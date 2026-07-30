@@ -201,7 +201,7 @@ body.res .sf {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: transparent;
+  background: var(--ch);
   color: var(--f);
   font: inherit;
   line-height: 0;
@@ -223,7 +223,7 @@ body.res .sf {
 
 .sf-clear:hover {
   color: var(--t);
-  background: var(--ch);
+  filter: brightness(0.96);
 }
 
 .sf-clear:focus-visible {
