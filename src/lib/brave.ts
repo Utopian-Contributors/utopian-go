@@ -85,6 +85,33 @@ function meta(m?: {
   };
 }
 
+/**
+ * Clean one infobox attribute row. Returns null to drop section headers,
+ * empty values, and non-string junk.
+ */
+function normalizeInfoboxAttr(
+  pair: unknown,
+): [string, string] | null {
+  if (!Array.isArray(pair) || pair.length < 2) return null;
+  const rawK = pair[0];
+  const rawV = pair[1];
+  // Section headers ship as null/undefined (not useful as table rows)
+  if (rawV == null) return null;
+  if (typeof rawV === "object") return null;
+
+  let k = plainText(String(rawK ?? ""));
+  let v = plainText(String(rawV));
+  if (!k || !v) return null;
+  if (/^(null|undefined)$/i.test(v)) return null;
+
+  // "Developer (s)" → "Developer(s)" (space left by stripped tags)
+  k = k.replace(/\s+\(/g, "(");
+  // Collapse leftover spaces around punctuation from markup strip
+  v = v.replace(/\s+([,;:.])/g, "$1").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")");
+
+  return [k, v];
+}
+
 /** Snippets may keep <strong> for highlights; everything else is plain. */
 function snippetText(value: string = ""): string {
   // Protect allowlisted highlight tags, strip/decode the rest, restore tags.
@@ -133,12 +160,13 @@ function normalize(query: string, data: BraveSearchResponse): SearchApiResponse 
   if (rawBox?.title) {
     const thumb =
       rawBox.images?.find((i) => i.src)?.src || rawBox.thumbnail?.src;
+    // Brave uses null values for Wikipedia-style section headers
+    // (e.g. ["<strong>Denominations</strong>", null]). Drop those; they
+    // otherwise become the literal string "null" after plainText.
     const attributes = (rawBox.attributes ?? [])
-      .slice(0, 8)
-      .map(
-        ([k, v]) => [plainText(k), plainText(v)] as [string, string],
-      )
-      .filter(([k, v]) => k && v);
+      .map((pair) => normalizeInfoboxAttr(pair))
+      .filter((row): row is [string, string] => row != null)
+      .slice(0, 10);
     const profiles = (rawBox.profiles ?? [])
       .slice(0, 6)
       .filter((p) => p.url)

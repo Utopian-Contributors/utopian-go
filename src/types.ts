@@ -123,7 +123,8 @@ export interface BraveSearchResponse {
       description?: string;
       long_desc?: string;
       category?: string;
-      attributes?: [string, string][];
+      /** Values may be null for section-header rows (e.g. "Denominations"). */
+      attributes?: Array<[string, string | null | undefined] | unknown[]>;
       profiles?: Array<{ name?: string; url?: string }>;
       images?: Array<{ src?: string }>;
       thumbnail?: { src?: string };

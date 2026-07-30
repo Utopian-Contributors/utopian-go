@@ -501,16 +501,27 @@ export function createRenderer(state) {
       fold = true;
       const table = el("table", { class: "at" });
       for (const [k, v] of box.attributes) {
-        table.append(
-          el(
-            "tr",
-            null,
-            el("th", { text: plainText(k) }),
-            el("td", { text: plainText(v) }),
-          ),
-        );
+        const key = plainText(k).replace(/\s+\(/g, "(");
+        const val = plainText(v);
+        // Defensive: skip empty / literal "null" rows if an old API response slips through
+        if (!key || !val || /^(null|undefined)$/i.test(val)) continue;
+
+        const td = el("td");
+        if (/^https?:\/\//i.test(val)) {
+          td.append(
+            el("a", {
+              href: val,
+              target: "_blank",
+              rel: "noopener",
+              text: val,
+            }),
+          );
+        } else {
+          td.textContent = val;
+        }
+        table.append(el("tr", null, el("th", { text: key }), td));
       }
-      more.append(table);
+      if (table.childNodes.length) more.append(table);
     }
 
     if (box?.profiles?.length) {
