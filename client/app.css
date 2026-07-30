@@ -68,6 +68,21 @@ body.res #mn {
   padding-inline: var(--pad);
 }
 
+/* Sticky search chrome (header + tabs) on results */
+body.res .chrome {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--bg);
+  /* Full-bleed bg so results don’t show through while scrolling */
+  width: 100%;
+}
+
+/* Home: let #hd participate in body flex centering */
+body.home .chrome {
+  display: contents;
+}
+
 /* —— Home —— */
 body.home {
   display: flex;
@@ -358,8 +373,17 @@ body.ld .sp {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
   gap: 40px;
-  padding-block: 16px 64px;
+  /* Top pad only — bottom pad on the main column so sticky #sd isn’t short */
+  padding-top: 16px;
+  padding-bottom: 0;
   align-items: start;
+}
+
+/* Results / skeletons column — page end spacing lives here, not on #sd */
+#mn > :first-child {
+  position: relative;
+  min-width: 0;
+  padding-bottom: 64px;
 }
 
 #mn.solo {
@@ -613,7 +637,8 @@ body.ld .sp {
 /* —— Knowledge panel —— */
 #sd {
   position: sticky;
-  top: 8px;
+  /* Sit below sticky header+tabs (height set by JS as --chrome-h) */
+  top: calc(var(--chrome-h, 0px) + 8px);
   align-self: start;
   width: 100%;
   min-width: 0;
@@ -818,7 +843,12 @@ body.ld .sp {
   #mn {
     grid-template-columns: 1fr;
     gap: 20px;
-    padding-block: 14px 48px;
+    padding-top: 14px;
+    padding-bottom: 0;
+  }
+
+  #mn > :first-child {
+    padding-bottom: 48px;
   }
 
   #sd {

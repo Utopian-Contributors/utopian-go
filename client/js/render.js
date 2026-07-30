@@ -119,6 +119,9 @@ export function createRenderer(state) {
     ) {
       setStatus("No results.");
     }
+
+    // Keep sticky chrome height + side max in sync after layout changes
+    syncSideMax();
   }
 
   /** @param {WebResult[]} items */
@@ -588,6 +591,14 @@ export function createRenderer(state) {
   }
 
   function syncSideMax() {
+    const chrome = document.getElementById("chrome");
+    if (chrome && document.body.classList.contains("res")) {
+      const h = Math.round(chrome.getBoundingClientRect().height);
+      document.documentElement.style.setProperty("--chrome-h", `${h}px`);
+    } else {
+      document.documentElement.style.removeProperty("--chrome-h");
+    }
+
     if (side.hidden || window.matchMedia("(max-width: 900px)").matches) {
       document.documentElement.style.removeProperty("--side-max");
       return;

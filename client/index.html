@@ -9,42 +9,45 @@
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
-    <header id="hd">
-      <a class="lg" href="/" id="lg" aria-label="utopian-go home">
-        <img
-          class="lg-mark"
-          src="/go-wordmark.svg"
-          alt="utopian-go"
-          width="188"
-          height="64"
-          decoding="async"
-        />
-      </a>
-      <form class="sf" id="f" role="search">
-        <input
-          id="q"
-          name="q"
-          type="search"
-          enterkeyhint="search"
-          placeholder="Search"
-          autocomplete="off"
-          spellcheck="false"
-          autofocus
-        />
-        <div class="sf-actions">
-          <button id="cl" type="button" class="sf-clear" aria-label="Clear" hidden>
-            <span aria-hidden="true">×</span>
-          </button>
-          <span class="sf-sep" aria-hidden="true" hidden></span>
-          <button id="go" type="submit" class="sf-go" aria-label="Search">
-            <span class="bl" aria-hidden="true">↵</span>
-            <span class="sp" aria-hidden="true"></span>
-          </button>
-        </div>
-      </form>
-    </header>
+    <div class="chrome" id="chrome">
+      <header id="hd">
+        <a class="lg" href="/" id="lg" aria-label="utopian-go home">
+          <img
+            class="lg-mark"
+            src="/go-wordmark.svg"
+            alt="utopian-go"
+            width="188"
+            height="64"
+            decoding="async"
+          />
+        </a>
+        <form class="sf" id="f" role="search">
+          <input
+            id="q"
+            name="q"
+            type="search"
+            enterkeyhint="search"
+            placeholder="Search"
+            autocomplete="off"
+            spellcheck="false"
+            autofocus
+          />
+          <div class="sf-actions">
+            <button id="cl" type="button" class="sf-clear" aria-label="Clear" hidden>
+              <span aria-hidden="true">×</span>
+            </button>
+            <span class="sf-sep" aria-hidden="true" hidden></span>
+            <button id="go" type="submit" class="sf-go" aria-label="Search">
+              <span class="bl" aria-hidden="true">↵</span>
+              <span class="sp" aria-hidden="true"></span>
+            </button>
+          </div>
+        </form>
+      </header>
 
-    <nav id="tb" hidden></nav>
+      <nav id="tb" hidden></nav>
+    </div>
+
     <div id="st" role="status" aria-live="polite" hidden></div>
 
     <div id="mn">
