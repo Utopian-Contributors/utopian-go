@@ -368,6 +368,15 @@ body.ld .sp {
   cursor: default;
 }
 
+/* Loading: whole nav stays put but non-interactive (active tab still readable) */
+#tb[aria-busy="true"] .tab {
+  cursor: default;
+}
+
+#tb[aria-busy="true"] .tab.on:disabled {
+  opacity: 0.7;
+}
+
 /* —— Layout —— */
 #mn {
   display: grid;
@@ -574,6 +583,11 @@ body.ld .sp {
   display: block;
   max-width: 220px;
   max-height: 160px;
+  width: auto;
+  height: auto;
+  /* Prefer HTML width/height attrs for aspect-ratio (reduces load reflow) */
+  vertical-align: middle;
+  background: var(--ch);
 }
 
 .ig-cap {
@@ -792,6 +806,27 @@ body.ld .sp {
   gap: 18px;
 }
 
+/* Image search: skeleton is an .ig grid, not result rows */
+#sk.is-ig {
+  display: block;
+}
+
+/* During crossfade: overlay skeleton on the real grid (no double height) */
+#sk.is-ig.is-crossfade {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.28s ease;
+}
+
+#sk.is-ig.is-crossfade.is-out {
+  opacity: 0;
+}
+
 .sk .b {
   height: 11px;
   width: 100%;
@@ -808,6 +843,48 @@ body.ld .sp {
 .sk .b:last-child {
   width: 70%;
   margin: 0;
+}
+
+/* Placeholder tiles — same shell as .ig-item + max box as .ig-item img */
+.ig-sk-cell {
+  flex: 0 0 auto;
+  max-width: 220px;
+  max-height: 160px;
+  border-radius: 10px;
+  background: var(--ch);
+  /* Gentle pulse only — no entrance stagger (avoids busy loading) */
+  animation: sk-pulse 1.6s ease-in-out infinite;
+}
+
+/* Real grid: soft reveal after skeleton (no per-tile bounce) */
+.ig.ig-reveal {
+  opacity: 0;
+  transition: opacity 0.28s ease;
+}
+
+.ig.ig-reveal.is-in {
+  opacity: 1;
+}
+
+.ig.ig-soft .ig-item {
+  animation: none;
+}
+
+@keyframes sk-pulse {
+  50% {
+    opacity: 0.65;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ig-sk-cell {
+    animation: none;
+  }
+
+  #sk.is-ig.is-crossfade,
+  .ig.ig-reveal {
+    transition: none;
+  }
 }
 
 /* —— Mobile —— */

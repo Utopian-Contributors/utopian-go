@@ -1,7 +1,16 @@
 /**
  * SERP rendering: tabs, web/news/video/discussion lists, images, knowledge panel.
  */
-import { $, clearResults, el, setLoading, setStatus } from "./dom.js";
+import {
+  $,
+  clearResults,
+  crossfadeImageSkeleton,
+  el,
+  hideSkeleton,
+  setLoading,
+  setStatus,
+  showSkeleton,
+} from "./dom.js";
 import { appendSanitized, host, plainText } from "./text.js";
 import { TABS, writeUrl } from "./url.js";
 import { cite, resultCard, snippet, titleLink, videoThumb } from "./pieces.js";
@@ -34,12 +43,14 @@ export function createRenderer(state) {
   const side = $("sd");
   const tabsEl = $("tb");
   const main = $("mn");
-  const skeletons = $("sk");
 
   function tabAvailability() {
     const d = state.data;
+    const busy = document.body.classList.contains("ld");
+    // While loading, treat the active surface as “available” for highlighting only;
+    // buttons stay disabled via `busy` in renderTabs.
     return {
-      web: !!d,
+      web: !!d || (busy && state.tab === "web"),
       images: !!state.lastQuery,
       news: !!d?.news?.length,
       videos: !!d?.videos?.length,
@@ -48,17 +59,22 @@ export function createRenderer(state) {
   }
 
   function ensureTabAvailable() {
+    // Don’t bounce the active tab during load (data may not be ready yet)
+    if (document.body.classList.contains("ld")) return;
     const available = tabAvailability();
     if (!available[state.tab]) state.tab = "web";
   }
 
   function renderTabs() {
+    // Show nav as soon as we have a query (including first load) — not only after results
     if (!state.data && !state.lastQuery) return;
 
     const available = tabAvailability();
     ensureTabAvailable();
+    const busy = document.body.classList.contains("ld");
 
     tabsEl.hidden = false;
+    tabsEl.setAttribute("aria-busy", busy ? "true" : "false");
     tabsEl.replaceChildren();
 
     for (const [key, label] of TABS) {
@@ -66,8 +82,10 @@ export function createRenderer(state) {
         type: "button",
         class: "tab" + (state.tab === key ? " on" : ""),
         text: label,
-        disabled: !available[key],
+        // Loading: every tab disabled. Idle: only tabs with results enabled.
+        disabled: busy || !available[key],
         onclick: () => {
+          if (document.body.classList.contains("ld")) return;
           if (state.tab === key || !available[key]) return;
           state.tab = key;
           if (key !== "images") state.selectedImage = null;
@@ -181,18 +199,24 @@ export function createRenderer(state) {
     }
 
     if (state.images && state.imagesQuery === q) {
+      setLoading(false);
+      renderTabs();
       paintImagesView();
       return;
     }
 
     state.selectedImage = null;
-    skeletons.hidden = false;
+    // Reuse skeleton if runSearch already put it up (no rebuild / reflow)
+    showSkeleton("images");
     setLoading(true);
+    renderTabs(); // refresh disabled state while busy
     setStatus("");
-    // Full-width while loading
+    // Stay solo the entire load — never flash the two-column shell
     main.classList.add("solo");
     side.hidden = true;
     side.replaceChildren();
+    // Keep skeleton; only clear the results pane
+    results.replaceChildren();
 
     const id = ++state.requestId;
     state.activeController?.abort();
@@ -207,31 +231,39 @@ export function createRenderer(state) {
       const json = await res.json();
       if (id !== state.requestId || state.tab !== "images") return;
 
-      skeletons.hidden = true;
       setLoading(false);
+      renderTabs();
 
       if (json.error) {
+        hideSkeleton();
         setStatus(json.error, true);
         return;
       }
 
       state.images = json.images || [];
       state.imagesQuery = q;
-      paintImagesView();
+      // Soft crossfade skeleton → real grid (no hard cut)
+      paintImagesView({ crossfade: true });
     } catch (err) {
       if (/** @type {Error} */ (err)?.name === "AbortError" || id !== state.requestId)
         return;
-      skeletons.hidden = true;
+      hideSkeleton();
       setLoading(false);
+      renderTabs();
       setStatus("Something went wrong.", true);
     }
   }
 
-  /** Layout: full grid, or collapsed grid + right-hand detail. */
-  function paintImagesView() {
-    clearResults();
+  /**
+   * Layout: full grid, or collapsed grid + right-hand detail.
+   * @param {{ crossfade?: boolean }} [opts]
+   */
+  function paintImagesView(opts = {}) {
+    // Don’t call clearResults() — it also clears status. Only swap the grid.
+    results.replaceChildren();
     const items = state.images || [];
     if (!items.length) {
+      hideSkeleton();
       main.classList.add("solo");
       side.hidden = true;
       side.replaceChildren();
@@ -240,16 +272,24 @@ export function createRenderer(state) {
     }
 
     const selected = state.selectedImage;
+    /** @type {HTMLElement | null} */
+    let grid = null;
     if (selected) {
       main.classList.remove("solo");
       side.hidden = false;
-      paintImageGrid(items, selected);
+      grid = paintImageGrid(items, selected, { soft: true });
       paintImageDetail(selected);
+      hideSkeleton();
     } else {
       main.classList.add("solo");
       side.hidden = true;
       side.replaceChildren();
-      paintImageGrid(items, null);
+      grid = paintImageGrid(items, null, {
+        soft: !!opts.crossfade,
+        reveal: !!opts.crossfade,
+      });
+      if (opts.crossfade) crossfadeImageSkeleton(grid);
+      else hideSkeleton();
     }
     syncSideMax();
   }
@@ -271,11 +311,18 @@ export function createRenderer(state) {
   /**
    * @param {ImageItem[]} items
    * @param {ImageItem | null} selected
+   * @param {{ soft?: boolean, reveal?: boolean }} [opts]
+   *   soft — no per-tile stagger (used when crossfading from skeleton)
+   *   reveal — start at opacity 0 for crossfade
+   * @returns {HTMLElement | null}
    */
-  function paintImageGrid(items, selected) {
-    const grid = el("div", {
-      class: "ig" + (selected ? " is-open" : ""),
-    });
+  function paintImageGrid(items, selected, opts = {}) {
+    const classes = ["ig"];
+    if (selected) classes.push("is-open");
+    if (opts.soft) classes.push("ig-soft");
+    if (opts.reveal) classes.push("ig-reveal");
+
+    const grid = el("div", { class: classes.join(" ") });
     let shown = 0;
 
     for (const item of items) {
@@ -293,13 +340,22 @@ export function createRenderer(state) {
           paintImagesView();
         },
       });
-      btn.style.setProperty("--i", String(shown * 24));
+      if (!opts.soft) {
+        btn.style.setProperty("--i", String(shown * 24));
+      }
 
       const img = el("img", {
         src,
         alt: plainText(item.title || "Image result"),
-        loading: "lazy",
+        // Eager: primary content; reserved width/height below avoid CLS on load
+        loading: "eager",
+        decoding: "async",
       });
+      // Intrinsic size hints → browser reserves aspect ratio inside max 220×160
+      if (item.width && item.height) {
+        img.width = item.width;
+        img.height = item.height;
+      }
       img.addEventListener(
         "error",
         () => {
@@ -322,9 +378,10 @@ export function createRenderer(state) {
 
     if (!shown) {
       setStatus("No results.");
-      return;
+      return null;
     }
     results.append(grid);
+    return grid;
   }
 
   /** @param {ImageItem} item */

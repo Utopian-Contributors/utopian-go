@@ -4,7 +4,7 @@
  * Home (centered search) ↔ results (tabs + list + knowledge panel).
  * Source is modular; `scripts/build-client.mjs` bundles + minifies to public/.
  */
-import { $, clearResults, setLoading, setStatus } from "./dom.js";
+import { $, clearResults, hideSkeleton, setLoading, setStatus, showSkeleton } from "./dom.js";
 import { readUrlState, writeUrl } from "./url.js";
 import { createRenderer } from "./render.js";
 
@@ -30,7 +30,6 @@ const clearBtn = /** @type {HTMLButtonElement} */ ($("cl"));
 const clearSep = /** @type {HTMLElement} */ (
   form.querySelector(".sf-sep")
 );
-const skeletons = $("sk");
 const logo = $("lg");
 
 const ui = createRenderer(state);
@@ -43,11 +42,6 @@ function syncClearButton() {
 }
 
 // —— Boot ——
-
-skeletons.innerHTML =
-  `<div class="sk"><div class="b"></div><div class="b"></div><div class="b"></div></div>`.repeat(
-    3,
-  );
 
 document.body.className = "home";
 
@@ -138,19 +132,30 @@ async function runSearch(query, pushState, opts = {}) {
   if (!opts.keepTab) state.tab = "web";
   if (pushState) writeUrl(query, state.tab, "push");
 
-  document.body.className = "res";
-  setLoading(true);
-  skeletons.hidden = false;
-  clearResults();
-  setStatus("");
-  $("tb").hidden = true;
-  ui.clearSide();
+  // Set query first so tabs can render immediately (disabled until results)
   state.lastQuery = query;
-
   if (state.imagesQuery !== query) {
     state.images = null;
     state.imagesQuery = "";
     state.selectedImage = null;
+  }
+
+  document.body.className = "res";
+  setLoading(true);
+  const onImages = state.tab === "images";
+  // Keep one stable loading chrome for this tab — do not swap layouts mid-flight
+  showSkeleton(onImages ? "images" : "web");
+  clearResults();
+  setStatus("");
+  // Nav is part of the results chrome from the first paint — disabled while ld
+  ui.renderTabs();
+  // clearSide() forces two columns; images stay full-width solo the whole time
+  if (onImages) {
+    $("mn").classList.add("solo");
+    $("sd").hidden = true;
+    $("sd").replaceChildren();
+  } else {
+    ui.clearSide();
   }
 
   try {
@@ -162,26 +167,31 @@ async function runSearch(query, pushState, opts = {}) {
     const json = await res.json();
     if (id !== state.requestId) return;
 
-    skeletons.hidden = true;
-    setLoading(false);
-
     if (json.error) {
+      setLoading(false);
+      hideSkeleton();
       setStatus(json.error, true);
-      ui.clearSide();
+      if (!onImages) ui.clearSide();
+      ui.renderTabs();
       return;
     }
 
     state.data = json;
     ui.ensureTabAvailable();
     if (!pushState) writeUrl(query, state.tab, "replace");
+    // Images still loading → keep body.ld so tabs stay disabled through paint()
+    if (state.tab !== "images") setLoading(false);
     ui.renderTabs();
+    // Images tab still needs /api/images — leave the grid skeleton up until then.
+    if (state.tab !== "images") hideSkeleton();
     ui.paint();
   } catch (err) {
     if (/** @type {Error} */ (err)?.name === "AbortError" || id !== state.requestId)
       return;
-    skeletons.hidden = true;
+    hideSkeleton();
     setLoading(false);
     setStatus("Something went wrong.", true);
-    ui.clearSide();
+    if (!onImages) ui.clearSide();
+    ui.renderTabs();
   }
 }
