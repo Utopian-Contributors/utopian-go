@@ -14,7 +14,7 @@
   --ch: #f1f3f4;
   --hover: #f1f3f4;
   --ff: system-ui, Helvetica, Arial, sans-serif;
-  --shell: 1280px;
+  --shell: 1520px;
   --pad: 28px;
 }
 
@@ -233,7 +233,7 @@ body.res .sf {
   font-weight: 500;
   line-height: 1;
   /* × sits slightly low on the baseline in most UI fonts */
-  transform: translateY(-0.08em);
+  transform: translateY(-0.09em);
 }
 
 .sf-clear:hover {
@@ -371,7 +371,7 @@ body.ld .sp {
 /* —— Layout —— */
 #mn {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 480px);
   gap: 40px;
   /* Top pad only — bottom pad on the main column so sticky #sd isn’t short */
   padding-top: 16px;
