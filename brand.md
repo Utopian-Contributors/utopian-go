@@ -59,3 +59,4 @@ Apple-inspired stark minimal search UI.
 - Hand-minified source, or checking in pre-mangled `client/` files
 - Gradients-as-decoration, multi-color accents
 - Shipping without compression in production
+- Shipping without proper cache-control in production
