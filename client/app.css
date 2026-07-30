@@ -417,6 +417,7 @@ body.ld .sp {
   animation-delay: calc(var(--i, 0) * 1ms);
   padding: 8px;
   border-radius: 8px;
+  max-width: 70ch;
 }
 
 .r:hover {
