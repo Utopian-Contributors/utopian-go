@@ -218,7 +218,7 @@ body.res .sf {
   font-weight: 500;
   line-height: 1;
   /* × sits slightly low on the baseline in most UI fonts */
-  transform: translateY(-0.05em);
+  transform: translateY(-0.08em);
 }
 
 .sf-clear:hover {
