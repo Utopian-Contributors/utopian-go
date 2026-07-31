@@ -1,5 +1,6 @@
 import { Request, Response, Router } from "express";
 import { BraveApiError, braveImageSearch, braveSearch } from "../lib/brave";
+import { lookupToken } from "../lib/tokens/store";
 import { ImageSearchApiResponse, SearchApiResponse } from "../types";
 
 export const apiRouter = Router();
@@ -23,13 +24,22 @@ apiRouter.get("/api/search", async (req: Request, res: Response) => {
     return;
   }
 
+  // Resolved from the in-memory index — synchronous, so the price rides along
+  // on this response instead of costing a second round trip.
+  const token = lookupToken(q);
+
   try {
-    res.json(await braveSearch(q));
+    const body = await braveSearch(q);
+    if (token) body.token = token;
+    res.json(body);
   } catch (err) {
     const { message, status, query } = apiError(err, q);
+    // A price is still worth serving when web results are not — checking a
+    // token on a bad link is the case this exists for.
     const body: SearchApiResponse = {
       query,
       results: [],
+      ...(token ? { token } : {}),
       error: message,
     };
     res.status(status).json(body);

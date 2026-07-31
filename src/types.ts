@@ -79,6 +79,53 @@ export interface ImageItem {
   height?: number;
 }
 
+/**
+ * A priced Solana token, as sent to the client. Rides along on the search
+ * response — a separate endpoint would cost an extra round trip, which is the
+ * whole budget on a bad link.
+ */
+export interface TokenQuote {
+  mint: string;
+  symbol: string;
+  name: string;
+  /** USD price of one token. */
+  price: number;
+  /** 24h price change, percent. */
+  change24h?: number;
+  /** Market cap, USD. */
+  mcap?: number;
+  /** Seconds since this price was sourced. */
+  age: number;
+}
+
+/** Server-side index entry. Superset of TokenQuote; never sent whole. */
+export interface TokenRecord {
+  mint: string;
+  symbol: string;
+  name: string;
+  price: number;
+  change24h?: number;
+  mcap?: number;
+  liquidity: number;
+  verified: boolean;
+  /** Tokenized equity / ETF (xStocks and friends). Outranks memecoins. */
+  equity?: boolean;
+  /**
+   * Extra lookup keys. Tokenized equities trade as "AAPLx" / "Apple xStock",
+   * but people search "AAPL" and "apple" — without aliases they are indexed
+   * and unreachable.
+   */
+  aliases?: string[];
+  /** Epoch ms the price itself was sourced — drives the age shown to users. */
+  priceAt: number;
+  /**
+   * Epoch ms we last asked for a fresher price, successful or not. Separate
+   * from priceAt so a failed lookup backs off without making a stale price
+   * look new.
+   */
+  checkedAt: number;
+}
+
 export interface SearchApiResponse {
   query: string;
   results: WebResult[];
@@ -87,6 +134,7 @@ export interface SearchApiResponse {
   news?: NewsItem[];
   videos?: VideoItem[];
   discussions?: DiscussionItem[];
+  token?: TokenQuote;
   error?: string;
 }
 
@@ -159,6 +207,29 @@ export interface BraveSearchResponse {
       meta_url?: { netloc?: string };
     }>;
   };
+}
+
+/** Loose Jupiter Tokens V2 entry (fields we read only). */
+export interface JupToken {
+  id?: string;
+  symbol?: string;
+  name?: string;
+  usdPrice?: number;
+  mcap?: number;
+  liquidity?: number;
+  isVerified?: boolean;
+  tags?: string[];
+  stats24h?: { priceChange?: number };
+}
+
+/** Loose Helius DAS `getAsset` response (fields we read only). */
+export interface HeliusAssetResponse {
+  result?: {
+    token_info?: {
+      price_info?: { price_per_token?: number; currency?: string };
+    };
+  };
+  error?: { message?: string };
 }
 
 /** Loose Brave image search response. */

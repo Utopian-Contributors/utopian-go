@@ -14,6 +14,7 @@ import {
 import { appendSanitized, host, plainText } from "./text.js";
 import { TABS, writeUrl } from "./url.js";
 import { cite, resultCard, snippet, titleLink, videoThumb } from "./pieces.js";
+import { tokenCard } from "./token.js";
 
 /** @typedef {import('../../src/types').SearchApiResponse} SearchApiResponse */
 /** @typedef {import('../../src/types').ImageItem} ImageItem */
@@ -117,6 +118,8 @@ export function createRenderer(state) {
     side.hidden = false;
 
     if (state.tab === "web") {
+      // Price answers the query — it leads, above the organic results.
+      if (state.data?.token) results.append(tokenCard(state.data.token));
       paintWeb(state.data?.results || []);
       paintSide();
     } else if (state.tab === "news") {
@@ -133,7 +136,8 @@ export function createRenderer(state) {
     if (
       state.tab === "web" &&
       !(state.data?.results || []).length &&
-      !state.data?.infobox
+      !state.data?.infobox &&
+      !state.data?.token
     ) {
       setStatus("No results.");
     }

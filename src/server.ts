@@ -1,7 +1,8 @@
 import compression from "compression";
 import express from "express";
 import path from "path";
-import { BRAVE_API_KEY, PORT } from "./config";
+import { BRAVE_API_KEY, HELIUS_RPC_URL, PORT } from "./config";
+import { startTokenIndex } from "./lib/tokens/store";
 import { apiRouter } from "./routes/api";
 
 const app = express();
@@ -48,4 +49,8 @@ app.listen(PORT, () => {
   if (!BRAVE_API_KEY) {
     console.log("Set BRAVE_API_KEY env var to get live results.");
   }
+  if (!HELIUS_RPC_URL) {
+    console.log("Set HELIUS_RPC_URL env var for live token price refresh.");
+  }
+  startTokenIndex();
 });

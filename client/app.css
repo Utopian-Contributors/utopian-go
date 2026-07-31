@@ -9,6 +9,7 @@
   --b: #dfe1e5;
   --a: #1a73e8;
   --go: #39a11c;
+  --dn: #d93025;
   --ln: #ebebeb;
   --pn: #fff;
   --ch: #f1f3f4;
@@ -28,6 +29,7 @@
     --b: #5f6368;
     --a: #8ab4f8;
     --go: #34a853;
+    --dn: #f28b82;
     --ln: #3c4043;
     --pn: #303134;
     --ch: #3c4043;
@@ -427,6 +429,91 @@ body.ld .sp {
   padding: 8px;
   border-radius: 8px;
   max-width: 70ch;
+}
+
+/* —— Token price card —— */
+
+.tk {
+  animation: enter 0.24s both;
+  border: 1px solid var(--b);
+  border-radius: 12px;
+  padding: 14px 16px;
+  max-width: 70ch;
+  background: var(--pn);
+}
+
+.tk-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tk-sym {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--t);
+}
+
+.tk-nm {
+  font-size: 13px;
+  color: var(--f);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tk-r {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+/* Tabular figures: live prices must not jitter as digits change width. */
+.tk-px,
+.tk-ch,
+.tk-f {
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-px {
+  font-size: 30px;
+  font-weight: 500;
+  color: var(--t);
+  line-height: 1.1;
+}
+
+.tk-ch {
+  font-size: 14px;
+  color: var(--f);
+}
+
+.tk-ch.up {
+  color: var(--go);
+}
+
+.tk-ch.dn {
+  color: var(--dn);
+}
+
+.tk-f {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--f);
+  flex-wrap: wrap;
+}
+
+.tk-f a {
+  color: var(--f);
+  text-decoration: underline;
+}
+
+.tk-f a:hover {
+  color: var(--a);
 }
 
 .r:hover {
@@ -875,7 +962,8 @@ body.ld .sp {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ig-sk-cell {
+  .ig-sk-cell,
+  .tk {
     animation: none;
   }
 
