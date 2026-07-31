@@ -24,7 +24,7 @@ import {
   writeFileSync,
   watch as fsWatch,
 } from "fs";
-import { gzipSync } from "zlib";
+import { brotliCompressSync, constants, gzipSync } from "zlib";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -33,6 +33,14 @@ const root = path.join(__dirname, "..");
 const clientDir = path.join(root, "client");
 const outDir = path.join(root, "public");
 
+/**
+ * Total compressed shell (bytes). This is the budget that physically matters:
+ * TCP's initial congestion window is 10 segments (RFC 6928), so ~10 x 1460 MSS
+ * = 14,600 bytes reach the client before anyone waits for an ACK. Measured on
+ * gzip — the worst case a client might negotiate — with brotli reported too.
+ * Hard fail: exceeding it costs a whole extra round trip.
+ */
+const TOTAL_BUDGET = 14_336; // 14 KiB across all payload files
 /** Per-file network budget (bytes, gzip). Hard fail if any payload file exceeds. */
 const GZIP_BUDGET = 8_192; // 8 KiB per file
 /** Per-file artifact guardrail (bytes, uncompressed). Soft — warns only. */
@@ -136,22 +144,32 @@ function fmt(n) {
   return String(n).padStart(6);
 }
 
+function brotli(buf) {
+  return brotliCompressSync(buf, {
+    params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
+  }).length;
+}
+
 function reportSize() {
   let rawTotal = 0;
   let gzipTotal = 0;
+  let brTotal = 0;
   /** @type {string[]} */
   const gzipOver = [];
   /** @type {string[]} */
   const rawOver = [];
 
   console.log(
-    `\nClient payload (budget is per file — gzip <${GZIP_BUDGET} hard, raw <${RAW_BUDGET} soft):`,
+    `\nClient payload (total gzip <${TOTAL_BUDGET} hard — one TCP init window;` +
+      ` per file gzip <${GZIP_BUDGET} hard, raw <${RAW_BUDGET} soft):`,
   );
   for (const f of PAYLOAD) {
     const buf = readFileSync(path.join(outDir, f));
     const gz = gzipSync(buf, { level: 9 }).length;
+    const br = brotli(buf);
     rawTotal += buf.length;
     gzipTotal += gz;
+    brTotal += br;
 
     const gOk = gz < GZIP_BUDGET;
     const rOk = buf.length < RAW_BUDGET;
@@ -160,13 +178,27 @@ function reportSize() {
 
     const tag = !gOk ? "OVER gzip" : !rOk ? "OVER raw" : "OK";
     console.log(
-      `  ${f.padEnd(12)} ${fmt(buf.length)} B  (gzip ${fmt(gz)} B)  [${tag}]`,
+      `  ${f.padEnd(12)} ${fmt(buf.length)} B  (gzip ${fmt(gz)} B, br ${fmt(br)} B)  [${tag}]`,
     );
   }
 
+  const totalOk = gzipTotal < TOTAL_BUDGET;
   console.log(
-    `  ${"TOTAL".padEnd(12)} ${fmt(rawTotal)} B  (gzip ${fmt(gzipTotal)} B)  (info only)`,
+    `  ${"TOTAL".padEnd(12)} ${fmt(rawTotal)} B  (gzip ${fmt(gzipTotal)} B, br ${fmt(brTotal)} B)` +
+      `  [${totalOk ? "OK" : "OVER"}]`,
   );
+
+  if (!totalOk) {
+    console.log(
+      `\n  ✗ Total compressed shell over budget: ${gzipTotal} B gzip > ${TOTAL_BUDGET} B.`,
+    );
+    console.log(
+      `    The shell no longer fits one TCP initial window — cold loads pay an\n` +
+        `    extra round trip. Trim before shipping.\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   if (gzipOver.length) {
     console.log(
@@ -174,28 +206,23 @@ function reportSize() {
     );
     console.log(`    Limit ${GZIP_BUDGET} B gzip each. Trim those assets.\n`);
     process.exitCode = 1;
-  } else if (rawOver.length) {
+    return;
+  }
+
+  if (rawOver.length) {
     console.log(
       `\n  ⚠ Raw guardrail exceeded (per file, soft): ${rawOver.join(", ")}`,
     );
     console.log(
       `    Limit ${RAW_BUDGET} B raw each. Gzip still OK — prefer shrinking source.\n`,
     );
-    process.exitCode = 0;
-  } else {
-    const worstHeadroom = Math.min(
-      ...PAYLOAD.map((f) => {
-        const gz = gzipSync(readFileSync(path.join(outDir, f)), {
-          level: 9,
-        }).length;
-        return GZIP_BUDGET - gz;
-      }),
-    );
-    console.log(
-      `\n  ✓ Each file within budget (tightest gzip headroom ${worstHeadroom} B).\n`,
-    );
-    process.exitCode = 0;
   }
+
+  console.log(
+    `\n  ✓ Shell fits one round trip (${TOTAL_BUDGET - gzipTotal} B gzip headroom,` +
+      ` ${TOTAL_BUDGET - brTotal} B brotli).\n`,
+  );
+  process.exitCode = 0;
 }
 
 async function buildAssets() {
