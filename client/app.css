@@ -723,12 +723,10 @@ body.ld .sp {
 }
 
 .pn .ph {
-  width: 100%;
   max-height: 140px;
   object-fit: contain;
   border-radius: 8px;
   margin: 0 0 12px;
-  background: var(--ch);
 }
 
 .at {
