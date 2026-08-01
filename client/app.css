@@ -178,8 +178,17 @@ body.res #hd {
   padding-block: 16px 8px;
 }
 
-body.res .lg {
-  flex-shrink: 0;
+/* The wordmark and an empty trailing spacer flex equally, which lands the
+   field on the page centre without hard-coding the wordmark's width. When
+   space runs short the wordmark holds its size and the field gives way, so the
+   two can never collide. */
+body.res .lg,
+body.res #hd::after {
+  flex: 1 1 0;
+}
+
+body.res #hd::after {
+  content: "";
 }
 
 body.res .lg-mark {
@@ -188,9 +197,9 @@ body.res .lg-mark {
 }
 
 body.res .sf {
-  flex: 1;
+  /* Same width as the home field — it doesn't resize when results appear. */
+  flex: 0 1 584px;
   min-width: 0;
-  max-width: 720px;
 }
 
 .lg {
@@ -1131,11 +1140,24 @@ body.ld .sp {
     padding-block: 12px 10px;
   }
 
+  /* Stacked layout: no centring spacer, and the wordmark sizes to its content
+     rather than flexing to fill a row. */
+  body.res #hd::after {
+    display: none;
+  }
+
+  body.res .lg {
+    flex: 0 0 auto;
+  }
+
   body.res .lg-mark {
     height: 36px;
   }
 
   body.res .sf {
+    /* Reset the desktop basis: in a column container it would size the
+       field's height, not its width. */
+    flex: 0 0 auto;
     max-width: none;
     width: 100%;
   }
