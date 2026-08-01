@@ -592,10 +592,12 @@ export function createRenderer(state) {
 
     if (box?.thumbnail) {
       fold = true;
+      // src is withheld until the panel is expanded. Hiding the element with
+      // display:none would not stop the fetch — only an absent src does.
       more.append(
         el("img", {
           class: "ph",
-          src: box.thumbnail,
+          "data-src": box.thumbnail,
           alt: "",
           loading: "lazy",
         }),
@@ -652,16 +654,18 @@ export function createRenderer(state) {
     }
 
     if (fold) {
-      // Expanded by default; user can still collapse via See less
-      panel.classList.add("is-open");
+      // Collapsed by default: the panel's extras cost nothing until asked for.
       panel.append(more);
       const btn = el("button", {
         type: "button",
         class: "pn-more",
-        text: "See less",
+        text: "See more",
+        "aria-expanded": "false",
         onclick: () => {
           const open = panel.classList.toggle("is-open");
+          if (open) hydrateDeferredImages(panel);
           btn.textContent = open ? "See less" : "See more";
+          btn.setAttribute("aria-expanded", String(open));
           syncSideMax();
         },
       });
@@ -670,6 +674,21 @@ export function createRenderer(state) {
 
     side.append(panel);
     syncSideMax();
+  }
+
+  /**
+   * Promote deferred `data-src` images to real requests. Called on first
+   * expand, so a collapsed knowledge panel never costs a byte of image traffic
+   * (and never hits a third-party CDN) on page load.
+   * @param {HTMLElement} root
+   */
+  function hydrateDeferredImages(root) {
+    for (const img of root.querySelectorAll("img[data-src]")) {
+      const src = img.getAttribute("data-src");
+      if (!src) continue;
+      img.setAttribute("src", src);
+      img.removeAttribute("data-src");
+    }
   }
 
   /**
