@@ -121,6 +121,55 @@ body.home #st {
   display: none !important;
 }
 
+/* Home-only price strip. Hidden by default so it never becomes a flex item in
+   the results header, where it would throw off the centred search field. */
+#hm-tk {
+  display: none;
+}
+
+body.home #hm-tk {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-top: -8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+body.home #hm-tk a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--m);
+}
+
+body.home #hm-tk a:hover {
+  color: var(--t);
+  text-decoration: none;
+}
+
+body.home #hm-tk b {
+  font-weight: 600;
+  color: var(--f);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+body.home #hm-tk i {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--f);
+}
+
+body.home #hm-tk i.up {
+  color: var(--go);
+}
+
+body.home #hm-tk i.dn {
+  color: var(--dn);
+}
+
 /* —— Results chrome —— */
 body.res #hd {
   display: flex;
