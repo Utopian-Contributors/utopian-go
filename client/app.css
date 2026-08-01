@@ -710,7 +710,9 @@ body.ld .sp {
   min-width: 0;
 }
 
-.vr > div {
+/* Text column only — the placeholder is also a div, and letting it flex here
+   would override its own sizing (this selector outranks .vr-ph). */
+.vr > div:not(.vr-ph) {
   min-width: 0;
   flex: 1;
 }
@@ -1217,9 +1219,11 @@ body.ld .sp {
     aspect-ratio: 16 / 9;
   }
 
-  /* Keep "No preview" at thumb size — do not grow with the column */
+  /* Keep "No preview" at thumb size — do not grow with the column. Basis stays
+     auto: in a column the basis is the height, so a length here would win over
+     the 90px and stretch the box. */
   .vr-ph {
-    flex: 0 0 160px;
+    flex: 0 0 auto;
     width: 160px;
     max-width: 160px;
     height: 90px;
