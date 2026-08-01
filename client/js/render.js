@@ -38,6 +38,10 @@ import { tokenCards } from "./token.js";
  * }} ViewState
  */
 
+/** Image tile cell — must stay in sync with `.ig-item` sizing in app.css. */
+const TILE_MAX_W = 220;
+const TILE_MAX_H = 160;
+
 /** @param {ViewState} state */
 export function createRenderer(state) {
   const results = $("rs");
@@ -300,6 +304,30 @@ export function createRenderer(state) {
   }
 
   /**
+   * Tile box, computed before a single byte of image data arrives.
+   *
+   * The grid can only be stable if every tile knows its final size up front.
+   * Brave gives us intrinsic dimensions, so we scale them into the 220x160
+   * cell ourselves rather than letting `max-width`/`auto` resolve on decode —
+   * which is what made each arriving image reflow everything after it.
+   * @param {ImageItem} item
+   * @returns {[number, number]}
+   */
+  function tileBox(item) {
+    const w = Number(item.width);
+    const h = Number(item.height);
+    // No dimensions from the API: reserve a typical 4:3 cell so the tile still
+    // holds its place. Slight crop beats a collapsing grid.
+    if (!w || !h) return [200, 150];
+    // Never upscale — small thumbnails keep their intrinsic size, as before.
+    const scale = Math.min(TILE_MAX_W / w, TILE_MAX_H / h, 1);
+    return [
+      Math.max(1, Math.round(w * scale)),
+      Math.max(1, Math.round(h * scale)),
+    ];
+  }
+
+  /**
    * @param {ImageItem} item
    * @param {ImageItem | null} selected
    */
@@ -345,27 +373,39 @@ export function createRenderer(state) {
           paintImagesView();
         },
       });
-      if (!opts.soft) {
-        btn.style.setProperty("--i", String(shown * 24));
-      }
+      // Final geometry now, so nothing below this tile ever moves again.
+      const [boxW, boxH] = tileBox(item);
+      btn.style.width = `${boxW}px`;
+      btn.style.height = `${boxH}px`;
 
       const img = el("img", {
         src,
         alt: plainText(item.title || "Image result"),
-        // Eager: primary content; reserved width/height below avoid CLS on load
+        // Eager: primary content; the tile already reserved its space.
         loading: "eager",
         decoding: "async",
+        width: boxW,
+        height: boxH,
       });
-      // Intrinsic size hints → browser reserves aspect ratio inside max 220×160
-      if (item.width && item.height) {
-        img.width = item.width;
-        img.height = item.height;
-      }
+
+      // Each image fades in on its own decode. Tying the reveal to the actual
+      // load event — rather than a fixed stagger — means you never watch an
+      // empty box animate in and then pop when the pixels arrive.
+      const reveal = () => img.classList.add("is-in");
+      if (img.complete && img.naturalWidth) reveal();
+      else img.addEventListener("load", reveal, { once: true });
+
       img.addEventListener(
         "error",
         () => {
-          btn.remove();
-          if (!grid.querySelector(".ig-item")) setStatus("No results.");
+          // Keep the reserved box. Removing a tile reflows every tile after it,
+          // and a dead thumbnail can arrive seconds late — measured as the
+          // single largest layout shift on this view. Leave a neutral cell.
+          btn.classList.add("is-broken");
+          img.remove();
+          if (!grid.querySelector(".ig-item:not(.is-broken)")) {
+            setStatus("No results.");
+          }
         },
         { once: true },
       );

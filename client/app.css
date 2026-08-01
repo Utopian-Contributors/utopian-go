@@ -748,8 +748,8 @@ body.ld .sp {
   text-decoration: none;
   color: inherit;
   cursor: pointer;
-  animation: enter 0.24s both;
-  animation-delay: calc(var(--i, 0) * 1ms);
+  /* No entrance animation on the tile: its box is fixed from first paint and
+     the image inside does the fading. One motion, tied to the real load. */
   line-height: 0;
   font: inherit;
 }
@@ -760,15 +760,26 @@ body.ld .sp {
   outline-offset: 2px;
 }
 
+/* Thumbnail failed to load — hold the space rather than reflow the grid. */
+.ig-item.is-broken {
+  background: var(--ch);
+  cursor: default;
+}
+
+/* Fills the box the tile already reserved — never negotiates its own size. */
 .ig-item img {
   display: block;
-  max-width: 220px;
-  max-height: 160px;
-  width: auto;
-  height: auto;
-  /* Prefer HTML width/height attrs for aspect-ratio (reduces load reflow) */
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   vertical-align: middle;
   background: var(--ch);
+  opacity: 0;
+  transition: opacity 0.22s ease-out;
+}
+
+.ig-item img.is-in {
+  opacity: 1;
 }
 
 .ig-cap {
@@ -1045,10 +1056,6 @@ body.ld .sp {
   opacity: 1;
 }
 
-.ig.ig-soft .ig-item {
-  animation: none;
-}
-
 @keyframes sk-pulse {
   50% {
     opacity: 0.65;
@@ -1062,8 +1069,14 @@ body.ld .sp {
   }
 
   #sk.is-ig.is-crossfade,
-  .ig.ig-reveal {
+  .ig.ig-reveal,
+  .ig-item img {
     transition: none;
+  }
+
+  /* No transition means no reveal event — show every image immediately. */
+  .ig-item img {
+    opacity: 1;
   }
 }
 

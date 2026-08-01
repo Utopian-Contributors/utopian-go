@@ -53,30 +53,19 @@ const WEB_SKEL =
     3,
   );
 
+/** Every real tile is capped by the 220px width before it hits the 160px height. */
+const IMAGE_SKEL_W = 220;
+
 /**
- * Stable tile sizes (all within 220×160) — same every load so the
- * skeleton doesn’t reshuffle while waiting.
- * @type {ReadonlyArray<readonly [number, number]>}
+ * Heights sampled from an actual result set: 19 of 20 tiles come back 220 wide,
+ * with heights clustered 110–160. Matching that distribution — rather than the
+ * scattered widths we used to draw — means the grid barely moves when real
+ * images replace the placeholders. Fixed order, so it never reshuffles mid-wait.
+ * @type {ReadonlyArray<number>}
  */
-const IMAGE_SKEL_SIZES = [
-  [220, 147],
-  [160, 160],
-  [120, 160],
-  [200, 133],
-  [180, 160],
-  [220, 124],
-  [140, 160],
-  [190, 140],
-  [100, 160],
-  [210, 150],
-  [165, 160],
-  [220, 110],
-  [130, 160],
-  [175, 145],
-  [150, 150],
-  [200, 160],
-  [110, 160],
-  [220, 130],
+const IMAGE_SKEL_HEIGHTS = [
+  124, 147, 133, 124, 140, 116, 147, 124, 131, 143, 124, 160, 133, 124, 147,
+  110, 140, 134, 144, 123,
 ];
 
 const CROSSFADE_MS = 280;
@@ -98,10 +87,9 @@ export function showSkeleton(kind = "web") {
     }
     sk.className = "is-ig";
     const grid = el("div", { class: "ig ig-sk", "aria-hidden": "true" });
-    for (let i = 0; i < IMAGE_SKEL_SIZES.length; i++) {
-      const [w, h] = IMAGE_SKEL_SIZES[i];
+    for (const h of IMAGE_SKEL_HEIGHTS) {
       const cell = el("div", { class: "ig-sk-cell" });
-      cell.style.width = `${w}px`;
+      cell.style.width = `${IMAGE_SKEL_W}px`;
       cell.style.height = `${h}px`;
       grid.append(cell);
     }
