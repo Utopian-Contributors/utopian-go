@@ -38,6 +38,55 @@ export const TOKEN_INDEX_TIMEOUT_MS = 20_000;
 /** Disk snapshot so a restart doesn't cold-start the index. */
 export const TOKEN_INDEX_FILE = path.join(process.cwd(), ".cache", "tokens.json");
 
+// —— Swap referral ——
+
+/** Swap API V1. Keyless on lite-api; `api.jup.ag` would want an x-api-key. */
+export const JUP_SWAP_ENDPOINT = "https://lite-api.jup.ag/swap/v1";
+
+/**
+ * Referral account from https://referral.jup.ag. Kept for provenance — the swap
+ * itself never sends it, since V1 takes the derived token account instead.
+ *
+ * Both spellings are read because the deployed .env uses the single-r variant.
+ */
+export const JUP_REFERRAL_ACCOUNT =
+  process.env.JUP_REFERAL_ACCOUNT || process.env.JUP_REFERRAL_ACCOUNT || "";
+
+/**
+ * Referral *token* accounts that collect our cut — Swap V1's `feeAccount`.
+ *
+ * Each is a PDA of ["referral_ata", referralAccount, mint] under REFER4Zg…,
+ * created once from the referral dashboard. Jupiter charges the fee on
+ * whichever side of the trade matches the account it is handed, so we need one
+ * per quote token rather than one per tradable token:
+ *
+ *   buy  SOL → BONK, pass the SOL account  → fee taken on the input  (SOL)
+ *   sell BONK → SOL, pass the SOL account  → fee taken on the output (SOL)
+ *
+ * Both verified by simulation: a 1 SOL buy credits exactly 2,000,000 lamports
+ * at 20 bps, and the sell direction credits the same account on the way back.
+ * The quote's `platformFee` field reports the amount in the output mint even
+ * when the charge lands on the input — trust the simulated balance delta, not
+ * that field.
+ *
+ * Empty disables fees for that side; the swap still works, unattributed.
+ */
+export const JUP_FEE_ACCOUNT_SOL =
+  process.env.JUP_FEE_ACCOUNT_SOL || process.env.JUP_FEE_ACCOUNT || "";
+export const JUP_FEE_ACCOUNT_USDC = process.env.JUP_FEE_ACCOUNT_USDC || "";
+
+/**
+ * Integrator fee in basis points, charged to the user on each swap.
+ *
+ * Bounded at 100 (1%) because this is real money taken from someone buying —
+ * a fat-fingered env var should cost us revenue, not overcharge a user. Note
+ * this is the classic Swap V1 path, which has none of Ultra's 50–255 floor.
+ */
+export const JUP_FEE_BPS = Math.min(
+  100,
+  Math.max(0, Number(process.env.JUP_FEE_BPS) || 20),
+);
+
 /**
  * Liquidity floor for everything that isn't a tokenized real-world asset.
  *

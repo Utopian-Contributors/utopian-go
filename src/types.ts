@@ -133,6 +133,23 @@ export interface TokenRecord {
   checkedAt: number;
 }
 
+/**
+ * Wallet balances for the tokens that can fund a swap, in base units as
+ * strings — lamport counts outgrow JSON's safe integer range.
+ */
+export interface Balances {
+  sol?: string;
+  usdc?: string;
+  /** The traded mint, when one was asked for — used to size a sell. */
+  token?: string;
+}
+
+export interface BalancesApiResponse extends Balances {
+  error?: string;
+  /** Cause of a failure, development only. */
+  detail?: string;
+}
+
 export interface SearchApiResponse {
   query: string;
   results: WebResult[];

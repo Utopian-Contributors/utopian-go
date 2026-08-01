@@ -2,7 +2,14 @@ import compression from "compression";
 import express from "express";
 import { readFileSync, watch } from "fs";
 import path from "path";
-import { BRAVE_API_KEY, HELIUS_RPC_URL, PORT } from "./config";
+import {
+  BRAVE_API_KEY,
+  HELIUS_RPC_URL,
+  JUP_FEE_ACCOUNT_SOL,
+  JUP_FEE_ACCOUNT_USDC,
+  JUP_FEE_BPS,
+  PORT,
+} from "./config";
 import { startTokenIndex } from "./lib/tokens/store";
 import { renderHomeTicker } from "./lib/tokens/ticker";
 import { apiRouter } from "./routes/api";
@@ -14,6 +21,18 @@ const indexPath = path.join(publicDir, "index.html");
 /** Slot in the built shell that the price strip is injected into. */
 const TICKER_SLOT = '<div id="hm-tk"></div>';
 
+/** Slot carrying the swap fee account to the client. */
+const REF_SLOT = 'data-fa=""';
+
+/** Attribute-value escape. The value is operator-supplied via env. */
+function attr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 /**
  * The shell is held in memory and re-read only when it changes on disk, so
  * serving a page costs no filesystem syscall — just one string replace.
@@ -23,6 +42,16 @@ let shell = "";
 function loadShell() {
   try {
     shell = readFileSync(indexPath, "utf8");
+    // Referral config is deploy-time constant, so it is baked in here rather
+    // than repeated on every quote in every search response.
+    if (JUP_FEE_ACCOUNT_SOL || JUP_FEE_ACCOUNT_USDC) {
+      shell = shell.replace(
+        REF_SLOT,
+        `data-fa-sol="${attr(JUP_FEE_ACCOUNT_SOL)}"` +
+          ` data-fa-usdc="${attr(JUP_FEE_ACCOUNT_USDC)}"` +
+          ` data-fee="${JUP_FEE_BPS}"`,
+      );
+    }
   } catch {
     // Client not built yet; the request handler falls back to sendFile.
     shell = "";
@@ -92,6 +121,20 @@ app.listen(PORT, () => {
   }
   if (!HELIUS_RPC_URL) {
     console.log("Set HELIUS_RPC_URL env var for live token price refresh.");
+  }
+  const sides = [
+    JUP_FEE_ACCOUNT_SOL && "SOL",
+    JUP_FEE_ACCOUNT_USDC && "USDC",
+  ].filter(Boolean);
+  if (!sides.length) {
+    console.log(
+      "Set JUP_FEE_ACCOUNT_SOL / JUP_FEE_ACCOUNT_USDC (referral token accounts " +
+        "from https://referral.jup.ag) to earn on swaps; trading works either way.",
+    );
+  } else {
+    console.log(
+      `[swap] fees at ${JUP_FEE_BPS} bps on ${sides.join(" + ")} side(s)`,
+    );
   }
   startTokenIndex();
 });

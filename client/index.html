@@ -8,7 +8,10 @@
     <link rel="icon" href="/go-favicon.png" type="image/png" />
     <link rel="stylesheet" href="/app.css" />
   </head>
-  <body>
+  <!-- data-fa: referral fee account, injected server-side once at boot (empty
+       means swaps run unattributed, which still works).
+       data-sw: the lazy buy-panel bundle, content-hashed at build time. -->
+  <body data-fa="" data-sw="/swap.js">
     <div class="chrome" id="chrome">
       <header id="hd">
         <a class="lg" href="/" id="lg" aria-label="utopian-go home">

@@ -1,7 +1,12 @@
 import { Request, Response, Router } from "express";
+import { fetchBalances, isPubkey } from "../lib/balances";
 import { BraveApiError, braveImageSearch, braveSearch } from "../lib/brave";
 import { lookupTokens } from "../lib/tokens/store";
-import { ImageSearchApiResponse, SearchApiResponse } from "../types";
+import {
+  BalancesApiResponse,
+  ImageSearchApiResponse,
+  SearchApiResponse,
+} from "../types";
 
 export const apiRouter = Router();
 
@@ -66,6 +71,43 @@ apiRouter.get("/api/images", async (req: Request, res: Response) => {
       error: message,
     };
     res.status(status).json(body);
+  }
+});
+
+/**
+ * Fundable balances for one wallet. Read-only and scoped to two mints — it
+ * exists so the browser never needs our RPC credentials.
+ */
+apiRouter.get("/api/balances", async (req: Request, res: Response) => {
+  const owner = String(req.query.owner ?? "").trim();
+  const mint = String(req.query.mint ?? "").trim();
+
+  if (!isPubkey(owner)) {
+    const body: BalancesApiResponse = { error: "Invalid wallet address." };
+    res.status(400).json(body);
+    return;
+  }
+  if (mint && !isPubkey(mint)) {
+    const body: BalancesApiResponse = { error: "Invalid mint address." };
+    res.status(400).json(body);
+    return;
+  }
+
+  try {
+    res.json(await fetchBalances(owner, mint || undefined));
+  } catch (err) {
+    console.warn("[balances] lookup failed:", err);
+    // The dialog treats this as "unknown", not "zero" — it still lets someone
+    // type an amount, and Jupiter rejects it later if they can't cover it.
+    const body: BalancesApiResponse = {
+      error: "Could not read balances.",
+      // Outside production the cause is worth having in the response; a
+      // silent 502 is the hardest kind of failure to chase from the browser.
+      ...(process.env.NODE_ENV === "production"
+        ? {}
+        : { detail: err instanceof Error ? err.message : String(err) }),
+    };
+    res.status(502).json(body);
   }
 });
 

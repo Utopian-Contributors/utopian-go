@@ -582,6 +582,34 @@ body.ld .sp {
   font-size: 20px;
 }
 
+/*
+ * The buy action. Solid fill because it is the one thing on the page we want
+ * clicked; --bg as the label colour resolves to white on the light accent and
+ * near-black on the dark one, so both themes stay readable from one rule.
+ */
+.tk-buy {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: var(--a);
+  color: var(--bg);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tk-buy:hover {
+  filter: brightness(1.08);
+}
+
+/* Buy panel in flight. Its own styles ship inside the lazy bundle. */
+.tk-buy.is-ld {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+
 .r:hover {
   background: var(--hover);
 }
@@ -1043,6 +1071,12 @@ body.ld .sp {
 @media (max-width: 900px) {
   :root {
     --pad: 16px;
+  }
+
+  /* Full-bleed tap target — buying is the whole point on a phone. */
+  .tk-buy {
+    display: block;
+    text-align: center;
   }
 
   body.home {

@@ -18,6 +18,7 @@ import { minify as minifyHtml } from "html-minifier-terser";
 import { createHash } from "crypto";
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -48,6 +49,12 @@ const RAW_BUDGET = 20_480; // 20 KiB per file
 
 const STATIC_EXT = new Set([".png", ".svg", ".ico", ".webp", ".jpg", ".jpeg"]);
 const PAYLOAD = ["index.html", "app.css", "app.js"];
+/**
+ * Fetched on demand, never on first paint, so it is reported but not budgeted.
+ * The buy panel only loads once someone presses Buy — counting it against the
+ * init-window budget would be measuring bytes nobody waits for.
+ */
+const LAZY = ["swap.js"];
 const watch = process.argv.includes("--watch");
 
 mkdirSync(outDir, { recursive: true });
@@ -65,6 +72,13 @@ const jsOpts = {
   format: "iife",
   legalComments: "none",
   logLevel: watch ? "error" : "info",
+};
+
+/** The buy panel, built as its own bundle so app.js never carries it. */
+const swapOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "swap", "main.js")],
+  outfile: path.join(outDir, "swap.js"),
 };
 
 /** @returns {Promise<string>} */
@@ -105,7 +119,7 @@ async function buildCss() {
   return contentHash(min);
 }
 
-async function buildHtml(cssHash, jsHash) {
+async function buildHtml(cssHash, jsHash, swapHash) {
   let raw = readFileSync(path.join(clientDir, "index.html"), "utf8");
   // Fingerprint asset URLs so browsers/CDNs fetch the new build after deploy.
   raw = raw
@@ -116,6 +130,11 @@ async function buildHtml(cssHash, jsHash) {
     .replace(
       /src="\/app\.js"/,
       `src="/app.js?v=${jsHash}"`,
+    )
+    // The panel is fetched by JS, not a tag, so its hash rides in an attribute.
+    .replace(
+      /data-sw="\/swap\.js"/,
+      `data-sw="/swap.js?v=${swapHash}"`,
     );
   const min = await minifyHtml(raw, {
     collapseWhitespace: true,
@@ -220,20 +239,39 @@ function reportSize() {
 
   console.log(
     `\n  ✓ Shell fits one round trip (${TOTAL_BUDGET - gzipTotal} B gzip headroom,` +
-      ` ${TOTAL_BUDGET - brTotal} B brotli).\n`,
+      ` ${TOTAL_BUDGET - brTotal} B brotli).`,
   );
+  reportLazy();
   process.exitCode = 0;
+}
+
+/** On-demand bundles: reported for visibility, excluded from the shell budget. */
+function reportLazy() {
+  const rows = LAZY.filter((f) => existsSync(path.join(outDir, f)));
+  if (!rows.length) return console.log("");
+
+  console.log(`\n  Lazy (fetched on interaction, outside the shell budget):`);
+  for (const f of rows) {
+    const buf = readFileSync(path.join(outDir, f));
+    console.log(
+      `  ${f.padEnd(12)} ${fmt(buf.length)} B  (gzip ${fmt(gzipSync(buf, { level: 9 }).length)} B,` +
+        ` br ${fmt(brotli(buf))} B)`,
+    );
+  }
+  console.log("");
 }
 
 async function buildAssets() {
   copyStatic();
   // CSS + JS first so HTML can embed content hashes for cache busting.
-  const [, cssHash] = await Promise.all([
+  const [, , cssHash] = await Promise.all([
     esbuild.build(jsOpts),
+    esbuild.build(swapOpts),
     buildCss(),
   ]);
   const jsHash = contentHash(readFileSync(path.join(outDir, "app.js")));
-  await buildHtml(cssHash, jsHash);
+  const swapHash = contentHash(readFileSync(path.join(outDir, "swap.js")));
+  await buildHtml(cssHash, jsHash, swapHash);
 }
 
 async function buildOnce() {
