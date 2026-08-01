@@ -993,7 +993,8 @@ body.ld .sp {
 #sk {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  /* Match .rs so cards land on the same rhythm the skeleton set up */
+  gap: 22px;
 }
 
 /* Image search: skeleton is an .ig grid, not result rows */
@@ -1017,21 +1018,43 @@ body.ld .sp {
   opacity: 0;
 }
 
-.sk .b {
+/* Same box as a real result card so nothing shifts when results land */
+.sk {
+  max-width: 70ch;
+  padding: 8px;
+}
+
+.sk i {
+  display: block;
   height: 11px;
-  width: 100%;
   border-radius: 4px;
   margin: 0 0 6px;
   background: var(--ch);
 }
 
-.sk .b:first-child {
-  width: 40%;
-  height: 14px;
+/* Stand-ins for .ci .sn and .ci .up — two short stacked lines */
+.sk i:nth-child(1) {
+  width: 22%;
+  height: 12px;
+  margin-bottom: 4px;
 }
 
-.sk .b:last-child {
-  width: 70%;
+.sk i:nth-child(2) {
+  width: 34%;
+  height: 10px;
+  margin-bottom: 10px;
+}
+
+/* .r h3 — the 20px title line */
+.sk i:nth-child(3) {
+  width: 58%;
+  height: 17px;
+  margin-bottom: 10px;
+}
+
+/* .r .s — a two-line snippet */
+.sk i:nth-child(5) {
+  width: 76%;
   margin: 0;
 }
 

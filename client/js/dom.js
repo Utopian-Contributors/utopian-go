@@ -48,10 +48,13 @@ export function setLoading(on) {
   /** @type {HTMLButtonElement} */ ($("go")).disabled = on;
 }
 
+/**
+ * One block mirrors a real `.r` card line for line: site name, url path,
+ * title, then two snippet lines. Bare <i> keeps the markup cheap; widths and
+ * heights live in CSS next to the rules they imitate.
+ */
 const WEB_SKEL =
-  `<div class="sk"><div class="b"></div><div class="b"></div><div class="b"></div></div>`.repeat(
-    3,
-  );
+  `<div class="sk"><i></i><i></i><i></i><i></i><i></i></div>`.repeat(3);
 
 /** Every real tile is capped by the 220px width before it hits the 160px height. */
 const IMAGE_SKEL_W = 220;
