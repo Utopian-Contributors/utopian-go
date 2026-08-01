@@ -17,6 +17,9 @@
   --ff: system-ui, Helvetica, Arial, sans-serif;
   --shell: 1520px;
   --pad: 28px;
+  /* Gap below the nav before results start. #sd cancels it so the knowledge
+     panel's rule meets the nav's bottom border. */
+  --main-gap: 16px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -443,7 +446,7 @@ body.ld .sp {
   grid-template-columns: minmax(0, 1fr) minmax(340px, 480px);
   gap: 40px;
   /* Top pad only — bottom pad on the main column so sticky #sd isn’t short */
-  padding-top: 16px;
+  padding-top: var(--main-gap);
   padding-bottom: 0;
   align-items: start;
 }
@@ -853,8 +856,11 @@ body.ld .sp {
 /* —— Knowledge panel —— */
 #sd {
   position: sticky;
-  /* Sit below sticky header+tabs (height set by JS as --chrome-h) */
-  top: calc(var(--chrome-h, 0px) + 8px);
+  /* Flush against the sticky header+tabs (height set by JS as --chrome-h), so
+     the panel's left rule continues the nav's bottom border while scrolling. */
+  top: var(--chrome-h, 0px);
+  /* Cancel #mn's top padding so the two borders meet at rest as well. */
+  margin-top: calc(var(--main-gap) * -1);
   align-self: start;
   width: 100%;
   min-width: 0;
@@ -865,7 +871,9 @@ body.ld .sp {
   border: 0;
   border-left: 1px solid var(--b);
   border-radius: 0;
-  padding: 4px 0 4px 20px;
+  /* Top pad sits inside the border, so the rule still meets the nav while the
+     text lines up with the first result in the left column. */
+  padding: 20px 0 4px 20px;
   background: transparent;
   box-sizing: border-box;
   max-height: var(--side-max, calc(100dvh - 8px));
@@ -1165,7 +1173,9 @@ body.ld .sp {
   #mn {
     grid-template-columns: 1fr;
     gap: 20px;
-    padding-top: 14px;
+    /* Keeps #sd's negative margin in step with the smaller mobile gap. */
+    --main-gap: 14px;
+    padding-top: var(--main-gap);
     padding-bottom: 0;
   }
 
