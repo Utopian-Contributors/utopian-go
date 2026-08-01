@@ -94,8 +94,14 @@ export interface TokenQuote {
   change24h?: number;
   /** Market cap, USD. */
   mcap?: number;
-  /** Seconds since this price was sourced. */
-  age: number;
+  /**
+   * Mint decimals. Only needed to render the quoted output amount, which
+   * Jupiter returns in base units — swapping itself never needs it, since the
+   * amount we send is denominated in the input mint. Absent on records from a
+   * snapshot written before this field existed; the UI drops the preview line
+   * rather than guessing a scale.
+   */
+  decimals?: number;
 }
 
 /** Server-side index entry. Superset of TokenQuote; never sent whole. */
@@ -106,6 +112,7 @@ export interface TokenRecord {
   price: number;
   change24h?: number;
   mcap?: number;
+  decimals?: number;
   liquidity: number;
   verified: boolean;
   /** Tokenized equity / ETF (xStocks and friends). Outranks memecoins. */
@@ -134,7 +141,12 @@ export interface SearchApiResponse {
   news?: NewsItem[];
   videos?: VideoItem[];
   discussions?: DiscussionItem[];
-  token?: TokenQuote;
+  /**
+   * Matching tokens, best first, capped server-side. Ambiguous tickers are
+   * common on Solana — a dozen mints answer to "USDC" — and showing the
+   * plausible ones beats silently picking or silently dropping.
+   */
+  tokens?: TokenQuote[];
   error?: string;
 }
 
@@ -214,6 +226,7 @@ export interface JupToken {
   id?: string;
   symbol?: string;
   name?: string;
+  decimals?: number;
   usdPrice?: number;
   mcap?: number;
   liquidity?: number;

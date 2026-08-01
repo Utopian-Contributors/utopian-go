@@ -65,6 +65,25 @@ function equityAliases(symbol: string, name: string): string[] {
   return out;
 }
 
+/**
+ * Wrapper prefix on a bridged asset's name: "Wrapped BTC", "Coinbase Wrapped
+ * BTC", "OKX Wrapped BTC". Deliberately excludes "Staked" — JitoSOL is not SOL
+ * and trades at its own price, so it must not inherit SOL's identity.
+ */
+const WRAPPER_PREFIX = /^(?:[\w.]+\s+)?wrapped\s+/i;
+
+/**
+ * Bitcoin has no mint on Solana — it exists only as WBTC, cbBTC, LBTC and
+ * friends. Strip the wrapper and the bridge marker so the underlying ticker
+ * ("BTC") and plain name ("Ether") become reachable keys.
+ */
+function wrappedAlias(name: string): string | null {
+  const unbridged = name.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  const core = unbridged.replace(WRAPPER_PREFIX, "").trim();
+  if (!core || core.toLowerCase() === name.toLowerCase()) return null;
+  return core;
+}
+
 function toRecord(t: JupToken, now: number): TokenRecord | null {
   const mint = String(t.id ?? "").trim();
   const symbol = String(t.symbol ?? "").trim();
@@ -81,7 +100,10 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
   const verified = t.isVerified === true;
   const change24h = Number(t.stats24h?.priceChange);
   const mcap = Number(t.mcap);
-  const aliases = isEquity ? equityAliases(symbol, name || symbol) : [];
+  const decimals = Number(t.decimals);
+  const aliases = isEquity
+    ? equityAliases(symbol, name || symbol)
+    : [wrappedAlias(name || symbol)].filter((a): a is string => !!a);
 
   return {
     mint,
@@ -90,6 +112,7 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
     price,
     ...(Number.isFinite(change24h) ? { change24h } : {}),
     ...(Number.isFinite(mcap) && mcap > 0 ? { mcap } : {}),
+    ...(Number.isInteger(decimals) && decimals >= 0 ? { decimals } : {}),
     liquidity,
     verified,
     ...(isEquity ? { equity: true } : {}),

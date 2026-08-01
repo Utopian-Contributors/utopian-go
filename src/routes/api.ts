@@ -1,6 +1,6 @@
 import { Request, Response, Router } from "express";
 import { BraveApiError, braveImageSearch, braveSearch } from "../lib/brave";
-import { lookupToken } from "../lib/tokens/store";
+import { lookupTokens } from "../lib/tokens/store";
 import { ImageSearchApiResponse, SearchApiResponse } from "../types";
 
 export const apiRouter = Router();
@@ -24,13 +24,13 @@ apiRouter.get("/api/search", async (req: Request, res: Response) => {
     return;
   }
 
-  // Resolved from the in-memory index — synchronous, so the price rides along
+  // Resolved from the in-memory index — synchronous, so the prices ride along
   // on this response instead of costing a second round trip.
-  const token = lookupToken(q);
+  const tokens = lookupTokens(q);
 
   try {
     const body = await braveSearch(q);
-    if (token) body.token = token;
+    if (tokens.length) body.tokens = tokens;
     res.json(body);
   } catch (err) {
     const { message, status, query } = apiError(err, q);
@@ -39,7 +39,7 @@ apiRouter.get("/api/search", async (req: Request, res: Response) => {
     const body: SearchApiResponse = {
       query,
       results: [],
-      ...(token ? { token } : {}),
+      ...(tokens.length ? { tokens } : {}),
       error: message,
     };
     res.status(status).json(body);

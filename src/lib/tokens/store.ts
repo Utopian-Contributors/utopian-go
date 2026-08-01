@@ -8,7 +8,7 @@ import {
 import { TokenQuote, TokenRecord } from "../../types";
 import { fetchPrice } from "./helius";
 import { fetchTokenRecords } from "./jupiter";
-import { TokenIndex, matchToken } from "./match";
+import { MAX_CANDIDATES, TokenIndex, matchTokens } from "./match";
 
 /**
  * The token index: built hourly from Jupiter, refreshed per-mint from Helius on
@@ -137,18 +137,14 @@ function refreshPrice(rec: TokenRecord): void {
 // —— Public API ——
 
 /**
- * Resolve a query to a quote. Synchronous by design — it reads the in-memory
- * index and returns whatever price is already cached, then kicks off a live
- * refresh if that price is stale. The search response is never delayed; the
- * next search for the same token gets the fresher number.
+ * Project the index entry down to what the client is allowed to see.
+ *
+ * `verified`, `liquidity` and price age stay server-side. Age in particular is
+ * withheld deliberately: publishing it would let anyone read our refresh
+ * cadence off the API, and suppressing it only in the UI would not have hidden
+ * it.
  */
-export function lookupToken(query: string): TokenQuote | null {
-  const rec = matchToken(query, index);
-  if (!rec) return null;
-
-  const now = Date.now();
-  if (now - rec.checkedAt > TOKEN_PRICE_TTL_MS) refreshPrice(rec);
-
+function toQuote(rec: TokenRecord): TokenQuote {
   return {
     mint: rec.mint,
     symbol: rec.symbol,
@@ -156,10 +152,36 @@ export function lookupToken(query: string): TokenQuote | null {
     price: rec.price,
     ...(rec.change24h != null ? { change24h: rec.change24h } : {}),
     ...(rec.mcap != null ? { mcap: rec.mcap } : {}),
-    // `verified` stays server-side: it ranks ticker collisions but the card
-    // doesn't display it, so shipping it would be dead bytes on every search.
-    age: Math.max(0, Math.round((now - rec.priceAt) / 1000)),
+    ...(rec.decimals != null ? { decimals: rec.decimals } : {}),
   };
+}
+
+/**
+ * Resolve a query to the quotes worth rendering, best first.
+ *
+ * Synchronous by design — it reads the in-memory index and returns whatever
+ * prices are already cached, then kicks off live refreshes for the stale ones.
+ * The search response is never delayed; the next search for the same tokens
+ * gets the fresher numbers. Every card shown gets refreshed, not just the
+ * leader: a stale price on the second card is exactly as wrong as on the first.
+ */
+export function lookupTokens(
+  query: string,
+  limit: number = MAX_CANDIDATES,
+): TokenQuote[] {
+  const recs = matchTokens(query, index, limit);
+  const now = Date.now();
+
+  for (const rec of recs) {
+    if (now - rec.checkedAt > TOKEN_PRICE_TTL_MS) refreshPrice(rec);
+  }
+
+  return recs.map(toQuote);
+}
+
+/** Single best quote, for callers that render exactly one cell. */
+export function lookupToken(query: string): TokenQuote | null {
+  return lookupTokens(query, 1)[0] ?? null;
 }
 
 /** Load any snapshot, then refresh now and hourly thereafter. */

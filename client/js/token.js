@@ -7,13 +7,6 @@ import { fiat, percent, tokenPrice } from "./num.js";
 
 /** @typedef {import('../../src/types').TokenQuote} TokenQuote */
 
-/** @param {number} seconds */
-function freshness(seconds) {
-  if (seconds < 90) return `${seconds}s ago`;
-  if (seconds < 5400) return `${Math.round(seconds / 60)}m ago`;
-  return `${Math.round(seconds / 3600)}h ago`;
-}
-
 /** @param {string} mint */
 function shortMint(mint) {
   return mint.length > 12 ? `${mint.slice(0, 4)}…${mint.slice(-4)}` : mint;
@@ -21,10 +14,11 @@ function shortMint(mint) {
 
 /**
  * @param {TokenQuote} t
+ * @param {boolean} [alt] Runner-up rather than the leading match.
  * @returns {HTMLElement}
  */
-export function tokenCard(t) {
-  const card = el("article", { class: "tk" });
+function tokenCard(t, alt) {
+  const card = el("article", { class: alt ? "tk tk-alt" : "tk" });
 
   const head = el("div", { class: "tk-h" });
   head.append(el("span", { class: "tk-sym", text: t.symbol }));
@@ -69,14 +63,26 @@ export function tokenCard(t) {
       text: shortMint(t.mint),
     }),
   );
-  foot.append(
-    el("span", {
-      class: "tk-ag",
-      title: `Price sourced ${t.age}s ago`,
-      text: freshness(t.age),
-    }),
-  );
   card.append(foot);
 
   return card;
+}
+
+/**
+ * All matching tokens, best first, as one fragment.
+ *
+ * Stacked rather than laid out in a horizontal strip: a scroll row hides its
+ * own contents behind a gesture desktop mice don't have, and these are
+ * alternatives to compare, not a carousel to browse.
+ *
+ * Grouped in their own element so the alternatives sit tight against the leader
+ * and the results list's wider gap falls after the whole set.
+ *
+ * @param {TokenQuote[]} list
+ * @returns {HTMLElement}
+ */
+export function tokenCards(list) {
+  const group = el("div", { class: "tkg" });
+  list.forEach((t, i) => group.append(tokenCard(t, i > 0)));
+  return group;
 }

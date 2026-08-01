@@ -516,6 +516,23 @@ body.ld .sp {
   color: var(--a);
 }
 
+/* Alternatives for an ambiguous ticker, stacked under the leading match. */
+.tkg {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Runner-ups stay legible but yield the page to the leader. */
+.tk-alt {
+  padding: 10px 16px;
+}
+
+.tk-alt .tk-px {
+  font-size: 20px;
+}
+
 .r:hover {
   background: var(--hover);
 }

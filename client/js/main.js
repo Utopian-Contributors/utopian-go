@@ -170,9 +170,18 @@ async function runSearch(query, pushState, opts = {}) {
     if (json.error) {
       setLoading(false);
       hideSkeleton();
-      setStatus(json.error, true);
       if (!onImages) ui.clearSide();
       ui.renderTabs();
+      // Quotes ride along on the same response and survive a web-search
+      // failure. Checking a price on a flaky connection is precisely the case
+      // the server keeps them for, so paint them instead of dropping them.
+      if (json.tokens?.length && state.tab === "web") {
+        state.data = json;
+        ui.paint();
+      }
+      // After paint(), never before: it clears the results pane via
+      // clearResults(), which resets the status line with it.
+      setStatus(json.error, true);
       return;
     }
 
