@@ -9,6 +9,12 @@ import { TokenQuote, TokenRecord } from "../../types";
 import { fetchPrice } from "./helius";
 import { fetchTokenRecords } from "./jupiter";
 import { MAX_CANDIDATES, TokenIndex, matchTokens } from "./match";
+import {
+  refreshTicks,
+  restoreTicks,
+  ticksFresh,
+  ticksUpdatedAt,
+} from "./ticks";
 
 /**
  * The token index: built hourly from Jupiter, refreshed per-mint from Helius on
@@ -61,6 +67,7 @@ function loadSnapshot(): boolean {
     const parsed = JSON.parse(raw) as {
       updatedAt?: number;
       records?: TokenRecord[];
+      ticksAt?: number;
     };
     if (!Array.isArray(parsed.records) || !parsed.records.length) return false;
     // Snapshots written before checkedAt existed fall back to priceAt.
@@ -69,6 +76,10 @@ function loadSnapshot(): boolean {
     }
     adopt(parsed.records);
     updatedAt = Number(parsed.updatedAt) || 0;
+    // Ticks outlive a restart: they came down with the snapshot, and pulling a
+    // thousand series again every time the dev server respawns would be rude
+    // to an endpoint that costs us nothing.
+    restoreTicks(parsed.ticksAt);
     return true;
   } catch {
     // Missing or corrupt snapshot is normal on a fresh box — rebuild instead.
@@ -81,7 +92,7 @@ function saveSnapshot(): void {
     mkdirSync(path.dirname(TOKEN_INDEX_FILE), { recursive: true });
     writeFileSync(
       TOKEN_INDEX_FILE,
-      JSON.stringify({ updatedAt, records }),
+      JSON.stringify({ updatedAt, ticksAt: ticksUpdatedAt(), records }),
       "utf8",
     );
   } catch (err) {
@@ -94,13 +105,31 @@ function saveSnapshot(): void {
 async function refreshIndex(): Promise<void> {
   try {
     const list = await fetchTokenRecords();
+    // A rebuild replaces every record object, but last hour's shapes are still
+    // last hour's shapes — carry them across so cards keep their line while
+    // the refresh below runs, rather than losing it for a few minutes an hour.
+    const ticks = new Map(
+      records.filter((r) => r.ticks).map((r) => [r.mint, r.ticks!]),
+    );
+    for (const rec of list) {
+      const carried = ticks.get(rec.mint);
+      if (carried) rec.ticks = carried;
+    }
+
     adopt(list);
     saveSnapshot();
     console.log(`[tokens] indexed ${list.length} mints`);
   } catch (err) {
     // Keep serving the previous index; a stale price beats a broken card.
     console.warn("[tokens] index refresh failed:", err);
+    return;
   }
+
+  // Outside the try on purpose: the line is decoration on top of a working
+  // index, and the index is already adopted and saved by the time this runs.
+  if (ticksFresh()) return;
+  await refreshTicks(records);
+  saveSnapshot();
 }
 
 /**
@@ -153,6 +182,7 @@ function toQuote(rec: TokenRecord): TokenQuote {
     ...(rec.change24h != null ? { change24h: rec.change24h } : {}),
     ...(rec.mcap != null ? { mcap: rec.mcap } : {}),
     ...(rec.decimals != null ? { decimals: rec.decimals } : {}),
+    ...(rec.ticks ? { ticks: rec.ticks } : {}),
   };
 }
 

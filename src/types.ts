@@ -102,6 +102,13 @@ export interface TokenQuote {
    * rather than guessing a scale.
    */
   decimals?: number;
+  /**
+   * 24 hourly closes as base64, one byte each, scaled so the day's low is 0
+   * and its high is 255. Shape only — the prices behind it are deliberately
+   * not recoverable, because nothing on the card reads a value off the line.
+   * 32 characters, which is what makes a chart affordable on every response.
+   */
+  ticks?: string;
 }
 
 /** Server-side index entry. Superset of TokenQuote; never sent whole. */
@@ -123,6 +130,12 @@ export interface TokenRecord {
    * and unreachable.
    */
   aliases?: string[];
+  /**
+   * The token's 24h shape, encoded as for TokenQuote. Absent on a mint too
+   * new — or too closed, for a tokenized equity over a weekend — to have a
+   * day of candles behind it.
+   */
+  ticks?: string;
   /** Epoch ms the price itself was sourced — drives the age shown to users. */
   priceAt: number;
   /**

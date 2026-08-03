@@ -38,6 +38,61 @@ export const TOKEN_INDEX_TIMEOUT_MS = 20_000;
 /** Disk snapshot so a restart doesn't cold-start the index. */
 export const TOKEN_INDEX_FILE = path.join(process.cwd(), ".cache", "tokens.json");
 
+// —— 24h ticks ——
+
+/**
+ * Jupiter's chart data API — the candle series behind the line on a token
+ * card. Separate host from the token index, keyless the same way.
+ */
+export const JUP_CHART_ENDPOINT = "https://datapi.jup.ag/v2/charts";
+
+/**
+ * 24 hourly candles is exactly a day, and about as many points as a line a
+ * few hundred pixels wide can show apart. Finer would cost bytes on every
+ * search response to draw detail nobody can see.
+ */
+export const TOKEN_TICKS_INTERVAL = "1_HOUR";
+export const TOKEN_TICKS_COUNT = 24;
+
+/**
+ * Below half a day there is no day to draw. Brand-new mints, and tokenized
+ * equities over a closed weekend, come back with a handful of candles; those
+ * cards go out without a line rather than with one implying a history the
+ * token doesn't have.
+ */
+export const TOKEN_TICKS_MIN_POINTS = 12;
+
+/**
+ * How stale a set of ticks has to be before an index rebuild refetches it.
+ * Just under the index interval, so the hourly rebuild always refreshes but a
+ * process restart — which also rebuilds the index — reuses the snapshot
+ * instead of re-fetching a thousand series.
+ */
+export const TOKEN_TICKS_TTL_MS = 3_300_000;
+
+/**
+ * Series fetches per second, paced evenly rather than fired in a burst.
+ *
+ * The endpoint sits behind a burst limiter: a few hundred requests as fast as
+ * the connection allows earns a 429 for the rest of the minute, which is how
+ * a refresh ends up covering fifty tokens instead of every token. Measured
+ * clean at 8/s sustained, so 6 leaves room and still walks the whole index in
+ * about four minutes — a rounding error against an hourly job.
+ */
+export const TOKEN_TICKS_RPS = 6;
+
+/**
+ * Workers pulling from the queue. Only has to be deep enough that the pacing
+ * above stays the constraint rather than round-trip latency.
+ */
+export const TOKEN_TICKS_CONCURRENCY = 6;
+
+/** Attempts at a throttled series before giving up on it this hour. */
+export const TOKEN_TICKS_RETRIES = 3;
+
+/** One slow series must not stall the refresh behind it. */
+export const TOKEN_TICKS_TIMEOUT_MS = 8_000;
+
 // —— Swap referral ——
 
 /** Swap API V1. Keyless on lite-api; `api.jup.ag` would want an x-api-key. */
