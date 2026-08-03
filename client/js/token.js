@@ -67,6 +67,49 @@ async function buyClick(e, link, t) {
   }
 }
 
+/** Gradient ids have to be unique within the document. */
+let chartSeq = 0;
+
+/**
+ * The 24h line.
+ *
+ * SVG rather than an image because the card's height is whatever its text
+ * needs, and only a vector can take that height without being stretched or
+ * cropped to fit it. `preserveAspectRatio="none"` lets the drawing fill the
+ * box exactly, and the stroke opts back out of that scaling in CSS so the
+ * line keeps one weight whatever shape the box turns out to be.
+ *
+ * Only geometry is written here — stroke, fill, the gradient's colours and
+ * the room kept above and below the line are all stylesheet, which is both
+ * fewer bytes in the bundle and the reason the line is the same --go / --dn
+ * as the percentage beside it in either theme.
+ *
+ * @param {TokenQuote} t
+ * @param {string} dir Direction class, shared with the percentage.
+ * @returns {HTMLElement | null}
+ */
+function tokenChart(t, dir) {
+  // x is the hour, y is the byte flipped. No scaling arithmetic — that is
+  // what the viewBox is for.
+  const pts = [...atob(t.ticks)].map((c, i) => `${i},${255 - c.charCodeAt(0)}`);
+  if (pts.length < 2) return null;
+
+  const line = pts.join("L");
+  const last = pts.length - 1;
+  const id = `tkc${(chartSeq += 1)}`;
+
+  const box = el("div", { class: `tk-c${dir ? ` ${dir}` : ""}` });
+  // Every value interpolated below is a number this function computed, or the
+  // id it just minted.
+  box.innerHTML =
+    `<svg viewBox="0 0 ${last} 255" preserveAspectRatio="none"` +
+    ` aria-hidden="true"><linearGradient id="${id}" x2="0" y2="1">` +
+    `<stop/><stop offset="1"/></linearGradient>` +
+    `<path d="M${line}L${last},255L0,255Z" fill="url(#${id})"/>` +
+    `<path d="M${line}"/></svg>`;
+  return box;
+}
+
 /**
  * @param {TokenQuote} t
  * @param {boolean} [alt] Runner-up rather than the leading match.
@@ -74,13 +117,15 @@ async function buyClick(e, link, t) {
  */
 function tokenCard(t, alt) {
   const card = el("article", { class: alt ? "tk tk-alt" : "tk" });
+  // The stack of facts, unchanged — it just shares the card with the chart now.
+  const body = el("div", { class: "tk-b" });
 
   const head = el("div", { class: "tk-h" });
   head.append(el("span", { class: "tk-sym", text: t.symbol }));
   if (t.name && t.name !== t.symbol) {
     head.append(el("span", { class: "tk-nm", text: t.name }));
   }
-  card.append(head);
+  body.append(head);
 
   const row = el("div", { class: "tk-r" });
   const price = tokenPrice(t.price);
@@ -94,8 +139,12 @@ function tokenCard(t, alt) {
     }),
   );
 
+  // One direction for the whole card: the number and the line are the same
+  // claim, so they read it off the same expression.
+  const dir =
+    t.change24h == null ? "" : t.change24h > 0 ? "up" : t.change24h < 0 ? "dn" : "";
+
   if (t.change24h != null) {
-    const dir = t.change24h > 0 ? "up" : t.change24h < 0 ? "dn" : "";
     row.append(
       el("span", {
         class: `tk-ch${dir ? ` ${dir}` : ""}`,
@@ -103,7 +152,7 @@ function tokenCard(t, alt) {
       }),
     );
   }
-  card.append(row);
+  body.append(row);
 
   // The trade action is the point of the card, so it sits above the metadata
   // rather than trailing it as one more small grey link.
@@ -122,7 +171,7 @@ function tokenCard(t, alt) {
     text: `Buy ${t.symbol}`,
     onclick: (e) => buyClick(e, buy, target),
   });
-  card.append(buy);
+  body.append(buy);
 
   const foot = el("div", { class: "tk-f" });
   if (t.mcap != null) {
@@ -137,7 +186,13 @@ function tokenCard(t, alt) {
       text: shortMint(t.mint),
     }),
   );
-  card.append(foot);
+  body.append(foot);
+
+  card.append(body);
+  // No line for a mint too new to have a day of history — the card is
+  // complete without one, so nothing takes its place.
+  const chart = t.ticks ? tokenChart(t, dir) : null;
+  if (chart) card.append(chart);
 
   return card;
 }

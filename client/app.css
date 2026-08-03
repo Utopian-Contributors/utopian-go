@@ -494,13 +494,99 @@ body.ld .sp {
 
 /* —— Token price card —— */
 
+/*
+ * Two columns: the facts, then the chart across the right two thirds. The
+ * padding moved onto the body so the chart can reach the card's own edges,
+ * and overflow clips it back to the corner radius.
+ *
+ * The left track asks for a third but will not go below what the price line
+ * needs on one row, which is the one thing on this card that must never wrap.
+ * `min-content` rather than a fixed floor because that width is the token's
+ * to decide: "$1.0" and "$63,197.79" want very different columns, and the
+ * chart is what gives way — it is the only thing here that reads the same at
+ * any width.
+ */
 .tk {
   animation: enter 0.24s both;
   border: 1px solid var(--b);
   border-radius: 12px;
-  padding: 14px 16px;
   max-width: 70ch;
   background: var(--pn);
+  display: grid;
+  grid-template-columns: minmax(min-content, 1fr) 2fr;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* The stack of facts. Everything the card said before the chart arrived. */
+.tk-b {
+  min-width: 0;
+  padding: 14px 16px;
+}
+
+/* No chart — nothing to leave a column for. */
+.tk-b:only-child {
+  grid-column: 1 / -1;
+}
+
+/*
+ * The 24h line, bled to the top, right and bottom edges.
+ *
+ * The box is stretched by the row and contributes no height of its own, so
+ * the card is sized by its text and the drawing takes whatever that comes to
+ * — which is why the chart is drawn rather than fetched. Absolute rather than
+ * a plain `height: 100%` so the SVG's own 300x150 default can never get a
+ * vote in how tall the row is.
+ */
+.tk-c {
+  position: relative;
+  align-self: stretch;
+  color: var(--f);
+}
+
+.tk-c.up {
+  color: var(--go);
+}
+
+.tk-c.dn {
+  color: var(--dn);
+}
+
+/*
+ * Inset vertically so the day's high and low don't sit on the card's own
+ * edge, where half the stroke would fall outside it.
+ */
+.tk-c svg {
+  position: absolute;
+  inset: 7px 0;
+  display: block;
+  width: 100%;
+  height: calc(100% - 14px);
+}
+
+/*
+ * The line — the second path, drawn over the filled one.
+ *
+ * `non-scaling-stroke` is what makes the box's aspect ratio irrelevant: the
+ * drawing is stretched to fill whatever the text sized, and the stroke
+ * declines to be stretched with it.
+ */
+.tk-c path + path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Gradient under the curve, from the line's own colour down to nothing. */
+.tk-c stop {
+  stop-color: currentColor;
+  stop-opacity: 0.34;
+}
+
+.tk-c stop + stop {
+  stop-opacity: 0;
 }
 
 .tk-h {
@@ -524,12 +610,17 @@ body.ld .sp {
   white-space: nowrap;
 }
 
+/*
+ * Price and change, always on one row. They are one statement — the number
+ * and which way it moved — and a wrap turns reading it into two glances.
+ * Nothing here may break, so this row's min-content is what the column above
+ * sizes itself to.
+ */
 .tk-r {
   display: flex;
   align-items: baseline;
   gap: 10px;
   margin-top: 6px;
-  flex-wrap: wrap;
 }
 
 /* Tabular figures: live prices must not jitter as digits change width. */
@@ -544,11 +635,14 @@ body.ld .sp {
   font-weight: 500;
   color: var(--t);
   line-height: 1.1;
+  white-space: nowrap;
 }
 
+/* "+0.30% 24h" is one reading, so it never breaks at its own space either. */
 .tk-ch {
   font-size: 14px;
   color: var(--f);
+  white-space: nowrap;
 }
 
 .tk-ch.up {
@@ -559,13 +653,19 @@ body.ld .sp {
   color: var(--dn);
 }
 
+/*
+ * Market cap and mint, always side by side. Both are short and neither is
+ * worth a line of its own, so the row never wraps — a stacked footer reads as
+ * two separate notes rather than the one line of provenance it is.
+ */
 .tk-f {
   display: flex;
   gap: 12px;
   margin-top: 8px;
   font-size: 12px;
   color: var(--f);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .tk-f a {
@@ -586,7 +686,7 @@ body.ld .sp {
 }
 
 /* Runner-ups stay legible but yield the page to the leader. */
-.tk-alt {
+.tk-alt .tk-b {
   padding: 10px 16px;
 }
 
@@ -1227,5 +1327,19 @@ body.ld .sp {
     width: 160px;
     max-width: 160px;
     height: 90px;
+  }
+}
+
+/*
+ * On a phone the whole card is about as wide as the chart's column alone, so
+ * the two thirds it wants are two thirds nobody can spare.
+ */
+@media (max-width: 620px) {
+  .tk-c {
+    display: none;
+  }
+
+  .tk-b {
+    grid-column: 1 / -1;
   }
 }
