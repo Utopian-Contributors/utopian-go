@@ -4,14 +4,18 @@
  *
  *   1. Bundle + minify JS with esbuild
  *   2. Minify CSS with lightningcss (esbuild fallback)
- *   3. Minify HTML with html-minifier-terser
+ *   3. Inline the CSS and the wordmark into the HTML, minify with html-minifier
  *   4. Copy static images
- *   5. Report dual budget (gzip hard / raw soft) — per file, not sum
+ *   5. Precompress everything the server serves compressed
+ *   6. Report the budget against a TCP initial window
  *
  * Budget strategy (see brand.md):
- *   - HARD:  each file gzip  < GZIP_BUDGET  — real transfer with compression
- *   - SOFT:  each file raw   < RAW_BUDGET   — parse/cache weight guardrail
- *   Soft overage warns; hard overage fails the build (exit 1).
+ *   Only the shell has to fit the *initial* window. Everything else is
+ *   requested after the HTML has been parsed — and therefore after it has been
+ *   ACKed — so it rides either a second connection with its own fresh window
+ *   (HTTP/1.1) or one that slow start has already grown past ten segments
+ *   (HTTP/2). Summing the shell with its subresources measures a flight that
+ *   never happens; each gets its own budget instead.
  */
 import * as esbuild from "esbuild";
 import { minify as minifyHtml } from "html-minifier-terser";
@@ -22,6 +26,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
   watch as fsWatch,
 } from "fs";
@@ -35,26 +40,64 @@ const clientDir = path.join(root, "client");
 const outDir = path.join(root, "public");
 
 /**
- * Total compressed shell (bytes). This is the budget that physically matters:
- * TCP's initial congestion window is 10 segments (RFC 6928), so ~10 x 1460 MSS
- * = 14,600 bytes reach the client before anyone waits for an ACK. Measured on
- * gzip — the worst case a client might negotiate — with brotli reported too.
- * Hard fail: exceeding it costs a whole extra round trip.
+ * One TCP initial congestion window: 10 segments × 1460 B MSS (RFC 6928).
+ * This much leaves the server before it has to wait for an ACK.
  */
-const TOTAL_BUDGET = 14_336; // 14 KiB across all payload files
-/** Per-file network budget (bytes, gzip). Hard fail if any payload file exceeds. */
-const GZIP_BUDGET = 8_192; // 8 KiB per file
-/** Per-file artifact guardrail (bytes, uncompressed). Soft — warns only. */
-const RAW_BUDGET = 20_480; // 20 KiB per file
+const INIT_WINDOW = 14_600;
 
-const STATIC_EXT = new Set([".png", ".svg", ".ico", ".webp", ".jpg", ".jpeg"]);
-const PAYLOAD = ["index.html", "app.css", "app.js"];
 /**
- * Fetched on demand, never on first paint, so it is reported but not budgeted.
- * The buy panel only loads once someone presses Buy — counting it against the
- * init-window budget would be measuring bytes nobody waits for.
+ * The part of that window that is not ours to spend.
+ *
+ * HEADER_RESERVE — HTTP/1.1 response headers go on the wire uncompressed:
+ * Date, ETag, Content-Type, Content-Encoding, Content-Length, Cache-Control,
+ * Vary, Connection, Keep-Alive. ~300 B on this server's responses, rounded up.
+ * HTTP/2 squeezes these with HPACK; budget the worse case.
+ *
+ * TICKER_RESERVE — the shell measured here still has an empty price strip.
+ * renderHomeTicker fills it per request with three cells, ~200 B raw and ~100 B
+ * once it compresses against the rest of the document. Reserved with slack so a
+ * build that passes here also passes on the wire.
+ */
+const HEADER_RESERVE = 350;
+const TICKER_RESERVE = 300;
+
+/** What the shell may weigh compressed, and its parse-weight guardrail. */
+const SHELL = {
+  file: "index.html",
+  gzip: INIT_WINDOW - HEADER_RESERVE - TICKER_RESERVE,
+  raw: 49_152, // soft: inlined CSS is cheap to parse, but not free
+};
+
+/**
+ * Fetched once the shell is parsed. Each rides its own initial window, so each
+ * is checked alone — never summed against the shell.
+ */
+const PARALLEL = [
+  { file: "app.js", gzip: 8_192, raw: 24_576 },
+];
+
+/**
+ * Fetched on interaction, never on first paint. Reported, not budgeted: the
+ * buy panel only loads once someone presses Buy, and counting it against a
+ * first-load window would be measuring bytes nobody waits for.
  */
 const LAZY = ["swap.js"];
+
+/**
+ * Requested on first load but never render-blocking, and already compressed as
+ * far as they go. Listed so the accounting is honest about total first-load
+ * bytes, not budgeted, since no paint waits on them.
+ */
+const STATIC_FIRST_LOAD = ["go-favicon.png"];
+
+const STATIC_EXT = new Set([".png", ".svg", ".ico", ".webp", ".jpg", ".jpeg"]);
+
+/**
+ * Extensions the server looks for a precompressed sibling of. Kept in sync
+ * with PRECOMPRESSED in src/server.ts.
+ */
+const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
+
 const watch = process.argv.includes("--watch");
 
 mkdirSync(outDir, { recursive: true });
@@ -112,37 +155,92 @@ function contentHash(buf) {
   return createHash("sha256").update(buf).digest("hex").slice(0, 8);
 }
 
-async function buildCss() {
-  const source = readFileSync(path.join(clientDir, "app.css"), "utf8");
-  const min = await minifyCss(source);
-  writeFileSync(path.join(outDir, "app.css"), min);
-  return contentHash(min);
+/**
+ * Substitute exactly one match, or fail the build.
+ *
+ * Every caller here is rewriting a tag that first paint depends on. A pattern
+ * that quietly stops matching would ship a page that still works but costs the
+ * round trip we removed — the kind of regression no test catches.
+ */
+function replaceOnce(source, pattern, value, what) {
+  if (!pattern.test(source)) {
+    throw new Error(`build: no ${what} to replace in index.html (${pattern})`);
+  }
+  return source.replace(pattern, () => value);
 }
 
-async function buildHtml(cssHash, jsHash, swapHash) {
+/**
+ * The wordmark, as markup rather than a request.
+ *
+ * As an <img> it was a second round trip that the header's first paint waited
+ * on; inlined it arrives with the document. Coordinates are rounded to 2 dp on
+ * the way in — the source carries 4, which across a 55-unit viewBox drawn at
+ * most 188 px wide is 0.017 px of precision at the very worst. The source file
+ * keeps its full precision: scripts/og-image.mjs measures ink bounds off it.
+ */
+function inlineWordmark() {
+  const svg = readFileSync(path.join(clientDir, "go-wordmark.svg"), "utf8")
+    .replace(/-?\d*\.\d+/g, (n) => String(Number(Number(n).toFixed(2))))
+    .replace(/\s+/g, " ")
+    .replace(/>\s+</g, "><")
+    // Implied by the HTML parser for inline SVG; only needed in an XML document.
+    .replace(/\s*xmlns="[^"]*"/, "")
+    .trim();
+
+  // The enclosing <a> already carries the accessible name, so announcing the
+  // mark again would just read the same words twice.
+  return svg.replace(/^<svg /, '<svg class="lg-mark" aria-hidden="true" ');
+}
+
+async function buildCss() {
+  const source = readFileSync(path.join(clientDir, "app.css"), "utf8");
+  return minifyCss(source);
+}
+
+async function buildHtml(css, jsHash, swapHash) {
   let raw = readFileSync(path.join(clientDir, "index.html"), "utf8");
+
+  // The stylesheet was the only render-blocking subresource, and the browser
+  // could not even discover it until the HTML had been parsed — a guaranteed
+  // round trip before first paint whatever the file weighed. Inlined, the
+  // shell paints off the first flight with nothing else in hand.
+  raw = replaceOnce(
+    raw,
+    /<link rel="stylesheet" href="\/app\.css"\s*\/?>/,
+    `<style>${css}</style>`,
+    "stylesheet link",
+  );
+  raw = replaceOnce(
+    raw,
+    /<img\b[^>]*class="lg-mark"[^>]*\/>/,
+    inlineWordmark(),
+    "wordmark img",
+  );
   // Fingerprint asset URLs so browsers/CDNs fetch the new build after deploy.
-  raw = raw
-    .replace(
-      /href="\/app\.css"/,
-      `href="/app.css?v=${cssHash}"`,
-    )
-    .replace(
-      /src="\/app\.js"/,
-      `src="/app.js?v=${jsHash}"`,
-    )
-    // The panel is fetched by JS, not a tag, so its hash rides in an attribute.
-    .replace(
-      /data-sw="\/swap\.js"/,
-      `data-sw="/swap.js?v=${swapHash}"`,
-    );
+  raw = replaceOnce(
+    raw,
+    /src="\/app\.js"/,
+    `src="/app.js?v=${jsHash}"`,
+    "app.js src",
+  );
+  // The panel is fetched by JS, not a tag, so its hash rides in an attribute.
+  raw = replaceOnce(
+    raw,
+    /data-sw="\/swap\.js"/,
+    `data-sw="/swap.js?v=${swapHash}"`,
+    "swap.js attribute",
+  );
+
   const min = await minifyHtml(raw, {
     collapseWhitespace: true,
     removeComments: true,
     removeRedundantAttributes: true,
     removeScriptTypeAttributes: true,
     removeStyleLinkTypeAttributes: true,
-    minifyCSS: true,
+    // lightningcss already minified the inlined CSS against explicit browser
+    // targets. Running clean-css over its output would only risk lowering
+    // syntax it understands better than clean-css does.
+    minifyCSS: false,
     minifyJS: true,
     // Keep quotes — safer for attribute values
     removeAttributeQuotes: false,
@@ -157,121 +255,147 @@ function copyStatic() {
     if (!STATIC_EXT.has(ext)) continue;
     copyFileSync(path.join(clientDir, name), path.join(outDir, name));
   }
+  // The stylesheet lives in the shell now; drop any file an older build left.
+  for (const stale of ["app.css", "app.css.br", "app.css.gz"]) {
+    rmSync(path.join(outDir, stale), { force: true });
+  }
+}
+
+function brotli(buf) {
+  return brotliCompressSync(buf, {
+    params: {
+      [constants.BROTLI_PARAM_QUALITY]: 11,
+      [constants.BROTLI_PARAM_SIZE_HINT]: buf.length,
+    },
+  });
+}
+
+function gzip(buf) {
+  return gzipSync(buf, { level: 9 });
+}
+
+/**
+ * Write .br/.gz siblings for everything the server serves compressed.
+ *
+ * Doing it here rather than per request is what makes the numbers below the
+ * numbers that actually go on the wire: compression() negotiates brotli and
+ * then hardcodes quality 4, which on this project's CSS came out *worse* than
+ * gzip -9. Quality 11 costs nothing at build time and the server just hands
+ * the bytes over.
+ */
+function precompress() {
+  for (const name of readdirSync(outDir)) {
+    if (!PRECOMPRESS_EXT.has(path.extname(name).toLowerCase())) continue;
+    const buf = readFileSync(path.join(outDir, name));
+    for (const [ext, compress] of [[".br", brotli], [".gz", gzip]]) {
+      const out = compress(buf);
+      const dest = path.join(outDir, name + ext);
+      // A sibling larger than the source would only cost the client bytes.
+      if (out.length < buf.length) writeFileSync(dest, out);
+      else rmSync(dest, { force: true });
+    }
+  }
 }
 
 function fmt(n) {
   return String(n).padStart(6);
 }
 
-function brotli(buf) {
-  return brotliCompressSync(buf, {
-    params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
-  }).length;
+/** raw/gzip/brotli for one built file. */
+function measure(file) {
+  const buf = readFileSync(path.join(outDir, file));
+  return { raw: buf.length, gzip: gzip(buf).length, br: brotli(buf).length };
+}
+
+function row(file, m, tag) {
+  return (
+    `  ${file.padEnd(14)} ${fmt(m.raw)} B  ` +
+    `(gzip ${fmt(m.gzip)} B, br ${fmt(m.br)} B)` +
+    (tag ? `  [${tag}]` : "")
+  );
 }
 
 function reportSize() {
-  let rawTotal = 0;
-  let gzipTotal = 0;
-  let brTotal = 0;
   /** @type {string[]} */
-  const gzipOver = [];
+  const hard = [];
   /** @type {string[]} */
-  const rawOver = [];
+  const soft = [];
+
+  /** Checks one entry against its budgets and returns its printable row. */
+  function check(entry) {
+    const m = measure(entry.file);
+    const gOk = m.gzip <= entry.gzip;
+    const rOk = m.raw <= entry.raw;
+    if (!gOk) hard.push(`${entry.file} (${m.gzip} B gzip > ${entry.gzip} B)`);
+    if (!rOk) soft.push(`${entry.file} (${m.raw} B raw > ${entry.raw} B)`);
+    return { m, line: row(entry.file, m, !gOk ? "OVER" : !rOk ? "OVER raw" : "OK") };
+  }
+
+  const shell = check(SHELL);
 
   console.log(
-    `\nClient payload (total gzip <${TOTAL_BUDGET} hard — one TCP init window;` +
-      ` per file gzip <${GZIP_BUDGET} hard, raw <${RAW_BUDGET} soft):`,
+    `\nShell — must fit one TCP initial window (${INIT_WINDOW} B = 10 × 1460 MSS,` +
+      ` RFC 6928)\n` +
+      `  less ${HEADER_RESERVE} B response headers and ${TICKER_RESERVE} B` +
+      ` server-injected price strip → ${SHELL.gzip} B for the document:`,
   );
-  for (const f of PAYLOAD) {
-    const buf = readFileSync(path.join(outDir, f));
-    const gz = gzipSync(buf, { level: 9 }).length;
-    const br = brotli(buf);
-    rawTotal += buf.length;
-    gzipTotal += gz;
-    brTotal += br;
-
-    const gOk = gz < GZIP_BUDGET;
-    const rOk = buf.length < RAW_BUDGET;
-    if (!gOk) gzipOver.push(f);
-    if (!rOk) rawOver.push(f);
-
-    const tag = !gOk ? "OVER gzip" : !rOk ? "OVER raw" : "OK";
-    console.log(
-      `  ${f.padEnd(12)} ${fmt(buf.length)} B  (gzip ${fmt(gz)} B, br ${fmt(br)} B)  [${tag}]`,
-    );
-  }
-
-  const totalOk = gzipTotal < TOTAL_BUDGET;
+  console.log(shell.line);
   console.log(
-    `  ${"TOTAL".padEnd(12)} ${fmt(rawTotal)} B  (gzip ${fmt(gzipTotal)} B, br ${fmt(brTotal)} B)` +
-      `  [${totalOk ? "OK" : "OVER"}]`,
+    `  ${"headroom".padEnd(14)} ${fmt(SHELL.gzip - shell.m.gzip)} B gzip,` +
+      ` ${fmt(SHELL.gzip - shell.m.br)} B brotli`,
   );
-
-  if (!totalOk) {
-    console.log(
-      `\n  ✗ Total compressed shell over budget: ${gzipTotal} B gzip > ${TOTAL_BUDGET} B.`,
-    );
-    console.log(
-      `    The shell no longer fits one TCP initial window — cold loads pay an\n` +
-        `    extra round trip. Trim before shipping.\n`,
-    );
-    process.exitCode = 1;
-    return;
-  }
-
-  if (gzipOver.length) {
-    console.log(
-      `\n  ✗ Gzip budget exceeded (per file, hard): ${gzipOver.join(", ")}`,
-    );
-    console.log(`    Limit ${GZIP_BUDGET} B gzip each. Trim those assets.\n`);
-    process.exitCode = 1;
-    return;
-  }
-
-  if (rawOver.length) {
-    console.log(
-      `\n  ⚠ Raw guardrail exceeded (per file, soft): ${rawOver.join(", ")}`,
-    );
-    console.log(
-      `    Limit ${RAW_BUDGET} B raw each. Gzip still OK — prefer shrinking source.\n`,
-    );
-  }
 
   console.log(
-    `\n  ✓ Shell fits one round trip (${TOTAL_BUDGET - gzipTotal} B gzip headroom,` +
-      ` ${TOTAL_BUDGET - brTotal} B brotli).`,
+    `\nParallel — requested after the shell parses, so each gets its own` +
+      ` window (HTTP/1.1: a\n` +
+      `  second connection; HTTP/2: one slow start has already grown).` +
+      ` Budgeted per file:`,
   );
-  reportLazy();
-  process.exitCode = 0;
-}
+  for (const entry of PARALLEL) console.log(check(entry).line);
+  for (const file of STATIC_FIRST_LOAD) {
+    if (!existsSync(path.join(outDir, file))) continue;
+    console.log(row(file, measure(file), "not render-blocking"));
+  }
 
-/** On-demand bundles: reported for visibility, excluded from the shell budget. */
-function reportLazy() {
   const rows = LAZY.filter((f) => existsSync(path.join(outDir, f)));
-  if (!rows.length) return console.log("");
-
-  console.log(`\n  Lazy (fetched on interaction, outside the shell budget):`);
-  for (const f of rows) {
-    const buf = readFileSync(path.join(outDir, f));
-    console.log(
-      `  ${f.padEnd(12)} ${fmt(buf.length)} B  (gzip ${fmt(gzipSync(buf, { level: 9 }).length)} B,` +
-        ` br ${fmt(brotli(buf))} B)`,
-    );
+  if (rows.length) {
+    console.log(`\nLazy — fetched on interaction, outside any first-load budget:`);
+    for (const file of rows) console.log(row(file, measure(file)));
   }
-  console.log("");
+
+  if (hard.length) {
+    console.log(`\n  ✗ Over budget: ${hard.join(", ")}`);
+    console.log(
+      `    ${hard.length === 1 && hard[0].startsWith("index.html")
+        ? "The shell no longer fits one initial window — every cold load pays an\n" +
+          "    extra round trip before first paint."
+        : "Trim before shipping."}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  if (soft.length) {
+    console.log(`\n  ⚠ Raw guardrail exceeded (soft): ${soft.join(", ")}`);
+    console.log(`    Compressed sizes are fine — prefer shrinking the source.\n`);
+  }
+
+  console.log(`\n  ✓ Shell paints off the first flight; no subresource blocks it.\n`);
+  process.exitCode = 0;
 }
 
 async function buildAssets() {
   copyStatic();
-  // CSS + JS first so HTML can embed content hashes for cache busting.
-  const [, , cssHash] = await Promise.all([
+  // CSS and JS first: the shell inlines the one and fingerprints the other.
+  const [, , css] = await Promise.all([
     esbuild.build(jsOpts),
     esbuild.build(swapOpts),
     buildCss(),
   ]);
   const jsHash = contentHash(readFileSync(path.join(outDir, "app.js")));
   const swapHash = contentHash(readFileSync(path.join(outDir, "swap.js")));
-  await buildHtml(cssHash, jsHash, swapHash);
+  await buildHtml(css, jsHash, swapHash);
+  precompress();
 }
 
 async function buildOnce() {
