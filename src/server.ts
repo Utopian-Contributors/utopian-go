@@ -9,6 +9,7 @@ import {
   JUP_FEE_ACCOUNT_USDC,
   JUP_FEE_BPS,
   PORT,
+  SITE_URL,
 } from "./config";
 import { startTokenIndex } from "./lib/tokens/store";
 import { renderHomeTicker } from "./lib/tokens/ticker";
@@ -23,6 +24,9 @@ const TICKER_SLOT = '<div id="hm-tk"></div>';
 
 /** Slot carrying the swap fee account to the client. */
 const REF_SLOT = 'data-fa=""';
+
+/** Root-relative social card URL, absolutised at boot when SITE_URL is set. */
+const OG_SLOT = 'property="og:image" content="/og.webp"';
 
 /** Attribute-value escape. The value is operator-supplied via env. */
 function attr(value: string): string {
@@ -50,6 +54,14 @@ function loadShell() {
         `data-fa-sol="${attr(JUP_FEE_ACCOUNT_SOL)}"` +
           ` data-fa-usdc="${attr(JUP_FEE_ACCOUNT_USDC)}"` +
           ` data-fee="${JUP_FEE_BPS}"`,
+      );
+    }
+    // Same reasoning: the origin is deploy-time constant, so the card URL is
+    // resolved once here rather than per request off the Host header.
+    if (SITE_URL) {
+      shell = shell.replace(
+        OG_SLOT,
+        `property="og:image" content="${attr(SITE_URL)}/og.webp"`,
       );
     }
   } catch {

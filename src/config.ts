@@ -1,6 +1,14 @@
 import path from "path";
 
 export const PORT = Number(process.env.PORT) || 3000;
+
+/**
+ * Public origin, e.g. `https://utopian.go`. Only used to absolutise the social
+ * card URL: crawlers are inconsistent about resolving a relative `og:image`
+ * against the page, and the ones that don't just show no card. Unset leaves
+ * the tag root-relative, which is correct for local dev.
+ */
+export const SITE_URL = (process.env.SITE_URL || "").replace(/\/+$/, "");
 export const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
 export const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 export const BRAVE_IMAGES_ENDPOINT =
