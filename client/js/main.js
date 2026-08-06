@@ -43,7 +43,9 @@ function syncClearButton() {
 
 // —— Boot ——
 
-document.body.className = "home";
+// The body class is not set here: the server ships it on the shell, because
+// every layout rule hangs off it and this bundle arrives a round trip after
+// first paint. Setting it here made the whole header jump into place.
 
 logo.addEventListener("click", (e) => {
   e.preventDefault();

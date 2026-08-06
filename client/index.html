@@ -16,7 +16,11 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="stylesheet" href="/app.css" />
   </head>
-  <body data-fa="" data-sw="/swap.js">
+  <!-- The layout is entirely keyed off this class, so it ships with the
+       document: the server swaps it to "res" when the URL carries a query.
+       Left to app.js it would land a round trip after first paint, and the
+       whole header would jump into place in front of the reader. -->
+  <body class="home" data-fa="" data-sw="/swap.js">
     <div class="chrome" id="chrome">
       <header id="hd">
         <a class="lg" href="/" id="lg" aria-label="utopian-go home">
@@ -56,14 +60,36 @@
         <div id="hm-tk"></div>
       </header>
 
-      <nav id="tb" hidden></nav>
+      <!-- Results-page loading chrome, shipped with the document instead of
+           built by app.js. On a /?q= URL this is exactly what the page looks
+           like while the search is in flight, so the bundle taking over moves
+           nothing. body.home hides all of it, so the home page pays only the
+           (heavily repetitive, near-free) bytes.
+
+           renderTabs() in render.js rebuilds this nav from TABS — the two have
+           to stay identical or the hand-off shifts the page. build-client.mjs
+           checks that on every build. -->
+      <nav id="tb" aria-busy="true">
+        <button type="button" class="tab on" disabled>Web</button>
+        <button type="button" class="tab" disabled>Images</button>
+        <button type="button" class="tab" disabled>News</button>
+        <button type="button" class="tab" disabled>Videos</button>
+        <button type="button" class="tab" disabled>Discussions</button>
+      </nav>
     </div>
 
     <div id="st" role="status" aria-live="polite" hidden></div>
 
     <div id="mn">
       <div>
-        <div id="sk" hidden></div>
+        <!-- Three blocks, each mirroring a real .r card line for line. dom.js
+             reads its skeleton template back out of here rather than keeping a
+             second copy, so this markup is the only definition of it. -->
+        <div id="sk">
+          <div class="sk"><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="sk"><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="sk"><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
         <div id="rs" class="rs"></div>
       </div>
       <aside id="sd" hidden></aside>

@@ -170,6 +170,46 @@ function replaceOnce(source, pattern, value, what) {
 }
 
 /**
+ * Guard the two places the shell duplicates the client's own rendering.
+ *
+ * The shell ships the results-page loading chrome so a /?q= URL paints it a
+ * round trip before app.js lands. That only buys anything while the shipped
+ * markup and the markup the bundle renders are identical — the moment they
+ * differ, the hand-off moves the page, which is exactly the shift the shipped
+ * markup exists to prevent. Nothing at runtime would notice, so check here.
+ */
+function verifyLoadingChrome(html) {
+  // Read as source, not imported: url.js is browser ESM in a CJS package, and
+  // a build step has no business executing client code to look at a list.
+  const urlSrc = readFileSync(path.join(clientDir, "js", "url.js"), "utf8");
+  const tabs = urlSrc.match(/export const TABS[^=]*=\s*\[([\s\S]*?)\];/);
+  if (!tabs) throw new Error("build: no TABS array found in client/js/url.js");
+
+  const shipped = [
+    ...html.matchAll(/<button type="button" class="tab[^"]*" disabled>([^<]+)<\/button>/g),
+  ].map((m) => m[1]);
+  const rendered = [
+    ...tabs[1].matchAll(/\[\s*"[^"]*"\s*,\s*"([^"]*)"\s*\]/g),
+  ].map((m) => m[1]);
+  if (shipped.join("|") !== rendered.join("|")) {
+    throw new Error(
+      `build: the shell's tab bar ${JSON.stringify(shipped)} no longer matches ` +
+        `TABS ${JSON.stringify(rendered)} in client/js/url.js — a results page ` +
+        `would shift when render.js rebuilds the nav`,
+    );
+  }
+
+  // dom.js reads WEB_SKEL out of #sk, so an empty one leaves it with nothing
+  // to re-render after an images search.
+  if (!/<div class="sk">/.test(html)) {
+    throw new Error(
+      "build: the shell has no skeleton blocks in #sk — dom.js sources " +
+        "WEB_SKEL from there and would render an empty skeleton",
+    );
+  }
+}
+
+/**
  * The wordmark, as markup rather than a request.
  *
  * As an <img> it was a second round trip that the header's first paint waited
@@ -199,6 +239,7 @@ async function buildCss() {
 
 async function buildHtml(css, jsHash, swapHash) {
   let raw = readFileSync(path.join(clientDir, "index.html"), "utf8");
+  verifyLoadingChrome(raw);
 
   // The stylesheet was the only render-blocking subresource, and the browser
   // could not even discover it until the HTML had been parsed — a guaranteed
@@ -236,6 +277,9 @@ async function buildHtml(css, jsHash, swapHash) {
     removeComments: true,
     removeRedundantAttributes: true,
     removeScriptTypeAttributes: true,
+    // Smaller, and it gives the server one spelling of `hidden`/`disabled` to
+    // match when it adjusts the shell's initial state per request.
+    collapseBooleanAttributes: true,
     removeStyleLinkTypeAttributes: true,
     // lightningcss already minified the inlined CSS against explicit browser
     // targets. Running clean-css over its output would only risk lowering

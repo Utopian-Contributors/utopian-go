@@ -27,6 +27,58 @@ app.disable("x-powered-by");
 /** Slot in the built shell that the price strip is injected into. */
 const TICKER_SLOT = '<div id="hm-tk"></div>';
 
+/**
+ * The body class the shell ships with, and what a query swaps it for.
+ *
+ * Every layout rule in app.css hangs off one of these two, so whichever the
+ * page needs has to be in the document itself. app.js setting it is a round
+ * trip too late: the header would paint in one geometry and jump to another.
+ */
+const HOME_SLOT = 'class="home"';
+// `ld` is what app.js adds while a search is in flight: spinner in place of the
+// arrow, tabs dimmed. Neither affects layout, but without it the shell paints
+// the idle chrome and flips to loading a round trip later.
+const RES_CLASS = 'class="res ld"';
+
+/** Anchor for the query, so the field is filled at first paint. */
+const INPUT_SLOT = 'id="q"';
+
+/**
+ * Elements the shell hides for the empty-field case, which a results URL is
+ * not. Leaving them hidden let app.js reveal them a round trip later, and the
+ * clear button and its divider take 49px out of the field's width when they
+ * arrive — the query text reflows mid-read.
+ */
+const EMPTY_FIELD_ONLY = ['id="cl"', 'class="sf-sep"'];
+
+/**
+ * Drop the `hidden` attribute from the tag carrying `anchor`.
+ *
+ * Warns rather than throws: a shell that shifts is worse than one that does
+ * not, but it still serves, and taking the site down over it would be a poor
+ * trade. The build's collapseBooleanAttributes is what keeps `hidden`
+ * spelled one way for this to find.
+ */
+function unhide(html: string, anchor: string): string {
+  const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tag = new RegExp(`(<[a-z]+[^>]*${escaped}[^>]*?)\\s+hidden(="[^"]*")?([^>]*>)`, "i");
+  if (!tag.test(html)) {
+    console.warn(`[shell] nothing hidden at ${anchor}; results pages may shift`);
+    return html;
+  }
+  return html.replace(tag, "$1$3");
+}
+
+/**
+ * The results-page shell, derived once from the home one at load.
+ *
+ * Only the query varies per request, so everything structural about the
+ * variant is settled here rather than on the request path.
+ */
+function buildResShell(base: string): string {
+  return EMPTY_FIELD_ONLY.reduce(unhide, base.replace(HOME_SLOT, RES_CLASS));
+}
+
 /** Slot carrying the swap fee account to the client. */
 const REF_SLOT = 'data-fa=""';
 
@@ -48,15 +100,27 @@ function attr(value: string): string {
  */
 let shell = "";
 
+/** Same shell, pre-adjusted for a results URL. Derived in loadShell. */
+let resShell = "";
+
+type Variant = "home" | "res";
+
 /**
- * The rendered shell, compressed once per distinct rendering.
+ * The rendered shell, compressed once per variant per distinct rendering.
  *
- * The document only changes when the price strip does — at most once per price
- * TTL — so compressing per request would spend CPU rederiving identical bytes.
- * Keyed on the rendered HTML itself: when prices move the string differs and
- * the entry is replaced, which needs no invalidation hook in the token store.
+ * A given variant only changes when the price strip does — at most once per
+ * price TTL — so compressing per request would spend CPU rederiving identical
+ * bytes. Keyed on the rendered HTML itself, so a price move replaces the entry
+ * with no invalidation hook in the token store. One slot per variant, so
+ * alternating home and results traffic doesn't evict on every request.
+ *
+ * Results pages carry the query in the markup, so only the home variant is
+ * cacheable across requests; `res` still saves the repeat hit on one query.
  */
-let encodedShell: { html: string; br?: Buffer; gzip?: Buffer } = { html: "" };
+const encodedShell: Record<
+  Variant,
+  { html: string; br?: Buffer; gzip?: Buffer }
+> = { home: { html: "" }, res: { html: "" } };
 
 /**
  * Is this encoding acceptable to the client? Handles the `q=0` form, which
@@ -89,13 +153,18 @@ function encode(raw: Buffer, enc: "br" | "gzip"): Buffer {
   });
 }
 
-function shellBody(html: string, enc: "br" | "gzip" | null): string | Buffer {
+function shellBody(
+  variant: Variant,
+  html: string,
+  enc: "br" | "gzip" | null,
+): string | Buffer {
   if (!enc) return html;
-  if (encodedShell.html !== html) encodedShell = { html };
-  const cached = encodedShell[enc];
+  let entry = encodedShell[variant];
+  if (entry.html !== html) entry = encodedShell[variant] = { html };
+  const cached = entry[enc];
   if (cached) return cached;
   const out = encode(Buffer.from(html, "utf8"), enc);
-  encodedShell[enc] = out;
+  entry[enc] = out;
   return out;
 }
 
@@ -120,9 +189,11 @@ function loadShell() {
         `property="og:image" content="${attr(SITE_URL)}/og.webp"`,
       );
     }
+    resShell = buildResShell(shell);
   } catch {
     // Client not built yet; the request handler falls back to sendFile.
     shell = "";
+    resShell = "";
   }
 }
 
@@ -205,19 +276,30 @@ function sendIndex(
     return;
   }
 
+  // A query means this URL renders as a results page. Saying so in the markup
+  // is what lets it paint in its final geometry: the shell already carries the
+  // loading chrome, and the variant is what shows it.
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const variant: Variant = q ? "res" : "home";
+
   // Prices ride along in the shell itself — no second request, and they paint
-  // before app.js has even been fetched.
-  const html = shell.replace(
+  // before app.js has even been fetched. Rendered on both variants: the strip
+  // is display:none off the home class, and clicking the wordmark home is a
+  // client-side transition that never asks the server for fresh markup.
+  let html = (variant === "res" ? resShell : shell).replace(
     TICKER_SLOT,
     `<div id="hm-tk">${renderHomeTicker()}</div>`,
   );
+  if (variant === "res") {
+    html = html.replace(INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);
+  }
 
   const enc = negotiate(req);
   res.setHeader("Vary", "Accept-Encoding");
   if (enc) res.setHeader("Content-Encoding", enc);
   // no-cache means revalidate, not don't-store: an unchanged strip answers 304
   // off the ETag and the inlined stylesheet costs a repeat visitor nothing.
-  res.type("html").send(shellBody(html, enc));
+  res.type("html").send(shellBody(variant, html, enc));
 }
 
 app.get("/", (req, res, next) => sendIndex(req, res, next));

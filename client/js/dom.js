@@ -52,9 +52,14 @@ export function setLoading(on) {
  * One block mirrors a real `.r` card line for line: site name, url path,
  * title, then two snippet lines. Bare <i> keeps the markup cheap; widths and
  * heights live in CSS next to the rules they imitate.
+ *
+ * Read out of the shell rather than written here. index.html ships this markup
+ * so a /?q= URL paints the skeleton a round trip before this bundle lands, and
+ * a second copy would only be a chance for the two to drift — at which point
+ * the hand-off from shipped markup to rendered markup moves the page, which is
+ * the whole thing the shipped markup exists to avoid.
  */
-const WEB_SKEL =
-  `<div class="sk"><i></i><i></i><i></i><i></i><i></i></div>`.repeat(3);
+const WEB_SKEL = $("sk").innerHTML;
 
 /** Every real tile is capped by the 220px width before it hits the 160px height. */
 const IMAGE_SKEL_W = 220;
