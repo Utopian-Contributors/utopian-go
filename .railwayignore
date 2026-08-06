@@ -1,0 +1,3 @@
+# Remotion marketing-video project: its own workspace, its own node_modules,
+# and rendered output. ~550 MB that the server build never reads.
+video/
