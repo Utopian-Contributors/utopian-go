@@ -44,13 +44,36 @@
   box-sizing: border-box;
 }
 
+/*
+ * The sideways clip, and it has to name both elements.
+ *
+ * On `body` alone — where this used to sit — it does nothing at all: overflow
+ * set there is handed up to the viewport, and a clip that arrives that way
+ * does not shorten the page's scroll range. On `html` alone it does nothing
+ * either, for the same reason and in the same direction. Only with both named
+ * does a real clipping box survive the hand-off. Measured, not assumed: a
+ * 3000px box pans the page 2200px under either half and zero under the pair.
+ *
+ * `clip` and not `hidden` so the y axis stays `visible` rather than being
+ * coerced to `auto`, which would make this a scroll container — the sticky
+ * header and knowledge panel are both positioned against the viewport.
+ *
+ * A floor, not a licence. Anything wide enough to meet it is still a bug to
+ * fix where it starts; all this decides is that the bug costs a clipped edge
+ * inside one card rather than a whole page sliding out from under a header
+ * that stays stuck to the top while it goes.
+ */
+html,
+body {
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
   font: 14px/1.5 var(--ff);
   color: var(--t);
   background: var(--bg);
-  overflow-x: clip;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -1033,7 +1056,16 @@ body.ld .sp {
   text-decoration: underline;
 }
 
+/*
+ * The thumbnail, at whatever size it arrives.
+ *
+ * Both caps are load-bearing: a tall image is held by the height, but a wide,
+ * short one never reaches it and would render at its full natural width —
+ * which on mobile, where the panel no longer clips, is the whole page pushed
+ * sideways.
+ */
 .pn .ph {
+  max-width: 100%;
   max-height: 140px;
   object-fit: contain;
   border-radius: 8px;
