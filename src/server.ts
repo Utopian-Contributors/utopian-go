@@ -79,6 +79,39 @@ function buildResShell(base: string): string {
   return EMPTY_FIELD_ONLY.reduce(unhide, base.replace(HOME_SLOT, RES_CLASS));
 }
 
+// —— Static documents ——
+
+/**
+ * Pages served off the shell rather than through the SPA: slug → title.
+ *
+ * They are documents, not app views: nothing on them needs the bundle, so the
+ * variant drops it. That is what the form's `action` in the shell is for — the
+ * search field on a document page falls back to its own GET to `/`.
+ */
+const DOCS: ReadonlyArray<readonly [string, string]> = [
+  ["terms", "Terms of Service"],
+  ["privacy", "Privacy Policy"],
+];
+
+/** Slot the document is rendered into. Empty and hidden on every other page. */
+const DOC_SLOT = '<main id="dc" hidden></main>';
+
+/** The shell's own title, replaced per document. */
+const TITLE_SLOT = "<title>Search</title>";
+
+/** The bundle, which a document page has no use for. */
+const APP_SCRIPT = /<script src="\/app\.js[^"]*"[^>]*><\/script>/;
+
+/**
+ * Autofocus, which a document page actively does not want: it would drop the
+ * caret in the search field of a page someone arrived at to read, and on a
+ * phone open the keyboard over the first paragraph.
+ */
+const AUTOFOCUS = / autofocus/;
+
+/** The class a document ships instead of the home one — see app.css. */
+const DOC_CLASS = 'class="res doc"';
+
 /** Slot carrying the swap fee account to the client. */
 const REF_SLOT = 'data-fa=""';
 
@@ -103,7 +136,11 @@ let shell = "";
 /** Same shell, pre-adjusted for a results URL. Derived in loadShell. */
 let resShell = "";
 
-type Variant = "home" | "res";
+/**
+ * The document pages, slug → finished HTML. Nothing about them varies per
+ * request, so each is rendered once in loadShell and served as-is.
+ */
+const docShells = new Map<string, string>();
 
 /**
  * The rendered shell, compressed once per variant per distinct rendering.
@@ -112,15 +149,17 @@ type Variant = "home" | "res";
  * price TTL — so compressing per request would spend CPU rederiving identical
  * bytes. Keyed on the rendered HTML itself, so a price move replaces the entry
  * with no invalidation hook in the token store. One slot per variant, so
- * alternating home and results traffic doesn't evict on every request.
+ * traffic alternating between them doesn't evict on every request.
  *
- * Results pages carry the query in the markup, so only the home variant is
- * cacheable across requests; `res` still saves the repeat hit on one query.
+ * Results pages carry the query in the markup, so only `home` and the document
+ * variants are cacheable across requests; `res` still saves the repeat hit on
+ * one query. Documents never change at all, so theirs is compressed exactly
+ * once per process and handed out from then on.
  */
-const encodedShell: Record<
-  Variant,
+const encodedShell = new Map<
+  string,
   { html: string; br?: Buffer; gzip?: Buffer }
-> = { home: { html: "" }, res: { html: "" } };
+>();
 
 /**
  * Is this encoding acceptable to the client? Handles the `q=0` form, which
@@ -154,13 +193,13 @@ function encode(raw: Buffer, enc: "br" | "gzip"): Buffer {
 }
 
 function shellBody(
-  variant: Variant,
+  variant: string,
   html: string,
   enc: "br" | "gzip" | null,
 ): string | Buffer {
   if (!enc) return html;
-  let entry = encodedShell[variant];
-  if (entry.html !== html) entry = encodedShell[variant] = { html };
+  let entry = encodedShell.get(variant);
+  if (!entry || entry.html !== html) encodedShell.set(variant, (entry = { html }));
   const cached = entry[enc];
   if (cached) return cached;
   const out = encode(Buffer.from(html, "utf8"), enc);
@@ -190,10 +229,43 @@ function loadShell() {
       );
     }
     resShell = buildResShell(shell);
+    loadDocs(shell);
   } catch {
     // Client not built yet; the request handler falls back to sendFile.
     shell = "";
     resShell = "";
+    docShells.clear();
+  }
+}
+
+/**
+ * Render each document into the shell once, at load.
+ *
+ * A missing fragment drops that page rather than taking the boot down: the
+ * search engine is the site, and losing `/terms` to a half-finished build is
+ * not worth losing the search with it. The route 404s until the next build.
+ */
+function loadDocs(base: string) {
+  docShells.clear();
+  for (const [slug, title] of DOCS) {
+    let body: string;
+    try {
+      body = readFileSync(path.join(publicDir, "legal", `${slug}.html`), "utf8");
+    } catch {
+      console.warn(`[shell] no built document at legal/${slug}.html; /${slug} will 404`);
+      continue;
+    }
+    docShells.set(
+      slug,
+      base
+        .replace(HOME_SLOT, DOC_CLASS)
+        .replace(TITLE_SLOT, `<title>${title} — UtopianGO</title>`)
+        .replace(AUTOFOCUS, "")
+        .replace(APP_SCRIPT, "")
+        // Function form: the fragment is free to contain `$&` and friends,
+        // which the string form would read as replacement patterns.
+        .replace(DOC_SLOT, () => `<main id="dc">${body}</main>`),
+    );
   }
 }
 
@@ -244,6 +316,18 @@ app.use((req, res, next) => {
   next();
 });
 
+/**
+ * The document fragments are built into public/ so the pipeline has one output
+ * tree, but a fragment is half a page — no head, no stylesheet, no way back.
+ * Send anyone who lands on one to the page that renders it, before
+ * express.static below hands over the raw file.
+ */
+app.get("/legal/:file", (req, res, next) => {
+  const slug = req.params.file.replace(/\.html$/, "");
+  if (!docShells.has(slug)) return next();
+  res.redirect(302, `/${slug}`);
+});
+
 // Built SPA assets. The stylesheet is inlined in the shell, so what is left
 // here is JS and images. HTML must not be cached long — it carries the ?v=
 // content hashes; JS can be, since a deploy changes those query strings.
@@ -280,7 +364,7 @@ function sendIndex(
   // is what lets it paint in its final geometry: the shell already carries the
   // loading chrome, and the variant is what shows it.
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  const variant: Variant = q ? "res" : "home";
+  const variant = q ? "res" : "home";
 
   // Prices ride along in the shell itself — no second request, and they paint
   // before app.js has even been fetched. Rendered on both variants: the strip
@@ -303,6 +387,21 @@ function sendIndex(
 }
 
 app.get("/", (req, res, next) => sendIndex(req, res, next));
+
+// The document pages. Registered before the catch-all, which would otherwise
+// answer them with the search shell.
+for (const [slug] of DOCS) {
+  app.get(`/${slug}`, (req, res, next) => {
+    const html = docShells.get(slug);
+    // Nothing built for it — fall through to the SPA rather than 500.
+    if (!html) return next();
+    const enc = negotiate(req);
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Vary", "Accept-Encoding");
+    if (enc) res.setHeader("Content-Encoding", enc);
+    res.type("html").send(shellBody(slug, html, enc));
+  });
+}
 
 // SPA deep-links: unknown non-API GETs fall back to the shell.
 app.get("*", (req, res, next) => {

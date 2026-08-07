@@ -498,6 +498,82 @@ body.ld .sp {
   display: none !important;
 }
 
+/* —— Static documents (/terms, /privacy) —— */
+
+/*
+ * A document page is the results shell with the results taken out: it ships
+ * `class="res doc"`, so the header keeps the geometry it has everywhere else
+ * and only the parts that have nothing to show are dropped.
+ */
+body.doc #tb,
+body.doc #mn {
+  display: none;
+}
+
+/* The tab bar's border is what separates the sticky chrome from the page
+   everywhere else, and a document has no tabs — so the chrome carries its own,
+   and the header regains the bottom padding the nav used to provide. */
+body.doc .chrome {
+  border-bottom: 1px solid var(--ln);
+}
+
+body.doc #hd {
+  padding-block: 16px;
+}
+
+#dc {
+  /* Narrower than the shell — a legal clause set 1500px wide is unreadable. */
+  max-width: 76ch;
+  margin-inline: auto;
+  padding: 28px var(--pad) 48px;
+  color: var(--m);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+#dc h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 500;
+  color: var(--t);
+}
+
+#dc h2 {
+  margin: 36px 0 10px;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--t);
+}
+
+#dc p,
+#dc ul {
+  margin: 0 0 14px;
+}
+
+#dc ul {
+  padding-left: 22px;
+}
+
+#dc li {
+  margin-bottom: 8px;
+}
+
+#dc b {
+  font-weight: 600;
+  color: var(--t);
+}
+
+#dc a {
+  color: var(--l);
+}
+
+/* Effective date and the closing note — secondary to the clauses themselves. */
+#dc .dt {
+  margin: 6px 0 28px;
+  font-size: 13px;
+  color: var(--f);
+}
+
 /* —— Result cards —— */
 .rs {
   display: flex;

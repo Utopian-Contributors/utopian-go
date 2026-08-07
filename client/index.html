@@ -33,7 +33,10 @@
             decoding="async"
           />
         </a>
-        <form class="sf" id="f" role="search">
+        <!-- action/method are never used on the SPA — app.js preventDefaults
+             the submit. They are what makes the field work on the document
+             pages, which ship without the bundle. -->
+        <form class="sf" id="f" role="search" action="/" method="get">
           <input
             id="q"
             name="q"
@@ -94,6 +97,12 @@
       </div>
       <aside id="sd" hidden></aside>
     </div>
+
+    <!-- /terms and /privacy are rendered into this slot server-side, off the
+         same shell — same header, same stylesheet, no second template. On
+         every other page it ships as the empty tag the server matches on,
+         which is the whole ~30 bytes it costs them. -->
+    <main id="dc" hidden></main>
 
     <script src="/app.js" defer></script>
   </body>

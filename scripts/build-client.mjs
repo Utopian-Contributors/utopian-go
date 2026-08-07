@@ -84,6 +84,15 @@ const PARALLEL = [
 const LAZY = ["swap.js"];
 
 /**
+ * Where the static documents' source and built fragments live.
+ *
+ * They are fragments, not pages: src/server.ts renders each into the shell at
+ * boot, so a document page reuses the shell's header and its inlined
+ * stylesheet rather than carrying a second copy of either.
+ */
+const LEGAL_DIR = "legal";
+
+/**
  * Requested on first load but never render-blocking, and already compressed as
  * far as they go. Listed so the accounting is honest about total first-load
  * bytes, not budgeted, since no paint waits on them.
@@ -290,7 +299,57 @@ async function buildHtml(css, jsHash, swapHash) {
     removeAttributeQuotes: false,
     useShortDoctype: true,
   });
+
+  // src/server.ts matches this exact string to render /terms and /privacy into
+  // the shell. How it comes out is the minifier's decision, not the source's,
+  // so check the built form — a miss serves those pages blank, and nothing at
+  // runtime would notice.
+  const docSlot = '<main id="dc" hidden></main>';
+  if (!min.includes(docSlot)) {
+    throw new Error(
+      `build: the document slot did not survive minification as ${docSlot} — ` +
+        `src/server.ts matches it verbatim and /terms would render empty`,
+    );
+  }
+
   writeFileSync(path.join(outDir, "index.html"), min);
+}
+
+/**
+ * Minify the document fragments into public/legal/.
+ *
+ * No budget of their own: a document page is one flight like any other, but
+ * nobody is waiting on a search when they open it, and truncating a legal
+ * clause to save a round trip would be the wrong trade in both directions.
+ * reportSize prints their weight so the accounting is still honest.
+ */
+async function buildLegal() {
+  const src = path.join(clientDir, LEGAL_DIR);
+  if (!existsSync(src)) return;
+  const dest = path.join(outDir, LEGAL_DIR);
+  mkdirSync(dest, { recursive: true });
+
+  for (const name of readdirSync(src)) {
+    if (path.extname(name).toLowerCase() !== ".html") continue;
+    const min = await minifyHtml(readFileSync(path.join(src, name), "utf8"), {
+      collapseWhitespace: true,
+      removeComments: true,
+      collapseBooleanAttributes: true,
+      removeRedundantAttributes: true,
+      removeAttributeQuotes: false,
+    });
+    writeFileSync(path.join(dest, name), min);
+  }
+}
+
+/** Built document fragments, relative to public/. */
+function legalFiles() {
+  const dir = path.join(outDir, LEGAL_DIR);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((n) => path.extname(n).toLowerCase() === ".html")
+    .map((n) => `${LEGAL_DIR}/${n}`)
+    .sort();
 }
 
 function copyStatic() {
@@ -407,6 +466,15 @@ function reportSize() {
     for (const file of rows) console.log(row(file, measure(file)));
   }
 
+  const docs = legalFiles();
+  if (docs.length) {
+    console.log(
+      `\nDocuments — rendered into the shell at boot for /terms and /privacy.` +
+        ` Reported,\n  not budgeted: nobody is waiting on a search behind one.`,
+    );
+    for (const file of docs) console.log(row(file, measure(file)));
+  }
+
   if (hard.length) {
     console.log(`\n  ✗ Over budget: ${hard.join(", ")}`);
     console.log(
@@ -438,7 +506,7 @@ async function buildAssets() {
   ]);
   const jsHash = contentHash(readFileSync(path.join(outDir, "app.js")));
   const swapHash = contentHash(readFileSync(path.join(outDir, "swap.js")));
-  await buildHtml(css, jsHash, swapHash);
+  await Promise.all([buildHtml(css, jsHash, swapHash), buildLegal()]);
   precompress();
 }
 
