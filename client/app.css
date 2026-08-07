@@ -89,7 +89,8 @@ a:hover {
 body.res #hd,
 body.res #tb,
 body.res #st,
-body.res #mn {
+body.res #mn,
+body.res #ft {
   width: 100%;
   max-width: var(--shell);
   margin-inline: auto;
@@ -117,7 +118,10 @@ body.home {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px 16px;
+  /* The bottom pad is the footer's: it is fixed to the window here, so nothing
+     in flow reserves room for it and the centred field would otherwise sit
+     under the bar on a short viewport. */
+  padding: 24px 16px 76px;
   min-height: 100vh;
 }
 
@@ -496,6 +500,52 @@ body.ld .sp {
 
 [hidden] {
   display: none !important;
+}
+
+/* —— Footer —— */
+#ft {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 24px;
+  border-top: 1px solid var(--ln);
+  font-size: 13px;
+  color: var(--f);
+}
+
+#ft nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+}
+
+#ft a {
+  color: var(--f);
+}
+
+#ft a:hover {
+  color: var(--t);
+}
+
+/*
+ * Home: a bar across the bottom of the window, legal links first.
+ *
+ * Fixed rather than in flow because body.home centres its children — in flow
+ * the bar would be centred with the search field instead of sitting under it,
+ * and giving it `margin-top:auto` to escape that would fight the centring the
+ * whole page is built on. body.home's bottom padding is what keeps the two
+ * from meeting on a short viewport.
+ */
+body.home #ft {
+  position: fixed;
+  inset: auto 0 0;
+  padding: 14px var(--pad);
+  background: var(--bg);
+}
+
+/* Results and documents: the end of the page, in the shell's own column. */
+body.res #ft {
+  padding-block: 16px 28px;
 }
 
 /* —— Static documents (/terms, /privacy) —— */
