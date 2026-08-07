@@ -200,12 +200,17 @@ function normalize(query: string, data: BraveSearchResponse): SearchApiResponse 
   if (rawBox?.title) {
     const thumb =
       rawBox.images?.find((i) => i.src)?.src || rawBox.thumbnail?.src;
+    const boxTitle = plainText(rawBox.title);
     // Brave uses null values for Wikipedia-style section headers
     // (e.g. ["<strong>Denominations</strong>", null]). Drop those; they
     // otherwise become the literal string "null" after plainText.
     const attributes = (rawBox.attributes ?? [])
       .map((pair) => normalizeInfoboxAttr(pair))
       .filter((row): row is [string, string] => row != null)
+      // The row keyed by the subject's own name is the caption of the photo
+      // sitting right above it ("Rammstein" → "Rammstein auf dem Wacken Open
+      // Air (2013)"). It reads as a fact about the subject and is not one.
+      .filter(([k]) => k.toLowerCase() !== boxTitle.toLowerCase())
       .slice(0, 10);
     const profiles = (rawBox.profiles ?? [])
       .slice(0, 6)
@@ -216,7 +221,7 @@ function normalize(query: string, data: BraveSearchResponse): SearchApiResponse 
       }));
 
     infobox = {
-      title: plainText(rawBox.title),
+      title: boxTitle,
       ...(rawBox.description
         ? { description: plainText(rawBox.description) }
         : {}),
