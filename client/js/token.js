@@ -117,15 +117,19 @@ function tokenChart(t, dir) {
  */
 function tokenCard(t, alt) {
   const card = el("article", { class: alt ? "tk tk-alt" : "tk" });
-  // The stack of facts, unchanged — it just shares the card with the chart now.
-  const body = el("div", { class: "tk-b" });
 
+  // Naming the token spans the card. Inside the grid its width became the
+  // facts column's floor, and a token with a company for a name left the
+  // chart nothing to draw in.
   const head = el("div", { class: "tk-h" });
   head.append(el("span", { class: "tk-sym", text: t.symbol }));
   if (t.name && t.name !== t.symbol) {
     head.append(el("span", { class: "tk-nm", text: t.name }));
   }
-  body.append(head);
+  card.append(head);
+
+  // The stack of facts, unchanged — it just shares the row with the chart now.
+  const body = el("div", { class: "tk-b" });
 
   const row = el("div", { class: "tk-r" });
   const price = tokenPrice(t.price);
@@ -188,11 +192,13 @@ function tokenCard(t, alt) {
   );
   body.append(foot);
 
-  card.append(body);
+  const grid = el("div", { class: "tk-g" });
+  grid.append(body);
   // No line for a mint too new to have a day of history — the card is
   // complete without one, so nothing takes its place.
   const chart = t.ticks ? tokenChart(t, dir) : null;
-  if (chart) card.append(chart);
+  if (chart) grid.append(chart);
+  card.append(grid);
 
   return card;
 }

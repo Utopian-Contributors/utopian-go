@@ -518,9 +518,33 @@ body.ld .sp {
 /* —— Token price card —— */
 
 /*
- * Two columns: the facts, then the chart across the right two thirds. The
- * padding moved onto the body so the chart can reach the card's own edges,
- * and overflow clips it back to the corner radius.
+ * The card is a header with a two-column block under it — it is not itself
+ * the grid, and that distinction is the whole point.
+ *
+ * Naming the token is a full-width job. When the header shared the grid, the
+ * left track's floor was the widest of the price line *and* the name, so a
+ * token called "Take-Two Interactive Software" reserved a column sized for a
+ * sentence and left the chart drawing a day of trading in eighty pixels. The
+ * name is also the one thing here that can afford to lose its tail, so it is
+ * the worst possible thing to size a column from.
+ *
+ * Above the grid it sizes nothing: it takes the width the card already has,
+ * ellipsises into it, and the floor below falls back to the price line alone
+ * — which is what the floor was always meant to be.
+ */
+.tk {
+  animation: enter 0.24s both;
+  border: 1px solid var(--b);
+  border-radius: 12px;
+  max-width: 70ch;
+  background: var(--pn);
+  overflow: hidden;
+}
+
+/*
+ * The facts, then the chart across the right two thirds. Padding sits on the
+ * body rather than here so the chart can still reach the card's own edges,
+ * and the card's overflow clips it back to the corner radius.
  *
  * The left track asks for a third but will not go below what the price line
  * needs on one row, which is the one thing on this card that must never wrap.
@@ -529,22 +553,16 @@ body.ld .sp {
  * chart is what gives way — it is the only thing here that reads the same at
  * any width.
  */
-.tk {
-  animation: enter 0.24s both;
-  border: 1px solid var(--b);
-  border-radius: 12px;
-  max-width: 70ch;
-  background: var(--pn);
+.tk-g {
   display: grid;
   grid-template-columns: minmax(min-content, 1fr) 2fr;
   align-items: center;
-  overflow: hidden;
 }
 
 /* The stack of facts. Everything the card said before the chart arrived. */
 .tk-b {
   min-width: 0;
-  padding: 14px 16px;
+  padding: 0 16px 14px;
 }
 
 /* No chart — nothing to leave a column for. */
@@ -553,7 +571,8 @@ body.ld .sp {
 }
 
 /*
- * The 24h line, bled to the top, right and bottom edges.
+ * The 24h line, bled to the right and bottom edges — the header holds the top
+ * now, and the line starts where the facts do.
  *
  * The box is stretched by the row and contributes no height of its own, so
  * the card is sized by its text and the drawing takes whatever that comes to
@@ -612,11 +631,31 @@ body.ld .sp {
   stop-opacity: 0;
 }
 
+/* Above the grid, so it carries the card's top padding for the whole width. */
 .tk-h {
   display: flex;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
+  /* No bottom pad: .tk-r's own margin is the header-to-price gap, as before. */
+  padding: 14px 16px 0;
+}
+
+/*
+ * Ticker and name, both on one line and both able to give way.
+ *
+ * A ticker is whatever its mint says it is, and plenty of them are a sentence.
+ * Left to size itself it would set the column's min-content and drag the whole
+ * card past the viewport, so it ellipsises like the name does. The name yields
+ * first — it is the expendable half of the pair, and losing its tail costs the
+ * reader less than losing the ticker's.
+ */
+.tk-sym,
+.tk-nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tk-sym {
@@ -626,11 +665,9 @@ body.ld .sp {
 }
 
 .tk-nm {
+  flex-shrink: 6;
   font-size: 13px;
   color: var(--f);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /*
@@ -709,8 +746,12 @@ body.ld .sp {
 }
 
 /* Runner-ups stay legible but yield the page to the leader. */
+.tk-alt .tk-h {
+  padding: 10px 16px 0;
+}
+
 .tk-alt .tk-b {
-  padding: 10px 16px;
+  padding: 0 16px 10px;
 }
 
 .tk-alt .tk-px {
@@ -731,7 +772,15 @@ body.ld .sp {
   color: var(--bg);
   font-size: 14px;
   font-weight: 600;
-  white-space: nowrap;
+  /*
+   * "Buy ${ticker}" is as long as the ticker is, and an unbreakable label sets
+   * the card's min-content — one long-named token and the card is wider than
+   * the phone. `anywhere` rather than `break-word` because only `anywhere`
+   * lowers the intrinsic width, which is the number the card is sized from.
+   * The break is a last resort either way: the label stays on one line for as
+   * long as one line fits.
+   */
+  overflow-wrap: anywhere;
 }
 
 .tk-buy:hover {
@@ -1370,11 +1419,33 @@ body.ld .sp {
  * the two thirds it wants are two thirds nobody can spare.
  */
 @media (max-width: 620px) {
+  /*
+   * One column, and it takes the width it is given rather than the width its
+   * contents ask for. The min-content floor above exists to stop the chart
+   * squeezing the facts; with no chart there is nothing to defend against, and
+   * left in place it is only a way for a long ticker to push the card off the
+   * side of the phone. Capped here, the header's ellipsis finally has a width
+   * to ellipsise against.
+   */
+  .tk-g {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .tk-c {
     display: none;
   }
 
-  .tk-b {
-    grid-column: 1 / -1;
+  /*
+   * With the card no longer free to grow, the price line is the one row that
+   * can still ask for more than a small phone has — a five-figure price next
+   * to a four-figure move needs about 265px, and a 320px screen offers 254.
+   * So it is allowed to wrap here, and only here: the change falls under the
+   * price instead of being cut in half by the card's edge. A wrap is a worse
+   * read than one line, but it is a far better one than half a number, and on
+   * every phone wide enough for the row it still never fires.
+   */
+  .tk-r {
+    flex-wrap: wrap;
+    gap: 2px 10px;
   }
 }
