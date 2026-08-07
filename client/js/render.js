@@ -608,23 +608,30 @@ export function createRenderer(state) {
       fold = true;
       const table = el("table", { class: "at" });
       for (const [k, v] of box.attributes) {
-        const key = plainText(k).replace(/\s+\(/g, "(");
-        const val = plainText(v);
-        // Defensive: skip empty / literal "null" rows if an old API response slips through
-        if (!key || !val || /^(null|undefined)$/i.test(val)) continue;
+        // "Developer (s)" → "Developer(s)"; a real parenthetical keeps its space
+        const key = plainText(k).replace(/\s+\((s|es|e|n|en|r|in|innen)\)/gi, "($1)");
+        // A multi-value row arrives newline-joined — split before plainText,
+        // which collapses every run of whitespace and would fuse the values.
+        const lines = String(v)
+          .split("\n")
+          .map((line) => plainText(line))
+          // Defensive: drop empty / literal "null" lines if an old API response slips through
+          .filter((line) => line && !/^(null|undefined)$/i.test(line));
+        if (!key || !lines.length) continue;
 
         const td = el("td");
-        if (/^https?:\/\//i.test(val)) {
+        if (lines.length === 1 && /^https?:\/\//i.test(lines[0])) {
           td.append(
             el("a", {
-              href: val,
+              href: lines[0],
               target: "_blank",
               rel: "noopener",
-              text: val,
+              text: lines[0],
             }),
           );
         } else {
-          td.textContent = val;
+          // Rendered as separate lines by `white-space: pre-line` on .at td
+          td.textContent = lines.join("\n");
         }
         table.append(el("tr", null, el("th", { text: key }), td));
       }

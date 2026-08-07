@@ -1058,6 +1058,9 @@ body.ld .sp {
 .at td {
   padding: 4px 0;
   vertical-align: top;
+  /* Multi-value rows are newline-joined and get a line each; every other run
+     of whitespace still collapses, so nothing else about the cell changes. */
+  white-space: pre-line;
 }
 
 .pf {

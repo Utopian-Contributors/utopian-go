@@ -86,8 +86,40 @@ function meta(m?: {
 }
 
 /**
+ * "Developer (s)" → "Developer(s)": the tag that held the suffix is gone and
+ * left a space behind. Only grammatical suffixes, so a real parenthetical
+ * ("Synthesizer (live)") keeps the space it was written with.
+ */
+const PLURAL_SUFFIX_RE = /\s+\((s|es|e|n|en|r|in|innen)\)/gi;
+
+/** Brave joins the values of a multi-value row with these, not with text. */
+const VALUE_BREAK_RE = /<br\s*\/?>|<\/li\s*>|<\/p\s*>/i;
+/** Beyond this a single row stops being a fact and becomes a wall. */
+const MAX_VALUE_LINES = 6;
+
+/** Clean one line of an attribute value. "" means drop it. */
+function normalizeValueLine(segment: string): string {
+  let v = plainText(segment);
+  if (!v || /^(null|undefined)$/i.test(v)) return "";
+  // Collapse leftover spaces around punctuation from markup strip
+  v = v.replace(/\s+([,;:.])/g, "$1").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")");
+  // Brave sometimes drops what was inside the parens and keeps the parens:
+  // "über 450.000 ()". An empty aside is worse than no aside.
+  v = v.replace(/\s*\(\s*\)/g, "").trim();
+  // Whatever is left is punctuation only — nothing was ever in this line
+  if (/^[\s,;:.·\-–—]*$/.test(v)) return "";
+  return v;
+}
+
+/**
  * Clean one infobox attribute row. Returns null to drop section headers,
  * empty values, and non-string junk.
+ *
+ * A multi-value row arrives as one <br>-joined string, so the value is split
+ * before the tags are stripped — strip first and the values run together into
+ * "14. Oktober 2007 (LeFloid) 2. August 2010 () …". The line break is the only
+ * thing separating them, so it has to survive as one: the returned value is
+ * newline-joined and the client renders a line per value.
  */
 function normalizeInfoboxAttr(
   pair: unknown,
@@ -99,17 +131,25 @@ function normalizeInfoboxAttr(
   if (rawV == null) return null;
   if (typeof rawV === "object") return null;
 
-  let k = plainText(String(rawK ?? ""));
-  let v = plainText(String(rawV));
-  if (!k || !v) return null;
-  if (/^(null|undefined)$/i.test(v)) return null;
+  const k = plainText(String(rawK ?? "")).replace(PLURAL_SUFFIX_RE, "($1)");
+  if (!k) return null;
 
-  // "Developer (s)" → "Developer(s)" (space left by stripped tags)
-  k = k.replace(/\s+\(/g, "(");
-  // Collapse leftover spaces around punctuation from markup strip
-  v = v.replace(/\s+([,;:.])/g, "$1").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")");
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const segment of String(rawV).split(VALUE_BREAK_RE)) {
+    const line = normalizeValueLine(segment);
+    // Image captions ship duplicated ("… (2013)<br>… (2013)")
+    if (!line || seen.has(line)) continue;
+    seen.add(line);
+    lines.push(line);
+    if (lines.length > MAX_VALUE_LINES) break;
+  }
+  if (!lines.length) return null;
+  if (lines.length > MAX_VALUE_LINES) {
+    lines.splice(MAX_VALUE_LINES, lines.length, "…");
+  }
 
-  return [k, v];
+  return [k, lines.join("\n")];
 }
 
 /** Snippets may keep <strong> for highlights; everything else is plain. */

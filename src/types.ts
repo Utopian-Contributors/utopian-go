@@ -34,6 +34,7 @@ export interface Infobox {
   long_desc?: string;
   category?: string;
   thumbnail?: string;
+  /** [label, value]; a multi-value row is newline-joined, one value per line. */
   attributes?: [string, string][];
   profiles?: Profile[];
 }
