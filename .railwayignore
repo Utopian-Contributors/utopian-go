@@ -1,3 +1,34 @@
+# `railway up` uploads the whole working tree, so everything the build doesn't
+# read is dead weight in the tarball. The build needs exactly package.json,
+# bun.lock, tsconfig.json, src/, client/, and scripts/ — the rest is below.
+
 # Remotion marketing-video project: its own workspace, its own node_modules,
 # and rendered output. ~550 MB that the server build never reads.
 video/
+
+# Prose, not code.
+specs/
+brand.md
+
+# The builder runs its own install. Shipping ours would upload 64 MB of
+# darwin-arm64 binaries (esbuild, lightningcss) the Linux box can't run.
+node_modules/
+
+# Build output. `npm run build` regenerates public/ from client/ and dist/
+# from src/ on the box; laptop-built artifacts would only mask a broken build.
+dist/
+public/
+
+# Token snapshot the server rewrites at runtime — a missing one is the normal
+# fresh-box path, and a stale local copy is worse than none.
+.cache/
+
+# Secrets belong in Railway's environment. Nothing loads this file anyway:
+# there's no dotenv dependency and `start` doesn't pass --env-file.
+.env
+
+# Local history and noise.
+.git/
+.DS_Store
+**/.DS_Store
+*.log
