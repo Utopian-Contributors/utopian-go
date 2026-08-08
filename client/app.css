@@ -16,10 +16,6 @@
   --hover: #f1f3f4;
   --ff: system-ui, Helvetica, Arial, sans-serif;
   --shell: 1520px;
-  /* The reading measure for /terms and /privacy — about 76 characters at the
-     document's 15px. A length and not `76ch` because the footer under the text
-     has to match it at 13px, where the same `ch` count is a different width. */
-  --doc: 720px;
   --pad: 28px;
   /* Gap below the nav before results start. #sd cancels it so the knowledge
      panel's rule meets the nav's bottom border. */
@@ -589,115 +585,24 @@ body.home #ft {
 }
 
 /*
- * Home and documents have no second column, so #mn is not a grid there — it
- * stays in the flow as a plain block carrying nothing but the footer. Hiding
- * #mn outright, as these pages used to, would take the footer with it.
+ * Home has no second column, so #mn is not a grid there — it stays in the flow
+ * as a plain block carrying nothing but the footer. Hiding #mn outright, as
+ * the home page used to, would take the footer with it.
  */
-body.home #mn,
-body.doc #mn {
+body.home #mn {
   display: block;
   padding-block: 0;
 }
 
-body.home #mn > :first-child,
-body.doc #mn > :first-child {
+body.home #mn > :first-child {
   display: none;
 }
 
-/* And with no column to be, the wrapper is neither pinned nor a flex context —
-   as the latter it would shrink the footer to its contents instead of letting
-   it take the measure below. */
-body.home #sc,
-body.doc #sc {
+/* And with no column to be, the wrapper is neither pinned nor a flex context. */
+body.home #sc {
   display: block;
   position: static;
   margin-top: 0;
-}
-
-/* Documents: at the end of the text, on the text's own measure. */
-body.doc #mn {
-  padding-inline: 0;
-}
-
-body.doc #ft {
-  max-width: var(--doc);
-  margin: 0 auto;
-  padding: 0 var(--pad) 56px;
-}
-
-/* —— Static documents (/terms, /privacy) —— */
-
-/*
- * A document page is the results shell with the results taken out: it ships
- * `class="res doc"`, so the header keeps the geometry it has everywhere else
- * and only the parts that have nothing to show are dropped.
- */
-body.doc #tb {
-  display: none;
-}
-
-/* The tab bar's border is what separates the sticky chrome from the page
-   everywhere else, and a document has no tabs — so the chrome carries its own,
-   and the header regains the bottom padding the nav used to provide. */
-body.doc .chrome {
-  border-bottom: 1px solid var(--ln);
-}
-
-body.doc #hd {
-  padding-block: 16px;
-}
-
-#dc {
-  /* Narrower than the shell — a legal clause set 1500px wide is unreadable. */
-  max-width: var(--doc);
-  margin-inline: auto;
-  padding: 28px var(--pad) 32px;
-  color: var(--m);
-  font-size: 15px;
-  line-height: 1.65;
-}
-
-#dc h1 {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 500;
-  color: var(--t);
-}
-
-#dc h2 {
-  margin: 36px 0 10px;
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--t);
-}
-
-#dc p,
-#dc ul {
-  margin: 0 0 14px;
-}
-
-#dc ul {
-  padding-left: 22px;
-}
-
-#dc li {
-  margin-bottom: 8px;
-}
-
-#dc b {
-  font-weight: 600;
-  color: var(--t);
-}
-
-#dc a {
-  color: var(--l);
-}
-
-/* Effective date and the closing note — secondary to the clauses themselves. */
-#dc .dt {
-  margin: 6px 0 28px;
-  font-size: 13px;
-  color: var(--f);
 }
 
 /* —— Result cards —— */
