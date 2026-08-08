@@ -491,10 +491,16 @@ body.ld .sp {
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* Images run full width, so the footer under them has no panel to line up
-   with either — see #ft's padding-left. */
+/* Images run full width: no panel to sit under, to pin to, or to line the
+   links up with — so the column is an ordinary row under the grid. */
+#mn.solo #sc {
+  position: static;
+  margin-top: 0;
+}
+
 #mn.solo #ft {
   padding-left: 0;
+  padding-bottom: 64px;
 }
 
 #st {
@@ -513,14 +519,21 @@ body.ld .sp {
 /* —— Footer —— */
 
 /*
- * The right column: the knowledge panel, and the footer at the foot of it.
+ * The right column: the knowledge panel with the footer directly under it.
  *
- * Stretched rather than start-aligned, so it is as tall as the results beside
- * it. That is what gives the sticky panel room to travel and what puts the
- * footer at the bottom of the column rather than just under the panel.
+ * The stickiness lives here rather than on the panel because the two have to
+ * travel together. With only the panel pinned, the footer keeps scrolling and
+ * slides up behind a panel that has stopped — it is underneath the panel for
+ * one screen and then gone. Pinned as a pair, it stays where it is meant to be.
+ *
+ * The negative margin is the panel's, moved up with the stickiness: it cancels
+ * #mn's top padding so the panel's rule meets the nav's bottom border, and it
+ * has to be on whichever box `top` is measured against.
  */
 #sc {
-  align-self: stretch;
+  position: sticky;
+  top: var(--chrome-h, 0px);
+  margin-top: calc(var(--main-gap) * -1);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -529,13 +542,11 @@ body.ld .sp {
 #ft {
   display: flex;
   flex-wrap: wrap;
-  /* The foot of the column, not the panel's hem. */
-  margin-top: auto;
+  /* Clear of the panel above it, and lined up with the panel's text rather
+     than its rule: .pn insets its content by its own 1px border plus 20px. */
+  margin-top: 18px;
   gap: 4px 16px;
-  /* Lines the links up with the panel's text rather than its rule: .pn insets
-     its content by its own 1px border plus 20px of padding. */
   padding-left: 21px;
-  padding-bottom: 64px;
   font-size: 13px;
   font-weight: 600;
   color: var(--f);
@@ -593,12 +604,14 @@ body.doc #mn > :first-child {
   display: none;
 }
 
-/* And with no column to be, the wrapper is not a flex context either — as one
-   it would shrink the footer to its contents instead of letting it take the
-   measure below. */
+/* And with no column to be, the wrapper is neither pinned nor a flex context —
+   as the latter it would shrink the footer to its contents instead of letting
+   it take the measure below. */
 body.home #sc,
 body.doc #sc {
   display: block;
+  position: static;
+  margin-top: 0;
 }
 
 /* Documents: at the end of the text, on the text's own measure. */
@@ -608,7 +621,7 @@ body.doc #mn {
 
 body.doc #ft {
   max-width: var(--doc);
-  margin-inline: auto;
+  margin: 0 auto;
   padding: 0 var(--pad) 56px;
 }
 
@@ -1217,14 +1230,9 @@ body.doc #hd {
 }
 
 /* —— Knowledge panel —— */
+/* Flush against the sticky header+tabs and cancelling #mn's top padding — both
+   now the job of #sc, which the panel shares with the footer. */
 #sd {
-  position: sticky;
-  /* Flush against the sticky header+tabs (height set by JS as --chrome-h), so
-     the panel's left rule continues the nav's bottom border while scrolling. */
-  top: var(--chrome-h, 0px);
-  /* Cancel #mn's top padding so the two borders meet at rest as well. */
-  margin-top: calc(var(--main-gap) * -1);
-  align-self: start;
   width: 100%;
   min-width: 0;
   overflow: visible;
@@ -1568,15 +1576,20 @@ body.doc #hd {
     display: contents;
   }
 
+  /* Grid items again, so the panel takes back the negative margin #sc was
+     carrying for it. Nothing is pinned at this width. */
   #sd {
-    position: static;
     order: -1;
+    margin-top: calc(var(--main-gap) * -1);
   }
 
-  /* One column, so there is no panel rule left of it to line up with. */
+  /* A page footer here, not a column one: last, full width, no panel rule to
+     the left of it to line up with. */
   #ft {
     order: 1;
+    margin-top: 0;
     padding-left: 0;
+    padding-bottom: 48px;
   }
 
   .pn {

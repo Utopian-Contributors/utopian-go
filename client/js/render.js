@@ -46,6 +46,7 @@ const TILE_MAX_H = 160;
 export function createRenderer(state) {
   const results = $("rs");
   const side = $("sd");
+  const sideCol = $("sc");
   const tabsEl = $("tb");
   const main = $("mn");
 
@@ -732,9 +733,20 @@ export function createRenderer(state) {
       return;
     }
     const top = side.getBoundingClientRect().top;
+    // Whatever sits below the panel inside the pinned column — the footer and
+    // its margin. The cap has to leave room for it: measured against the
+    // viewport alone, a tall panel pushes the footer below the fold, and being
+    // pinned there means it never comes back up.
+    const below = Math.max(
+      0,
+      Math.round(
+        sideCol.getBoundingClientRect().bottom -
+          side.getBoundingClientRect().bottom,
+      ),
+    );
     const max = Math.max(
       160,
-      Math.round(window.innerHeight - Math.max(0, top) - 8),
+      Math.round(window.innerHeight - Math.max(0, top) - 8 - below),
     );
     document.documentElement.style.setProperty("--side-max", `${max}px`);
   }
