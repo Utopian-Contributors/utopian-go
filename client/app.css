@@ -16,6 +16,10 @@
   --hover: #f1f3f4;
   --ff: system-ui, Helvetica, Arial, sans-serif;
   --shell: 1520px;
+  /* The reading measure for /terms and /privacy — about 76 characters at the
+     document's 15px. A length and not `76ch` because the footer under the text
+     has to match it at 13px, where the same `ch` count is a different width. */
+  --doc: 720px;
   --pad: 28px;
   /* Gap below the nav before results start. #sd cancels it so the knowledge
      panel's rule meets the nav's bottom border. */
@@ -89,8 +93,7 @@ a:hover {
 body.res #hd,
 body.res #tb,
 body.res #st,
-body.res #mn,
-body.res #ft {
+body.res #mn {
   width: 100%;
   max-width: var(--shell);
   margin-inline: auto;
@@ -146,7 +149,6 @@ body.home .sf {
 }
 
 body.home #tb,
-body.home #mn,
 body.home #st {
   display: none !important;
 }
@@ -489,6 +491,12 @@ body.ld .sp {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Images run full width, so the footer under them has no panel to line up
+   with either — see #ft's padding-left. */
+#mn.solo #ft {
+  padding-left: 0;
+}
+
 #st {
   padding-block: 16px 0;
   color: var(--m);
@@ -503,24 +511,38 @@ body.ld .sp {
 }
 
 /* —— Footer —— */
+
+/*
+ * The right column: the knowledge panel, and the footer at the foot of it.
+ *
+ * Stretched rather than start-aligned, so it is as tall as the results beside
+ * it. That is what gives the sticky panel room to travel and what puts the
+ * footer at the bottom of the column rather than just under the panel.
+ */
+#sc {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 #ft {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 6px 24px;
-  border-top: 1px solid var(--ln);
+  /* The foot of the column, not the panel's hem. */
+  margin-top: auto;
+  gap: 4px 16px;
+  /* Lines the links up with the panel's text rather than its rule: .pn insets
+     its content by its own 1px border plus 20px of padding. */
+  padding-left: 21px;
+  padding-bottom: 64px;
   font-size: 13px;
+  font-weight: 600;
   color: var(--f);
-}
-
-#ft nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 22px;
 }
 
 #ft a {
-  color: var(--f);
+  color: inherit;
 }
 
 #ft a:hover {
@@ -528,24 +550,66 @@ body.ld .sp {
 }
 
 /*
- * Home: a bar across the bottom of the window, legal links first.
+ * Not until there is a page under it.
+ *
+ * The shell ships the footer, and on a results URL it ships it in the loading
+ * state — where the column is three skeletons tall and the foot of it is a
+ * third of the way up the screen. Painting it there means moving it the moment
+ * the results land, which is the one thing this shell is built not to do.
+ */
+body.ld #ft {
+  display: none;
+}
+
+/*
+ * Home: a line along the bottom of the window.
  *
  * Fixed rather than in flow because body.home centres its children — in flow
- * the bar would be centred with the search field instead of sitting under it,
- * and giving it `margin-top:auto` to escape that would fight the centring the
- * whole page is built on. body.home's bottom padding is what keeps the two
- * from meeting on a short viewport.
+ * it would be centred with the search field instead of sitting under it.
+ * body.home's bottom padding is what keeps the two from meeting on a short
+ * viewport.
  */
 body.home #ft {
   position: fixed;
   inset: auto 0 0;
+  margin: 0;
   padding: 14px var(--pad);
   background: var(--bg);
 }
 
-/* Results and documents: the end of the page, in the shell's own column. */
-body.res #ft {
-  padding-block: 16px 28px;
+/*
+ * Home and documents have no second column, so #mn is not a grid there — it
+ * stays in the flow as a plain block carrying nothing but the footer. Hiding
+ * #mn outright, as these pages used to, would take the footer with it.
+ */
+body.home #mn,
+body.doc #mn {
+  display: block;
+  padding-block: 0;
+}
+
+body.home #mn > :first-child,
+body.doc #mn > :first-child {
+  display: none;
+}
+
+/* And with no column to be, the wrapper is not a flex context either — as one
+   it would shrink the footer to its contents instead of letting it take the
+   measure below. */
+body.home #sc,
+body.doc #sc {
+  display: block;
+}
+
+/* Documents: at the end of the text, on the text's own measure. */
+body.doc #mn {
+  padding-inline: 0;
+}
+
+body.doc #ft {
+  max-width: var(--doc);
+  margin-inline: auto;
+  padding: 0 var(--pad) 56px;
 }
 
 /* —— Static documents (/terms, /privacy) —— */
@@ -555,8 +619,7 @@ body.res #ft {
  * `class="res doc"`, so the header keeps the geometry it has everywhere else
  * and only the parts that have nothing to show are dropped.
  */
-body.doc #tb,
-body.doc #mn {
+body.doc #tb {
   display: none;
 }
 
@@ -573,9 +636,9 @@ body.doc #hd {
 
 #dc {
   /* Narrower than the shell — a legal clause set 1500px wide is unreadable. */
-  max-width: 76ch;
+  max-width: var(--doc);
   margin-inline: auto;
-  padding: 28px var(--pad) 48px;
+  padding: 28px var(--pad) 32px;
   color: var(--m);
   font-size: 15px;
   line-height: 1.65;
@@ -1495,9 +1558,25 @@ body.doc #hd {
     padding-bottom: 48px;
   }
 
+  /*
+   * One column, so the wrapper has no column to be — it dissolves and hands
+   * its two children back to #mn's grid, which is what lets the panel keep
+   * its order:-1 hop above the results while the footer stays at the foot of
+   * the page. Wrapped, the two would have had to move together.
+   */
+  #sc {
+    display: contents;
+  }
+
   #sd {
     position: static;
     order: -1;
+  }
+
+  /* One column, so there is no panel rule left of it to line up with. */
+  #ft {
+    order: 1;
+    padding-left: 0;
   }
 
   .pn {

@@ -83,6 +83,13 @@
 
     <div id="st" role="status" aria-live="polite" hidden></div>
 
+    <!-- /terms and /privacy are rendered into this slot server-side, off the
+         same shell — same header, same stylesheet, no second template. On
+         every other page it ships as the empty tag the server matches on,
+         which is the whole ~30 bytes it costs them. Ahead of #mn because the
+         footer lives inside #mn, and a document wants it after the text. -->
+    <main id="dc" hidden></main>
+
     <div id="mn">
       <div>
         <!-- Three blocks, each mirroring a real .r card line for line. dom.js
@@ -95,32 +102,27 @@
         </div>
         <div id="rs" class="rs"></div>
       </div>
-      <aside id="sd" hidden></aside>
+
+      <!-- The right column, holding the knowledge panel and the footer under
+           it. They are siblings rather than nested because render.js rebuilds
+           #sd from scratch on every paint and would take the footer with it. -->
+      <div id="sc">
+        <aside id="sd" hidden></aside>
+        <footer id="ft">
+          <a href="/terms">Terms</a>
+          <a href="/privacy">Privacy</a>
+          <a href="https://x.com/UtopianContrib" target="_blank" rel="noopener"
+            >@UtopianContrib</a
+          >
+          <a
+            href="https://pump.fun/coin/HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA"
+            target="_blank"
+            rel="noopener"
+            >pump.fun</a
+          >
+        </footer>
+      </div>
     </div>
-
-    <!-- /terms and /privacy are rendered into this slot server-side, off the
-         same shell — same header, same stylesheet, no second template. On
-         every other page it ships as the empty tag the server matches on,
-         which is the whole ~30 bytes it costs them. -->
-    <main id="dc" hidden></main>
-
-    <footer id="ft">
-      <nav>
-        <a href="/terms">Terms</a>
-        <a href="/privacy">Privacy</a>
-      </nav>
-      <nav>
-        <a href="https://x.com/UtopianContrib" target="_blank" rel="noopener"
-          >@UtopianContrib</a
-        >
-        <a
-          href="https://pump.fun/coin/HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA"
-          target="_blank"
-          rel="noopener"
-          >pump.fun</a
-        >
-      </nav>
-    </footer>
 
     <script src="/app.js" defer></script>
   </body>
