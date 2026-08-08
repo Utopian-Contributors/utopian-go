@@ -160,3 +160,20 @@ export const JUP_FEE_BPS = Math.min(
  * doesn't make the quote wrong.
  */
 export const TOKEN_MIN_LIQUIDITY_USD = 25_000;
+
+/**
+ * Mints indexed by hand, whatever their depth.
+ *
+ * The floor above is aimed at tokens that would hijack a query they have no
+ * claim to. A ticker nobody else uses, on the site the project itself runs,
+ * hijacks nothing — so this is a named exemption rather than a lower floor,
+ * which would let every thin memecoin through with it.
+ *
+ * These are also fetched individually: the hourly index is built from
+ * Jupiter's verified, lst and top-traded lists, and a mint this small is in
+ * none of them. See SOURCES in lib/tokens/jupiter.ts.
+ */
+export const TOKEN_PINNED_MINTS = new Set([
+  // $UTCC — Utopian Contributor Coin, this project's own token.
+  "HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA",
+]);

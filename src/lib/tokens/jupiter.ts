@@ -2,6 +2,7 @@ import {
   JUP_TOKENS_ENDPOINT,
   TOKEN_INDEX_TIMEOUT_MS,
   TOKEN_MIN_LIQUIDITY_USD,
+  TOKEN_PINNED_MINTS,
 } from "../../config";
 import { JupToken, TokenRecord } from "../../types";
 
@@ -21,6 +22,11 @@ const SOURCES = [
   `${JUP_TOKENS_ENDPOINT}/tag?query=verified`,
   `${JUP_TOKENS_ENDPOINT}/tag?query=lst`,
   `${JUP_TOKENS_ENDPOINT}/toptraded/24h`,
+  // Pinned mints, one lookup each. They are pinned precisely because no list
+  // above carries them, so these are pure gap-fillers and go last.
+  ...[...TOKEN_PINNED_MINTS].map(
+    (mint) => `${JUP_TOKENS_ENDPOINT}/search?query=${encodeURIComponent(mint)}`,
+  ),
 ];
 
 async function fetchList(url: string): Promise<JupToken[]> {
@@ -93,9 +99,11 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
 
   const isEquity = (t.tags ?? []).some((tag) => EQUITY_TAGS.has(tag));
   const liquidity = Number(t.liquidity) || 0;
-  // Tokenized RWAs are issuer-priced and admitted at any depth; everything else
-  // has to show a real market before it can claim a price card.
-  if (!isEquity && liquidity < TOKEN_MIN_LIQUIDITY_USD) return null;
+  // Tokenized RWAs are issuer-priced and admitted at any depth, and a pinned
+  // mint was named by hand; everything else has to show a real market before
+  // it can claim a price card.
+  const exempt = isEquity || TOKEN_PINNED_MINTS.has(mint);
+  if (!exempt && liquidity < TOKEN_MIN_LIQUIDITY_USD) return null;
 
   const verified = t.isVerified === true;
   const change24h = Number(t.stats24h?.priceChange);
