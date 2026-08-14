@@ -69,6 +69,25 @@ const CSS = `
 .swx-go:hover:not(:disabled){filter:brightness(1.1)}
 .swx-go:disabled{opacity:.55;cursor:not-allowed}
 .swx-go.busy{cursor:progress}
+/*
+ * Confirmation screen. The two panes and the arrow are the form's, restyled
+ * only where they stop being interactive, so the trade does not appear to
+ * change shape between reviewing it and sending it.
+ */
+.swx-flip.static{cursor:default;pointer-events:none}
+.swx-sum{margin-top:12px;border-top:1px solid var(--b);padding-top:8px}
+.swx-row{display:flex;align-items:baseline;justify-content:space-between;
+ gap:14px;padding:4px 0;font-size:12.5px}
+.swx-k{color:var(--f);flex:0 0 auto}
+.swx-v{color:var(--t);text-align:right;min-width:0;overflow-wrap:anywhere;
+ font-variant-numeric:tabular-nums}
+.swx-v.warn{color:var(--dn);font-weight:600}
+.swx-2nd{width:100%;margin-top:8px;border:1px solid var(--b);border-radius:999px;
+ padding:10px;background:none;color:var(--t);font:600 14px/1.2 var(--ff);
+ cursor:pointer}
+.swx-2nd:hover:not(:disabled){background:var(--hover)}
+.swx-2nd:disabled{opacity:.55;cursor:not-allowed}
+
 .swx-note{margin-top:9px;font-size:12px;color:var(--f);min-height:16px;
  text-align:center}
 .swx-note.err{color:var(--dn)}
@@ -123,10 +142,12 @@ export function dialog(title, onClose) {
     onclick: close,
   });
 
+  const heading = el("div", { class: "swx-t", text: title });
+
   const panel = el(
     "div",
     { class: "swx-d", role: "document" },
-    el("div", { class: "swx-h" }, el("div", { class: "swx-t", text: title }), closeBtn),
+    el("div", { class: "swx-h" }, heading, closeBtn),
     body,
   );
 
@@ -137,7 +158,13 @@ export function dialog(title, onClose) {
     panel,
   );
 
+  /** Retitle in place — the dialog's screens are steps, not separate dialogs. */
+  const setTitle = (next) => {
+    heading.textContent = next;
+    root.setAttribute("aria-label", next);
+  };
+
   document.addEventListener("keydown", onKey);
   document.body.append(root);
-  return { body, close, panel };
+  return { body, close, panel, setTitle };
 }

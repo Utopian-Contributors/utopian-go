@@ -18,6 +18,18 @@ import { connect, signAndSend, wallets } from "./wallet.js";
 const SLIPPAGE_BPS = 100;
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 
+/**
+ * How often the confirmation screen re-prices the trade it is showing.
+ *
+ * A review step that quotes you once and then sits there is worse than no
+ * review step: the numbers you agreed to are the ones you stopped looking at.
+ * Fifteen seconds is well inside the window where a quote still builds.
+ */
+const REQUOTE_MS = 15_000;
+
+/** Price impact at or above this reads as a warning rather than a detail. */
+const HIGH_IMPACT_PCT = 1;
+
 /** Lamports held back from MAX so the wallet can still pay network fees. */
 const SOL_RESERVE = 10_000_000n;
 
@@ -79,6 +91,21 @@ function shortAddr(a) {
   return a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
 }
 
+/** Percent for display. Anything that rounds to nothing says so as a bound. */
+function percent(n) {
+  if (!Number.isFinite(n)) return "—";
+  if (n > 0 && n < 0.01) return "<0.01%";
+  return `${n.toFixed(2)}%`;
+}
+
+/** The venues a route passes through, deduped and in order. */
+function venues(q) {
+  const labels = (q.routePlan ?? [])
+    .map((leg) => leg?.swapInfo?.label)
+    .filter(Boolean);
+  return [...new Set(labels)].join(" → ");
+}
+
 /**
  * The amount to assume before anyone types anything.
  *
@@ -100,7 +127,16 @@ function defaultAmount(preset, decimals, spendable) {
  * @param {{mint: string, symbol: string, decimals?: number, fallback: string}} t
  */
 function open(t) {
-  const { body, close } = dialog(`Trade ${t.symbol}`);
+  /**
+   * Teardown owed by whichever screen is mounted — the confirmation one keeps
+   * a re-quote timer running, and Escape or the backdrop closes the dialog out
+   * from under it without going through its own Back button.
+   */
+  let cleanup = null;
+  const { body, close, setTitle } = dialog(`Trade ${t.symbol}`, () => {
+    cleanup?.();
+    cleanup = null;
+  });
   // Buying SOL cannot be funded with SOL, and vice versa for USDC.
   const funds = FUNDS.filter((f) => f.mint !== t.mint);
   // Selling means converting a typed amount of the token into base units,
@@ -151,6 +187,9 @@ function open(t) {
   // —— the trade form: shown immediately, quotes without a wallet ——
 
   function form() {
+    cleanup?.();
+    cleanup = null;
+    setTitle(`Trade ${t.symbol}`);
     body.replaceChildren();
     const buying = mode === "buy";
     const feeAccount = document.body.dataset[fund.fee] || "";
@@ -370,8 +409,11 @@ function open(t) {
         action.textContent = "Connect wallet";
         action.disabled = false;
       } else {
-        const verb = buying ? "Buy" : "Sell";
-        action.textContent = current ? `${verb} ${t.symbol}` : "Enter an amount";
+        // Naming the review rather than the trade: the next screen is where
+        // the trade is actually agreed to, and it carries the verb.
+        action.textContent = current
+          ? `Review ${buying ? "buy" : "sell"}`
+          : "Enter an amount";
         action.disabled = !current;
       }
       action.classList.remove("busy");
@@ -445,51 +487,245 @@ function open(t) {
       refresh();
     });
 
-    action.addEventListener("click", async () => {
+    action.addEventListener("click", () => {
       if (busy) return;
       if (!session) return startConnect();
       if (!current) return;
-
-      busy = true;
-      action.disabled = true;
-      action.classList.add("busy");
-      action.textContent = "Confirm in wallet…";
-      setNote("");
-
-      try {
-        const tx = await build({
-          quote: current,
-          taker: session.account.address,
-          feeAccount,
-        });
-        const sig = toBase58(await signAndSend(session.wallet, session.account, tx));
-        note.replaceChildren(
-          el("a", {
-            href: `https://solscan.io/tx/${sig}`,
-            target: "_blank",
-            rel: "noopener",
-            text: "View transaction",
-          }),
-        );
-        note.className = "swx-note ok";
-        action.textContent = `${buying ? "Bought" : "Sold"} ${t.symbol}`;
-        current = null;
-        // Re-arm sized to what's left, so trading again is one click.
-        touched = false;
-        typed = "";
-        loadBalances();
-      } catch (err) {
-        const msg = /reject|denied|cancel|user/i.test(err?.message ?? "")
-          ? "Cancelled."
-          : err?.message || "Swap failed.";
-        setNote(msg, "err");
-        action.textContent = `${buying ? "Buy" : "Sell"} ${t.symbol}`;
-        action.disabled = false;
-      } finally {
-        busy = false;
-        action.classList.remove("busy");
-      }
+      review();
     });
+
+    // —— the confirmation screen: the same trade, priced and itemised ——
+
+    /**
+     * Everything the form showed, restated as figures that do not move while
+     * being read, plus the ones the form had no room for: what the trade can
+     * settle at in the worst allowed case, what it moves the pool by, and
+     * which route it takes.
+     *
+     * The quote is re-fetched on a timer here rather than frozen. A stale
+     * confirmation is the failure mode this screen exists to prevent — asking
+     * someone to agree to a number and then sending a different one.
+     */
+    function review() {
+      setTitle(`Confirm ${buying ? "buy" : "sell"}`);
+      body.replaceChildren();
+
+      let sending = false;
+      let done = false;
+      let timer = null;
+      let pending = null;
+
+      const payAmt = el("div", { class: "swx-recv" });
+      const recvAmt = el("div", { class: "swx-recv" });
+      const rows = el("div", { class: "swx-sum" });
+      const rnote = el("div", { class: "swx-note" });
+      const go = el("button", {
+        class: `swx-go${buying ? "" : " sell"}`,
+        type: "button",
+        text: `${buying ? "Buy" : "Sell"} ${t.symbol}`,
+      });
+      const back = el("button", { class: "swx-2nd", type: "button", text: "Back" });
+
+      const leave = () => {
+        clearInterval(timer);
+        timer = null;
+        pending?.abort();
+        pending = null;
+      };
+      cleanup = leave;
+
+      const setRNote = (text, kind) => {
+        rnote.textContent = text || "";
+        rnote.className = `swx-note${kind ? ` ${kind}` : ""}`;
+      };
+
+      const detail = (key, value, warn) =>
+        el(
+          "div",
+          { class: "swx-row" },
+          el("span", { class: "swx-k", text: key }),
+          el("span", { class: `swx-v${warn ? " warn" : ""}`, text: value }),
+        );
+
+      /**
+       * Unit price, quoted whichever way round states a number.
+       *
+       * Selling a memecoin is the case that forces this: one BONK is
+       * 0.0000003 SOL, and "1 Bonk = 0 SOL" is not a rounding of that, it is a
+       * different claim. Inverted it reads 1 SOL = 32,280,110 Bonk, which is
+       * the same rate and survives being printed.
+       */
+      function rate(q) {
+        if (pay.decimals == null || recv.decimals == null) return "—";
+        const paid = Number(q.inAmount) / 10 ** pay.decimals;
+        const got = Number(q.outAmount) / 10 ** recv.decimals;
+        if (!paid || !got || !Number.isFinite(paid) || !Number.isFinite(got)) {
+          return "—";
+        }
+        const [unit, per, other] =
+          got >= paid
+            ? [pay.symbol, got / paid, recv.symbol]
+            : [recv.symbol, paid / got, pay.symbol];
+        const shown = per.toLocaleString("en-US", {
+          maximumFractionDigits: per >= 1000 ? 2 : 4,
+        });
+        return `1 ${unit} = ${shown} ${other}`;
+      }
+
+      function paint(q) {
+        // Bare numbers — the pill beside each one already names the token.
+        payAmt.textContent = pretty(q.inAmount, pay.decimals);
+        recvAmt.textContent =
+          recv.decimals != null ? pretty(q.outAmount, recv.decimals) : "—";
+
+        // Jupiter reports impact as a fraction, not a percentage.
+        const impact = Number(q.priceImpactPct) * 100;
+        const route = venues(q);
+        rows.replaceChildren(
+          detail("Rate", rate(q)),
+          detail(
+            "Minimum received",
+            recv.decimals != null
+              ? `${pretty(q.otherAmountThreshold, recv.decimals)} ${recv.symbol}`
+              : "—",
+          ),
+          detail("Price impact", percent(impact), impact >= HIGH_IMPACT_PCT),
+          detail("Max slippage", `${(q.slippageBps ?? SLIPPAGE_BPS) / 100}%`),
+          // The quote's platformFee.amount names the wrong mint often enough
+          // that only the rate is worth stating — see JUP_FEE_ACCOUNT_SOL.
+          ...(feeBps > 0 ? [detail("Platform fee", `${feeBps / 100}%`)] : []),
+          ...(route ? [detail("Route", route)] : []),
+          detail("Wallet", shortAddr(session.account.address)),
+        );
+      }
+
+      /** Re-price what is on screen. Silent on success, explicit on failure. */
+      async function requote() {
+        if (sending || done) return;
+        const units = toUnits(typed, pay.decimals);
+        if (!units || units === "0") return;
+
+        pending?.abort();
+        const controller = new AbortController();
+        pending = controller;
+        try {
+          const q = await quote({
+            input: pay.mint,
+            output: buying ? t.mint : fund.mint,
+            amount: units,
+            slippageBps: SLIPPAGE_BPS,
+            feeBps,
+            signal: controller.signal,
+          });
+          if (controller !== pending || sending || done) return;
+          current = q;
+          paint(q);
+          setRNote("");
+        } catch (err) {
+          if (controller !== pending || err?.name === "AbortError") return;
+          // Keep the last good figures on screen, but stop implying they are
+          // current — the button still works, and Jupiter re-checks on build.
+          setRNote("Could not refresh the price. Figures may be stale.", "err");
+        }
+      }
+
+      body.append(
+        el(
+          "div",
+          { class: "swx-pane" },
+          el("div", { class: "swx-lbl" }, el("span", { text: "You pay" })),
+          el(
+            "div",
+            { class: "swx-body" },
+            el("span", { class: "swx-lock", text: pay.symbol }),
+            payAmt,
+          ),
+        ),
+        el(
+          "div",
+          { class: "swx-arrow" },
+          el("span", { class: "swx-flip static", "aria-hidden": "true", text: "↓" }),
+        ),
+        el(
+          "div",
+          { class: "swx-pane" },
+          el("div", { class: "swx-lbl" }, el("span", { text: "You receive" })),
+          el(
+            "div",
+            { class: "swx-body" },
+            el("span", { class: "swx-lock", text: recv.symbol }),
+            recvAmt,
+          ),
+        ),
+        rows,
+        go,
+        back,
+        rnote,
+      );
+
+      paint(current);
+      go.focus();
+      timer = setInterval(requote, REQUOTE_MS);
+
+      back.addEventListener("click", () => {
+        if (sending) return;
+        leave();
+        form();
+      });
+
+      go.addEventListener("click", async () => {
+        if (sending || done) return;
+        sending = true;
+        // Nothing may re-price under a transaction that is being signed.
+        leave();
+        go.disabled = true;
+        go.classList.add("busy");
+        go.textContent = "Confirm in wallet…";
+        back.disabled = true;
+        setRNote("");
+
+        try {
+          const tx = await build({
+            quote: current,
+            taker: session.account.address,
+            feeAccount,
+          });
+          const sig = toBase58(await signAndSend(session.wallet, session.account, tx));
+          done = true;
+          rnote.replaceChildren(
+            el("a", {
+              href: `https://solscan.io/tx/${sig}`,
+              target: "_blank",
+              rel: "noopener",
+              text: "View transaction",
+            }),
+          );
+          rnote.className = "swx-note ok";
+          go.textContent = `${buying ? "Bought" : "Sold"} ${t.symbol}`;
+          current = null;
+          // Re-arm sized to what's left, so trading again is one click.
+          touched = false;
+          typed = "";
+          back.disabled = false;
+          back.textContent = "Done";
+        } catch (err) {
+          const msg = /reject|denied|cancel|user/i.test(err?.message ?? "")
+            ? "Cancelled."
+            : err?.message || "Swap failed.";
+          setRNote(msg, "err");
+          go.textContent = `${buying ? "Buy" : "Sell"} ${t.symbol}`;
+          go.disabled = false;
+          back.disabled = false;
+          // Whatever went wrong, the figures are now older than the attempt.
+          cleanup = leave;
+          timer = setInterval(requote, REQUOTE_MS);
+          void requote();
+        } finally {
+          sending = false;
+          go.classList.remove("busy");
+        }
+      });
+    }
   }
 }
 
