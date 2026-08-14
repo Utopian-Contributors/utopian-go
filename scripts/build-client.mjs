@@ -55,9 +55,11 @@ const INIT_WINDOW = 14_600;
  * HTTP/2 squeezes these with HPACK; budget the worse case.
  *
  * TICKER_RESERVE — the shell measured here still has an empty price strip.
- * renderHomeTicker fills it per request with three cells, ~200 B raw and ~100 B
- * once it compresses against the rest of the document. Reserved with slack so a
- * build that passes here also passes on the wire.
+ * renderHomeTicker fills it per request with three cells, and renderFundPrices
+ * hangs the quote tokens' USD prices off the same tag for the buy dialog to
+ * convert with: ~250 B raw and under 60 B once it compresses against the rest
+ * of the document. Reserved with slack so a build that passes here also passes
+ * on the wire.
  */
 const HEADER_RESERVE = 350;
 const TICKER_RESERVE = 300;

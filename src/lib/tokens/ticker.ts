@@ -72,3 +72,29 @@ export function renderHomeTicker(): string {
 
   return cells.join("");
 }
+
+/** The tokens the buy dialog can spend or receive on the non-token side. */
+const FUND_KEYS = ["sol", "usdc"];
+
+/**
+ * USD prices for those two, as data attributes on the strip's own tag.
+ *
+ * The buy dialog states every figure in dollars, and one side of any trade it
+ * makes is always SOL or USDC — so it needs their prices to convert. Carried
+ * on markup that is already re-rendered per request rather than fetched: a
+ * round trip for two numbers, opened over a page that already has them, is
+ * not a trade this project makes.
+ *
+ * Values are our own formatting of a number, so nothing here needs escaping.
+ */
+export function renderFundPrices(): string {
+  let out = "";
+  for (const key of FUND_KEYS) {
+    const quote = lookupToken(key);
+    if (!quote || !Number.isFinite(quote.price) || quote.price <= 0) continue;
+    // Six significant figures — far more than two decimals of dollars needs,
+    // and enough that a sub-cent token doesn't convert through a zero.
+    out += ` data-${key}-usd="${Number(quote.price.toPrecision(6))}"`;
+  }
+  return out;
+}

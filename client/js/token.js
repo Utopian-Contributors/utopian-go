@@ -166,6 +166,8 @@ function tokenCard(t, alt) {
     symbol: t.symbol,
     fallback: href,
     ...(t.decimals != null ? { decimals: t.decimals } : {}),
+    // What the buy dialog converts this side of a trade into dollars with.
+    ...(Number.isFinite(t.price) ? { price: t.price } : {}),
   };
   const buy = el("a", {
     class: "tk-buy",

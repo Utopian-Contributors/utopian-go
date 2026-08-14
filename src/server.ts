@@ -13,7 +13,7 @@ import {
   SITE_URL,
 } from "./config";
 import { startTokenIndex } from "./lib/tokens/store";
-import { renderHomeTicker } from "./lib/tokens/ticker";
+import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
 import { apiRouter } from "./routes/api";
 
 const app = express();
@@ -286,9 +286,11 @@ function sendIndex(
   // before app.js has even been fetched. Rendered on both variants: the strip
   // is display:none off the home class, and clicking the wordmark home is a
   // client-side transition that never asks the server for fresh markup.
+  // The strip carries the quote tokens' USD prices as well as its own cells —
+  // the buy dialog converts with them, and they are already here.
   let html = (variant === "res" ? resShell : shell).replace(
     TICKER_SLOT,
-    `<div id="hm-tk">${renderHomeTicker()}</div>`,
+    `<div id="hm-tk"${renderFundPrices()}>${renderHomeTicker()}</div>`,
   );
   if (variant === "res") {
     html = html.replace(INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);

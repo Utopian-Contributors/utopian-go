@@ -91,19 +91,30 @@ function shortAddr(a) {
   return a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
 }
 
-/** Percent for display. Anything that rounds to nothing says so as a bound. */
-function percent(n) {
-  if (!Number.isFinite(n)) return "—";
-  if (n > 0 && n < 0.01) return "<0.01%";
-  return `${n.toFixed(2)}%`;
+/**
+ * Dollars, two decimals, for someone who does not think in lamports.
+ *
+ * Sub-cent amounts state themselves as a bound rather than as $0.00, which
+ * reads as free. Everything the confirmation screen shows goes through here.
+ */
+function usd(v) {
+  if (!Number.isFinite(v)) return "—";
+  if (v > 0 && v < 0.005) return "<$0.01";
+  return `$${v.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
-/** The venues a route passes through, deduped and in order. */
-function venues(q) {
-  const labels = (q.routePlan ?? [])
-    .map((leg) => leg?.swapInfo?.label)
-    .filter(Boolean);
-  return [...new Set(labels)].join(" → ");
+/** Data attributes the server writes onto the price strip, by fund key. */
+const FUND_PRICE_ATTR = { sol: "solUsd", usdc: "usdcUsd" };
+
+/** USD price of a quote token, or null when the index was not warm. */
+function fundPrice(key) {
+  const attr = FUND_PRICE_ATTR[key];
+  const raw = attr && document.getElementById("hm-tk")?.dataset[attr];
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 /**
@@ -139,6 +150,8 @@ function open(t) {
   });
   // Buying SOL cannot be funded with SOL, and vice versa for USDC.
   const funds = FUNDS.filter((f) => f.mint !== t.mint);
+  /** The searched token's USD price, carried in from the card. */
+  const tokenUsd = Number.isFinite(t.price) ? t.price : null;
   // Selling means converting a typed amount of the token into base units,
   // which needs its decimals. Records from an older snapshot may lack them.
   const canSell = t.decimals != null;
@@ -201,8 +214,8 @@ function open(t) {
       ? { symbol: fund.symbol, mint: fund.mint, decimals: fund.decimals, key: fund.key }
       : { symbol: t.symbol, mint: t.mint, decimals: t.decimals, key: "token" };
     const recv = buying
-      ? { symbol: t.symbol, decimals: t.decimals }
-      : { symbol: fund.symbol, decimals: fund.decimals };
+      ? { symbol: t.symbol, decimals: t.decimals, key: "token" }
+      : { symbol: fund.symbol, decimals: fund.decimals, key: fund.key };
     const reserve = pay.mint === SOL_MINT ? SOL_RESERVE : 0n;
 
     let current = null;
@@ -548,53 +561,46 @@ function open(t) {
         );
 
       /**
-       * Unit price, quoted whichever way round states a number.
+       * Base units of one side, in dollars.
        *
-       * Selling a memecoin is the case that forces this: one BONK is
-       * 0.0000003 SOL, and "1 Bonk = 0 SOL" is not a rounding of that, it is a
-       * different claim. Inverted it reads 1 SOL = 32,280,110 Bonk, which is
-       * the same rate and survives being printed.
+       * The searched token is priced by the card that opened this dialog; the
+       * other side is always SOL or USDC, priced by the strip the server
+       * renders. Both come from the same index the quote does, so the two
+       * sides are comparable rather than one being an oracle and one a market.
        */
-      function rate(q) {
-        if (pay.decimals == null || recv.decimals == null) return "—";
-        const paid = Number(q.inAmount) / 10 ** pay.decimals;
-        const got = Number(q.outAmount) / 10 ** recv.decimals;
-        if (!paid || !got || !Number.isFinite(paid) || !Number.isFinite(got)) {
-          return "—";
-        }
-        const [unit, per, other] =
-          got >= paid
-            ? [pay.symbol, got / paid, recv.symbol]
-            : [recv.symbol, paid / got, pay.symbol];
-        const shown = per.toLocaleString("en-US", {
-          maximumFractionDigits: per >= 1000 ? 2 : 4,
-        });
-        return `1 ${unit} = ${shown} ${other}`;
+      function toUsd(side, units) {
+        const price = side.key === "token" ? tokenUsd : fundPrice(side.key);
+        if (price == null || side.decimals == null) return NaN;
+        return (Number(units) / 10 ** side.decimals) * price;
       }
 
       function paint(q) {
-        // Bare numbers — the pill beside each one already names the token.
-        payAmt.textContent = pretty(q.inAmount, pay.decimals);
-        recvAmt.textContent =
-          recv.decimals != null ? pretty(q.outAmount, recv.decimals) : "—";
+        // Jupiter values the input side of the trade, which is the figure to
+        // fall back on when we could not price that side ourselves.
+        const spend = toUsd(pay, q.inAmount);
+        const paid = Number.isFinite(spend) ? spend : Number(q.swapUsdValue);
+        const got = toUsd(recv, q.outAmount);
+        const least = toUsd(recv, q.otherAmountThreshold);
 
-        // Jupiter reports impact as a fraction, not a percentage.
+        payAmt.textContent = usd(paid);
+        recvAmt.textContent = usd(got);
+
+        // Impact is a fraction from Jupiter, and it is only worth a row when
+        // it is large enough to cost real money — as money, not as basis points.
         const impact = Number(q.priceImpactPct) * 100;
-        const route = venues(q);
+        const costly = impact >= HIGH_IMPACT_PCT && Number.isFinite(paid);
+
         rows.replaceChildren(
-          detail("Rate", rate(q)),
-          detail(
-            "Minimum received",
-            recv.decimals != null
-              ? `${pretty(q.otherAmountThreshold, recv.decimals)} ${recv.symbol}`
-              : "—",
-          ),
-          detail("Price impact", percent(impact), impact >= HIGH_IMPACT_PCT),
-          detail("Max slippage", `${(q.slippageBps ?? SLIPPAGE_BPS) / 100}%`),
           // The quote's platformFee.amount names the wrong mint often enough
-          // that only the rate is worth stating — see JUP_FEE_ACCOUNT_SOL.
-          ...(feeBps > 0 ? [detail("Platform fee", `${feeBps / 100}%`)] : []),
-          ...(route ? [detail("Route", route)] : []),
+          // that the rate is the only part worth trusting — see
+          // JUP_FEE_ACCOUNT_SOL — so the charge is worked out from it here.
+          ...(feeBps > 0
+            ? [detail("Fee", usd(paid * (feeBps / 10000)))]
+            : []),
+          ...(costly
+            ? [detail("Cost of moving the price", usd(paid * (impact / 100)), true)]
+            : []),
+          detail("Guaranteed minimum", usd(least)),
           detail("Wallet", shortAddr(session.account.address)),
         );
       }
