@@ -7,6 +7,14 @@
  * browser wallet takes the bytes directly.
  */
 
+/**
+ * Only ever reached once a wallet is connected.
+ *
+ * Before that the dialog prices itself from the index figures the page already
+ * carries — see `estimate` in main.js — so opening it tells Jupiter nothing
+ * about a visitor who has agreed to nothing. Once connected, Jupiter is a party
+ * to the trade regardless: it builds the very transaction the wallet signs.
+ */
 const ENDPOINT = "https://lite-api.jup.ag/swap/v1";
 
 /** base64 → bytes, for the transaction Jupiter builds. */

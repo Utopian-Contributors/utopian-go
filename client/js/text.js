@@ -171,6 +171,37 @@ export function appendSanitized(parent, raw) {
   flush();
 }
 
+/**
+ * A URL safe to put in an href or src, or "" if it is not one.
+ *
+ * Every URL rendered on a results page is relayed from Brave — a crawler's
+ * report of what some page said about itself, not something this app minted.
+ * The server passes them through untouched (src/lib/brave.ts), so the scheme
+ * check has to happen where they are used. `javascript:` in an href is script
+ * execution in this origin on click, which on a page hosting a wallet flow is
+ * the whole game; `data:` in an href is a same-tab document the address bar
+ * makes hard to read.
+ *
+ * An allowlist rather than a blocklist: whitespace, control characters and
+ * mixed case are all ways to spell a scheme, and only "is it one of these two"
+ * is a question with a stable answer. Protocol-relative and root-relative URLs
+ * resolve against this origin, which is fine and stays allowed.
+ *
+ * @param {string | undefined | null} value
+ * @returns {string} the URL, or "" when it is not safe to navigate to
+ */
+export function safeUrl(value) {
+  const s = String(value ?? "").trim();
+  if (!s) return "";
+  // No scheme at all — relative to this document, so nothing to check.
+  if (/^(?:[/?#]|$)/.test(s)) return s;
+  // Strip the control characters browsers ignore when parsing a scheme, so
+  // "java\0script:" and "java\tscript:" are read the way the browser reads it.
+  const scheme = s.replace(/[\u0000-\u0020]/g, "").match(/^([a-z][a-z0-9+.-]*):/i);
+  if (!scheme) return s;
+  return /^https?$/i.test(scheme[1]) ? s : "";
+}
+
 /** @param {string | undefined} s */
 export function host(s) {
   try {

@@ -11,7 +11,7 @@ import {
   setStatus,
   showSkeleton,
 } from "./dom.js";
-import { appendSanitized, host, plainText } from "./text.js";
+import { appendSanitized, host, plainText, safeUrl } from "./text.js";
 import { TABS, writeUrl } from "./url.js";
 import { cite, resultCard, snippet, titleLink, videoThumb } from "./pieces.js";
 import { tokenCards } from "./token.js";
@@ -161,7 +161,7 @@ export function createRenderer(state) {
         const sl = el("div", { class: "sl" });
         for (const c of item.cluster) {
           const a = el("a", {
-            href: c.url,
+            href: safeUrl(c.url) || "#",
             target: "_blank",
             rel: "noopener",
             text: plainText(c.title),
@@ -360,7 +360,7 @@ export function createRenderer(state) {
     let shown = 0;
 
     for (const item of items) {
-      const src = item.thumbnail || item.image;
+      const src = safeUrl(item.thumbnail) || safeUrl(item.image);
       if (!src) continue;
 
       const on = sameImage(item, selected);
@@ -435,8 +435,8 @@ export function createRenderer(state) {
     side.replaceChildren();
 
     const panel = el("div", { class: "pn pn-img" });
-    const full = item.image || item.thumbnail || "";
-    const thumb = item.thumbnail || item.image || "";
+    const full = safeUrl(item.image) || safeUrl(item.thumbnail);
+    const thumb = safeUrl(item.thumbnail) || safeUrl(item.image);
 
     panel.append(
       el("button", {
@@ -504,8 +504,9 @@ export function createRenderer(state) {
 
     if (rows.length) {
       const table = el("table", { class: "at" });
-      for (const [k, v, href] of rows) {
+      for (const [k, v, rawHref] of rows) {
         const td = el("td");
+        const href = safeUrl(rawHref);
         if (href) {
           td.append(
             el("a", {
@@ -524,20 +525,21 @@ export function createRenderer(state) {
     }
 
     const actions = el("div", { class: "pf" });
-    if (item.url) {
+    const pageHref = safeUrl(item.url);
+    if (pageHref) {
       actions.append(
         el("a", {
-          href: item.url,
+          href: pageHref,
           target: "_blank",
           rel: "noopener",
           text: "Visit page",
         }),
       );
     }
-    if (item.image || item.thumbnail) {
+    if (full) {
       actions.append(
         el("a", {
-          href: item.image || item.thumbnail || "#",
+          href: full,
           target: "_blank",
           rel: "noopener",
           text: "Open image",
@@ -598,7 +600,7 @@ export function createRenderer(state) {
       more.append(
         el("img", {
           class: "ph",
-          "data-src": box.thumbnail,
+          "data-src": safeUrl(box.thumbnail),
           alt: "",
           loading: "lazy",
         }),
@@ -643,10 +645,11 @@ export function createRenderer(state) {
       fold = true;
       const wrap = el("div", { class: "pf" });
       for (const p of box.profiles) {
-        if (!p.url) continue;
+        const href = safeUrl(p.url);
+        if (!href) continue;
         wrap.append(
           el("a", {
-            href: p.url,
+            href,
             target: "_blank",
             rel: "noopener",
             text: plainText(p.name || p.url),
@@ -694,8 +697,12 @@ export function createRenderer(state) {
     for (const img of root.querySelectorAll("img[data-src]")) {
       const src = img.getAttribute("data-src");
       if (!src) continue;
-      img.setAttribute("src", src);
+      // Re-checked on promotion as well as on write: this reads an attribute
+      // back out of the DOM, so the check belongs where the value becomes a
+      // request rather than only where it was first put there.
+      const url = safeUrl(src);
       img.removeAttribute("data-src");
+      if (url) img.setAttribute("src", url);
     }
   }
 

@@ -75,6 +75,13 @@ const CSS = `
  * change shape between reviewing it and sending it.
  */
 .swx-flip.static{cursor:default;pointer-events:none}
+/*
+ * The exact quantity under the dollar figure it values. Right-aligned to the
+ * amount above it, and quiet — it is the reading you check rather than the one
+ * you take in.
+ */
+.swx-sub{margin-top:2px;text-align:right;font-size:12px;color:var(--f);
+ font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
 .swx-sum{margin-top:12px;border-top:1px solid var(--b);padding-top:8px}
 .swx-row{display:flex;align-items:baseline;justify-content:space-between;
  gap:14px;padding:4px 0;font-size:12.5px}

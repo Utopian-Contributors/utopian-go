@@ -2,6 +2,7 @@ import {
   BRAVE_API_KEY,
   BRAVE_ENDPOINT,
   BRAVE_IMAGES_ENDPOINT,
+  BRAVE_TIMEOUT_MS,
 } from "../config";
 import { plainText } from "./text";
 import {
@@ -26,18 +27,42 @@ async function braveFetch(url: string): Promise<unknown> {
     throw new BraveApiError("No BRAVE_API_KEY set on the server.");
   }
 
-  const res = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "X-Subscription-Token": BRAVE_API_KEY,
-    },
-  });
+  // The whole exchange is guarded, not just the connect. fetch() resolves as
+  // soon as the headers land, so a stall part-way through the body — which is
+  // precisely the slow-upstream case the timeout exists for — aborts out of
+  // res.json(), not out of fetch(). Guarding only the call would report that
+  // one as a 500 "unexpected error", blaming us for an upstream stall.
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "X-Subscription-Token": BRAVE_API_KEY,
+      },
+      signal: AbortSignal.timeout(BRAVE_TIMEOUT_MS),
+    });
 
-  if (!res.ok) {
-    throw new BraveApiError(`Brave API responded ${res.status}`);
+    if (!res.ok) {
+      // Logged, not just returned. A quota exhausted or a key rotated in the
+      // Brave dashboard but not in Railway turns every search on the site into
+      // a 502, and without a line here the process looks perfectly healthy
+      // while the thing it exists to do is completely broken.
+      console.warn(`[brave] responded ${res.status}`);
+      throw new BraveApiError(`Brave API responded ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (err) {
+    // Reported as a Brave failure rather than an unexpected one, so api.ts
+    // answers 502 with the token card intact instead of 500 with nothing.
+    // The cause is deliberately not passed through: it is upstream detail, and
+    // the URL it may carry is one we build from the caller's own query.
+    if (err instanceof BraveApiError) throw err;
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
+    console.warn(`[brave] ${timedOut ? "timed out" : "unreachable"}`);
+    throw new BraveApiError(
+      timedOut ? "Brave API timed out." : "Could not reach the Brave API.",
+    );
   }
-
-  return res.json();
 }
 
 export async function braveSearch(query: string): Promise<SearchApiResponse> {

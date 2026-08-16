@@ -26,7 +26,32 @@ export function isPubkey(value: string): boolean {
  * wallet reopening the dialog twice in a row shouldn't cost two round trips.
  */
 const CACHE_TTL_MS = 5_000;
+
+/**
+ * Ceiling on cached wallets.
+ *
+ * The key is a caller-supplied address that only has to *look* like a pubkey —
+ * isPubkey checks base58 shape, not that the account exists — so an anonymous
+ * caller can mint unlimited distinct keys. Without a bound the five-second
+ * cache is a permanent record of every address ever asked about, which is both
+ * a slow memory leak and a store of wallet addresses this app has no business
+ * keeping. Entries are only ever useful for CACHE_TTL_MS, so the sweep below
+ * discards on age first and only clears wholesale if that frees nothing.
+ */
+const MAX_CACHED_WALLETS = 5_000;
 const cache = new Map<string, { at: number; value: Balances }>();
+
+/** In-flight lookups, so a burst for one wallet costs one RPC round trip. */
+const inFlight = new Map<string, Promise<Balances>>();
+
+function sweepCache(now: number): void {
+  for (const [key, entry] of cache) {
+    if (now - entry.at >= CACHE_TTL_MS) cache.delete(key);
+  }
+  // Everything is younger than the TTL and we are still at the cap: this is a
+  // flood, not a working set. Drop it all rather than grow.
+  if (cache.size >= MAX_CACHED_WALLETS) cache.clear();
+}
 
 interface RpcReply {
   id?: number;
@@ -67,12 +92,35 @@ export async function fetchBalances(
   owner: string,
   mint?: string,
 ): Promise<Balances> {
-  if (!HELIUS_RPC_URL) return {};
+  // No RPC configured is a deployment fault, not an empty wallet. Returning {}
+  // let the dialog read "we looked and found nothing" — which switches off the
+  // affordability check without saying so, and the first the user hears of it
+  // is a transaction their wallet cannot fund. Thrown so the route answers 502
+  // and the client marks the balance unknown.
+  if (!HELIUS_RPC_URL) throw new Error("HELIUS_RPC_URL is not configured");
 
   const cacheKey = mint ? `${owner}:${mint}` : owner;
   const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
 
+  // Concurrent callers asking the same question share one answer. Without this
+  // the cache only collapses requests that arrive after the first has landed,
+  // which is precisely the case a flood does not produce.
+  const pending = inFlight.get(cacheKey);
+  if (pending) return pending;
+
+  const task = lookup(owner, mint, cacheKey).finally(() => {
+    inFlight.delete(cacheKey);
+  });
+  inFlight.set(cacheKey, task);
+  return task;
+}
+
+async function lookup(
+  owner: string,
+  mint: string | undefined,
+  cacheKey: string,
+): Promise<Balances> {
   // One batched request: native lamports, USDC, and the traded mint if asked.
   const calls: unknown[] = [
     { jsonrpc: "2.0", id: 1, method: "getBalance", params: [owner] },
@@ -129,6 +177,8 @@ export async function fetchBalances(
     ...(mint === USDC_MINT && usdc != null ? { token: usdc.toString() } : {}),
   };
 
-  cache.set(cacheKey, { at: Date.now(), value });
+  const now = Date.now();
+  if (cache.size >= MAX_CACHED_WALLETS) sweepCache(now);
+  cache.set(cacheKey, { at: now, value });
   return value;
 }

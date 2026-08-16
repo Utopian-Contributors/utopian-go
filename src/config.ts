@@ -10,6 +10,17 @@ export const PORT = Number(process.env.PORT) || 3000;
  */
 export const SITE_URL = (process.env.SITE_URL || "").replace(/\/+$/, "");
 export const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
+
+/**
+ * How long a search may wait on Brave.
+ *
+ * Every other outbound call in this app is bounded; this one was not, and an
+ * unbounded fetch on the request path is how a slow upstream turns into a
+ * queue of held-open sockets rather than into an error page. Well past Brave's
+ * normal latency, so a timeout means something is actually wrong — and api.ts
+ * already renders that as a 502 with the token card still attached.
+ */
+export const BRAVE_TIMEOUT_MS = 8_000;
 export const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 export const BRAVE_IMAGES_ENDPOINT =
   "https://api.search.brave.com/res/v1/images/search";
@@ -103,7 +114,16 @@ export const TOKEN_TICKS_TIMEOUT_MS = 8_000;
 
 // —— Swap referral ——
 
-/** Swap API V1. Keyless on lite-api; `api.jup.ag` would want an x-api-key. */
+/**
+ * Swap API V1. Keyless on lite-api; `api.jup.ag` would want an x-api-key.
+ *
+ * Keyless means shared: this host answers on a per-IP budget, and the hourly
+ * token index (SOURCES in lib/tokens/jupiter.ts) spends from the same one. So
+ * nothing on the request path may call it per visitor — a proxy in front of
+ * this endpoint would put every visitor's traffic on the server's single IP and
+ * starve the index, which is what every price card on the site is built from.
+ * The browser calls it directly, once a wallet is connected, on its own budget.
+ */
 export const JUP_SWAP_ENDPOINT = "https://lite-api.jup.ag/swap/v1";
 
 /**
@@ -145,10 +165,18 @@ export const JUP_FEE_ACCOUNT_USDC = process.env.JUP_FEE_ACCOUNT_USDC || "";
  * a fat-fingered env var should cost us revenue, not overcharge a user. Note
  * this is the classic Swap V1 path, which has none of Ultra's 50–255 floor.
  */
-export const JUP_FEE_BPS = Math.min(
-  100,
-  Math.max(0, Number(process.env.JUP_FEE_BPS) || 20),
-);
+export const JUP_FEE_BPS = (() => {
+  const raw = process.env.JUP_FEE_BPS;
+  // `Number(raw) || 20` reads an explicit "0" as absent, because 0 is falsy —
+  // so turning the fee off for a promotion or a compliance request silently
+  // kept charging 20 bps, and the boot log agreed with the env var while the
+  // swap disagreed with both. Absent and unparseable fall back; a real number,
+  // including zero, is honoured.
+  if (raw == null || raw.trim() === "") return 20;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 20;
+  return Math.min(100, Math.max(0, parsed));
+})();
 
 /**
  * Liquidity floor for everything that isn't a tokenized real-world asset.

@@ -102,9 +102,31 @@ function saveSnapshot(): void {
 
 // —— Refresh ——
 
+/**
+ * Fraction of the previous index a rebuild must reach to be believed.
+ *
+ * fetchTokenRecords succeeds if *any* source answered, which is the right call
+ * for resilience and the wrong one for adoption: when the verified list — much
+ * the largest — times out and the small ones do not, the rebuild returns a
+ * genuine but tiny index. Adopting it drops most of the site's price cards, and
+ * saveSnapshot then writes that over the good copy, so a restart cannot recover
+ * either. A rebuild this much smaller than what we already hold is treated as a
+ * partial fetch rather than as news about the market.
+ */
+const MIN_REBUILD_RATIO = 0.5;
+
 async function refreshIndex(): Promise<void> {
   try {
     const list = await fetchTokenRecords();
+
+    if (records.length && list.length < records.length * MIN_REBUILD_RATIO) {
+      console.warn(
+        `[tokens] rebuild returned ${list.length} mints against ${records.length} held;` +
+          " treating as a partial fetch and keeping the current index",
+      );
+      return;
+    }
+
     // A rebuild replaces every record object, but last hour's shapes are still
     // last hour's shapes — carry them across so cards keep their line while
     // the refresh below runs, rather than losing it for a few minutes an hour.
@@ -214,6 +236,19 @@ export function lookupToken(query: string): TokenQuote | null {
   return lookupTokens(query, 1)[0] ?? null;
 }
 
+/**
+ * Retry schedule for a cold start with nothing to serve.
+ *
+ * The hourly cadence is right for keeping a working index fresh and badly wrong
+ * for acquiring one: a container that boots while Jupiter is briefly unreachable
+ * has no snapshot and no records, so every price card and the entire home strip
+ * are blank — and the next attempt is an hour away. These back off from seconds
+ * to minutes, so a blip costs a moment rather than the rest of the hour, and a
+ * genuine outage is not hammered. Only used while the index is *empty*; once
+ * anything is held, a stale price beats a retry storm and the hourly job resumes.
+ */
+const COLD_RETRY_MS = [5_000, 15_000, 60_000, 300_000];
+
 /** Load any snapshot, then refresh now and hourly thereafter. */
 export function startTokenIndex(): void {
   if (loadSnapshot()) {
@@ -221,8 +256,29 @@ export function startTokenIndex(): void {
     console.log(`[tokens] loaded ${records.length} mints from snapshot (${age}m old)`);
   }
 
-  void refreshIndex();
   const timer = setInterval(() => void refreshIndex(), TOKEN_INDEX_INTERVAL_MS);
   // Don't hold the process open for the index alone.
   timer.unref();
+
+  void (async () => {
+    await refreshIndex();
+    for (const delay of COLD_RETRY_MS) {
+      if (records.length) return;
+      console.warn(
+        `[tokens] index still empty; retrying in ${Math.round(delay / 1000)}s` +
+          " (no prices are being served until it fills)",
+      );
+      await new Promise((resolve) => {
+        const t = setTimeout(resolve, delay);
+        t.unref();
+      });
+      await refreshIndex();
+    }
+    if (!records.length) {
+      console.error(
+        "[tokens] index empty after every cold-start retry; falling back to the" +
+          " hourly schedule. Search works; price cards and the home strip do not.",
+      );
+    }
+  })();
 }

@@ -2,7 +2,7 @@
  * Shared SERP building blocks (cite, title, snippet, video thumb).
  */
 import { el } from "./dom.js";
-import { appendSanitized, displayPath, formatAge, host, plainText } from "./text.js";
+import { appendSanitized, displayPath, formatAge, host, plainText, safeUrl } from "./text.js";
 
 /** Stagger entrance animation delay step (ms). */
 export const STAGGER_MS = 32;
@@ -26,7 +26,7 @@ export function titleLink(item) {
     "h3",
     null,
     el("a", {
-      href: item.url || "#",
+      href: safeUrl(item.url) || "#",
       target: "_blank",
       rel: "noopener",
       text: plainText(item.title || item.url || "Untitled"),
@@ -59,8 +59,9 @@ function noPreviewEl() {
 
 /** @param {string | null | undefined} src */
 export function videoThumb(src) {
-  if (!src) return noPreviewEl();
-  const img = el("img", { src, alt: "", loading: "lazy" });
+  const url = safeUrl(src);
+  if (!url) return noPreviewEl();
+  const img = el("img", { src: url, alt: "", loading: "lazy" });
   img.addEventListener(
     "error",
     () => {

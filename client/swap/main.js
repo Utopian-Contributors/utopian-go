@@ -173,7 +173,13 @@ function open(t) {
 
     for (const wallet of found) {
       const row = el("button", { type: "button" });
-      if (wallet.icon) row.append(el("img", { src: wallet.icon, alt: "" }));
+      // Data URIs only. Wallet Standard supplies the icon inline, and this is a
+      // pre-connect screen — an extension offering a remote URL instead would
+      // make the browser fetch it, which is exactly the third-party contact the
+      // dialog otherwise no longer makes before a wallet is chosen.
+      if (/^data:image\//i.test(wallet.icon ?? "")) {
+        row.append(el("img", { src: wallet.icon, alt: "" }));
+      }
       row.append(el("span", { text: wallet.name }));
       row.addEventListener("click", async () => {
         row.disabled = true;
@@ -221,6 +227,17 @@ function open(t) {
     let current = null;
     let inflight = null;
     let busy = false;
+    /**
+     * The balance lookup was refused, so `balances` is empty for a reason that
+     * is not "this wallet holds nothing".
+     *
+     * Kept as form state rather than announced once, because the announcement
+     * cannot survive: `note` belongs to the quote, which repaints it on every
+     * keystroke and every refresh. An unknown balance has to stay legible for
+     * as long as it is unknown — it is the whole reason the "Not enough" check
+     * below is not running.
+     */
+    let balanceUnknown = false;
 
     const balance = el("button", { class: "swx-bal", type: "button", text: "Balance —" });
     const amount = el("input", {
@@ -345,6 +362,43 @@ function open(t) {
     }
 
     /**
+     * Base units of one side, in dollars.
+     *
+     * The searched token is priced by the card that opened this dialog; the
+     * other side is always SOL or USDC, priced by the strip the server renders.
+     * Both come from the same index the quote does, so the two sides are
+     * comparable rather than one being an oracle and one a market.
+     */
+    function toUsd(side, units) {
+      const price = side.key === "token" ? tokenUsd : fundPrice(side.key);
+      if (price == null || side.decimals == null) return NaN;
+      return (Number(units) / 10 ** side.decimals) * price;
+    }
+
+    /**
+     * What this trade is worth, worked out from prices the page already has.
+     *
+     * Used only before a wallet is connected, and it is what lets that be true:
+     * the dialog opens already answering "what would I get", and the honest way
+     * to answer it at that moment is with the numbers the server already sent —
+     * the card's own price and the ticker's — rather than by asking a third
+     * party about a visitor who has agreed to nothing. No route, no slippage,
+     * no price impact; those need a real quote, and a real quote is what the
+     * connected form fetches a moment later.
+     *
+     * @returns {number|null} base units of the receive side, or null if either
+     *   side is unpriced — in which case the field says so rather than guessing.
+     */
+    function estimate(units) {
+      const spent = toUsd(pay, units);
+      const price = recv.key === "token" ? tokenUsd : fundPrice(recv.key);
+      if (!Number.isFinite(spent) || price == null || recv.decimals == null) {
+        return null;
+      }
+      return (spent / price) * 10 ** recv.decimals;
+    }
+
+    /**
      * Buying assumes a fixed position sized to the wallet; selling assumes the
      * whole holding, since exiting a position usually means exiting it.
      */
@@ -359,8 +413,11 @@ function open(t) {
       // reads like a zero rather than an unknown.
       balance.hidden = !session;
       const raw = balances[pay.key];
-      balance.textContent =
-        raw == null ? "Balance —" : `Balance ${pretty(raw, pay.decimals)}`;
+      balance.textContent = balanceUnknown
+        ? "Balance unknown"
+        : raw == null
+          ? "Balance —"
+          : `Balance ${pretty(raw, pay.decimals)}`;
     }
 
     async function startConnect() {
@@ -391,12 +448,36 @@ function open(t) {
 
     async function loadBalances() {
       try {
-        const url =
-          `/api/balances?owner=${encodeURIComponent(session.account.address)}` +
-          `&mint=${encodeURIComponent(t.mint)}`;
-        const res = await fetch(url, { headers: { Accept: "application/json" } });
+        // POSTed rather than queried. A wallet address in a query string is
+        // written to the hosting provider's request log beside the caller's IP,
+        // which is how a site that keeps no user records ends up holding a
+        // record of who owns which wallet. A body is not logged.
+        const res = await fetch("/api/balances", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            owner: session.account.address,
+            mint: t.mint,
+          }),
+        });
+        // Every way this can fail means the same thing to the form — throttled,
+        // upstream error, dropped connection, unreadable body — so they are
+        // funnelled into one handler below rather than each being given its
+        // own. A lookup that did not happen must never be mistaken for one that
+        // came back empty: `balances` stays {}, `spendable()` returns null, and
+        // the "Not enough" check silently stops running.
+        if (!res.ok) throw new Error(`balances ${res.status}`);
         const data = await res.json();
         if (data?.error) throw new Error(data.error);
+        balanceUnknown = false;
+        // The reply outlived the screen that asked for it. `typed` is read by
+        // the confirmation screen's re-quote, so writing it here would change
+        // the size of a trade someone is in the middle of agreeing to — the
+        // balance itself is still worth keeping, the assumed position is not.
+        if (!receive.isConnected) {
+          balances = data;
+          return;
+        }
         balances = data;
         showBalance();
         // Now that the wallet's actual depth is known, revise the assumed
@@ -410,8 +491,23 @@ function open(t) {
           }
         }
       } catch {
-        // Unknown is not zero: leave the field usable and let Jupiter decide.
+        // Unknown is not zero: leave the field usable and let Jupiter decide —
+        // but do not let a check that never ran read as one that passed.
+        balanceUnknown = true;
+        if (!receive.isConnected) return;
+        showBalance();
+        // The quote may already have painted its note before this failed, so
+        // restate it rather than re-quoting to say the same thing.
+        if (current) setNote(quoteNote());
       }
+    }
+
+    /** The standing note for a priced form: slippage, plus any live caveat. */
+    function quoteNote() {
+      const slippage = `${SLIPPAGE_BPS / 100}% max slippage`;
+      return balanceUnknown
+        ? `${slippage} — balance unknown, check you can cover this`
+        : slippage;
     }
 
     function label() {
@@ -433,6 +529,12 @@ function open(t) {
     }
 
     async function refresh() {
+      // The confirmation screen replaces the form's nodes but not its closures,
+      // so an /api/balances reply that lands late can still reach this and
+      // re-price the trade underneath a screen the user is reading — and
+      // `current` is what the Buy button signs. Detachment is the reliable
+      // signal that this form is no longer the mounted screen.
+      if (!receive.isConnected) return;
       inflight?.abort();
       current = null;
       const units = toUnits(amount.value, pay.decimals);
@@ -454,6 +556,22 @@ function open(t) {
         return;
       }
 
+      // Nothing has been connected, so nothing about this visitor goes anywhere
+      // for a number that is only here to start the conversation. The estimate
+      // comes off prices the page already carries; the real quote is fetched
+      // the moment there is a wallet to trade with, which is also the moment
+      // Jupiter becomes a party to the trade rather than a stranger being told
+      // about one. `current` stays null, so nothing signable is ever built from
+      // an estimate.
+      if (!session) {
+        const out = estimate(units);
+        receive.textContent = out == null ? "—" : pretty(out, recv.decimals);
+        receive.className = out == null ? "swx-recv dim" : "swx-recv";
+        setNote("Estimate — connect a wallet to price this trade");
+        label();
+        return;
+      }
+
       receive.textContent = "…";
       receive.className = "swx-recv dim";
       const controller = new AbortController();
@@ -467,12 +585,18 @@ function open(t) {
           feeBps,
           signal: controller.signal,
         });
-        if (controller !== inflight) return;
+        // Detachment is re-checked here as well as on entry: a quote in flight
+        // when the confirmation screen mounts would otherwise land afterwards
+        // and replace `current` — the very object the Buy button signs — with
+        // one whose figures were never shown to anyone.
+        if (controller !== inflight || !receive.isConnected) return;
         current = q;
         receive.textContent =
           recv.decimals != null ? pretty(q.outAmount, recv.decimals) : "—";
         receive.className = "swx-recv";
-        setNote(`${SLIPPAGE_BPS / 100}% max slippage`);
+        // The slippage line owns this element on every quote, so an unknown
+        // balance has to ride along with it or be erased by it — see quoteNote.
+        setNote(quoteNote());
       } catch (err) {
         if (controller !== inflight || err?.name === "AbortError") return;
         receive.textContent = "0.0";
@@ -530,6 +654,13 @@ function open(t) {
 
       const payAmt = el("div", { class: "swx-recv" });
       const recvAmt = el("div", { class: "swx-recv" });
+      // The dollar figures above are our own index's valuation; these are the
+      // quantities the transaction actually moves, read straight off the quote
+      // being signed. Both belong on screen: dollars are what the trade means,
+      // token amounts are what it does, and only the second is what the wallet
+      // will be asked to approve.
+      const payUnits = el("div", { class: "swx-sub" });
+      const recvUnits = el("div", { class: "swx-sub" });
       const rows = el("div", { class: "swx-sum" });
       const rnote = el("div", { class: "swx-note" });
       const go = el("button", {
@@ -560,35 +691,64 @@ function open(t) {
           el("span", { class: `swx-v${warn ? " warn" : ""}`, text: value }),
         );
 
+      /** Base units and symbol, e.g. "1.0000 SOL". Empty when decimals are unknown. */
+      function units(side, raw) {
+        return side.decimals == null ? "" : `${pretty(raw, side.decimals)} ${side.symbol}`;
+      }
+
       /**
-       * Base units of one side, in dollars.
+       * A floor, stated as a floor.
        *
-       * The searched token is priced by the card that opened this dialog; the
-       * other side is always SOL or USDC, priced by the strip the server
-       * renders. Both come from the same index the quote does, so the two
-       * sides are comparable rather than one being an oracle and one a market.
+       * `pretty` rounds to nearest, which is right for a figure that only has
+       * to read well and wrong for this one: rounding 1.23456 up to 1.2346
+       * prints a minimum fractionally *above* the amount the chain will
+       * actually enforce, so the one number on the screen that carries a
+       * promise would be the one number that could be short. Truncating can
+       * only ever understate it.
        */
-      function toUsd(side, units) {
-        const price = side.key === "token" ? tokenUsd : fundPrice(side.key);
-        if (price == null || side.decimals == null) return NaN;
-        return (Number(units) / 10 ** side.decimals) * price;
+      function atLeast(side, raw) {
+        if (side.decimals == null) return "";
+        const exact = toDecimal(String(raw), side.decimals);
+        const [whole, frac = ""] = exact.split(".");
+        // Same visual precision as pretty(), reached by dropping digits rather
+        // than by rounding them.
+        const n = Number(exact);
+        const keep = n >= 1000 ? 2 : n >= 1 ? 4 : 6;
+        const cut = frac.slice(0, keep).replace(/0+$/, "");
+        const grouped = Number(whole).toLocaleString("en-US");
+        return `${cut ? `${grouped}.${cut}` : grouped} ${side.symbol}`;
       }
 
       function paint(q) {
-        // Jupiter values the input side of the trade, which is the figure to
-        // fall back on when we could not price that side ourselves.
+        // Jupiter's valuation of the input side leads, and ours is the fallback
+        // — the opposite way round from how this started, for a reason worth
+        // stating. Our figure comes from the price strip the server rendered
+        // into the page, and that strip is written once at page load and never
+        // touched again: the SPA navigates with pushState, so a tab left open
+        // all day still converts at breakfast's SOL price. `swapUsdValue` rides
+        // on the quote itself and is therefore exactly as fresh as the trade it
+        // is describing. Ours is still worth keeping for the case Jupiter omits
+        // it, which is the case it was written for.
+        const quoted = Number(q.swapUsdValue);
         const spend = toUsd(pay, q.inAmount);
-        const paid = Number.isFinite(spend) ? spend : Number(q.swapUsdValue);
+        const paid = Number.isFinite(quoted) && quoted > 0 ? quoted : spend;
         const got = toUsd(recv, q.outAmount);
-        const least = toUsd(recv, q.otherAmountThreshold);
 
         payAmt.textContent = usd(paid);
         recvAmt.textContent = usd(got);
+        payUnits.textContent = units(pay, q.inAmount);
+        recvUnits.textContent = units(recv, q.outAmount);
 
         // Impact is a fraction from Jupiter, and it is only worth a row when
         // it is large enough to cost real money — as money, not as basis points.
         const impact = Number(q.priceImpactPct) * 100;
         const costly = impact >= HIGH_IMPACT_PCT && Number.isFinite(paid);
+
+        // Stated in tokens, not dollars. This is the one number on the screen
+        // the chain actually enforces — the transaction reverts below it — and
+        // converting it through our own price index would restate a hard
+        // guarantee as an estimate that moves with a number we control.
+        const least = atLeast(recv, q.otherAmountThreshold);
 
         rows.replaceChildren(
           // The quote's platformFee.amount names the wrong mint often enough
@@ -600,7 +760,7 @@ function open(t) {
           ...(costly
             ? [detail("Cost of moving the price", usd(paid * (impact / 100)), true)]
             : []),
-          detail("Guaranteed minimum", usd(least)),
+          ...(least ? [detail("Guaranteed minimum", least)] : []),
           detail("Wallet", shortAddr(session.account.address)),
         );
       }
@@ -646,6 +806,7 @@ function open(t) {
             el("span", { class: "swx-lock", text: pay.symbol }),
             payAmt,
           ),
+          payUnits,
         ),
         el(
           "div",
@@ -662,6 +823,7 @@ function open(t) {
             el("span", { class: "swx-lock", text: recv.symbol }),
             recvAmt,
           ),
+          recvUnits,
         ),
         rows,
         go,
@@ -698,16 +860,24 @@ function open(t) {
           });
           const sig = toBase58(await signAndSend(session.wallet, session.account, tx));
           done = true;
+          // "Sent", not "Bought". signAndSend resolves when the wallet has
+          // broadcast the transaction, which is not the same as it landing and
+          // not the same as it succeeding: a swap carries the quote's
+          // otherAmountThreshold and reverts on-chain if the route settles
+          // below it, and a transaction can also expire without landing at all.
+          // This app holds no RPC of its own to ask with — the wallet does the
+          // sending — so the honest claim is the one we can actually make, and
+          // the link is how someone checks the rest.
           rnote.replaceChildren(
             el("a", {
               href: `https://solscan.io/tx/${sig}`,
               target: "_blank",
               rel: "noopener",
-              text: "View transaction",
+              text: "Check the transaction",
             }),
           );
           rnote.className = "swx-note ok";
-          go.textContent = `${buying ? "Bought" : "Sold"} ${t.symbol}`;
+          go.textContent = `${buying ? "Buy" : "Sell"} sent`;
           current = null;
           // Re-arm sized to what's left, so trading again is one click.
           touched = false;
