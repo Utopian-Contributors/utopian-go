@@ -10,12 +10,17 @@
  *   6. Report the budget against a TCP initial window
  *
  * Budget strategy (see brand.md):
- *   Only the shell has to fit the *initial* window. Everything else is
+ *   Only a document has to fit the *initial* window. Everything else is
  *   requested after the HTML has been parsed — and therefore after it has been
  *   ACKed — so it rides either a second connection with its own fresh window
  *   (HTTP/1.1) or one that slow start has already grown past ten segments
- *   (HTTP/2). Summing the shell with its subresources measures a flight that
+ *   (HTTP/2). Summing a document with its subresources measures a flight that
  *   never happens; each gets its own budget instead.
+ *
+ *   There are two documents. The search shell is one; the wallet page is a
+ *   second, with its own stylesheet and its own bundle, because it shares
+ *   almost nothing with search and serving it app.css to use a tenth of it
+ *   would cost more than the whole page weighs.
  */
 import * as esbuild from "esbuild";
 import { minify as minifyHtml } from "html-minifier-terser";
@@ -64,27 +69,58 @@ const INIT_WINDOW = 14_600;
 const HEADER_RESERVE = 350;
 const TICKER_RESERVE = 300;
 
-/** What the shell may weigh compressed, and its parse-weight guardrail. */
-const SHELL = {
-  file: "index.html",
-  gzip: INIT_WINDOW - HEADER_RESERVE - TICKER_RESERVE,
-  raw: 49_152, // soft: inlined CSS is cheap to parse, but not free
-};
+/**
+ * What any one first-flight response may weigh.
+ *
+ * Derived rather than picked. A document goes out on a cold connection and gets
+ * the whole ten segments; a bundle discovered while parsing that document goes
+ * out on a connection whose window has already grown past ten (HTTP/2, after
+ * the document was ACKed) or on a second connection with a fresh ten
+ * (HTTP/1.1). Both land in one flight under the same ceiling, so both are
+ * measured against the same number.
+ *
+ * app.js used to carry a hardcoded 8,192 here, inherited from an older model
+ * that summed every asset into a single flight and therefore had to ration the
+ * window between them. That model is gone — see the strategy note at the top —
+ * but the number outlived it and had become a ceiling with no physics behind
+ * it. The parse-weight guardrails below are what actually bound how much code
+ * a page may carry; this bounds what it costs to deliver.
+ */
+const FLIGHT = INIT_WINDOW - HEADER_RESERVE;
 
 /**
- * Fetched once the shell is parsed. Each rides its own initial window, so each
- * is checked alone — never summed against the shell.
+ * The pages, each with the document that must paint off the first flight and
+ * the bundles that ride the second one.
+ *
+ * `raw` is a soft guardrail on parse and compile cost, not on transfer — a
+ * budget that gzip alone cannot express, since the cheapest bytes to send are
+ * often the most repetitive ones to parse.
  */
-const PARALLEL = [
-  { file: "app.js", gzip: 8_192, raw: 24_576 },
+const PAGES = [
+  {
+    name: "Search",
+    doc: {
+      file: "index.html",
+      // Less the strip the server injects per request; see TICKER_RESERVE.
+      gzip: FLIGHT - TICKER_RESERVE,
+      raw: 49_152, // soft: inlined CSS is cheap to parse, but not free
+    },
+    parallel: [{ file: "app.js", gzip: FLIGHT, raw: 24_576 }],
+  },
+  {
+    name: "Wallet",
+    doc: { file: "wallet.html", gzip: FLIGHT, raw: 32_768 },
+    parallel: [{ file: "wallet.js", gzip: FLIGHT, raw: 16_384 }],
+  },
 ];
 
 /**
  * Fetched on interaction, never on first paint. Reported, not budgeted: the
- * buy panel only loads once someone presses Buy, and counting it against a
- * first-load window would be measuring bytes nobody waits for.
+ * buy panel only loads once someone presses Buy and the wallet picker only
+ * once someone presses Login, so counting either against a first-load window
+ * would be measuring bytes nobody waits for.
  */
-const LAZY = ["swap.js"];
+const LAZY = ["swap.js", "connect.js"];
 
 /**
  * The legal documents: readable HTML under client/legal/, published as the
@@ -117,9 +153,21 @@ const STATIC_EXT = new Set([".png", ".svg", ".ico", ".webp", ".jpg", ".jpeg"]);
 
 /**
  * Extensions the server looks for a precompressed sibling of. Kept in sync
- * with PRECOMPRESSED in src/server.ts.
+ * with PRECOMPRESSED_EXT in src/server.ts.
  */
 const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
+
+/**
+ * Documents precompressed by name rather than by extension.
+ *
+ * index.html is deliberately absent: it is never served as a file. The server
+ * holds it in memory, renders the price strip and the body class into it per
+ * request, and compresses the result itself — a .br sibling of the unrendered
+ * shell would be a copy with no prices and no referral accounts sitting in
+ * public/ waiting for something to serve it by mistake. The wallet page has no
+ * per-request content at all, so for it the file *is* the response.
+ */
+const PRECOMPRESS_HTML = ["wallet.html"];
 
 const watch = process.argv.includes("--watch");
 
@@ -145,6 +193,24 @@ const swapOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "swap", "main.js")],
   outfile: path.join(outDir, "swap.js"),
+};
+
+/**
+ * The wallet picker. Its own bundle rather than part of app.js because most
+ * visitors never press Login, and rather than part of swap.js because the
+ * wallet page needs it without needing a quote engine.
+ */
+const connectOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "connect", "main.js")],
+  outfile: path.join(outDir, "connect.js"),
+};
+
+/** The wallet page's own bundle. Shares helpers with app.js, not bytes. */
+const walletOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "wallet", "main.js")],
+  outfile: path.join(outDir, "wallet.js"),
 };
 
 /** @returns {Promise<string>} */
@@ -255,12 +321,25 @@ function inlineWordmark() {
   return svg.replace(/^<svg /, '<svg class="lg-mark" aria-hidden="true" ');
 }
 
-async function buildCss() {
-  const source = readFileSync(path.join(clientDir, "app.css"), "utf8");
+/**
+ * A page's stylesheet, plus the account control's.
+ *
+ * acct.css is appended to both rather than living in either, because the
+ * control appears on both pages and a second copy of its rules is a second
+ * chance for the header to look different depending on where you are standing.
+ * Concatenated at build time rather than fetched as a second file: it is a few
+ * hundred bytes, and both stylesheets are inlined into their document anyway.
+ *
+ * @param {string} name page stylesheet under client/
+ */
+async function buildCss(name) {
+  const source =
+    readFileSync(path.join(clientDir, name), "utf8") +
+    readFileSync(path.join(clientDir, "acct.css"), "utf8");
   return minifyCss(source);
 }
 
-async function buildHtml(css, jsHash, swapHash) {
+async function buildHtml(css, jsHash, swapHash, connectHash) {
   let raw = readFileSync(path.join(clientDir, "index.html"), "utf8");
   verifyLoadingChrome(raw);
 
@@ -287,15 +366,26 @@ async function buildHtml(css, jsHash, swapHash) {
     `src="/app.js?v=${jsHash}"`,
     "app.js src",
   );
-  // The panel is fetched by JS, not a tag, so its hash rides in an attribute.
+  // These are fetched by JS, not by a tag, so their hashes ride in attributes.
   raw = replaceOnce(
     raw,
     /data-sw="\/swap\.js"/,
     `data-sw="/swap.js?v=${swapHash}"`,
     "swap.js attribute",
   );
+  raw = replaceOnce(
+    raw,
+    /data-cn="\/connect\.js"/,
+    `data-cn="/connect.js?v=${connectHash}"`,
+    "connect.js attribute",
+  );
 
-  const min = await minifyHtml(raw, {
+  writeFileSync(path.join(outDir, "index.html"), await minifyDoc(raw));
+}
+
+/** One HTML minifier configuration, so the two documents cannot drift. */
+function minifyDoc(raw) {
+  return minifyHtml(raw, {
     collapseWhitespace: true,
     removeComments: true,
     removeRedundantAttributes: true,
@@ -313,8 +403,54 @@ async function buildHtml(css, jsHash, swapHash) {
     removeAttributeQuotes: false,
     useShortDoctype: true,
   });
+}
 
-  writeFileSync(path.join(outDir, "index.html"), min);
+/**
+ * The wallet page, built the same way the shell is and for the same reason:
+ * its stylesheet is inlined so the page paints off the first flight, and its
+ * two bundle URLs are fingerprinted so a deploy cannot be served stale ones.
+ *
+ * Unlike the shell it is never rendered per request — it carries no
+ * server-side state, because the server does not know whose wallet it is. That
+ * is what lets it be a plain precompressed file rather than a template.
+ */
+async function buildWalletHtml(css, walletHash, connectHash, swapHash) {
+  let raw = readFileSync(path.join(clientDir, "wallet.html"), "utf8");
+
+  raw = replaceOnce(
+    raw,
+    /<link rel="stylesheet" href="\/wallet\.css"\s*\/?>/,
+    `<style>${css}</style>`,
+    "wallet stylesheet link",
+  );
+  raw = replaceOnce(
+    raw,
+    /<img\b[^>]*class="lg-mark"[^>]*\/>/,
+    inlineWordmark(),
+    "wallet wordmark img",
+  );
+  raw = replaceOnce(
+    raw,
+    /src="\/wallet\.js"/,
+    `src="/wallet.js?v=${walletHash}"`,
+    "wallet.js src",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-cn="\/connect\.js"/,
+    `data-cn="/connect.js?v=${connectHash}"`,
+    "wallet connect.js attribute",
+  );
+  // Positions carry buy and sell controls, so this page opens the same trade
+  // dialog the price cards do.
+  raw = replaceOnce(
+    raw,
+    /data-sw="\/swap\.js"/,
+    `data-sw="/swap.js?v=${swapHash}"`,
+    "wallet swap.js attribute",
+  );
+
+  writeFileSync(path.join(outDir, "wallet.html"), await minifyDoc(raw));
 }
 
 /** Typeset the legal documents into public/ as PDFs. */
@@ -340,9 +476,12 @@ function copyStatic() {
     if (!STATIC_EXT.has(ext)) continue;
     copyFileSync(path.join(clientDir, name), path.join(outDir, name));
   }
-  // The stylesheet lives in the shell now; drop any file an older build left.
-  for (const stale of ["app.css", "app.css.br", "app.css.gz"]) {
-    rmSync(path.join(outDir, stale), { force: true });
+  // Both stylesheets live inside their document now; drop anything an older
+  // build left behind, so nothing can be served a copy the page does not use.
+  for (const base of ["app.css", "wallet.css"]) {
+    for (const stale of [base, `${base}.br`, `${base}.gz`]) {
+      rmSync(path.join(outDir, stale), { force: true });
+    }
   }
 }
 
@@ -370,11 +509,12 @@ function gzip(buf) {
  */
 function precompress() {
   for (const name of readdirSync(outDir)) {
-    if (!PRECOMPRESS_EXT.has(path.extname(name).toLowerCase())) continue;
+    const ext = path.extname(name).toLowerCase();
+    if (!PRECOMPRESS_EXT.has(ext) && !PRECOMPRESS_HTML.includes(name)) continue;
     const buf = readFileSync(path.join(outDir, name));
-    for (const [ext, compress] of [[".br", brotli], [".gz", gzip]]) {
+    for (const [suffix, compress] of [[".br", brotli], [".gz", gzip]]) {
       const out = compress(buf);
-      const dest = path.join(outDir, name + ext);
+      const dest = path.join(outDir, name + suffix);
       // A sibling larger than the source would only cost the client bytes.
       if (out.length < buf.length) writeFileSync(dest, out);
       else rmSync(dest, { force: true });
@@ -416,30 +556,48 @@ function reportSize() {
     return { m, line: row(entry.file, m, !gOk ? "OVER" : !rOk ? "OVER raw" : "OK") };
   }
 
-  const shell = check(SHELL);
-
   console.log(
-    `\nShell — must fit one TCP initial window (${INIT_WINDOW} B = 10 × 1460 MSS,` +
-      ` RFC 6928)\n` +
-      `  less ${HEADER_RESERVE} B response headers and ${TICKER_RESERVE} B` +
-      ` server-injected price strip → ${SHELL.gzip} B for the document:`,
-  );
-  console.log(shell.line);
-  console.log(
-    `  ${"headroom".padEnd(14)} ${fmt(SHELL.gzip - shell.m.gzip)} B gzip,` +
-      ` ${fmt(SHELL.gzip - shell.m.br)} B brotli`,
+    `\nEvery first-flight response must fit one TCP initial window` +
+      ` (${INIT_WINDOW} B = 10 ×\n` +
+      `  1460 MSS, RFC 6928), less ${HEADER_RESERVE} B of response headers` +
+      ` → ${FLIGHT} B each. A bundle\n` +
+      `  is discovered only once its document has been parsed and therefore` +
+      ` ACKed, so it\n` +
+      `  rides a second connection's fresh window or a grown one — never the` +
+      ` document's.`,
   );
 
-  console.log(
-    `\nParallel — requested after the shell parses, so each gets its own` +
-      ` window (HTTP/1.1: a\n` +
-      `  second connection; HTTP/2: one slow start has already grown).` +
-      ` Budgeted per file:`,
+  for (const page of PAGES) {
+    if (!existsSync(path.join(outDir, page.doc.file))) continue;
+
+    const doc = check(page.doc);
+    const reserved =
+      page.doc.gzip === FLIGHT
+        ? ""
+        : `, less ${FLIGHT - page.doc.gzip} B of server-injected markup`;
+    console.log(`\n${page.name} — document (${page.doc.gzip} B${reserved}):`);
+    console.log(doc.line);
+    console.log(
+      `  ${"headroom".padEnd(14)} ${fmt(page.doc.gzip - doc.m.gzip)} B gzip,` +
+        ` ${fmt(page.doc.gzip - doc.m.br)} B brotli`,
+    );
+
+    const bundles = page.parallel.filter((e) =>
+      existsSync(path.join(outDir, e.file)),
+    );
+    if (!bundles.length) continue;
+    console.log(`  fetched in parallel, each budgeted alone:`);
+    for (const entry of bundles) console.log(check(entry).line);
+  }
+
+  const statics = STATIC_FIRST_LOAD.filter((f) =>
+    existsSync(path.join(outDir, f)),
   );
-  for (const entry of PARALLEL) console.log(check(entry).line);
-  for (const file of STATIC_FIRST_LOAD) {
-    if (!existsSync(path.join(outDir, file))) continue;
-    console.log(row(file, measure(file), "not render-blocking"));
+  if (statics.length) {
+    console.log(`\nAlso on first load, but nothing waits on it:`);
+    for (const file of statics) {
+      console.log(row(file, measure(file), "not render-blocking"));
+    }
   }
 
   const rows = LAZY.filter((f) => existsSync(path.join(outDir, f)));
@@ -463,11 +621,13 @@ function reportSize() {
   }
 
   if (hard.length) {
+    const docs = PAGES.map((pg) => pg.doc.file);
+    const overDoc = hard.filter((h) => docs.some((d) => h.startsWith(d)));
     console.log(`\n  ✗ Over budget: ${hard.join(", ")}`);
     console.log(
-      `    ${hard.length === 1 && hard[0].startsWith("index.html")
-        ? "The shell no longer fits one initial window — every cold load pays an\n" +
-          "    extra round trip before first paint."
+      `    ${overDoc.length === hard.length
+        ? "A document no longer fits one initial window — every cold load of it\n" +
+          "    pays an extra round trip before first paint."
         : "Trim before shipping."}\n`,
     );
     process.exitCode = 1;
@@ -479,21 +639,33 @@ function reportSize() {
     console.log(`    Compressed sizes are fine — prefer shrinking the source.\n`);
   }
 
-  console.log(`\n  ✓ Shell paints off the first flight; no subresource blocks it.\n`);
+  console.log(
+    `\n  ✓ Every document paints off its first flight; no subresource blocks one.\n`,
+  );
   process.exitCode = 0;
 }
 
 async function buildAssets() {
   copyStatic();
-  // CSS and JS first: the shell inlines the one and fingerprints the other.
-  const [, , css] = await Promise.all([
+  // CSS and JS first: each document inlines a stylesheet and fingerprints the
+  // bundles it names.
+  const [, , , , css, walletCss] = await Promise.all([
     esbuild.build(jsOpts),
     esbuild.build(swapOpts),
-    buildCss(),
+    esbuild.build(connectOpts),
+    esbuild.build(walletOpts),
+    buildCss("app.css"),
+    buildCss("wallet.css"),
   ]);
-  const jsHash = contentHash(readFileSync(path.join(outDir, "app.js")));
-  const swapHash = contentHash(readFileSync(path.join(outDir, "swap.js")));
-  await buildHtml(css, jsHash, swapHash);
+
+  const hash = (file) => contentHash(readFileSync(path.join(outDir, file)));
+  const connectHash = hash("connect.js");
+  const swapHash = hash("swap.js");
+
+  await Promise.all([
+    buildHtml(css, hash("app.js"), swapHash, connectHash),
+    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash),
+  ]);
   buildLegal();
   precompress();
 }
