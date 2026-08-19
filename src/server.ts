@@ -274,8 +274,19 @@ function loadShell() {
       );
     }
     resShell = buildResShell(shell);
-  } catch {
+  } catch (err) {
     // Client not built yet; the request handler falls back to sendFile.
+    //
+    // Said out loud rather than swallowed. The fallback is quiet by design and
+    // indistinguishable from a healthy server at a glance — the page still
+    // paints, and every static asset it names is still there — but what it
+    // serves is the *unrendered* shell: no price strip, no fund prices for the
+    // trade dialog to convert its dollars with, no referral accounts, and
+    // `class="home"` on results URLs. On an unbuilt tree that is expected and
+    // this line is the answer to "why is the page bare"; mid-run it means a
+    // read lost a race with the build replacing the file, and without the line
+    // there is nothing at all to connect a missing ticker strip to its cause.
+    console.warn("[shell] load failed — serving the unrendered shell:", err);
     shell = "";
     resShell = "";
   }
@@ -284,9 +295,26 @@ function loadShell() {
 loadShell();
 try {
   // Picks up client rebuilds in dev without polling on the request path.
-  watch(indexPath, { persistent: false }, loadShell);
+  //
+  // The directory, not the file. A build does not write index.html in place, it
+  // replaces it — and a watch bound to the file follows the old inode, so after
+  // the first rebuild it is watching something nobody will ever write to again.
+  // That is what turns one unlucky read during the swap into a permanent
+  // condition: the shell latches empty, and the event that would have refilled
+  // it can no longer arrive. The directory's own inode survives the swap, so
+  // every subsequent write is another chance to recover.
+  //
+  // The .br/.gz siblings are written just after index.html itself and match the
+  // prefix on purpose. Re-reading a file that has not changed costs one 20 KB
+  // read, and those events land once the document is fully in place — which is
+  // exactly the moment a read that lost the race would now succeed.
+  watch(publicDir, { persistent: false }, (_event, filename) => {
+    if (!filename || path.basename(String(filename)).startsWith("index.html")) {
+      loadShell();
+    }
+  });
 } catch {
-  // Watch is best-effort — a missing file just means we fall back.
+  // Watch is best-effort — a missing directory just means we fall back.
 }
 
 /**
