@@ -20,6 +20,11 @@
   /* Gap below the nav before results start. #sd cancels it so the knowledge
      panel's rule meets the nav's bottom border. */
   --main-gap: 16px;
+  /* The knowledge-panel column and the gutter beside it. Named here because
+     two boxes are sized off them: #mn's grid, and the spacer that stops the
+     search field at the results column's right edge. */
+  --side: 480px;
+  --col-gap: 40px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -206,17 +211,27 @@ body.res #hd {
   padding-block: 16px 8px;
 }
 
-/* The wordmark and an empty trailing spacer flex equally, which lands the
-   field on the page centre without hard-coding the wordmark's width. When
-   space runs short the wordmark holds its size and the field gives way, so the
-   two can never collide. */
-body.res .lg,
-body.res #hd::after {
-  flex: 1 1 0;
+/* The wordmark sizes to itself and the field takes what is left, so the field
+   starts beside the wordmark rather than in the middle of the page. */
+body.res .lg {
+  flex: 0 0 auto;
 }
 
+/* What lands the field's right edge on the results column's right edge: the
+   spacer stands in for everything #mn puts to the right of that column — the
+   knowledge panel and the gutter before it — less the header's own gap, which
+   already sits between the field and the spacer. It does not shrink, so the
+   field is the one that gives when the row runs short, exactly as the results
+   column gives to the panel beside it. */
 body.res #hd::after {
   content: "";
+  /* Shrinks, but only just: at 0.001 its share of any squeeze is under a
+     quarter-pixel across the whole range where the field is still giving, so
+     the field remains the item that gives and the edges stay in line. What the
+     factor buys is the end of that range — once the field is down on its
+     min-width and frozen, the spacer is the only item left to take the rest,
+     and the row narrows instead of overflowing the page. */
+  flex: 0 0.001 calc(var(--side) + var(--col-gap) - 20px);
 }
 
 body.res .lg-mark {
@@ -225,9 +240,22 @@ body.res .lg-mark {
 }
 
 body.res .sf {
-  /* Same width as the home field — it doesn't resize when results appear. */
-  flex: 0 1 584px;
-  min-width: 0;
+  /* Not the whole run left of the spacer — the wordmark already fills the left
+     of the row, and a field stretched across everything after it reads as a
+     banner rather than a field. It takes a set width and sits straight after
+     the wordmark, so the slack collects to its right.
+     It is also the only item on the row that gives, which is what ties it to
+     the results below: once the window is narrow enough that the slack is
+     gone, every pixel the row loses comes off the field, and its right edge
+     tracks the results column's edge down exactly.
+     It tracks it down to a floor and no further. Below roughly a 1050px
+     window the column is too narrow to be worth following: matching it would
+     leave a field with less room in it than the query it is holding, so the
+     field stops there and overhangs the column instead. 340px keeps ~225px of
+     text visible past the buttons — about thirty characters — which is the
+     same floor the knowledge-panel track holds itself to. */
+  flex: 0 1 560px;
+  min-width: 340px;
 }
 
 .lg {
@@ -468,8 +496,8 @@ body.ld .sp {
 /* —— Layout —— */
 #mn {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 480px);
-  gap: 40px;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, var(--side));
+  gap: var(--col-gap);
   /* Top pad only — bottom pad on the main column so sticky #sd isn’t short */
   padding-top: var(--main-gap);
   padding-bottom: 0;
@@ -1452,8 +1480,10 @@ body.home #sc {
 
   body.res .sf {
     /* Reset the desktop basis: in a column container it would size the
-       field's height, not its width. */
+       field's height, not its width. The floor goes with it — the field is
+       the width of the stack here, and on a narrow phone that is under it. */
     flex: 0 0 auto;
+    min-width: 0;
     max-width: none;
     width: 100%;
   }
