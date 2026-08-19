@@ -8,28 +8,51 @@ _Status: active_
 
 | Metric | Limit | Kind | Why |
 |--------|-------|------|-----|
-| **total gzip** | **&lt; 14 KiB** | **hard** | The whole shell fits one TCP initial congestion window |
-| **gzip** | &lt; 8 KiB per file | hard | No single asset dominates the shell |
-| **raw** | &lt; 20 KiB per file | soft | Parse/cache weight; warns but does not fail CI |
+| **gzip** | **&lt; 14,250 B per first-flight response** | **hard** | Each fits one TCP initial congestion window |
+| **raw** | soft, per file | soft | Parse/compile weight; warns but does not fail CI |
 
-The budget that physically matters is **total compressed**. TCP starts at a 10-segment
-congestion window (RFC 6928), so ~10 × 1460 B MSS = **14,600 B** reach the client before
-anything waits on an ACK. Under that, a flight lands in one round trip; over it, cold
-loads pay another RTT — which on a train or through a VPN hop is the whole latency budget.
+TCP starts at a 10-segment congestion window (RFC 6928), so ~10 × 1460 B MSS =
+**14,600 B** reach the client before anything waits on an ACK. Less ~350 B of response
+headers leaves **14,250 B** per response. Under that, a flight lands in one round trip;
+over it, cold loads pay another RTT — which on a train or through a VPN hop is the whole
+latency budget.
 
-Two things that budget does *not* buy:
+**The budget is per response, not per page.** A document goes out on a cold connection
+and gets the whole ten segments. A bundle is only discovered once that document has been
+parsed — and therefore ACKed — so it rides either a second connection with its own fresh
+window (HTTP/1.1) or one slow start has already grown past ten segments (HTTP/2). Summing
+a document with its subresources measures a flight that never happens, so each is checked
+alone.
+
+> This replaced an older model that summed every asset into a single 14 KiB flight and
+> therefore had to ration the window between them — which is where the "&lt; 8 KiB per
+> file" rule came from. The rationing went away when the CSS was inlined and the budget
+> model was rewritten (`5522af1`); the 8 KiB number outlived it for a while as a ceiling
+> with no physics behind it. Parse weight is now the only per-file guardrail, because it
+> is the only per-file cost that is actually real.
+
+There are two documents, each with its own budget and its own bundle:
+
+| Page | Document | Bundle | Lazy |
+|------|----------|--------|------|
+| Search | `index.html` (13,950 B — the rest is the server-injected price strip) | `app.js` | `swap.js`, `connect.js` |
+| Wallet | `wallet.html` | `wallet.js` | `connect.js` |
+
+The wallet page does not share the search shell. It has no search field, tabs, results
+list, knowledge panel or skeletons — most of `app.css` — so serving it that stylesheet to
+use a tenth of it would cost more than the whole page weighs.
+
+One thing the budget does *not* buy:
 
 - **Raw size is not transfer size.** It governs parse/cache weight only. `app.js` is
-  ~18 KiB raw but ~6.8 KiB on the wire.
-- **The shell is still 2 RTTs**, because the browser must parse `index.html` before it
-  discovers `/app.css` and `/app.js`. Shrinking files cannot fix that; only inlining the
-  critical CSS/JS into the HTML would.
+  ~22 KiB raw but ~7.5 KiB on the wire.
 
-`compression@1.8.1` negotiates **brotli** as well as gzip, so real transfer is ~12% below
-the gzip figure. The budget gates on gzip as the worst case a client might negotiate.
+Assets are precompressed at build time (brotli quality 11) and served as-is, so real
+transfer is ~10% below the gzip figure. The budget gates on gzip as the worst case a
+client might negotiate.
 
 - Measure with `npm run size` (see `scripts/build-client.mjs`)
-- Images (favicon, wordmark) are **outside** this shell budget
+- Images (favicon, wordmark) are **outside** these budgets
 - Source is readable under `client/`; only `public/` is shipped minified
 
 ### Other
@@ -43,7 +66,7 @@ the gzip figure. The budget gates on gzip as the worst case a client might negot
 2. **Let the pipeline minify** — esbuild (JS), lightningcss (CSS), html-minifier-terser (HTML)
 3. **Prefer shared helpers** over copy-pasted DOM builders (`el`, `cite`, `resultCard`)
 4. **Avoid decorative CSS** (long keyframes, multi-stop gradients) unless product-critical
-5. **Run `npm run size` after every UI change** — hard fail if total gzip exceeds one init window, or any single file exceeds its gzip budget
+5. **Run `npm run size` after every UI change** — hard fail if any first-flight response exceeds one init window
 6. **Server must compress** — `compression` middleware is required for the budget to match production
 
 ## Direction
@@ -60,7 +83,7 @@ Apple-inspired stark minimal search UI.
 
 ## Do
 
-- Keep the total gzip shell under 14 KiB (hard) and each file under 8 KiB gzip; `npm run size` after UI changes
+- Keep every first-flight response under one init window (hard); `npm run size` after UI changes
 - Write readable modules under `client/js/`; never hand-minify source
 - One accent on grayscale
 - Respect `prefers-reduced-motion` when adding animation

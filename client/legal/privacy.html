@@ -219,10 +219,11 @@
 </p>
 <p>
   <b>9.1. No account, no cookies, no trackers.</b> UtopianGO has no sign-up and
-  no login, so the identity data in section 2 is never collected here. It sets
-  no cookies, uses no local storage, and loads no analytics or advertising
-  scripts of any kind. There is nothing on the site that follows you to another
-  one.
+  no password, so the identity data in section 2 is never collected here. It
+  sets no cookies and loads no analytics or advertising scripts of any kind.
+  There is nothing on the site that follows you to another one. Connecting a
+  wallet is not an account; the one thing the site stores on your device is
+  described in 9.6.
 </p>
 <p>
   <b>9.2. Your search goes to Brave.</b> To answer a search we forward your
@@ -247,16 +248,32 @@
 <p>
   <b>9.5. If you connect a wallet.</b> Connecting is entirely your choice and
   nothing happens until you do. Your wallet address is then sent to our server
-  to read your SOL and token balances, which we look up via Helius and do not
-  store; and, when you request a quote or a swap, from your browser directly to
-  Jupiter&rsquo;s API, which sees your address and your IP. Your keys never
+  to read what the address holds &mdash; the balances a trade can be funded
+  with, and, on the wallet page, the tokens held and what they are worth. We
+  read those from the Solana blockchain via Helius and do not store them. All
+  of it is public on-chain information that any block explorer will show for
+  any address. Your address is also sent, when you request a quote or a swap,
+  from your browser directly to Jupiter&rsquo;s API, which sees your address
+  and your IP. Your keys never
   leave your wallet, we never take custody, and the transaction is signed and
   submitted by your wallet, not by us. Anything that settles on Solana is
   public and permanent by the nature of a blockchain, and is outside our
   control and outside the deletion right in section 5.
 </p>
 <p>
-  <b>9.6. What we keep.</b> Nothing that identifies you. The site holds no
+  <b>9.6. What is stored on your device.</b> If you connect a wallet, your
+  browser remembers its public address, and the name of the wallet extension
+  you picked, in that browser&rsquo;s local storage &mdash; so that you are not
+  asked to connect again on every visit. That is the only thing UtopianGO
+  writes to your device. It is not a cookie, it is never attached automatically
+  to any request, and no copy of it is kept on our server. Pressing
+  &ldquo;Logout&rdquo; erases it immediately, as does clearing your
+  browser&rsquo;s data for this site; either way your wallet may still list
+  this site among those it has approved, which you can revoke in the wallet
+  itself.
+</p>
+<p>
+  <b>9.7. What we keep.</b> Nothing that identifies you. The site holds no
   user records, so a deletion request about UtopianGO will usually be answered
   with the fact that there was nothing to delete &mdash; you are welcome to ask
   us to confirm that at the address in section 8.
