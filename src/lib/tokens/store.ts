@@ -22,7 +22,11 @@ import {
  */
 
 let records: TokenRecord[] = [];
-let index: TokenIndex = { bySymbol: new Map(), byName: new Map() };
+let index: TokenIndex = {
+  bySymbol: new Map(),
+  byName: new Map(),
+  byMint: new Map(),
+};
 let updatedAt = 0;
 
 /** In-flight price refreshes, keyed by mint, so N searches cause one fetch. */
@@ -31,6 +35,7 @@ const inFlight = new Map<string, Promise<void>>();
 function buildIndex(list: TokenRecord[]): TokenIndex {
   const bySymbol = new Map<string, TokenRecord[]>();
   const byName = new Map<string, TokenRecord[]>();
+  const byMint = new Map<string, TokenRecord>();
 
   /** Push once — a record whose alias equals its own symbol must not double up. */
   const add = (map: Map<string, TokenRecord[]>, key: string, rec: TokenRecord) => {
@@ -40,6 +45,7 @@ function buildIndex(list: TokenRecord[]): TokenIndex {
   };
 
   for (const rec of list) {
+    byMint.set(rec.mint, rec);
     add(bySymbol, rec.symbol.toUpperCase(), rec);
     add(byName, rec.name.toLowerCase(), rec);
     // Aliases go into both maps; an equity's ticker alias competes with real
@@ -50,7 +56,7 @@ function buildIndex(list: TokenRecord[]): TokenIndex {
     }
   }
 
-  return { bySymbol, byName };
+  return { bySymbol, byName, byMint };
 }
 
 function adopt(list: TokenRecord[]): void {
@@ -229,6 +235,28 @@ export function lookupTokens(
   }
 
   return recs.map(toQuote);
+}
+
+/**
+ * Prices for mints the caller already knows the identity of.
+ *
+ * The inverse of lookupTokens: no matching, no ranking, no ambiguity to
+ * adjudicate — a wallet's holdings arrive as mint addresses, and the only
+ * question is what each one is worth. Mints the index does not carry are
+ * absent from the result rather than guessed at, which is what lets the wallet
+ * page count them instead of pricing them.
+ *
+ * Deliberately does not kick off per-mint refreshes the way lookupTokens does.
+ * A portfolio can name fifty mints at once, and fifty on-demand price calls per
+ * page load is a cost the hourly rebuild already covers.
+ */
+export function lookupMints(mints: string[]): Map<string, TokenRecord> {
+  const out = new Map<string, TokenRecord>();
+  for (const mint of mints) {
+    const rec = index.byMint.get(mint);
+    if (rec) out.set(mint, rec);
+  }
+  return out;
 }
 
 /** Single best quote, for callers that render exactly one cell. */

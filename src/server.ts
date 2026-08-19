@@ -20,6 +20,22 @@ const app = express();
 const publicDir = path.join(__dirname, "..", "public");
 const indexPath = path.join(publicDir, "index.html");
 
+/**
+ * The wallet page's canonical URL, and the file behind it.
+ *
+ * Extensionless, so it reads as a page rather than as a download, and mapped
+ * onto the built file by a rewrite rather than by a handler of its own. That
+ * rewrite happens before the precompressed-sibling middleware below, so the
+ * page is served straight out of the build's quality-11 brotli — no template,
+ * no per-request compression, and no in-memory copy for this process to hold.
+ *
+ * It can be a plain file precisely because the server does not know whose
+ * wallet it is: there is no cookie and no session, the address lives in the
+ * browser, and every figure on the page is fetched by the bundle afterwards.
+ */
+const WALLET_PATH = "/wallet";
+const WALLET_FILE = "/wallet.html";
+
 // Nothing downstream reads it, and it is bytes on every response — including
 // the ones that have to fit an initial congestion window.
 app.disable("x-powered-by");
@@ -339,12 +355,47 @@ app.use((req, res, next) => {
   next();
 });
 
+/**
+ * URL canonicalisation, ahead of everything that reads the URL.
+ *
+ * Ordering is the whole point. The precompressed-sibling middleware below
+ * rewrites `req.url` to point at a `.br` or `.gz` file, and a route matching on
+ * the original path would never fire afterwards — so both redirects and the
+ * `/wallet` rewrite have to be settled first, while the URL still says what the
+ * visitor asked for.
+ */
+app.get("/index.html", (req, res) => {
+  const qs = req.originalUrl.slice(req.path.length);
+  res.redirect(308, `/${qs}`);
+});
+
+// One address for the page. `/wallet.html` would otherwise be served directly
+// by express.static, giving the same document two URLs to drift between.
+app.get(WALLET_FILE, (req, res) => {
+  const qs = req.originalUrl.slice(req.path.length);
+  res.redirect(308, `${WALLET_PATH}${qs}`);
+});
+
+app.get(WALLET_PATH, (req, _res, next) => {
+  // express.static and the precompressed lookup both read the path off
+  // req.url, so pointing it at the built file is all this takes.
+  req.url = WALLET_FILE + req.originalUrl.slice(req.path.length);
+  next();
+});
+
 // Negotiated compression for everything generated per request (API JSON).
 // Static assets are served precompressed below, and the shell brings its own.
 app.use(compression());
 
-/** Extensions the build writes .br/.gz siblings for. Sync with build-client.mjs. */
-const PRECOMPRESSED_EXT = new Set([".js", ".css", ".svg"]);
+/**
+ * Extensions the build writes .br/.gz siblings for. Sync with build-client.mjs.
+ *
+ * `.html` is here for the wallet page, which is a plain file. The shell is not
+ * reachable through this path at all — `/` is answered by sendIndex and
+ * `/index.html` is redirected above — so the only document that can match is
+ * one the build actually precompressed.
+ */
+const PRECOMPRESSED_EXT = new Set([".js", ".css", ".svg", ".html"]);
 
 /**
  * Hand over the build's precompressed files rather than compressing per request.
@@ -388,10 +439,6 @@ app.use((req, res, next) => {
  * screen has no prices to state dollars with. Redirected rather than rendered,
  * so the two URLs cannot drift and there is one canonical address for the page.
  */
-app.get("/index.html", (req, res) => {
-  const qs = req.originalUrl.slice(req.path.length);
-  res.redirect(308, `/${qs}`);
-});
 
 // Built SPA assets. The stylesheet is inlined in the shell, so what is left
 // here is JS and images. HTML must not be cached long — it carries the ?v=
@@ -402,7 +449,18 @@ app.use(
     maxAge: process.env.NODE_ENV === "production" ? "7d" : 0,
     etag: true,
     setHeaders(res, filePath) {
-      if (filePath.endsWith(`${path.sep}index.html`) || filePath.endsWith("/index.html")) {
+      // Documents must revalidate. Both carry `?v=` content hashes for the
+      // bundles they load, so a copy cached for a week goes on asking for the
+      // build it was deployed with long after that build is gone — and for the
+      // wallet page that means a working document quietly fetching two 404s.
+      // JS and images are safe to cache hard precisely because a deploy changes
+      // those query strings.
+      // The precompressed lookup above rewrites req.url to a `.br`/`.gz`
+      // sibling, so what arrives here is `wallet.html.br` rather than
+      // `wallet.html`. Matching the bare name alone silently missed every
+      // compressed response — which is every real one.
+      const name = path.basename(filePath).replace(/\.(br|gz)$/, "");
+      if (name === "index.html" || name === "wallet.html") {
         res.setHeader("Cache-Control", "no-cache");
       }
     },

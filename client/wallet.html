@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Wallet</title>
+    <link rel="icon" href="/go-favicon.png" type="image/png" />
+    <!-- A page about one visitor's money has no business in a search index or
+         on a social card. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="stylesheet" href="/wallet.css" />
+  </head>
+  <body data-cn="/connect.js" data-sw="/swap.js">
+    <!-- One header row: the mark on the left, the account on the right. The
+         search shell has to pin its account control out of flow because it has
+         two header layouts to avoid disturbing; this page has one, so the
+         control is simply in it. -->
+    <header class="wl-h wrap">
+      <a class="lg" href="/" aria-label="utopian-go home">
+        <img
+          class="lg-mark"
+          src="/go-wordmark.svg"
+          alt="utopian-go"
+          width="188"
+          height="64"
+          decoding="async"
+        />
+      </a>
+      <nav id="ac" aria-label="Account"></nav>
+    </header>
+
+    <main class="wrap" id="wl">
+      <!-- Shipped in its final geometry, the same bargain the search shell
+           makes: this is exactly what the page looks like while the lookup is
+           in flight, so the bundle taking over moves nothing. The figure is a
+           dash rather than a zero — nobody's balance should read as empty
+           before it has been read. -->
+      <div class="wl-tot">
+        <span class="wl-k">Total value</span>
+        <div class="wl-vr">
+          <strong class="wl-v" id="wl-v">—</strong>
+          <span class="wl-d" id="wl-d" hidden></span>
+        </div>
+        <!-- The 24h line, drawn from a shape the server computes and sends
+             with the holdings. Hidden until there is one: a chart box that
+             reserves height before it has anything in it is a hole in the
+             page, and one that appears afterwards moves the list under it. -->
+        <div class="wl-c" id="wl-c" hidden></div>
+        <p class="wl-cap" id="wl-cap" hidden></p>
+      </div>
+      <div id="wl-l"></div>
+      <p class="wl-n" id="wl-n">Reading your wallet…</p>
+      <!-- Whatever the current state offers to do about itself: connect a
+           wallet, or try the lookup again. Its own element because the state
+           is rebuilt from scratch on every render, and a control appended as a
+           sibling of the note above outlived that rebuild — every failed retry
+           left another "Try again" button behind it. -->
+      <div id="wl-x"></div>
+    </main>
+
+    <footer id="ft" class="wrap">
+      <a href="/terms.pdf" target="_blank" rel="noopener">Terms</a>
+      <a href="/privacy.pdf" target="_blank" rel="noopener">Privacy</a>
+      <a href="https://x.com/UtopianContrib" target="_blank" rel="noopener"
+        >@UtopianContrib</a
+      >
+      <a
+        href="https://pump.fun/coin/HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA"
+        target="_blank"
+        rel="noopener"
+        >$UTCC</a
+      >
+    </footer>
+
+    <script src="/wallet.js" defer></script>
+  </body>
+</html>

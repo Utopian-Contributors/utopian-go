@@ -1,11 +1,13 @@
 import express, { NextFunction, Request, Response, Router } from "express";
 import { fetchBalances, isPubkey } from "../lib/balances";
+import { fetchHoldings } from "../lib/holdings";
 import { BraveApiError, braveImageSearch, braveSearch } from "../lib/brave";
 import { asString } from "../lib/query";
 import { rateLimit } from "../lib/rateLimit";
 import { lookupTokens } from "../lib/tokens/store";
 import {
   BalancesApiResponse,
+  HoldingsApiResponse,
   ImageSearchApiResponse,
   SearchApiResponse,
 } from "../types";
@@ -62,6 +64,15 @@ const imagesLimit = rateLimit({ perMinute: 120, burst: 40 });
  * at all.
  */
 const balancesLimit = rateLimit({ perMinute: 180, burst: 60 });
+
+/**
+ * Holdings is the opposite shape: one request per visit to the wallet page,
+ * answered from a 15s cache, and each miss is a three-call batch against our
+ * Helius key. So it gets a tighter bucket than balances — nothing legitimate
+ * asks for a portfolio in a loop, and the endpoint takes a caller-supplied
+ * address, which makes it the cheapest thing on this server to point a script at.
+ */
+const holdingsLimit = rateLimit({ perMinute: 60, burst: 20 });
 
 /**
  * Route an async handler's rejection to Express instead of into the void.
@@ -187,6 +198,52 @@ apiRouter.post(
         error: "Could not read balances.",
         // Outside production the cause is worth having in the response; a
         // silent 502 is the hardest kind of failure to chase from the browser.
+        ...(process.env.NODE_ENV === "production"
+          ? {}
+          : { detail: err instanceof Error ? err.message : String(err) }),
+      };
+      res.status(502).json(body);
+    }
+  }),
+);
+
+/**
+ * Everything one wallet holds, priced from our own token index.
+ *
+ * POST for the same reason /api/balances is: the argument is a wallet address,
+ * and a query string is written to the hosting provider's request log next to
+ * the caller's IP. A GET here would turn an access log into a record of which
+ * address was looked at from which connection — which is exactly what section
+ * 9.6 of the privacy policy says this site does not keep.
+ *
+ * Note what this does *not* assert: that the caller owns the address. It
+ * cannot, and does not try to — every figure it returns is public on-chain
+ * data that any explorer will show for any address. The wallet page asks about
+ * the address the browser remembered; the endpoint answers about whatever
+ * address it is handed.
+ */
+apiRouter.post(
+  "/api/holdings",
+  holdingsLimit,
+  readJson,
+  wrap(async (req: Request, res: Response) => {
+    const owner = asString(req.body?.owner).trim();
+
+    if (!isPubkey(owner)) {
+      const body: HoldingsApiResponse = { error: "Invalid wallet address." };
+      res.status(400).json(body);
+      return;
+    }
+
+    try {
+      res.json(await fetchHoldings(owner));
+    } catch (err) {
+      console.warn("[holdings] lookup failed:", err);
+      // The page says "could not read" rather than rendering an empty
+      // portfolio: zero holdings and a failed lookup look identical in a
+      // response body and could not be less alike to the person reading it.
+      const body: HoldingsApiResponse = {
+        error: "Could not read this wallet.",
         ...(process.env.NODE_ENV === "production"
           ? {}
           : { detail: err instanceof Error ? err.message : String(err) }),

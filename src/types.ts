@@ -137,6 +137,15 @@ export interface TokenRecord {
    * day of candles behind it.
    */
   ticks?: string;
+  /**
+   * The price range `ticks` was scaled against, so the shape can be read back
+   * as prices. Server-side only — never projected into a TokenQuote, because
+   * nothing the client draws is labelled with a value off the line. The wallet
+   * page's portfolio series is what needs them. Absent on records restored
+   * from a snapshot written before they were kept.
+   */
+  tickLo?: number;
+  tickHi?: number;
   /** Epoch ms the price itself was sourced — drives the age shown to users. */
   priceAt: number;
   /**
@@ -159,6 +168,81 @@ export interface Balances {
 }
 
 export interface BalancesApiResponse extends Balances {
+  error?: string;
+  /** Cause of a failure, development only. */
+  detail?: string;
+}
+
+/**
+ * One line of a portfolio: what is held, and what it is worth.
+ *
+ * `amount` stays a base-unit string for the same reason balances do — a large
+ * holding of a nine-decimal mint outgrows JSON's safe integer range, and this
+ * is a number people check against their wallet. `usd` is a display value
+ * computed server-side, so every row on the page is valued by the same index
+ * at the same instant rather than by whatever each client rounded to.
+ */
+export interface Holding {
+  mint: string;
+  symbol: string;
+  name: string;
+  /** Base units, summed across every token account for this mint. */
+  amount: string;
+  decimals: number;
+  /** USD price of one token, from the same index the price cards read. */
+  price: number;
+  /** amount x price, in dollars. */
+  usd: number;
+  /** 24h price change, percent. */
+  change24h?: number;
+}
+
+/**
+ * A priced portfolio. The counts are the honest part: this page shows what it
+ * can value and says how much it left out, rather than presenting a filtered
+ * list as if it were everything.
+ */
+export interface Holdings {
+  /** Rows worth showing, largest first. */
+  items: Holding[];
+  /** USD across everything held, including the rows omitted below. */
+  total: number;
+  /**
+   * What these holdings were worth over the last 24 hours, one byte an hour,
+   * encoded exactly as a token's own sparkline is.
+   *
+   * Read it for what it is: today's balances priced at each hour's price. It
+   * is not a record of what the wallet held — we have no transaction history
+   * and do not want one — so a position opened an hour ago appears across the
+   * whole day. What it does answer is the question people actually have when
+   * they open this page: which way did the market move what I am holding.
+   *
+   * Absent when too little of the portfolio has price history behind it for a
+   * line to mean anything.
+   */
+  series?: string;
+  /**
+   * The dollar range `series` was scaled against, low and high.
+   *
+   * A token card ships its shape without a range on purpose — nothing there is
+   * labelled with a value read off the line. Here something is: hovering the
+   * chart reads the portfolio's worth at that hour back out of it, so the two
+   * numbers that turn a byte into dollars have to come with it. Twenty bytes,
+   * against a second endpoint for the same information.
+   */
+  seriesLo?: number;
+  seriesHi?: number;
+  /** Change across `series`, percent. Present whenever `series` is. */
+  change24h?: number;
+  /** Priced rows past the display cap. */
+  more?: number;
+  /** Priced rows worth less than a cent. */
+  dust?: number;
+  /** Mints the token index carries no price for — almost always airdrop spam. */
+  unpriced?: number;
+}
+
+export interface HoldingsApiResponse extends Partial<Holdings> {
   error?: string;
   /** Cause of a failure, development only. */
   detail?: string;

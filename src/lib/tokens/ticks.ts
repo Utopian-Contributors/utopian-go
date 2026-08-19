@@ -112,14 +112,20 @@ async function fetchSeries(mint: string): Promise<number[]> {
 }
 
 /**
- * Closes to one byte per point, base64.
+ * Closes to one byte per point, base64, plus the range they were scaled by.
  *
- * The range is thrown away deliberately — the card never labels the line, so
- * shipping the prices again would be shipping numbers nobody reads. What
- * survives is the shape, at 1/255th of its own range, which is finer than the
- * hundred-odd pixels of height it gets drawn into.
+ * The bytes are all the *client* ever gets: the card never labels the line, so
+ * shipping the prices again would be shipping numbers nobody reads. The range
+ * is returned for the server's own use — the wallet page values a portfolio
+ * back over the same 24 hours, and lo/hi are what turn a shape back into the
+ * prices it was made from. Two numbers per record against re-fetching a
+ * thousand series, and accurate to 1/255th of the day's range either way.
  */
-export function encodeTicks(closes: number[]): string {
+export function encodeTicks(closes: number[]): {
+  ticks: string;
+  lo: number;
+  hi: number;
+} {
   let lo = Infinity;
   let hi = -Infinity;
   for (const v of closes) {
@@ -142,7 +148,26 @@ export function encodeTicks(closes: number[]): string {
   for (let i = 0; i < closes.length; i += 1) {
     bytes[i] = Math.round(((closes[i] - lo) / span) * 255);
   }
-  return bytes.toString("base64");
+  return { ticks: bytes.toString("base64"), lo, hi };
+}
+
+/**
+ * The inverse: a record's shape back into approximate hourly closes.
+ *
+ * Lossy by exactly one byte of the day's range, which on an ordinary day is a
+ * few thousandths of a percent of price — far below anything a summed
+ * portfolio figure is read to. Null when the record has no series, or came
+ * from a snapshot written before the range was kept, in which case the caller
+ * has to treat that holding as having no history rather than guess one.
+ */
+export function decodeTicks(rec: TokenRecord): number[] | null {
+  if (!rec.ticks || rec.tickLo == null || rec.tickHi == null) return null;
+  const bytes = Buffer.from(rec.ticks, "base64");
+  if (bytes.length < 2) return null;
+  const span = rec.tickHi - rec.tickLo;
+  const out: number[] = [];
+  for (const b of bytes) out.push(rec.tickLo + (b / 255) * span);
+  return out;
 }
 
 /**
@@ -170,7 +195,12 @@ export async function refreshTicks(
       try {
         const closes = await fetchSeries(rec.mint);
         if (closes.length < TOKEN_TICKS_MIN_POINTS) continue;
-        rec.ticks = encodeTicks(closes);
+        const encoded = encodeTicks(closes);
+        rec.ticks = encoded.ticks;
+        // Kept beside the shape so the wallet page can read prices back out of
+        // it without a second trip to the chart API.
+        rec.tickLo = encoded.lo;
+        rec.tickHi = encoded.hi;
         ok += 1;
       } catch {
         // One token's line is not worth a log line each hour; the card simply

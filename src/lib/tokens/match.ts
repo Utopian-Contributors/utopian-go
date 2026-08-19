@@ -6,6 +6,13 @@ export interface TokenIndex {
   bySymbol: Map<string, TokenRecord[]>;
   /** lowercase name → mints sharing it. */
   byName: Map<string, TokenRecord[]>;
+  /**
+   * Mint address → its record. Unlike the two above this cannot collide, and
+   * matchTokens never reads it: it exists for the wallet page, which arrives
+   * already knowing exactly which mints it holds and needs prices for them
+   * rather than a search over them.
+   */
+  byMint: Map<string, TokenRecord>;
 }
 
 /**
