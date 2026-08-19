@@ -154,6 +154,45 @@ body.home #st {
   display: none !important;
 }
 
+/*
+ * The account control, pinned out of flow.
+ *
+ * That is the whole design. This stylesheet has two entirely different header
+ * layouts — a centred column on the home page, a row on results, each stacking
+ * differently on a phone — and adding a fifth item to either would have meant
+ * re-deriving the spacer maths that lands the search field on the results
+ * column's edge. Out of flow it reserves no space, so it changes no geometry on
+ * any page at any width, and the layout shift it can contribute is exactly zero.
+ *
+ * The wallet page needs none of this: one header, one row, control in it.
+ */
+#ac {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  justify-content: flex-end;
+  width: 100%;
+  max-width: var(--shell);
+  /* left/right pinned and width capped, so auto margins centre it — the bar
+     tracks the shell's right edge rather than the viewport's, which on a wide
+     monitor is several hundred pixels further out than any content. */
+  margin-inline: auto;
+  padding: 13px var(--pad);
+  /*
+   * A full-width bar across the top of a page whose search field is also at
+   * the top of the page. Without this it would swallow every click aimed at
+   * the wordmark and the first ~50px of the field — an invisible one, since
+   * the bar has no background of its own.
+   */
+  pointer-events: none;
+}
+
+#ac > * {
+  pointer-events: auto;
+}
+
 /* Home-only price strip. Hidden by default so it never becomes a flex item in
    the results header, where it would throw off the centred search field. */
 #hm-tk {
@@ -1470,8 +1509,17 @@ body.home #sc {
     display: none;
   }
 
+  /*
+   * Cross axis, not main: the stacked header is a column, so `flex` above sizes
+   * the wordmark's height and it is `align-self` that stops the anchor being
+   * stretched to the full width of the phone. It looked identical either way —
+   * the mark is left-aligned inside it — but the stretched box carried a
+   * "go home" hit area right across the row, including the corner the account
+   * control sits in.
+   */
   body.res .lg {
     flex: 0 0 auto;
+    align-self: flex-start;
   }
 
   body.res .lg-mark {

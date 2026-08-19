@@ -5,6 +5,7 @@
  * Source is modular; `scripts/build-client.mjs` bundles + minifies to public/.
  */
 import { $, clearResults, hideSkeleton, setLoading, setStatus, showSkeleton } from "./dom.js";
+import { mountAccount } from "./acct.js";
 import { readUrlState, writeUrl } from "./url.js";
 import { createRenderer } from "./render.js";
 
@@ -46,6 +47,11 @@ function syncClearButton() {
 // The body class is not set here: the server ships it on the shell, because
 // every layout rule hangs off it and this bundle arrives a round trip after
 // first paint. Setting it here made the whole header jump into place.
+
+// Before anything else on the boot path: it is a localStorage read and two
+// buttons, and the corner of the page it fills is otherwise empty until it
+// runs. Nothing here fetches, and nothing here waits on a search.
+mountAccount($("ac"));
 
 logo.addEventListener("click", (e) => {
   e.preventDefault();

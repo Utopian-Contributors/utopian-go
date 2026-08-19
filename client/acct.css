@@ -1,0 +1,52 @@
+/*
+ * The account control, top right.
+ *
+ * What it looks like, not where it sits. build-client.mjs appends this to both
+ * stylesheets, so the control cannot drift between the two pages it appears
+ * on — but the two pages place it very differently, and each does that in its
+ * own sheet. The search shell pins it out of flow (see app.css, and the reason
+ * there); the wallet page has one simple header row and just puts it in it.
+ */
+#ac {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+}
+
+/* The address. Tabular so it does not jitter, and truncated in the markup
+   rather than by CSS — the full value stays in the title and the label. */
+.ac-a {
+  color: var(--m);
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline;
+}
+
+.ac-a:hover {
+  color: var(--t);
+  text-decoration: underline;
+}
+
+.ac-b {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: 600 13px/1.2 var(--ff);
+  color: var(--a);
+  cursor: pointer;
+}
+
+.ac-b:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.ac-b:disabled {
+  color: var(--f);
+  cursor: progress;
+}
+
+/* Leaving is the one destructive control on the page, so it is the one that
+   is not the accent colour. */
+.ac-out {
+  color: var(--dn);
+}

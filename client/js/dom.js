@@ -58,8 +58,19 @@ export function setLoading(on) {
  * a second copy would only be a chance for the two to drift — at which point
  * the hand-off from shipped markup to rendered markup moves the page, which is
  * the whole thing the shipped markup exists to avoid.
+ *
+ * Read eagerly, and it has to be: showSkeleton("images") replaces #sk's
+ * children with the image grid, so a lazy read taken after an images search
+ * would capture that grid as the web skeleton.
+ *
+ * Optional, and it has to be that too: this module is imported by the wallet
+ * page and the wallet picker, neither of which has a #sk — and `$` throws on a
+ * missing id, so an eager `$("sk")` here failed those bundles at import time,
+ * before a line of their own code ran. Nothing is masked by the fallback: the
+ * only page that needs a skeleton is the shell, and build-client.mjs hard-fails
+ * if #sk is ever missing from it.
  */
-const WEB_SKEL = $("sk").innerHTML;
+const WEB_SKEL = document.getElementById("sk")?.innerHTML ?? "";
 
 /** Every real tile is capped by the 220px width before it hits the 160px height. */
 const IMAGE_SKEL_W = 220;

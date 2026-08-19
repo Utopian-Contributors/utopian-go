@@ -20,7 +20,7 @@
        document: the server swaps it to "res" when the URL carries a query.
        Left to app.js it would land a round trip after first paint, and the
        whole header would jump into place in front of the reader. -->
-  <body class="home" data-fa="" data-sw="/swap.js">
+  <body class="home" data-fa="" data-sw="/swap.js" data-cn="/connect.js">
     <div class="chrome" id="chrome">
       <header id="hd">
         <a class="lg" href="/" id="lg" aria-label="utopian-go home">
@@ -60,6 +60,15 @@
 
         <!-- Filled server-side with live prices; empty until then. -->
         <div id="hm-tk"></div>
+
+        <!-- The account control. Ships empty and is filled by app.js from
+             localStorage, because the server has no idea who is looking: there
+             is no cookie and no session, which is the point. Shipping a
+             "Login" here instead would paint the wrong answer for everyone who
+             is already logged in, and an empty box costs nothing to correct.
+             It is position:fixed, so it reserves no space and shifts nothing
+             whichever way it resolves. -->
+        <nav id="ac" aria-label="Account"></nav>
       </header>
 
       <!-- Results-page loading chrome, shipped with the document instead of

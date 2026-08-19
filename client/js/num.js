@@ -117,6 +117,29 @@ export function percent(v, signed = false) {
 }
 
 /**
+ * USD value, stated exactly — grouped, two decimals, never abbreviated.
+ *
+ * The counterpart to `fiat` below, and the difference is who the number
+ * belongs to. A market cap is context: "$1.3B" tells you what you need and
+ * nobody reads the units digit. A balance is someone's money, and rounding
+ * $1,250.45 to "$1.3K" on the page they opened to check it is the one place
+ * abbreviation actively removes the information they came for.
+ *
+ * Sub-cent amounts state themselves as a bound rather than as $0.00, which
+ * reads as free.
+ *
+ * @param {number | null | undefined} v
+ */
+export function dollars(v) {
+  if (invalid(v)) return "—";
+  if (v > 0 && v < 0.005) return "<$0.01";
+  return `$${v.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+/**
  * USD value, compact context — abbreviates at 1K and above.
  * @param {number | null | undefined} v
  */
