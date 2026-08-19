@@ -136,12 +136,21 @@ async function refreshIndex(): Promise<void> {
     // A rebuild replaces every record object, but last hour's shapes are still
     // last hour's shapes — carry them across so cards keep their line while
     // the refresh below runs, rather than losing it for a few minutes an hour.
-    const ticks = new Map(
-      records.filter((r) => r.ticks).map((r) => [r.mint, r.ticks!]),
-    );
+    //
+    // The range travels with the shape. tickLo/tickHi are what turn the bytes
+    // back into prices, so a shape carried without them still draws a card and
+    // no longer values a portfolio — decodeTicks refuses it, every holding is
+    // held flat, and the wallet page's line disappears. And because the rebuild
+    // saves its snapshot on the next line, dropping them here did not cost one
+    // hour of chart: it wrote a rangeless index to disk that every later boot
+    // loaded and every later rebuild carried forward.
+    const prior = new Map(records.filter((r) => r.ticks).map((r) => [r.mint, r]));
     for (const rec of list) {
-      const carried = ticks.get(rec.mint);
-      if (carried) rec.ticks = carried;
+      const was = prior.get(rec.mint);
+      if (!was) continue;
+      rec.ticks = was.ticks;
+      rec.tickLo = was.tickLo;
+      rec.tickHi = was.tickHi;
     }
 
     adopt(list);
@@ -155,7 +164,15 @@ async function refreshIndex(): Promise<void> {
 
   // Outside the try on purpose: the line is decoration on top of a working
   // index, and the index is already adopted and saved by the time this runs.
-  if (ticksFresh()) return;
+  //
+  // Freshness is a claim about the clock, so on its own it cannot see a shape
+  // that arrived without its range — carried over from a snapshot written
+  // before ranges were kept, say. Those are fresh and undecodable at the same
+  // time, and left to the clock alone they are carried forward another hour
+  // before anything re-encodes them. Re-encoding is the only way to acquire a
+  // range, so a rangeless index is never fresh enough to skip.
+  const ranged = records.some((r) => r.ticks && r.tickLo != null);
+  if (ranged && ticksFresh()) return;
   await refreshTicks(records);
   saveSnapshot();
 }
