@@ -1,34 +1,26 @@
 /**
- * Loader for the buy panel.
- *
- * The panel is a separate bundle so the shell stays inside one TCP init
- * window: visitors who never buy pay nothing for it, and the budget script
- * keeps reporting first-load honestly. The URL carries a content hash written
- * in at build time, so a deploy can't be served a stale panel from cache.
+ * Entry point for the buy panel, which lives in its own bundle. See lazy.js
+ * for why, and for the content-hashed URL it is fetched from.
  */
+import { load } from "./lazy.js";
 
-/** Resolves to the loaded module's global, or rejects if the chunk won't load. */
-let loading = null;
+/** Wrapped SOL. Swapping SOL for SOL is not a trade, so the pair flips. */
+const SOL_MINT = "So11111111111111111111111111111111111111112";
 
-function loadPanel() {
-  if (loading) return loading;
-
-  const src = document.body.dataset.sw;
-  loading = new Promise((resolve, reject) => {
-    if (!src) return reject(new Error("no swap bundle configured"));
-    const script = document.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.onload = () =>
-      window.__swap ? resolve(window.__swap) : reject(new Error("swap bundle empty"));
-    script.onerror = () => reject(new Error("swap bundle blocked"));
-    document.head.append(script);
-  }).catch((err) => {
-    loading = null;
-    throw err;
-  });
-
-  return loading;
+/**
+ * Deeplink into Jupiter's hosted swap UI.
+ *
+ * The floor the dialog degrades to, not the primary path — a normal click
+ * opens our own. It stays a real URL so middle-click, cmd-click, no JS and a
+ * blocked bundle all still reach a working swap. SOL cannot be bought with
+ * SOL, so that one pair is funded with USDC.
+ *
+ * @param {string} mint
+ */
+export function swapUrl(mint) {
+  const path =
+    mint === SOL_MINT ? "USDC-SOL" : `SOL-${encodeURIComponent(mint)}`;
+  return `https://jup.ag/swap/${path}`;
 }
 
 /**
@@ -37,6 +29,6 @@ function loadPanel() {
  * @param {{mint: string, symbol: string, decimals?: number, fallback: string}} token
  */
 export async function openSwap(token) {
-  const panel = await loadPanel();
+  const panel = await load("sw", "__swap");
   return panel.open(token);
 }

@@ -1,33 +1,17 @@
 /**
- * Dialog shell and styles for the buy flow.
+ * Styles for the trade form specifically.
  *
- * Styles live in this bundle rather than app.css so a visitor who never buys
- * downloads none of them. Every colour reads from the shell's existing custom
- * properties, so light and dark come for free.
+ * The dialog shell, the wallet chooser and the note line moved to js/ui.js
+ * when the Login button started opening the same dialog. What is left here is
+ * everything only a trade has — the two panes, the amount field, the flip
+ * arrow, the confirmation summary — so the login bundle does not carry the
+ * styling for controls it will never render.
  */
-import { el } from "../js/dom.js";
+import { injectStyles } from "../js/ui.js";
 
 const CSS = `
-.swx{position:fixed;inset:0;z-index:60;display:flex;align-items:center;
- justify-content:center;padding:16px}
-.swx-bd{position:absolute;inset:0;background:rgba(0,0,0,.55);
- backdrop-filter:blur(2px);animation:swx-in .15s both}
-.swx-d{position:relative;width:100%;max-width:400px;background:var(--pn);
- border:1px solid var(--b);border-radius:16px;padding:16px;
- box-shadow:0 16px 48px rgba(0,0,0,.35);animation:swx-up .18s both}
-@keyframes swx-in{from{opacity:0}}
-@keyframes swx-up{from{opacity:0;transform:translateY(8px)}}
-.swx-h{display:flex;align-items:center;justify-content:space-between;
- margin-bottom:14px}
-.swx-t{font-size:15px;font-weight:600;color:var(--t)}
-.swx-x{border:0;background:none;color:var(--f);font-size:20px;line-height:1;
- cursor:pointer;padding:2px 6px;border-radius:6px}
-.swx-x:hover{background:var(--hover);color:var(--t)}
-
 .swx-pane{background:var(--bg);border:1px solid var(--b);border-radius:12px;
  padding:10px 12px}
-.swx-lbl{display:flex;justify-content:space-between;align-items:center;
- font-size:12px;color:var(--f);margin-bottom:6px}
 .swx-bal{background:none;border:0;color:var(--f);font-size:12px;cursor:pointer;
  padding:0;font-family:var(--ff)}
 .swx-bal:hover{color:var(--a)}
@@ -35,18 +19,55 @@ const CSS = `
 .swx-amt{flex:1;min-width:0;border:0;background:none;outline:none;text-align:right;
  font:500 22px/1.2 var(--ff);color:var(--t);font-variant-numeric:tabular-nums}
 .swx-amt::placeholder{color:var(--b)}
-.swx-recv{flex:1;text-align:right;font:500 22px/1.2 var(--t);color:var(--t);
- font-family:var(--ff);font-variant-numeric:tabular-nums;
- overflow:hidden;text-overflow:ellipsis}
+/*
+ * The figure opposite the amount field, on the form and on both confirmation
+ * panes. The family in the shorthand is --ff and has to be: it read var(--t),
+ * the *text colour*, and a hex value is not a family — which invalidates the
+ * whole shorthand, not just the family, so font-size fell back to the
+ * inherited 14px and every figure this class styles rendered at body size.
+ * font-variant-numeric stays after the shorthand, which resets it.
+ */
+.swx-recv{flex:1;text-align:right;font:500 22px/1.2 var(--ff);color:var(--t);
+ font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
 .swx-recv.dim{color:var(--f)}
+/* The same figure when it is a quantity rather than a dollar one — see
+   stateSide(). Millions of a memecoin is far longer than $24.81, and at 22px
+   it would ellipsise inside its own pane. */
+.swx-recv.qty{font-size:17px}
 
+/*
+ * Which currency funds the trade — so the selected one has to be unmistakable.
+ *
+ * It used to be a white pill on a light grey track, separated by a hairline of
+ * shadow: barely legible in light, and actively backwards in dark, where the
+ * "selected" surface (--pn) is *darker* than the track it sits on (--ch). The
+ * selected segment is now simply inverted — the page's own text colour as a
+ * fill — which reads as chosen at a glance in either theme and stays on the
+ * grayscale the rest of the dialog keeps, leaving colour to mean direction.
+ */
 .swx-seg{display:flex;gap:4px;background:var(--ch);border-radius:999px;padding:3px}
 .swx-seg button{border:0;background:none;border-radius:999px;padding:5px 12px;
- font:600 13px/1.2 var(--ff);color:var(--f);cursor:pointer}
-.swx-seg button.on{background:var(--pn);color:var(--t);
- box-shadow:0 1px 2px rgba(0,0,0,.14)}
+ font:600 13px/1.2 var(--ff);color:var(--m);cursor:pointer;
+ transition:background .15s,color .15s}
+.swx-seg button:hover:not(.on){background:var(--hover);color:var(--t)}
+.swx-seg button.on{background:var(--t);color:var(--bg)}
+/*
+ * The fixed side's ticker — and on the confirmation screen, both sides'.
+ *
+ * The control above with one option in it, selected. That side can be no other
+ * currency, so selected is the truth about it; drawn any other way it read as
+ * the disabled one, sitting pale beside a SOL/USDC control where something
+ * clearly had been chosen.
+ *
+ * The 3px border is the seg's track on a single element — --ch around a pill
+ * filled with --t, which is where the .on segment sits. So the geometry is
+ * identical rather than close: 3+5+15.6+5+3 is the seg's 31.6px, and 3+12 puts
+ * both tickers' text 15px in. The form's panes match, and nothing moves when a
+ * chosen ticker becomes a locked one on the confirmation.
+ */
 .swx-lock{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;
- border-radius:999px;background:var(--ch);font:600 13px/1.2 var(--ff);color:var(--t)}
+ border:3px solid var(--ch);border-radius:999px;background:var(--t);
+ font:600 13px/1.2 var(--ff);color:var(--bg)}
 
 .swx-arrow{display:flex;justify-content:center;margin:-7px 0;position:relative;
  z-index:1}
@@ -94,84 +115,10 @@ const CSS = `
  cursor:pointer}
 .swx-2nd:hover:not(:disabled){background:var(--hover)}
 .swx-2nd:disabled{opacity:.55;cursor:not-allowed}
-
-.swx-note{margin-top:9px;font-size:12px;color:var(--f);min-height:16px;
- text-align:center}
-.swx-note.err{color:var(--dn)}
-.swx-note.ok{color:var(--go)}
-.swx-note a{color:var(--a);text-decoration:underline}
-
-.swx-w{display:flex;flex-direction:column;gap:8px}
-.swx-w button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;
- border:1px solid var(--b);border-radius:12px;background:var(--bg);cursor:pointer;
- font:600 14px/1.2 var(--ff);color:var(--t)}
-.swx-w button:hover{border-color:var(--a)}
-.swx-w img{width:22px;height:22px;border-radius:6px}
 .swx-acct{font-size:12px;color:var(--f);font-variant-numeric:tabular-nums}
-@media (max-width:520px){.swx{align-items:flex-end;padding:0}
- .swx-d{max-width:none;border-radius:16px 16px 0 0;border-bottom:0}}
 `;
 
-export function injectStyles() {
-  if (document.getElementById("swx-css")) return;
-  document.head.append(el("style", { id: "swx-css", text: CSS }));
-}
-
-/**
- * Mount a modal and return handles to its body plus a closer.
- *
- * Escape and backdrop both dismiss, and focus is restored to whatever opened
- * it — a dialog that traps you or loses your place is worse than no dialog.
- *
- * @param {string} title
- * @param {() => void} [onClose]
- */
-export function dialog(title, onClose) {
-  injectStyles();
-
-  const opener = document.activeElement;
-  const body = el("div");
-  const close = () => {
-    document.removeEventListener("keydown", onKey);
-    root.remove();
-    if (opener instanceof HTMLElement) opener.focus();
-    onClose?.();
-  };
-  const onKey = (e) => {
-    if (e.key === "Escape") close();
-  };
-
-  const closeBtn = el("button", {
-    class: "swx-x",
-    type: "button",
-    "aria-label": "Close",
-    text: "×",
-    onclick: close,
-  });
-
-  const heading = el("div", { class: "swx-t", text: title });
-
-  const panel = el(
-    "div",
-    { class: "swx-d", role: "document" },
-    el("div", { class: "swx-h" }, heading, closeBtn),
-    body,
-  );
-
-  const root = el(
-    "div",
-    { class: "swx", role: "dialog", "aria-modal": "true", "aria-label": title },
-    el("div", { class: "swx-bd", onclick: close }),
-    panel,
-  );
-
-  /** Retitle in place — the dialog's screens are steps, not separate dialogs. */
-  const setTitle = (next) => {
-    heading.textContent = next;
-    root.setAttribute("aria-label", next);
-  };
-
-  document.addEventListener("keydown", onKey);
-  document.body.append(root);
-  return { body, close, panel, setTitle };
+/** Called once the trade dialog is about to render its form. */
+export function injectFormStyles() {
+  injectStyles("swx-form-css", CSS);
 }

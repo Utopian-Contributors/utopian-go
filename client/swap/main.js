@@ -11,9 +11,15 @@
  * collects on `SOL → X` (input side) and on `X → SOL` (output side) alike.
  */
 import { el } from "../js/dom.js";
+// Dollars for someone who does not think in lamports. Shared with the wallet
+// page rather than defined twice, so a balance reads the same in both places.
+import { dollars as usd } from "../js/num.js";
+import { renderPicker } from "../js/picker.js";
+import { onSession, readSession, shortAddr } from "../js/session.js";
+import { dialog } from "../js/ui.js";
+import { restore, signAndSend, wallets } from "../js/wallet.js";
 import { build, quote, toBase58 } from "./jup.js";
-import { dialog } from "./ui.js";
-import { connect, signAndSend, wallets } from "./wallet.js";
+import { injectFormStyles } from "./ui.js";
 
 const SLIPPAGE_BPS = 100;
 const SOL_MINT = "So11111111111111111111111111111111111111112";
@@ -56,6 +62,21 @@ const LADDER_STEPS = 4;
 /** Kept across dialogs so a second trade doesn't re-prompt the wallet. */
 let session = null;
 
+/**
+ * Logging out in the header has to reach in here too.
+ *
+ * This bundle holds a live wallet object and a connected account, and neither
+ * is stored anywhere the header can clear. Without this, Logout would empty
+ * the corner of the page while the buy dialog went on quoting, signing and
+ * displaying the address someone had just asked it to forget. The same check
+ * covers an account switch: a session whose address no longer matches the
+ * remembered one is not this visitor's session any more.
+ */
+onSession(() => {
+  const saved = readSession();
+  if (!saved || saved.address !== session?.account?.address) session = null;
+});
+
 // —— base-unit arithmetic on strings ——
 // Money must not round-trip through a float. 0.1 SOL is 100000000 lamports,
 // not 100000000.00000001, and the difference is a rejected transaction.
@@ -85,25 +106,6 @@ function pretty(raw, decimals) {
   if (!Number.isFinite(n)) return "0";
   const digits = n >= 1000 ? 2 : n >= 1 ? 4 : 6;
   return n.toLocaleString("en-US", { maximumFractionDigits: digits });
-}
-
-function shortAddr(a) {
-  return a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
-}
-
-/**
- * Dollars, two decimals, for someone who does not think in lamports.
- *
- * Sub-cent amounts state themselves as a bound rather than as $0.00, which
- * reads as free. Everything the confirmation screen shows goes through here.
- */
-function usd(v) {
-  if (!Number.isFinite(v)) return "—";
-  if (v > 0 && v < 0.005) return "<$0.01";
-  return `$${v.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
 }
 
 /** Data attributes the server writes onto the price strip, by fund key. */
@@ -144,9 +146,19 @@ function open(t) {
    * from under it without going through its own Back button.
    */
   let cleanup = null;
+  /**
+   * Whether this dialog ever put a transaction on the wire.
+   *
+   * Handed to the caller on close so a page showing balances knows whether it
+   * has anything to re-read. Deliberately not "did the trade succeed": all we
+   * can honestly report is that the wallet broadcast something, which is the
+   * same claim the success message makes.
+   */
+  let sent = false;
   const { body, close, setTitle } = dialog(`Trade ${t.symbol}`, () => {
     cleanup?.();
     cleanup = null;
+    t.onClose?.(sent);
   });
   // Buying SOL cannot be funded with SOL, and vice versa for USDC.
   const funds = FUNDS.filter((f) => f.mint !== t.mint);
@@ -157,7 +169,11 @@ function open(t) {
   const canSell = t.decimals != null;
 
   let fund = funds[0];
-  let mode = "buy";
+  // The wallet page opens this straight into a sell from a position's minus
+  // button; everywhere else a trade starts as a buy. Selling needs the mint's
+  // decimals to turn a typed amount into base units, so a request to sell
+  // something we cannot size falls back to buying rather than to a dead form.
+  let mode = t.mode === "sell" && t.decimals != null ? "sell" : "buy";
   let typed = "";
   let balances = {};
   /** Once someone edits the field, stop replacing it with assumed positions. */
@@ -165,42 +181,26 @@ function open(t) {
 
   form();
 
-  /** Wallet picker, shown only when connecting needs a choice. */
+  // A wallet remembered from a previous visit is re-authorised without a
+  // prompt, so the dialog arrives already connected — real quotes, a real
+  // balance, and no Connect step in front of any of it. Deliberately not
+  // awaited: the form is on screen and priced from the page's own numbers
+  // while this runs, and it repaints only if a wallet actually answers.
+  if (!session) {
+    void restore().then((found) => {
+      if (!found || session || !body.isConnected) return;
+      session = found;
+      form();
+    });
+  }
+
+  /** Wallet chooser, shown only when connecting needs a choice. */
   function picker(found) {
-    body.replaceChildren();
-    const list = el("div", { class: "swx-w" });
-    const note = el("div", { class: "swx-note" });
-
-    for (const wallet of found) {
-      const row = el("button", { type: "button" });
-      // Data URIs only. Wallet Standard supplies the icon inline, and this is a
-      // pre-connect screen — an extension offering a remote URL instead would
-      // make the browser fetch it, which is exactly the third-party contact the
-      // dialog otherwise no longer makes before a wallet is chosen.
-      if (/^data:image\//i.test(wallet.icon ?? "")) {
-        row.append(el("img", { src: wallet.icon, alt: "" }));
-      }
-      row.append(el("span", { text: wallet.name }));
-      row.addEventListener("click", async () => {
-        row.disabled = true;
-        note.textContent = "";
-        try {
-          session = { wallet, account: await connect(wallet) };
-          form();
-        } catch (err) {
-          row.disabled = false;
-          note.textContent = err?.message || "Connection declined.";
-          note.className = "swx-note err";
-        }
-      });
-      list.append(row);
-    }
-
-    body.append(
-      el("div", { class: "swx-lbl" }, el("span", { text: "Choose a wallet" })),
-      list,
-      note,
-    );
+    setTitle("Connect a wallet");
+    renderPicker(body, found, (picked) => {
+      session = picked;
+      form();
+    });
   }
 
   // —— the trade form: shown immediately, quotes without a wallet ——
@@ -208,6 +208,9 @@ function open(t) {
   function form() {
     cleanup?.();
     cleanup = null;
+    // Here rather than at module load: the chooser may be the only screen this
+    // dialog ever shows, and its styles are in the shared sheet.
+    injectFormStyles();
     setTitle(`Trade ${t.symbol}`);
     body.replaceChildren();
     const buying = mode === "buy";
@@ -697,6 +700,38 @@ function open(t) {
       }
 
       /**
+       * One side of the trade, on the two lines the pane gives it.
+       *
+       * Dollars lead and the quantity sits under them: dollars are what the
+       * trade means, the quantity is what it does, and both belong on screen.
+       *
+       * Unless we hold no price for that side, which for a mint created this
+       * morning is the ordinary case and not the exotic one. The dollar line
+       * then printed "—" while the quantity — exact, and the figure the wallet
+       * is actually about to be asked to approve — sat in the small grey line
+       * underneath, so the one question a confirmation screen exists to answer
+       * was answered in the quietest text in the pane and contradicted by the
+       * loudest. The quantity is promoted into the headline in that case, and
+       * the line beneath it is dropped rather than left repeating it.
+       *
+       * @param {HTMLElement} head the large line
+       * @param {HTMLElement} sub the quiet line under it
+       * @param {{symbol: string, decimals?: number, key: string}} side
+       * @param {string} raw base units of that side, off the quote
+       * @param {number} value the same amount in dollars, or NaN
+       */
+      function stateSide(head, sub, side, raw, value) {
+        const qty = units(side, raw);
+        const priced = Number.isFinite(value);
+        head.className = `swx-recv${priced ? "" : " qty"}`;
+        // A dash only when there is neither a price nor the decimals to state
+        // a quantity with — nothing is known about this side's size at all.
+        head.textContent = priced ? usd(value) : qty || "—";
+        sub.textContent = priced ? qty : "";
+        sub.hidden = !sub.textContent;
+      }
+
+      /**
        * A floor, stated as a floor.
        *
        * `pretty` rounds to nearest, which is right for a figure that only has
@@ -734,10 +769,8 @@ function open(t) {
         const paid = Number.isFinite(quoted) && quoted > 0 ? quoted : spend;
         const got = toUsd(recv, q.outAmount);
 
-        payAmt.textContent = usd(paid);
-        recvAmt.textContent = usd(got);
-        payUnits.textContent = units(pay, q.inAmount);
-        recvUnits.textContent = units(recv, q.outAmount);
+        stateSide(payAmt, payUnits, pay, q.inAmount, paid);
+        stateSide(recvAmt, recvUnits, recv, q.outAmount, got);
 
         // Impact is a fraction from Jupiter, and it is only worth a row when
         // it is large enough to cost real money — as money, not as basis points.
@@ -837,6 +870,16 @@ function open(t) {
 
       back.addEventListener("click", () => {
         if (sending) return;
+        // Once something has been sent this button reads "Done", and done means
+        // done: the trade is on the wire, and dropping back into a form still
+        // holding the amount just traded is an invitation to send it twice.
+        //
+        // Closing is also what tells the opener anything happened — the dialog
+        // hands `sent` to its onClose, which is the signal the wallet page waits
+        // on before it starts watching for the new balance. Going back to the
+        // form instead left that page showing pre-trade figures until whenever
+        // the dialog was eventually dismissed.
+        if (done) return close();
         leave();
         form();
       });
@@ -860,6 +903,7 @@ function open(t) {
           });
           const sig = toBase58(await signAndSend(session.wallet, session.account, tx));
           done = true;
+          sent = true;
           // "Sent", not "Bought". signAndSend resolves when the wallet has
           // broadcast the transaction, which is not the same as it landing and
           // not the same as it succeeding: a swap carries the quote's
