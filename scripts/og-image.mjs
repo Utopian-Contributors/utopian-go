@@ -12,11 +12,11 @@
  * a card that silently doesn't draw is worth more than the ~10 KB the smaller
  * format saves on an image no visitor to the site ever loads.
  *
- * The card is a stripped version of the wordmark: the same shapes as
- * client/go-wordmark.svg, flattened to black on white. A social card is
- * composited over whatever chrome the platform draws around it, at whatever
- * size the feed decides — a high-contrast mark survives that better than a
- * mid-green one shrunk to a thumbnail.
+ * The card is the wordmark's own shapes, in the wordmark's own green, over a
+ * white-to-grey gradient. The mark is drawn at over half the card width, so it
+ * survives the thumbnail a feed may shrink it to on size alone — which is what
+ * buys the brand colour here, where a run of body text at this contrast would
+ * not be legible.
  */
 import { execFileSync } from "child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
@@ -52,6 +52,30 @@ const MARK_RATIO = 0.55;
 const SCALE = 2;
 
 /**
+ * The wordmark's own green, read off client/go-wordmark.svg rather than
+ * repeated as a literal — the card and the logo in the header are then the
+ * same colour by construction, and stay that way through a rebrand.
+ */
+const INK_FILL = (() => {
+  const m = readFileSync(srcSvg, "utf8").match(/fill="(#[0-9a-fA-F]{3,8})"/);
+  if (!m) throw new Error("no fill colour found in go-wordmark.svg");
+  return m[1];
+})();
+
+/**
+ * Background ramp, top to bottom. Both ends come from the site's own neutrals
+ * (--bg and the grey family around --ch/--b in client/app.css), so the card
+ * reads as the same surface the page does.
+ *
+ * Drawn as a gradient rather than a flat fill because a social card is
+ * composited onto the platform's own background: a card that is white edge to
+ * edge dissolves into a light feed, and the ramp gives the bottom edge enough
+ * tone to hold the card's shape.
+ */
+const BG_TOP = "#ffffff";
+const BG_BOTTOM = "#e3e6e9";
+
+/**
  * Pull the mark's shapes out of the wordmark rather than duplicating them.
  *
  * The source paints with a single fill on the root <svg>, so its shapes take
@@ -82,8 +106,12 @@ function buildSvg() {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W * SCALE}" height="${H * SCALE}"` +
     ` viewBox="0 0 ${W} ${H}">` +
-    `<rect width="${W}" height="${H}" fill="#fff"/>` +
-    `<g fill="#000" transform="translate(${tx.toFixed(3)} ${ty.toFixed(3)}) scale(${s.toFixed(5)})">` +
+    `<defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="${BG_TOP}"/>` +
+    `<stop offset="1" stop-color="${BG_BOTTOM}"/>` +
+    `</linearGradient></defs>` +
+    `<rect width="${W}" height="${H}" fill="url(#bg)"/>` +
+    `<g fill="${INK_FILL}" transform="translate(${tx.toFixed(3)} ${ty.toFixed(3)}) scale(${s.toFixed(5)})">` +
     markShapes() +
     `</g></svg>`
   );
