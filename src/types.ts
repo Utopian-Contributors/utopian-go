@@ -262,6 +262,15 @@ export interface SearchApiResponse {
    * plausible ones beats silently picking or silently dropping.
    */
   tokens?: TokenQuote[];
+  /**
+   * Whether asking for the next page will return anything.
+   *
+   * Read from Brave's `more_results_available`, and additionally false once
+   * the feed has reached the last page Brave will serve. The client scrolls on
+   * this flag alone, so it has to mean "there is another page to fetch" rather
+   * than "more results exist somewhere" — the two part company at the ceiling.
+   */
+  more?: boolean;
   error?: string;
 }
 
@@ -273,6 +282,14 @@ export interface ImageSearchApiResponse {
 
 /** Loose Brave response shapes (fields we read only). */
 export interface BraveSearchResponse {
+  query?: {
+    /**
+     * Brave's own "is there a page after this one". Documented as the thing to
+     * check rather than incrementing `offset` until a page comes back empty,
+     * which spends a metered call to discover the end of the results.
+     */
+    more_results_available?: boolean;
+  };
   web?: {
     results?: Array<{
       title?: string;

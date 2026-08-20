@@ -25,6 +25,21 @@ export const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 export const BRAVE_IMAGES_ENDPOINT =
   "https://api.search.brave.com/res/v1/images/search";
 
+/**
+ * Web results per request, and the last page Brave will serve.
+ *
+ * Upstream caps `count` at 20 and `offset` at 9, so at this page size the feed
+ * can reach 100 results before there is nothing left to ask for. Ten rather
+ * than twenty because it is the step the scroll pays for: a continuation page
+ * carries results and nothing else (see normalize in lib/brave.ts), which puts
+ * one at a few hundred bytes on the wire instead of a second full response.
+ *
+ * The images endpoint takes no offset at all, which is why the feed is a
+ * web-tab feature rather than a whole-SERP one.
+ */
+export const BRAVE_PAGE_SIZE = 10;
+export const BRAVE_MAX_OFFSET = 9;
+
 // —— Solana token index ——
 
 /**

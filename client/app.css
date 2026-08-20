@@ -1049,6 +1049,35 @@ body.home #sc {
   background: var(--hover);
 }
 
+/* —— Infinite feed —— */
+/*
+ * One element under the last result, in three states: the box the observer
+ * watches for, the spinner while the next page is in flight, and the line that
+ * says there is no page after this one. One element rather than three so the
+ * bottom of the list never grows or collapses a box as it moves between them —
+ * which, at the exact moment someone is scrolling into it, is the one place a
+ * layout shift is guaranteed to be felt.
+ */
+.fd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
+  max-width: 70ch;
+  font-size: 13px;
+  color: var(--f);
+}
+
+.fd.is-on::after {
+  content: "";
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--b);
+  border-top-color: var(--a);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
 .ci {
   margin: 0 0 2px;
 }

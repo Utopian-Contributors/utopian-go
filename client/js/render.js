@@ -35,12 +35,26 @@ import { tokenCards } from "./token.js";
  *   lastQuery: string,
  *   requestId: number,
  *   activeController: AbortController | null,
+ *   offset: number,
+ *   more: boolean,
+ *   feeding: boolean,
  * }} ViewState
  */
 
 /** Image tile cell — must stay in sync with `.ig-item` sizing in app.css. */
 const TILE_MAX_W = 220;
 const TILE_MAX_H = 160;
+
+/**
+ * How far below the viewport the next page starts loading.
+ *
+ * A result card runs about 110px, so ten of them is roughly one screen:
+ * fetching a screen ahead means the results are usually already there when the
+ * reader arrives, and no earlier than that — every page is a metered Brave
+ * call, and a margin of several screens would spend the whole pagination
+ * allowance on someone who stopped reading at the third result.
+ */
+const FEED_AHEAD_PX = 800;
 
 /** @param {ViewState} state */
 export function createRenderer(state) {
@@ -112,6 +126,10 @@ export function createRenderer(state) {
 
   function paint() {
     clearResults();
+    // clearResults() emptied #rs, taking the feed marker out of the tree with
+    // it. Drop the observation too, so nothing is left watching a detached
+    // node while this paint decides whether the feed applies at all.
+    feedWatch?.disconnect();
     if (!state.data && state.tab !== "images") return;
 
     if (state.tab === "images") {
@@ -148,6 +166,10 @@ export function createRenderer(state) {
       setStatus("No results.");
     }
 
+    // Arms the feed under the web list, or tears it down on the tabs that
+    // have nothing behind their first page.
+    syncFeed();
+
     // Keep sticky chrome height + side max in sync after layout changes
     syncSideMax();
   }
@@ -178,6 +200,126 @@ export function createRenderer(state) {
       frag.append(card);
     });
     results.append(frag);
+  }
+
+  /* —— Infinite feed —— */
+
+  /** @type {IntersectionObserver | null} */
+  let feedWatch = null;
+  /** The marker under the last result: spinner, then trigger, then epitaph. */
+  let feedMark = null;
+
+  /**
+   * Arm the feed under the web results, or tear it down.
+   *
+   * Called after every paint, so it is the one place that decides whether this
+   * view paginates at all. Web tab only — and that is the shape of the API
+   * rather than a choice: Brave paginates web results with `offset`, its image
+   * endpoint takes no offset at any count, and news, videos and discussions
+   * arrive complete on the first response with nothing behind them to ask for.
+   */
+  function syncFeed() {
+    feedWatch?.disconnect();
+    if (state.tab !== "web") return stopFeed();
+
+    const done = !state.more;
+    // Ended without the reader ever having scrolled for it. A first page that
+    // fits on one screen does not need a footnote saying it was the only one.
+    if (done && !state.offset) return stopFeed();
+
+    if (!feedMark) feedMark = el("div", { class: "fd" });
+    // Appending a node already in the tree moves it, so the marker follows the
+    // results down rather than blinking out and back between pages.
+    results.append(feedMark);
+
+    if (done) {
+      feedMark.className = "fd is-end";
+      feedMark.textContent = "End of results";
+      return;
+    }
+
+    feedMark.className = "fd";
+    feedMark.textContent = "";
+    // An observer rather than a scroll listener: the browser reports the
+    // crossing itself, so a flick down the page costs one callback instead of
+    // one per frame spent measuring against a scroll position.
+    if (!feedWatch) {
+      feedWatch = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) loadMore();
+        },
+        { rootMargin: `${FEED_AHEAD_PX}px 0px` },
+      );
+    }
+    feedWatch.observe(feedMark);
+  }
+
+  /** Take the feed down entirely — no marker, nothing observed. */
+  function stopFeed() {
+    feedWatch?.disconnect();
+    feedMark?.remove();
+    feedMark = null;
+  }
+
+  /**
+   * Fetch and append the page after the one showing.
+   *
+   * One page at a time, and only one in flight: the marker stays on screen for
+   * as long as the request takes, and every further crossing while it sits
+   * there would spend another metered Brave call on the page already coming.
+   */
+  async function loadMore() {
+    if (state.feeding || !state.more) return;
+    state.feeding = true;
+    feedWatch?.disconnect();
+    if (feedMark) feedMark.className = "fd is-on";
+
+    const q = state.lastQuery || state.data?.query || "";
+    const next = state.offset + 1;
+    // Deliberately not on state.activeController: that one belongs to the
+    // search itself, and borrowing it here would let a scroll abort the search
+    // that is still painting the page. The id below does the same job from the
+    // other end — a page whose query has been replaced is dropped on arrival
+    // rather than cancelled in flight.
+    const id = state.requestId;
+
+    try {
+      const res = await fetch(
+        `/api/search?q=${encodeURIComponent(q)}&offset=${next}`,
+        { headers: { Accept: "application/json" } },
+      );
+      /** @type {SearchApiResponse} */
+      const json = await res.json();
+      // A new search landed while this was out. Its results are the page's
+      // now, and appending to them would interleave two queries.
+      if (id !== state.requestId || state.tab !== "web") return;
+
+      if (json.error || !json.results?.length) {
+        // Brave answered, with nothing. Whatever the reason, there is no page
+        // after a page that came back empty.
+        state.more = false;
+      } else {
+        state.offset = next;
+        state.more = !!json.more;
+        // Appended to the model too, not just to the DOM: going back to this
+        // SERP repaints from state.data, and a reader who scrolled to result
+        // sixty should not land back on the first ten.
+        if (state.data) {
+          state.data.results = (state.data.results || []).concat(json.results);
+        }
+        paintWeb(json.results);
+      }
+    } catch {
+      // A dropped connection is not the end of the results, but it is the end
+      // of scrolling for them: re-firing on every crossing would hammer a
+      // connection that has already shown it is failing.
+      state.more = false;
+    } finally {
+      state.feeding = false;
+      // Moves the marker below what was just painted, and either re-observes
+      // it or turns it into the end-of-results line.
+      syncFeed();
+    }
   }
 
   /**
@@ -772,5 +914,6 @@ export function createRenderer(state) {
     paint,
     clearSide,
     syncSideMax,
+    stopFeed,
   };
 }

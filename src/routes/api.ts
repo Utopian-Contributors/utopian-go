@@ -1,6 +1,7 @@
 import express, { NextFunction, Request, Response, Router } from "express";
 import { fetchBalances, isPubkey } from "../lib/balances";
 import { fetchHoldings } from "../lib/holdings";
+import { BRAVE_MAX_OFFSET } from "../config";
 import { BraveApiError, braveImageSearch, braveSearch } from "../lib/brave";
 import { asString } from "../lib/query";
 import { rateLimit } from "../lib/rateLimit";
@@ -95,6 +96,20 @@ function wrap(
   };
 }
 
+/**
+ * The page the caller asked for, clamped to one Brave will answer.
+ *
+ * Caller-supplied and therefore not trusted with the upstream URL: "abc",
+ * "-1" and "500" all have to become a page number here, because past the
+ * ceiling Brave answers 422 and this server renders that to the visitor as
+ * "Brave API responded 422" — an upstream complaint about our own URL.
+ */
+function readOffset(value: unknown): number {
+  const n = Math.floor(Number(asString(value)));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(n, BRAVE_MAX_OFFSET);
+}
+
 function apiError(err: unknown, query: string) {
   const message =
     err instanceof BraveApiError
@@ -107,6 +122,7 @@ function apiError(err: unknown, query: string) {
 /** JSON web search API for client-side hydration. */
 apiRouter.get("/api/search", searchLimit, wrap(async (req: Request, res: Response) => {
   const q = asString(req.query.q).trim();
+  const offset = readOffset(req.query.offset);
 
   if (!q) {
     const body: SearchApiResponse = { query: "", results: [] };
@@ -116,10 +132,15 @@ apiRouter.get("/api/search", searchLimit, wrap(async (req: Request, res: Respons
 
   // Resolved from the in-memory index — synchronous, so the prices ride along
   // on this response instead of costing a second round trip.
-  const tokens = lookupTokens(q);
+  //
+  // First page only. The price card answers the query, and the query does not
+  // change as someone scrolls — repeating it forty results down would be a
+  // second answer to a question already answered, on a response whose whole
+  // point is to be small.
+  const tokens = offset === 0 ? lookupTokens(q) : [];
 
   try {
-    const body = await braveSearch(q);
+    const body = await braveSearch(q, offset);
     if (tokens.length) body.tokens = tokens;
     res.json(body);
   } catch (err) {

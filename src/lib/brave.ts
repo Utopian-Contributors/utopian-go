@@ -2,6 +2,8 @@ import {
   BRAVE_API_KEY,
   BRAVE_ENDPOINT,
   BRAVE_IMAGES_ENDPOINT,
+  BRAVE_MAX_OFFSET,
+  BRAVE_PAGE_SIZE,
   BRAVE_TIMEOUT_MS,
 } from "../config";
 import { plainText } from "./text";
@@ -65,10 +67,23 @@ async function braveFetch(url: string): Promise<unknown> {
   }
 }
 
-export async function braveSearch(query: string): Promise<SearchApiResponse> {
-  const url = `${BRAVE_ENDPOINT}?q=${encodeURIComponent(query)}&count=10`;
+/**
+ * One page of web results.
+ *
+ * `offset` counts pages, not results — Brave's own unit — so page n starts at
+ * n x BRAVE_PAGE_SIZE. Callers are expected to have clamped it to
+ * BRAVE_MAX_OFFSET already; anything past that is a 422 from upstream, which
+ * would reach the visitor as "Brave API responded 422".
+ */
+export async function braveSearch(
+  query: string,
+  offset = 0,
+): Promise<SearchApiResponse> {
+  const url =
+    `${BRAVE_ENDPOINT}?q=${encodeURIComponent(query)}&count=${BRAVE_PAGE_SIZE}` +
+    (offset > 0 ? `&offset=${offset}` : "");
   const data = (await braveFetch(url)) as BraveSearchResponse;
-  return normalize(query, data);
+  return normalize(query, data, offset);
 }
 
 export async function braveImageSearch(
@@ -192,7 +207,11 @@ function snippetText(value: string = ""): string {
     .trim(); // only the full snippet, not segments
 }
 
-function normalize(query: string, data: BraveSearchResponse): SearchApiResponse {
+function normalize(
+  query: string,
+  data: BraveSearchResponse,
+  offset = 0,
+): SearchApiResponse {
   const results: WebResult[] = (data.web?.results ?? []).map((r) => {
     const item: WebResult = {
       title: plainText(r.title ?? ""),
@@ -219,6 +238,32 @@ function normalize(query: string, data: BraveSearchResponse): SearchApiResponse 
     if (age) item.age = age;
     return item;
   });
+
+  /**
+   * Whether a next page is worth asking for.
+   *
+   * Both halves matter. Brave's flag answers "are there more results", and the
+   * ceiling answers "will you serve them to me" — past offset 9 it will not,
+   * and a client scrolling on the flag alone would spend a metered call to be
+   * told so. The client stops on this field, so it has to mean both.
+   */
+  const more =
+    data.query?.more_results_available === true && offset < BRAVE_MAX_OFFSET;
+
+  /**
+   * A continuation page is results and nothing else.
+   *
+   * The infobox, the FAQ block and the news/video/discussion strips describe
+   * the *query*, not page four of it — Brave repeats them on every page, and
+   * the client painted them from page 0 and would throw these away. Dropping
+   * them here is the difference between a scroll step costing a few hundred
+   * bytes and costing a second full search response, which on this project is
+   * the difference between infinite scroll fitting the bandwidth budget and
+   * not. Everything below this line only runs for the first page.
+   */
+  if (offset > 0) {
+    return { query, results, ...(more ? { more } : {}) };
+  }
 
   const rawBox = data.infobox?.results?.[0];
   let infobox: Infobox | undefined;
@@ -320,5 +365,6 @@ function normalize(query: string, data: BraveSearchResponse): SearchApiResponse 
     ...(news?.length ? { news } : {}),
     ...(videos?.length ? { videos } : {}),
     ...(discussions?.length ? { discussions } : {}),
+    ...(more ? { more } : {}),
   };
 }

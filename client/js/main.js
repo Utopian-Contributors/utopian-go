@@ -23,6 +23,12 @@ const state = {
   lastQuery: "",
   requestId: 0,
   activeController: null,
+  /** Pages of web results appended below the first one, by Brave's offset. */
+  offset: 0,
+  /** Whether the server says the next page is worth asking for. */
+  more: false,
+  /** A continuation page is in flight; only ever one at a time. */
+  feeding: false,
 };
 
 const form = /** @type {HTMLFormElement} */ ($("f"));
@@ -117,6 +123,10 @@ function goHome() {
   state.selectedImage = null;
   state.lastQuery = "";
   state.tab = "web";
+  state.offset = 0;
+  state.more = false;
+  state.feeding = false;
+  ui.stopFeed();
   document.body.className = "home";
   setLoading(false);
   clearResults();
@@ -142,6 +152,13 @@ async function runSearch(query, pushState, opts = {}) {
 
   // Set query first so tabs can render immediately (disabled until results)
   state.lastQuery = query;
+  // A new query starts at its own first page, whatever the last one reached.
+  state.offset = 0;
+  state.more = false;
+  // A continuation for the *previous* query may still be in flight. It drops
+  // itself on arrival (loadMore checks requestId), but the flag it set has to
+  // come off here or this search's feed waits on a page it will never use.
+  state.feeding = false;
   if (state.imagesQuery !== query) {
     state.images = null;
     state.imagesQuery = "";
@@ -194,6 +211,8 @@ async function runSearch(query, pushState, opts = {}) {
     }
 
     state.data = json;
+    // Whether there is a page two. The feed reads this and nothing else.
+    state.more = !!json.more;
     ui.ensureTabAvailable();
     if (!pushState) writeUrl(query, state.tab, "replace");
     // Images still loading → keep body.ld so tabs stay disabled through paint()
