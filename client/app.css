@@ -427,12 +427,11 @@ body.res .sf {
 .sf input::placeholder {
   color: var(--f);
 }
-
 .sf-actions {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  margin: 4px 4px 4px 0;
+  margin: 4px 0 4px 0;
   /* Space clear · divider · search evenly */
   gap: 6px;
 }
