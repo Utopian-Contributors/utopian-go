@@ -188,7 +188,7 @@ body.home #st {
 }
 
 /*
- * The account control, pinned out of flow.
+ * The account control, out of flow on every page.
  *
  * That is the whole design. This stylesheet has two entirely different header
  * layouts — a centred column on the home page, a row on results, each stacking
@@ -196,6 +196,11 @@ body.home #st {
  * re-deriving the spacer maths that lands the search field on the results
  * column's edge. Out of flow it reserves no space, so it changes no geometry on
  * any page at any width, and the layout shift it can contribute is exactly zero.
+ *
+ * Pinned to the window here, which is the home page's answer to where it goes:
+ * the header there is a column centred in the middle of the viewport, so there
+ * is no row for the control to sit on and it is simply a bar along the top.
+ * Results have a row, and pin it to that instead — see body.res #ac.
  *
  * The wallet page needs none of this: one header, one row, control in it.
  */
@@ -224,6 +229,37 @@ body.home #st {
 
 #ac > * {
   pointer-events: auto;
+}
+
+/*
+ * On results, positioned by the header rather than by the window.
+ *
+ * Fixed at `top: 0` it sat 18px above the line the wordmark and the search
+ * field share, and no padding written here could have found that line: the row
+ * is as tall as the field, the field is as tall as the buttons inside it, and
+ * none of that is a number this rule has any business knowing. Absolute inside
+ * #hd and spanning it pad to pad, the box simply is the row — so the
+ * `align-items: center` it already had lands the control on the wordmark's
+ * centre line, and keeps it there if the row's height ever changes.
+ *
+ * Still out of flow, so it still reserves nothing and still shifts nothing.
+ *
+ * `right` resolves against #hd's padding box, so var(--pad) puts the control's
+ * edge on the header's content edge — the same line the spacer stops the search
+ * field on, and the same place the fixed bar's capped width and auto margins
+ * were reaching for.
+ */
+body.res #ac {
+  position: absolute;
+  top: var(--hd-pt);
+  right: var(--pad);
+  bottom: var(--hd-pb);
+  left: auto;
+  /* Out of the full-width bar and back to hugging its contents. */
+  width: auto;
+  max-width: none;
+  margin-inline: 0;
+  padding: 0;
 }
 
 /* Home-only price strip. Hidden by default so it never becomes a flex item in
@@ -277,10 +313,18 @@ body.home #hm-tk i.dn {
 
 /* —— Results chrome —— */
 body.res #hd {
+  /* The wordmark's height and the header's own pads, named rather than written
+     where they are used, because the account control is positioned off all
+     three and they are the only numbers in this row it may rely on. */
+  --lg-h: 40px;
+  --hd-pt: 16px;
+  --hd-pb: 8px;
+  /* The containing block for #ac; see there. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 20px;
-  padding-block: 16px 8px;
+  padding-block: var(--hd-pt) var(--hd-pb);
 }
 
 /* The wordmark sizes to itself and the field takes what is left, so the field
@@ -307,7 +351,7 @@ body.res #hd::after {
 }
 
 body.res .lg-mark {
-  height: 40px;
+  height: var(--lg-h);
   width: auto;
 }
 
@@ -1526,10 +1570,13 @@ body.home #sc {
   }
 
   body.res #hd {
+    --lg-h: 36px;
+    --hd-pt: 12px;
+    --hd-pb: 10px;
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
-    padding-block: 12px 10px;
+    padding-block: var(--hd-pt) var(--hd-pb);
   }
 
   /* Stacked layout: no centring spacer, and the wordmark sizes to its content
@@ -1551,8 +1598,15 @@ body.home #sc {
     align-self: flex-start;
   }
 
-  body.res .lg-mark {
-    height: 36px;
+  /*
+   * Stacked, the header's box is the wordmark, the field, and the gap between
+   * them, and centring in all of that would float the control in the gap. The
+   * wordmark's row is the one it shares a line with, so it takes that row's
+   * height and centres in it instead.
+   */
+  body.res #ac {
+    bottom: auto;
+    height: var(--lg-h);
   }
 
   body.res .sf {
