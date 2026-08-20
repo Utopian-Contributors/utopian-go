@@ -141,10 +141,24 @@ body.home {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* The bottom pad is the footer's: it is fixed to the window here, so nothing
-     in flow reserves room for it and the centred field would otherwise sit
-     under the bar on a short viewport. */
-  padding: 24px 16px 76px;
+  /*
+   * Two jobs, deliberately left as two numbers.
+   *
+   * The first is the footer's. It is fixed to the window here, so nothing in
+   * flow reserves room for it, and without this the centred field would sit
+   * under the bar on a short viewport.
+   *
+   * The second is optical. justify-content centres the block in the content
+   * box, and a block on the exact middle of a window reads as sitting low —
+   * the eye puts the centre of a page a little above its geometric one, and
+   * the footer pinned along the bottom edge adds weight down there that drags
+   * the impression lower still. Padding the bottom lifts the centring region
+   * rather than nudging the block with a margin, so the field stays honestly
+   * centred in what is left of the window and simply lands where it reads as
+   * centred. Capped: past a point this stops being a correction and starts
+   * being a search field sitting high on a very tall monitor.
+   */
+  padding: 24px 16px calc(76px + clamp(24px, 6vh, 64px));
   min-height: 100vh;
 }
 
