@@ -2,13 +2,22 @@ import path from "path";
 
 export const PORT = Number(process.env.PORT) || 3000;
 
+/** Canonical public origin. The fallback when the env var is unset. */
+const DEFAULT_SITE_URL = "https://utopiango.com";
+
 /**
- * Public origin, e.g. `https://utopian.go`. Only used to absolutise the social
- * card URL: crawlers are inconsistent about resolving a relative `og:image`
- * against the page, and the ones that don't just show no card. Unset leaves
- * the tag root-relative, which is correct for local dev.
+ * Public origin. Only used to absolutise the social card URL: crawlers are
+ * inconsistent about resolving a relative `og:image` against the page, and X
+ * in particular just shows no card at all.
+ *
+ * Defaulted rather than left empty. It was empty, and the deploy never set it
+ * — so production shipped `content="/og.png"` and every link posted to X went
+ * out bare. Nothing here is per-deploy secret: there is one canonical origin,
+ * so it belongs in the code, and the env var stays for staging hosts that need
+ * to point the tag at themselves. A dev build naming the production card is
+ * harmless — no crawler ever reads a page served off localhost.
  */
-export const SITE_URL = (process.env.SITE_URL || "").replace(/\/+$/, "");
+export const SITE_URL = (process.env.SITE_URL || DEFAULT_SITE_URL).replace(/\/+$/, "");
 export const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
 
 /**

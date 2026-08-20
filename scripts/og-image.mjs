@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 /**
- * Social card generator: wordmark → client/og.webp
+ * Social card generator: wordmark → client/og.png
  *
  * Run by hand (`npm run build:og`), not on every client build — it shells out
- * to macOS `sips` and `cwebp`, which no other build step needs. The output is
- * checked in; `copyStatic` in build-client.mjs ships it to public/.
+ * to macOS `sips`, which no other build step needs. The output is checked in;
+ * `copyStatic` in build-client.mjs ships it to public/.
+ *
+ * PNG rather than WebP, which this wrote until the card stopped rendering on
+ * X. WebP is nominally on their supported list, but the file this produces is
+ * lossless VP8L — a variant their card renderer does not reliably decode, and
+ * a card that silently doesn't draw is worth more than the ~10 KB the smaller
+ * format saves on an image no visitor to the site ever loads.
  *
  * The card is a stripped version of the wordmark: the same shapes as
  * client/go-wordmark.svg, flattened to black on white. A social card is
@@ -21,7 +27,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const srcSvg = path.join(root, "client", "go-wordmark.svg");
-const outWebp = path.join(root, "client", "og.webp");
+const outPng = path.join(root, "client", "og.png");
 
 /** Open Graph's canonical size — 1.91:1, what every platform crops toward. */
 const W = 1200;
@@ -86,25 +92,21 @@ function buildSvg() {
 const work = mkdtempSync(path.join(tmpdir(), "og-"));
 try {
   const svgPath = path.join(work, "og.svg");
-  const pngPath = path.join(work, "og.png");
   writeFileSync(svgPath, buildSvg());
 
   // sips is the only rasterizer guaranteed present on macOS; it reads SVG and
   // writes PNG at the size the document declares (2× here).
-  execFileSync("sips", ["-s", "format", "png", svgPath, "--out", pngPath], {
+  execFileSync("sips", ["-s", "format", "png", svgPath, "--out", outPng], {
     stdio: "ignore",
   });
 
-  // Lossless: the card is two flat tones and hard edges, exactly what lossy
-  // WebP rings around, and it still compresses to a few KB.
-  execFileSync(
-    "cwebp",
-    ["-lossless", "-z", "9", "-resize", String(W), String(H), pngPath, "-o", outWebp],
-    { stdio: "ignore" },
-  );
+  // Down to 1:1 as a second pass, so the glyph edges land on subpixels and
+  // resample rather than being rasterized straight to the final grid. `-z`
+  // takes height then width.
+  execFileSync("sips", ["-z", String(H), String(W), outPng], { stdio: "ignore" });
 
-  const bytes = readFileSync(outWebp).length;
-  console.log(`og.webp  ${W}×${H}  ${bytes} B`);
+  const bytes = readFileSync(outPng).length;
+  console.log(`og.png  ${W}×${H}  ${bytes} B`);
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

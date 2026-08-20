@@ -98,8 +98,8 @@ function buildResShell(base: string): string {
 /** Slot carrying the swap fee account to the client. */
 const REF_SLOT = 'data-fa=""';
 
-/** Root-relative social card URL, absolutised at boot when SITE_URL is set. */
-const OG_SLOT = 'property="og:image" content="/og.webp"';
+/** Root-relative social card URL, absolutised against SITE_URL at boot. */
+const OG_SLOT = 'property="og:image" content="/og.png"';
 
 /**
  * Attribute-value escape.
@@ -270,7 +270,7 @@ function loadShell() {
       shell = replaceSlot(
         shell,
         OG_SLOT,
-        `property="og:image" content="${attr(SITE_URL)}/og.webp"`,
+        `property="og:image" content="${attr(SITE_URL)}/og.png"`,
       );
     }
     resShell = buildResShell(shell);
