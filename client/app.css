@@ -556,6 +556,14 @@ body.ld .sp {
   }
 }
 
+/* Opacity only — see .lb, where a transform would slide the backdrop off the
+   bottom edge of the screen and show the page through the gap. */
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
 @keyframes enter {
   from {
     opacity: 0;
@@ -1220,8 +1228,7 @@ body.home #sc {
   font: inherit;
 }
 
-.ig-item:focus-visible,
-.ig-item.on {
+.ig-item:focus-visible {
   outline: 2px solid var(--a);
   outline-offset: 2px;
 }
@@ -1262,49 +1269,108 @@ body.home #sc {
   pointer-events: none;
 }
 
-/* Image detail (right column) */
-.pn-img {
+/* —— Image dialog —— */
+/*
+ * Over the page rather than in it. Fixed to the viewport, so the picture is
+ * centred against the screen and its metadata sits on the bottom edge of the
+ * screen however far down the grid the tile that opened it was — which is not
+ * something a panel in the document's own flow can promise.
+ *
+ * The padding is what keeps the three pieces off each other: the top clears
+ * the close button, the bottom clears the metadata bar, and the picture is
+ * centred in what is left. So the image is centred and nothing overlaps,
+ * without either one having to know the other's height.
+ */
+.lb {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 24px 136px;
+  background: rgba(0, 0, 0, 0.85);
+  animation: fade 0.16s both;
 }
 
-.pn-img .ph-lg {
-  width: 100%;
-  max-height: min(52vh, 420px);
+/*
+ * `contain` rather than a width: a panorama and a portrait both end up centred
+ * inside the same box at their own aspect ratio, and neither is cropped to fit
+ * a shape the dialog picked for them.
+ */
+.lb-img {
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
   border-radius: 8px;
-  margin: 0;
   background: var(--ch);
 }
 
-.pn-img h2 {
-  margin: 0;
-  font: 400 18px/1.3 var(--ff);
-}
-
-.pn-img .at {
-  margin-top: 2px;
-}
-
-.pn-img .at a {
-  color: var(--l);
-  word-break: break-all;
-}
-
-.pn-close {
-  align-self: flex-start;
-  margin: 0;
+.lb-x {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border: 0;
-  background: 0;
-  color: var(--l);
-  font: 500 13px var(--ff);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: 400 26px/1 var(--ff);
   cursor: pointer;
 }
 
-.pn-close:hover {
-  text-decoration: underline;
+.lb-x:hover,
+.lb-x:focus-visible {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+/* Pinned to the foot of the screen, not to the foot of the picture. */
+.lb-meta {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 20px var(--pad) 18px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.78) 45%);
+  color: #fff;
+}
+
+.lb-meta h2 {
+  margin: 0;
+  /* One line: an image title is often a whole sentence of keywords, and this
+     bar has a picture above it that should not be paying for them. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 500 15px/1.4 var(--ff);
+}
+
+.lb-meta .c {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.lb-meta .pf {
+  margin-top: 10px;
+}
+
+.lb-meta .pf a {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.lb-meta .pf a:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* The grid holds still underneath — a modal that scrolls the page behind it
+   loses the reader's place in the very grid they opened it from. */
+body.lb-on {
+  overflow: hidden;
 }
 
 /* —— Knowledge panel —— */
@@ -1573,6 +1639,13 @@ body.home #sc {
   .ig.ig-reveal,
   .ig-item img {
     transition: none;
+  }
+
+  /* The dialog's entrance is decoration and goes. The feed spinner stays: it
+     is the only thing on screen saying a request is in flight, and so is the
+     search button's, which has never been switched off here either. */
+  .lb {
+    animation: none;
   }
 
   /* No transition means no reveal event — show every image immediately. */

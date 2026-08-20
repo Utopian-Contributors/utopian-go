@@ -10,15 +10,12 @@ import { readUrlState, writeUrl } from "./url.js";
 import { createRenderer } from "./render.js";
 
 /** @typedef {import('../../src/types').SearchApiResponse} SearchApiResponse */
-/** @typedef {import('../../src/types').ImageItem} ImageItem */
 
 /** @type {import('./render.js').ViewState} */
 const state = {
   data: null,
   images: null,
   imagesQuery: "",
-  /** @type {ImageItem | null} */
-  selectedImage: null,
   tab: "web",
   lastQuery: "",
   requestId: 0,
@@ -120,12 +117,14 @@ function goHome() {
   state.data = null;
   state.images = null;
   state.imagesQuery = "";
-  state.selectedImage = null;
   state.lastQuery = "";
   state.tab = "web";
   state.offset = 0;
   state.more = false;
   state.feeding = false;
+  // Home paints nothing, so neither of these is torn down by a later paint()
+  // the way every other exit from a results page is.
+  ui.closeImage();
   ui.stopFeed();
   document.body.className = "home";
   setLoading(false);
@@ -159,10 +158,12 @@ async function runSearch(query, pushState, opts = {}) {
   // itself on arrival (loadMore checks requestId), but the flag it set has to
   // come off here or this search's feed waits on a page it will never use.
   state.feeding = false;
+  // Open over the *previous* query's grid — only reachable via back/forward,
+  // since the dialog covers the search field while it is up.
+  ui.closeImage();
   if (state.imagesQuery !== query) {
     state.images = null;
     state.imagesQuery = "";
-    state.selectedImage = null;
   }
 
   document.body.className = "res";

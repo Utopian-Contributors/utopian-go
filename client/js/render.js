@@ -30,7 +30,6 @@ import { tokenCards } from "./token.js";
  *   data: SearchApiResponse | null,
  *   images: ImageItem[] | null,
  *   imagesQuery: string,
- *   selectedImage: ImageItem | null,
  *   tab: string,
  *   lastQuery: string,
  *   requestId: number,
@@ -108,7 +107,6 @@ export function createRenderer(state) {
           if (document.body.classList.contains("ld")) return;
           if (state.tab === key || !available[key]) return;
           state.tab = key;
-          if (key !== "images") state.selectedImage = null;
           writeUrl(state.lastQuery || state.data?.query || "", state.tab, "push");
           renderTabs();
           paint();
@@ -357,7 +355,7 @@ export function createRenderer(state) {
       return;
     }
 
-    state.selectedImage = null;
+    closeImage();
     // Reuse skeleton if runSearch already put it up (no rebuild / reflow)
     showSkeleton("images");
     setLoading(true);
@@ -407,42 +405,34 @@ export function createRenderer(state) {
   }
 
   /**
-   * Layout: full grid, or collapsed grid + right-hand detail.
+   * The image grid — one layout, the full width of the page.
+   *
+   * It used to have a second: clicking a tile collapsed the grid into the left
+   * column and opened the picture in the right one. The detail is a dialog
+   * over the page now, so a click no longer relays the grid out from under the
+   * pointer that clicked it, and every tile stays exactly where it was put.
    * @param {{ crossfade?: boolean }} [opts]
    */
   function paintImagesView(opts = {}) {
     // Don’t call clearResults() — it also clears status. Only swap the grid.
     results.replaceChildren();
+    main.classList.add("solo");
+    side.hidden = true;
+    side.replaceChildren();
+
     const items = state.images || [];
     if (!items.length) {
       hideSkeleton();
-      main.classList.add("solo");
-      side.hidden = true;
-      side.replaceChildren();
       setStatus("No results.");
       return;
     }
 
-    const selected = state.selectedImage;
-    /** @type {HTMLElement | null} */
-    let grid = null;
-    if (selected) {
-      main.classList.remove("solo");
-      side.hidden = false;
-      grid = paintImageGrid(items, selected, { soft: true });
-      paintImageDetail(selected);
-      hideSkeleton();
-    } else {
-      main.classList.add("solo");
-      side.hidden = true;
-      side.replaceChildren();
-      grid = paintImageGrid(items, null, {
-        soft: !!opts.crossfade,
-        reveal: !!opts.crossfade,
-      });
-      if (opts.crossfade) crossfadeImageSkeleton(grid);
-      else hideSkeleton();
-    }
+    const grid = paintImageGrid(items, {
+      soft: !!opts.crossfade,
+      reveal: !!opts.crossfade,
+    });
+    if (opts.crossfade) crossfadeImageSkeleton(grid);
+    else hideSkeleton();
     syncSideMax();
   }
 
@@ -471,30 +461,14 @@ export function createRenderer(state) {
   }
 
   /**
-   * @param {ImageItem} item
-   * @param {ImageItem | null} selected
-   */
-  function sameImage(item, selected) {
-    if (!selected) return false;
-    return (
-      item === selected ||
-      ((item.image || item.thumbnail || "") ===
-        (selected.image || selected.thumbnail || "") &&
-        item.url === selected.url)
-    );
-  }
-
-  /**
    * @param {ImageItem[]} items
-   * @param {ImageItem | null} selected
    * @param {{ soft?: boolean, reveal?: boolean }} [opts]
    *   soft — no per-tile stagger (used when crossfading from skeleton)
    *   reveal — start at opacity 0 for crossfade
    * @returns {HTMLElement | null}
    */
-  function paintImageGrid(items, selected, opts = {}) {
+  function paintImageGrid(items, opts = {}) {
     const classes = ["ig"];
-    if (selected) classes.push("is-open");
     if (opts.soft) classes.push("ig-soft");
     if (opts.reveal) classes.push("ig-reveal");
 
@@ -505,16 +479,11 @@ export function createRenderer(state) {
       const src = safeUrl(item.thumbnail) || safeUrl(item.image);
       if (!src) continue;
 
-      const on = sameImage(item, selected);
       const btn = el("button", {
         type: "button",
-        class: "ig-item" + (on ? " on" : ""),
+        class: "ig-item",
         title: plainText(item.title || item.source || "Image"),
-        onclick: () => {
-          // Toggle: click again closes the detail panel
-          state.selectedImage = on ? null : item;
-          paintImagesView();
-        },
+        onclick: () => openImage(item, btn),
       });
       // Final geometry now, so nothing below this tile ever moves again.
       const [boxW, boxH] = tileBox(item);
@@ -572,34 +541,61 @@ export function createRenderer(state) {
     return grid;
   }
 
-  /** @param {ImageItem} item */
-  function paintImageDetail(item) {
-    side.replaceChildren();
+  /* —— Image dialog —— */
 
-    const panel = el("div", { class: "pn pn-img" });
+  /** The open dialog, or null when there isn't one. */
+  let imageBox = null;
+  /** The tile that opened it, so focus goes back where it came from. */
+  let imageOpener = null;
+
+  /**
+   * Open one image over the page: the picture centred in the viewport, what is
+   * known about it along the bottom of the screen, and a close control in the
+   * top right corner. Clicking the backdrop closes it, as does Escape.
+   *
+   * A fixed overlay rather than a <dialog>. showModal() wants Safari 15.4, and
+   * this project builds for Safari 14.1 (see the targets in
+   * scripts/build-client.mjs), so the element would take the image viewer away
+   * from browsers the rest of the site still serves — in exchange for a
+   * backdrop and a key handler that are a dozen lines to write.
+   *
+   * @param {ImageItem} item
+   * @param {HTMLElement} opener the tile clicked, refocused on close
+   */
+  function openImage(item, opener) {
+    closeImage();
+    imageOpener = opener;
+
     const full = safeUrl(item.image) || safeUrl(item.thumbnail);
     const thumb = safeUrl(item.thumbnail) || safeUrl(item.image);
+    const label = plainText(item.title || item.source || "Image");
 
-    panel.append(
-      el("button", {
-        type: "button",
-        class: "pn-close",
-        text: "Close",
-        "aria-label": "Close image detail",
-        onclick: () => {
-          state.selectedImage = null;
-          paintImagesView();
-        },
-      }),
-    );
+    const box = el("div", {
+      class: "lb",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": label,
+      // The picture, the metadata bar and the close button are its only
+      // children, so "the event landed on the overlay itself" is precisely
+      // "the pointer went down outside the dialog's content".
+      onclick: (e) => {
+        if (e.target === box) closeImage();
+      },
+    });
+
+    const shut = el("button", {
+      type: "button",
+      class: "lb-x",
+      "aria-label": "Close image",
+      text: "\u00d7",
+      onclick: closeImage,
+    });
 
     if (full) {
-      const img = el("img", {
-        class: "ph-lg",
-        src: full,
-        alt: plainText(item.title || "Selected image"),
-      });
-      // Fall back to thumbnail if full-size fails
+      const img = el("img", { class: "lb-img", src: full, alt: label });
+      // The grid is built from Brave's thumbnails; the full size lives on
+      // whichever site the crawler found it on, and that one may well refuse
+      // us. Falling back keeps a dead original from opening an empty dialog.
       if (thumb && thumb !== full) {
         img.addEventListener(
           "error",
@@ -609,88 +605,65 @@ export function createRenderer(state) {
           { once: true },
         );
       }
-      panel.append(img);
+      box.append(img);
     }
 
-    if (item.title) {
-      panel.append(el("h2", { text: plainText(item.title) }));
+    box.append(shut, imageMeta(item));
+    document.body.append(box);
+    // Holds the page still underneath: a modal that scrolls the results behind
+    // it loses the reader's place in the grid they came from.
+    document.body.classList.add("lb-on");
+    imageBox = box;
+    // Focus moves in, so Escape and Tab belong to the dialog rather than to
+    // the grid still sitting behind it.
+    shut.focus();
+  }
+
+  function closeImage() {
+    if (!imageBox) return;
+    imageBox.remove();
+    imageBox = null;
+    document.body.classList.remove("lb-on");
+    imageOpener?.focus();
+    imageOpener = null;
+  }
+
+  /**
+   * The bar along the bottom of the screen: what the picture is, where it came
+   * from, and how to get to either.
+   *
+   * A line of text rather than the label/value table the side panel used. The
+   * table had a row per fact because it had a whole column to fill; along the
+   * foot of a photo the same three facts read as one sentence, and the picture
+   * keeps the height they would have taken.
+   * @param {ImageItem} item
+   */
+  function imageMeta(item) {
+    const bar = el("div", { class: "lb-meta" });
+    if (item.title) bar.append(el("h2", { text: plainText(item.title) }));
+
+    const facts = [
+      plainText(item.source || (item.url ? host(item.url) : "")),
+      item.width && item.height ? `${item.width} \u00d7 ${item.height}` : "",
+    ].filter(Boolean);
+    if (facts.length) {
+      bar.append(el("p", { class: "c", text: facts.join(" \u00b7 ") }));
     }
 
-    const sourceLabel =
-      item.source || (item.url ? host(item.url) : "") || "";
-    if (sourceLabel) {
-      panel.append(el("p", { class: "c", text: plainText(sourceLabel) }));
-    }
-
-    // Metadata table: dimensions, page, image URL
-    const rows = /** @type {[string, string, string?][]} */ ([]);
-    if (item.width && item.height) {
-      rows.push(["Size", `${item.width} × ${item.height}`]);
-    } else if (item.width) {
-      rows.push(["Width", String(item.width)]);
-    } else if (item.height) {
-      rows.push(["Height", String(item.height)]);
-    }
-    if (item.url) {
-      rows.push(["Page", plainText(host(item.url) || item.url), item.url]);
-    }
-    if (item.image) {
-      rows.push(["Image", plainText(host(item.image) || "Original"), item.image]);
-    } else if (item.thumbnail && item.thumbnail !== item.image) {
-      rows.push([
-        "Image",
-        plainText(host(item.thumbnail) || "Thumbnail"),
-        item.thumbnail,
-      ]);
-    }
-
-    if (rows.length) {
-      const table = el("table", { class: "at" });
-      for (const [k, v, rawHref] of rows) {
-        const td = el("td");
-        const href = safeUrl(rawHref);
-        if (href) {
-          td.append(
-            el("a", {
-              href,
-              target: "_blank",
-              rel: "noopener",
-              text: v,
-            }),
-          );
-        } else {
-          td.textContent = v;
-        }
-        table.append(el("tr", null, el("th", { text: k }), td));
+    const links = el("div", { class: "pf" });
+    for (const [text, raw] of [
+      ["Visit page", item.url],
+      ["Open image", item.image || item.thumbnail],
+    ]) {
+      const href = safeUrl(raw);
+      if (href) {
+        links.append(
+          el("a", { href, target: "_blank", rel: "noopener", text }),
+        );
       }
-      panel.append(table);
     }
-
-    const actions = el("div", { class: "pf" });
-    const pageHref = safeUrl(item.url);
-    if (pageHref) {
-      actions.append(
-        el("a", {
-          href: pageHref,
-          target: "_blank",
-          rel: "noopener",
-          text: "Visit page",
-        }),
-      );
-    }
-    if (full) {
-      actions.append(
-        el("a", {
-          href: full,
-          target: "_blank",
-          rel: "noopener",
-          text: "Open image",
-        }),
-      );
-    }
-    if (actions.childNodes.length) panel.append(actions);
-
-    side.append(panel);
+    if (links.childNodes.length) bar.append(links);
+    return bar;
   }
 
   function paintSide() {
@@ -900,12 +873,26 @@ export function createRenderer(state) {
     document.documentElement.style.setProperty("--side-max", `${max}px`);
   }
 
-  // Escape closes the image detail panel
+  // Escape closes the image dialog. No tab or state check in front of it —
+  // closeImage() returns on its own when there is nothing open, which is one
+  // condition instead of three that have to keep agreeing with each other.
   window.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape" || !state.selectedImage || state.tab !== "images")
-      return;
-    state.selectedImage = null;
-    paintImagesView();
+    if (e.key === "Escape") return closeImage();
+
+    // Keep Tab inside the dialog while it is up. A <dialog> would do this for
+    // us, and not using one (see openImage) is what leaves it to be written:
+    // an overlay only covers the page visually, so without this the next Tab
+    // walks into the grid behind it, focusing links nobody can see and cannot
+    // scroll to. Three stops at most, so the whole trap is its two edges.
+    if (e.key !== "Tab" || !imageBox) return;
+    const stops = imageBox.querySelectorAll("button, a[href]");
+    if (!stops.length) return;
+    const last = stops.length - 1;
+    const edge = e.shiftKey ? stops[0] : stops[last];
+    if (document.activeElement === edge || !imageBox.contains(document.activeElement)) {
+      e.preventDefault();
+      stops[e.shiftKey ? last : 0].focus();
+    }
   });
 
   return {
@@ -914,6 +901,7 @@ export function createRenderer(state) {
     paint,
     clearSide,
     syncSideMax,
+    closeImage,
     stopFeed,
   };
 }
