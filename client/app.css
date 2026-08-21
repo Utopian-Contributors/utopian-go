@@ -708,6 +708,86 @@ body.ld .sp {
 }
 
 /*
+ * The result language, at the far end of the row.
+ *
+ * `margin-left: auto` rather than an order or a float: it takes whatever space
+ * the flex line has left, so the control sits against the right edge on a wide
+ * footer and simply follows the links on a narrow one — where the row has
+ * already wrapped and there is no free space left to take.
+ */
+#ft .ft-lang {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+/*
+ * Stripped back to text. A native select is a bordered 30-odd-pixel control in
+ * the system font; every one of its neighbours here is a 13px semibold link,
+ * and the row reads as one thing only if this does too.
+ */
+#ft select {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 0 14px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  line-height: inherit;
+  color: inherit;
+  cursor: pointer;
+  /*
+   * A select is as wide as its widest option, always — here that is
+   * "Português (BR)", and every shorter language left a gap of dead space
+   * between its own label and the caret. The box still takes that width; this
+   * puts the label at the end of it, against the caret, so the control reads
+   * as one word and a chevron whichever language is showing. Unsupported it
+   * degrades to the gap, which is untidy rather than broken.
+   */
+  text-align: right;
+}
+
+/*
+ * The dropdown itself is drawn by the platform, not by this stylesheet, and
+ * inherits nothing from the closed control. Named explicitly so the list is
+ * legible in dark mode rather than dark-on-dark.
+ */
+#ft option {
+  background: var(--bg);
+  color: var(--t);
+}
+
+/*
+ * The caret, from borders rather than an asset: it takes the hover colour with
+ * the label through currentColor, and costs no second request for eight pixels
+ * of chevron. Pointer events off so a click anywhere lands on the select.
+ */
+#ft .ft-lang::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 1px;
+  width: 0;
+  height: 0;
+  margin-top: -1px;
+  border: 4px solid transparent;
+  border-top-color: currentcolor;
+  pointer-events: none;
+}
+
+#ft .ft-lang:hover {
+  color: var(--t);
+}
+
+#ft select:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: 2px;
+}
+
+/*
  * Not until there is a page under it.
  *
  * The shell ships the footer, and on a results URL it ships it in the loading

@@ -13,6 +13,7 @@ import {
 } from "./dom.js";
 import { appendSanitized, host, plainText, safeUrl } from "./text.js";
 import { TABS, writeUrl } from "./url.js";
+import { langParam } from "./lang.js";
 import { cite, resultCard, snippet, titleLink, videoThumb } from "./pieces.js";
 import { tokenCards } from "./token.js";
 
@@ -283,7 +284,7 @@ export function createRenderer(state) {
 
     try {
       const res = await fetch(
-        `/api/search?q=${encodeURIComponent(q)}&offset=${next}`,
+        `/api/search?q=${encodeURIComponent(q)}&offset=${next}${langParam()}`,
         { headers: { Accept: "application/json" } },
       );
       /** @type {SearchApiResponse} */
@@ -373,7 +374,7 @@ export function createRenderer(state) {
     state.activeController = new AbortController();
 
     try {
-      const res = await fetch(`/api/images?q=${encodeURIComponent(q)}`, {
+      const res = await fetch(`/api/images?q=${encodeURIComponent(q)}${langParam()}`, {
         headers: { Accept: "application/json" },
         signal: state.activeController.signal,
       });

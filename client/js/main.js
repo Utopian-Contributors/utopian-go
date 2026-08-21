@@ -7,6 +7,7 @@
 import { $, clearResults, hideSkeleton, setLoading, setStatus, showSkeleton } from "./dom.js";
 import { mountAccount } from "./acct.js";
 import { readUrlState, writeUrl } from "./url.js";
+import { langParam, mountLang, setLang } from "./lang.js";
 import { createRenderer } from "./render.js";
 
 /** @typedef {import('../../src/types').SearchApiResponse} SearchApiResponse */
@@ -79,12 +80,16 @@ clearBtn.addEventListener("click", () => {
 });
 
 window.addEventListener("popstate", () => {
-  const { q, t } = readUrlState();
+  const { q, t, lang } = readUrlState();
+  // The URL is what the history entry preserved, the stored preference is not
+  // part of it: going back to a search made in German has to land in German,
+  // and back past it to one made before that has to leave it again.
+  const relanguaged = setLang(lang);
   input.value = q;
   syncClearButton();
   state.tab = t;
   if (q) {
-    if (state.data && state.lastQuery === q) {
+    if (state.data && state.lastQuery === q && !relanguaged) {
       ui.ensureTabAvailable();
       ui.renderTabs();
       ui.paint();
@@ -100,13 +105,42 @@ window.addEventListener("resize", ui.syncSideMax);
 window.addEventListener("scroll", ui.syncSideMax, { passive: true });
 
 {
-  const { q, t } = readUrlState();
+  const { q, t, lang } = readUrlState();
+  // Before the boot search, because it settles the language that search asks
+  // for. Nothing in it waits on the network — a localStorage read and a value
+  // assigned to a <select> the shell has already shipped.
+  mountLang(lang, relanguage);
   if (q) {
     input.value = q;
     state.tab = t;
     runSearch(q, false, { keepTab: true });
   }
   syncClearButton();
+}
+
+/**
+ * A different language for the query already on screen.
+ *
+ * Re-runs the search rather than repainting it: the language is a parameter of
+ * the Brave request, not of the page built from it, so there is nothing here
+ * to translate — there is only a different search to make. The images grid
+ * goes with it, or the Images tab would answer in the language before last.
+ *
+ * Replaces the history entry rather than pushing one. It is the same query,
+ * and a push would put a back button between someone and the page they were
+ * reading a moment ago.
+ */
+function relanguage() {
+  const q = state.lastQuery;
+  if (!q) {
+    // Home: no search to redo, but the URL still records the choice so a
+    // later back-navigation to this entry restores it.
+    writeUrl("", "web", "replace");
+    return;
+  }
+  state.images = null;
+  state.imagesQuery = "";
+  runSearch(q, false, { keepTab: true });
 }
 
 // —— Navigation ——
@@ -185,7 +219,7 @@ async function runSearch(query, pushState, opts = {}) {
   }
 
   try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}${langParam()}`, {
       headers: { Accept: "application/json" },
       signal: state.activeController.signal,
     });

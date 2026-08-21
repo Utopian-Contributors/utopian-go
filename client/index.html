@@ -123,6 +123,75 @@
             rel="noopener"
             >$UTCC</a
           >
+          <!--
+            The result language, at the far end of the row.
+
+            The options live in the document rather than in app.js because
+            fifty native names weigh about a kilobyte, which the document's
+            budget has room for and the bundle's has not — see PAGES in
+            scripts/build-client.mjs. Shipping them in the markup also means
+            the control works from the moment the footer paints, with no
+            second round trip to populate it.
+
+            src/lib/lang.ts is the authoritative half of this list: it maps
+            each of these codes to the Brave country and market that go with
+            it, and answers anything it does not recognise with English. Edit
+            the two together; drift here costs a default, not a failed search.
+          -->
+          <span class="ft-lang">
+            <select id="lang" aria-label="Result language">
+              <option value="en">English</option>
+              <option value="en-gb">English (UK)</option>
+              <option value="ar">العربية</option>
+              <option value="eu">Euskara</option>
+              <option value="bn">বাংলা</option>
+              <option value="bg">Български</option>
+              <option value="ca">Català</option>
+              <option value="zh-hans">中文（简体）</option>
+              <option value="zh-hant">中文（繁體）</option>
+              <option value="hr">Hrvatski</option>
+              <option value="cs">Čeština</option>
+              <option value="da">Dansk</option>
+              <option value="nl">Nederlands</option>
+              <option value="et">Eesti</option>
+              <option value="fi">Suomi</option>
+              <option value="fr">Français</option>
+              <option value="gl">Galego</option>
+              <option value="de">Deutsch</option>
+              <option value="gu">ગુજરાતી</option>
+              <option value="he">עברית</option>
+              <option value="hi">हिन्दी</option>
+              <option value="hu">Magyar</option>
+              <option value="is">Íslenska</option>
+              <option value="it">Italiano</option>
+              <option value="jp" data-l="ja">日本語</option>
+              <option value="kn">ಕನ್ನಡ</option>
+              <option value="ko">한국어</option>
+              <option value="lv">Latviešu</option>
+              <option value="lt">Lietuvių</option>
+              <option value="ms">Melayu</option>
+              <option value="ml">മലയാളം</option>
+              <option value="mr">मराठी</option>
+              <option value="nb">Norsk</option>
+              <option value="pl">Polski</option>
+              <option value="pt-br">Português (BR)</option>
+              <option value="pt-pt">Português (PT)</option>
+              <option value="pa">ਪੰਜਾਬੀ</option>
+              <option value="ro">Română</option>
+              <option value="ru">Русский</option>
+              <option value="sr">Српски</option>
+              <option value="sk">Slovenčina</option>
+              <option value="sl">Slovenščina</option>
+              <option value="es">Español</option>
+              <option value="sv">Svenska</option>
+              <option value="ta">தமிழ்</option>
+              <option value="te">తెలుగు</option>
+              <option value="th">ไทย</option>
+              <option value="tr">Türkçe</option>
+              <option value="uk">Українська</option>
+              <option value="vi">Tiếng Việt</option>
+            </select>
+          </span>
         </footer>
       </div>
     </div>
