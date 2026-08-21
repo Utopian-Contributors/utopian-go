@@ -3,6 +3,7 @@ import { fetchBalances, isPubkey } from "../lib/balances";
 import { fetchHoldings } from "../lib/holdings";
 import { BRAVE_MAX_OFFSET } from "../config";
 import { BraveApiError, braveImageSearch, braveSearch } from "../lib/brave";
+import { DEFAULT_LANG, isLanguage } from "../lib/lang";
 import { asString } from "../lib/query";
 import { rateLimit } from "../lib/rateLimit";
 import { lookupTokens } from "../lib/tokens/store";
@@ -110,6 +111,22 @@ function readOffset(value: unknown): number {
   return Math.min(n, BRAVE_MAX_OFFSET);
 }
 
+/**
+ * The result language the caller asked for, or English.
+ *
+ * Same reasoning as readOffset above, and the same refusal to forward what it
+ * was handed: `search_lang`, `country` and `ui_lang` are all closed enums
+ * upstream, and a code Brave does not know is a 422 that this server renders
+ * to the visitor as "Brave API responded 422" — a complaint about a URL we
+ * built. So an unrecognised code is answered with the default rather than
+ * passed on. That also makes the footer's <option> list free to drift from
+ * lib/lang.ts without breaking a search: the worst case is English.
+ */
+function readLang(value: unknown): string {
+  const code = asString(value).trim();
+  return isLanguage(code) ? code : DEFAULT_LANG;
+}
+
 function apiError(err: unknown, query: string) {
   const message =
     err instanceof BraveApiError
@@ -123,6 +140,7 @@ function apiError(err: unknown, query: string) {
 apiRouter.get("/api/search", searchLimit, wrap(async (req: Request, res: Response) => {
   const q = asString(req.query.q).trim();
   const offset = readOffset(req.query.offset);
+  const lang = readLang(req.query.lang);
 
   if (!q) {
     const body: SearchApiResponse = { query: "", results: [] };
@@ -140,7 +158,7 @@ apiRouter.get("/api/search", searchLimit, wrap(async (req: Request, res: Respons
   const tokens = offset === 0 ? lookupTokens(q) : [];
 
   try {
-    const body = await braveSearch(q, offset);
+    const body = await braveSearch(q, offset, lang);
     if (tokens.length) body.tokens = tokens;
     res.json(body);
   } catch (err) {
@@ -160,6 +178,7 @@ apiRouter.get("/api/search", searchLimit, wrap(async (req: Request, res: Respons
 /** JSON image search API (Brave Images endpoint). */
 apiRouter.get("/api/images", imagesLimit, wrap(async (req: Request, res: Response) => {
   const q = asString(req.query.q).trim();
+  const lang = readLang(req.query.lang);
 
   if (!q) {
     const body: ImageSearchApiResponse = { query: "", images: [] };
@@ -168,7 +187,7 @@ apiRouter.get("/api/images", imagesLimit, wrap(async (req: Request, res: Respons
   }
 
   try {
-    res.json(await braveImageSearch(q));
+    res.json(await braveImageSearch(q, lang));
   } catch (err) {
     const { message, status, query } = apiError(err, q);
     const body: ImageSearchApiResponse = {

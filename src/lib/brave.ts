@@ -6,6 +6,7 @@ import {
   BRAVE_PAGE_SIZE,
   BRAVE_TIMEOUT_MS,
 } from "../config";
+import { DEFAULT_LANG, langQuery } from "./lang";
 import { plainText } from "./text";
 import {
   BraveImageSearchResponse,
@@ -74,23 +75,32 @@ async function braveFetch(url: string): Promise<unknown> {
  * n x BRAVE_PAGE_SIZE. Callers are expected to have clamped it to
  * BRAVE_MAX_OFFSET already; anything past that is a 422 from upstream, which
  * would reach the visitor as "Brave API responded 422".
+ *
+ * `lang` is sent on every page, continuations included. It is a parameter of
+ * the search rather than of the first response, and a page four asked for
+ * without it would come back in whatever language Brave infers from this
+ * server — half a feed in one language and half in another.
  */
 export async function braveSearch(
   query: string,
   offset = 0,
+  lang = DEFAULT_LANG,
 ): Promise<SearchApiResponse> {
   const url =
     `${BRAVE_ENDPOINT}?q=${encodeURIComponent(query)}&count=${BRAVE_PAGE_SIZE}` +
-    (offset > 0 ? `&offset=${offset}` : "");
+    (offset > 0 ? `&offset=${offset}` : "") +
+    langQuery(lang, true);
   const data = (await braveFetch(url)) as BraveSearchResponse;
   return normalize(query, data, offset);
 }
 
 export async function braveImageSearch(
   query: string,
+  lang = DEFAULT_LANG,
 ): Promise<ImageSearchApiResponse> {
   const url =
-    `${BRAVE_IMAGES_ENDPOINT}?q=${encodeURIComponent(query)}&count=20`;
+    `${BRAVE_IMAGES_ENDPOINT}?q=${encodeURIComponent(query)}&count=20` +
+    langQuery(lang);
   const data = (await braveFetch(url)) as BraveImageSearchResponse;
 
   const images: ImageItem[] = (data.results ?? [])
