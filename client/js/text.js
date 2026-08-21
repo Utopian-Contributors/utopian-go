@@ -226,10 +226,26 @@ export function displayPath(item) {
   }
 }
 
-/** @param {string} a */
+/**
+ * How long ago, in the coarsest unit that still says something.
+ *
+ * Days all the way up read fine on a fresh page and stop meaning anything on
+ * an old one: the Arabic Wikipedia article on Einstein came back as "8204d
+ * ago", which nobody converts to twenty-two years while scanning a result.
+ * Mostly a non-English problem in practice — those indexes surface much older
+ * pages than the English one does — which is why it went unnoticed until there
+ * was a language picker to find it with.
+ *
+ * @param {string} a
+ */
 export function formatAge(a) {
   const d = Date.parse(a);
+  // Brave also sends already-worded ages ("3 days ago"), which parse to NaN.
+  // Those are shown as they arrived rather than guessed at.
   if (Number.isNaN(d)) return String(a).slice(0, 10);
   const days = Math.floor((Date.now() - d) / 864e5);
-  return days < 1 ? "Today" : `${days}d ago`;
+  if (days < 1) return "Today";
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
 }

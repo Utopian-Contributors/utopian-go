@@ -1195,6 +1195,31 @@ body.home #sc {
   overflow-wrap: anywhere;
 }
 
+/*
+ * Let each string pick its own direction.
+ *
+ * With Arabic or Hebrew results in an otherwise left-to-right page, the words
+ * inside a snippet come out in the right order — the browser's bidi algorithm
+ * handles that unasked — but the line still hangs off the left margin, and a
+ * trailing "..." or a bracketed aside lands on the wrong end of it. `plaintext`
+ * resolves the direction per paragraph from its own first strong character,
+ * so a right-to-left snippet is laid out and aligned right, an English one
+ * beside it stays left, and neither needs the container to commit to one.
+ *
+ * Deliberately not `dir="rtl"` on the pane. That would mirror the whole
+ * column — the cite line, the sitelink grid, the video thumbnails — which is
+ * the correct end state for a right-to-left interface and much more than is
+ * wanted while the interface itself is still in English.
+ */
+.r h3,
+.r .s,
+.ci .up,
+.pn h2,
+.pn .ld,
+.at td {
+  unicode-bidi: plaintext;
+}
+
 .r h3 {
   margin: 0;
   font: 400 20px/1.3 var(--ff);
