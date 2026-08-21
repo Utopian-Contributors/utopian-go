@@ -5,6 +5,7 @@
 import { el } from "./dom.js";
 import { fiat, percent, tokenPrice } from "./num.js";
 import { openSwap, swapUrl } from "./swap.js";
+import { takePendingBuy } from "./url.js";
 
 /** @typedef {import('../../src/types').TokenQuote} TokenQuote */
 
@@ -151,6 +152,16 @@ function tokenCard(t, alt) {
     onclick: (e) => buyClick(e, buy, target),
   });
   body.append(buy);
+
+  // The far end of the QR code and the wallet links in swap/main.js. Both carry
+  // ?buy=<mint> for exactly this: the phone that scanned or tapped lands on the
+  // trade itself, not on a search page with the trade one click further on.
+  // Every field the dialog needs is already assembled above, so this costs a
+  // comparison rather than a second lookup.
+  //
+  // A bundle that will not load leaves the card and its Buy button standing,
+  // which is the same floor every other entry point degrades to.
+  if (takePendingBuy(t.mint)) openSwap(target).catch(() => {});
 
   const foot = el("div", { class: "tk-f" });
   if (t.mcap != null) {

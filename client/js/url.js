@@ -56,3 +56,44 @@ export function writeUrl(q, t, mode = "push") {
   const fn = mode === "replace" ? history.replaceState : history.pushState;
   fn.call(history, { q, t }, "", next);
 }
+
+/**
+ * The mint a deeplink asked to trade, read at module load and only then.
+ *
+ * A wallet's in-app browser opens us at `/?q=SYM&buy=<mint>`, and the first
+ * thing the boot path does with a query is `writeUrl(…, "replace")` — which
+ * rebuilds the URL out of `q` and `t` alone and drops every other parameter
+ * with it. That happens a few hundred milliseconds in, so anything that waits
+ * for a search to resolve before looking is reading a URL the app has already
+ * rewritten. Module evaluation is the one point that is unconditionally
+ * earlier: this file is imported before main.js runs a line.
+ *
+ * Deliberately only the mint, never an amount. This URL is handed to the
+ * wallet's own domain on the way through and lands in its logs and ours; a
+ * size in it would be a record of what someone was about to trade, tied to
+ * their IP, written before they had agreed to anything. Which token a person
+ * looked at is a fact about a token. How much they were about to spend is a
+ * fact about them.
+ */
+let pendingBuy = (new URLSearchParams(location.search).get("buy") || "").trim();
+
+/**
+ * Claim the pending mint, if it is this one.
+ *
+ * Consuming rather than reading, because `paint()` runs again on every tab
+ * switch and every continuation page. A mint that reopened the trade dialog on
+ * each repaint would be a dialog nobody could close.
+ *
+ * No validation of the mint beyond this comparison: the only thing it is ever
+ * matched against is the mint of a card the server has already returned, so a
+ * junk value simply never matches and a crafted one can only name a token that
+ * was on the page anyway.
+ *
+ * @param {string} mint
+ * @returns {boolean} whether the deeplink named this mint
+ */
+export function takePendingBuy(mint) {
+  if (!pendingBuy || pendingBuy !== mint) return false;
+  pendingBuy = "";
+  return true;
+}
