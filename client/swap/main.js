@@ -11,13 +11,14 @@
  * collects on `SOL → X` (input side) and on `X → SOL` (output side) alike.
  */
 import { el } from "../js/dom.js";
+import { load } from "../js/lazy.js";
 // Dollars for someone who does not think in lamports. Shared with the wallet
 // page rather than defined twice, so a balance reads the same in both places.
 import { dollars as usd } from "../js/num.js";
 import { renderPicker } from "../js/picker.js";
 import { onSession, readSession, shortAddr } from "../js/session.js";
 import { dialog } from "../js/ui.js";
-import { restore, signAndSend, wallets } from "../js/wallet.js";
+import { restore, settled, signAndSend } from "../js/wallet.js";
 import { build, quote, toBase58 } from "./jup.js";
 import { injectFormStyles } from "./ui.js";
 
@@ -38,6 +39,56 @@ const HIGH_IMPACT_PCT = 1;
 
 /** Lamports held back from MAX so the wallet can still pay network fees. */
 const SOL_RESERVE = 10_000_000n;
+
+/**
+ * How long to keep listening for a wallet before accepting that there is none.
+ *
+ * Only ever waited out when the answer is genuinely nothing — `settled`
+ * resolves the moment a wallet registers, and an extension has registered long
+ * before anyone reaches this code. The wait exists for a wallet's own in-app
+ * browser, where the provider is injected with the page and may land a tick or
+ * two after we announce ourselves. 400 ms is imperceptible against a wallet
+ * that is about to open its own approval sheet, and it is the difference
+ * between trading and being told there is no wallet while inside one.
+ */
+const SETTLE_MS = 400;
+
+/** Is this a device where the wallet is an app rather than an extension? */
+const handheld = () =>
+  window.matchMedia("(pointer: coarse) and (hover: none)").matches;
+
+/**
+ * Wallets that will open a URL in their own in-app browser.
+ *
+ * This is the whole reason the hand-off is worth building. The alternative — the
+ * deeplink protocols that ask a wallet to sign a transaction over an encrypted
+ * round trip — needs an x25519 handshake and a nacl box per session, which is
+ * more code than this entire bundle, and Phantom has since deprecated the
+ * sign-and-send call it would be built on. Opening our own page inside the
+ * wallet's browser needs no protocol at all: the wallet injects its provider
+ * exactly as an extension does, js/wallet.js discovers it through the same
+ * Wallet Standard handshake, and the trade is the one we would have built
+ * anyway — referral account included. What today's jup.ag punt hands away, this
+ * keeps.
+ *
+ * The templates are transcribed from each wallet's own documentation and the
+ * path shapes are not interchangeable: Phantom takes no version segment,
+ * Solflare and Backpack both require `v1` (Backpack's unversioned route never
+ * resolves), and MetaMask takes a bare host with no scheme and no `ref`.
+ *
+ * NOT YET CONFIRMED ON A HANDSET. Every one of these is read from docs, not
+ * observed working. The failure mode is a button that opens a wallet which then
+ * fails to register — in which case this screen is where to look first.
+ */
+const LINKS = [
+  { name: "Phantom", to: (u, r) => `https://phantom.app/ul/browse/${u}?ref=${r}` },
+  { name: "Solflare", to: (u, r) => `https://solflare.com/ul/v1/browse/${u}?ref=${r}` },
+  { name: "Backpack", to: (u, r) => `https://backpack.app/ul/v1/browse/${u}?ref=${r}` },
+  // Bare host, and therefore the one link that cannot carry which token was
+  // being traded. A visitor who takes it lands on the search page instead of
+  // the dialog — degraded, not broken.
+  { name: "MetaMask", to: () => `https://link.metamask.io/dapp/${location.host}` },
+];
 
 /** Quote tokens. Each has a referral token account, so each side can earn. */
 const FUNDS = [
@@ -203,6 +254,102 @@ function open(t) {
     });
   }
 
+  /**
+   * The URL that reopens this trade somewhere else.
+   *
+   * Carries the mint and nothing more. js/url.js reads it back at boot and
+   * js/token.js opens the dialog on the card it names, so a scan or a tap lands
+   * on the trade rather than on a search page with the trade one click further
+   * on. See url.js for why an amount must never be added to it: this string is
+   * handed to a wallet's own domain on the way through and written to its logs
+   * and ours, and what someone was about to spend is a fact about them.
+   */
+  function tradeUrl() {
+    const p = new URLSearchParams({ q: t.symbol, buy: t.mint });
+    return `${location.origin}/?${p}`;
+  }
+
+  /**
+   * How to reach a wallet this browser has not got.
+   *
+   * Two audiences, one screen, because they are the same problem approached
+   * from opposite ends. On a desktop the wallet is on a phone somewhere in the
+   * room, and the only thing a web page can hand a phone is something its
+   * camera can read. On a phone the wallet is an app on this very device, and
+   * the only thing that reaches inside it is its own deeplink — while a QR
+   * drawn there would be a code asking to be scanned by the screen displaying
+   * it. So the screen shows whichever crossing can actually be made from here,
+   * and never both.
+   *
+   * The two meet in the middle: a phone that scans the desktop's code arrives
+   * in its own browser, where no wallet is injected either — and gets this same
+   * screen, now showing the wallet links. That second step is the one that ends
+   * inside a wallet, which is the only place the trade can be signed.
+   */
+  async function handoff() {
+    const url = tradeUrl();
+    const back = el("button", {
+      class: "swx-2nd",
+      type: "button",
+      text: "Back",
+      onclick: form,
+    });
+    // The floor, and the only rung that never depends on a wallet being
+    // installed. It earns us nothing, which is exactly why it is last.
+    const floor = el("a", {
+      class: "swx-acct",
+      href: t.fallback,
+      target: "_blank",
+      rel: "noopener",
+      style: "display:block;text-align:center;margin-top:12px",
+      text: "Or trade on Jupiter",
+    });
+
+    if (handheld()) {
+      setTitle("Open in a wallet");
+      const list = el("div");
+      const ref = encodeURIComponent(location.origin);
+      const enc = encodeURIComponent(url);
+      for (const w of LINKS) {
+        list.append(
+          el("a", { class: "swx-lnk", href: w.to(enc, ref), text: w.name }),
+        );
+      }
+      body.replaceChildren(
+        el("div", {
+          class: "swx-note",
+          text: `Opens ${t.symbol} inside your wallet's browser, where the trade can be signed.`,
+        }),
+        list,
+        back,
+        floor,
+      );
+      return;
+    }
+
+    setTitle("Open on your phone");
+    const holder = el("div", { class: "swx-qr" });
+    body.replaceChildren(
+      el("div", {
+        class: "swx-note",
+        text: `Scan with your phone's camera to trade ${t.symbol} there.`,
+      }),
+      holder,
+      back,
+      floor,
+    );
+    try {
+      const qr = await load("qr", "__qr");
+      // Generated markup, every value of it a number this bundle produced —
+      // the same way the price cards inline their sparklines.
+      holder.innerHTML = qr.svg(url);
+    } catch {
+      holder.replaceChildren(
+        el("div", { class: "swx-note err", text: "Could not draw the code." }),
+      );
+    }
+  }
+
   // —— the trade form: shown immediately, quotes without a wallet ——
 
   function form() {
@@ -256,6 +403,22 @@ function open(t) {
     const action = el("button", {
       class: `swx-go${buying ? "" : " sell"}`,
       type: "button",
+    });
+    /**
+     * The way out of this browser, standing next to the way through it.
+     *
+     * Beside Buy rather than behind it because the people who need it are
+     * exactly the people for whom Buy does nothing — no extension here, or no
+     * extension possible — and a control they have to fail first to discover is
+     * a control most of them never will. Its label is the crossing that can be
+     * made from this device: a code to carry the trade to a phone, or a link to
+     * carry it into a wallet. See handoff().
+     */
+    const bridge = el("button", {
+      class: "swx-2nd",
+      type: "button",
+      text: handheld() ? "Open in wallet" : "Use QR Code",
+      onclick: handoff,
     });
     const note = el("div", { class: "swx-note" });
 
@@ -321,7 +484,7 @@ function open(t) {
         el("div", { class: "swx-lbl" }, el("span", { text: "You receive" })),
         el("div", { class: "swx-body" }, buying ? lock() : quoteControl(), receive),
       ),
-      action,
+      el("div", { class: "swx-act" }, action, bridge),
       note,
     );
     if (session) {
@@ -424,20 +587,35 @@ function open(t) {
     }
 
     async function startConnect() {
-      const found = wallets();
-      if (!found.length) {
-        setNote("No Solana wallet detected — opening Jupiter.", "err");
-        setTimeout(() => {
-          window.open(t.fallback, "_blank", "noopener");
-          close();
-        }, 800);
-        return;
-      }
-      if (found.length > 1) return picker(found);
-
       busy = true;
       action.disabled = true;
       action.classList.add("busy");
+      action.textContent = "Looking for a wallet…";
+      // Asking rather than glancing. The old synchronous read was correct for
+      // an extension and wrong everywhere else; see settled() in js/wallet.js.
+      const found = await settled(SETTLE_MS);
+      // The dialog can be dismissed, or the form rebuilt by a flip, while we
+      // wait. Everything below writes to a form that may no longer be on
+      // screen, so it is checked once here rather than in each branch.
+      if (!action.isConnected) return;
+
+      if (!found.length) {
+        // Was: a note, then window.open(jup.ag) on an 800 ms timer, then close.
+        // Three things wrong with it. The timer never looked for a wallet
+        // again, so one that registered at t+50 ms was punted anyway. The
+        // window.open fired 800 ms after the click, outside the user-activation
+        // window, so Safari swallowed it while close() ran regardless and the
+        // visitor was left with nothing at all. And the destination earns no
+        // referral, which made the worst-handled path also the only unpaid one.
+        //
+        // The hand-off screen replaces all of it: every route out of here is
+        // now something the visitor clicks, which is its own user activation,
+        // and the two routes that reach a wallet keep the fee.
+        return handoff();
+      }
+      if (found.length > 1) return picker(found);
+
+      // busy, disabled and the spinner are already on from the search above.
       action.textContent = "Check your wallet…";
       try {
         session = { wallet: found[0], account: await connect(found[0]) };

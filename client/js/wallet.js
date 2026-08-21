@@ -17,6 +17,7 @@ const CHAIN = "solana:mainnet";
 const CONNECT = "standard:connect";
 const DISCONNECT = "standard:disconnect";
 const SIGN_AND_SEND = "solana:signAndSendTransaction";
+const REGISTER = "wallet-standard:register-wallet";
 
 /** @type {Set<any>} */
 const found = new Set();
@@ -30,7 +31,7 @@ let listening = false;
 function discover() {
   if (!listening) {
     listening = true;
-    window.addEventListener("wallet-standard:register-wallet", (e) => {
+    window.addEventListener(REGISTER, (e) => {
       try {
         e.detail({ register: (...ws) => (ws.forEach((w) => found.add(w)), () => {}) });
       } catch {
@@ -45,6 +46,18 @@ function discover() {
     }),
   );
 
+  return qualified();
+}
+
+/**
+ * The registered wallets that can actually sign a mainnet Solana trade.
+ *
+ * Split out of `discover` so a caller can re-read the set without dispatching
+ * `app-ready` again — `settled` below reads it on every registration, and
+ * re-announcing ourselves each time would be a handshake per wallet for no
+ * new information.
+ */
+function qualified() {
   return [...found].filter(
     (w) =>
       w?.features?.[CONNECT] &&
@@ -56,6 +69,49 @@ function discover() {
 /** Wallets able to sign a mainnet Solana transaction, in registration order. */
 export function wallets() {
   return discover();
+}
+
+/**
+ * The same list, but after giving wallets a chance to answer.
+ *
+ * `wallets()` announces the app and reads the set in the same tick. For a
+ * browser extension that is right: it injected itself during page load, long
+ * before anyone pressed a button, so it is already in `found` when we look.
+ *
+ * Inside a wallet's own in-app browser it is wrong. There the provider is
+ * injected with the page, and whether it has registered by the time someone
+ * taps Buy is a race we do not control. Losing that race used to mean telling
+ * a visitor there was no Solana wallet while they stood inside one — and then
+ * sending them to jup.ag, where the trade earns us nothing and costs them our
+ * referral. A synchronous read is the difference between a trade and a punt.
+ *
+ * Resolves the instant a qualifying wallet appears, so the ordinary case — a
+ * wallet already registered — costs one microtask rather than the timeout.
+ * `ms` is a ceiling on waiting, not a delay to sit through.
+ *
+ * @param {number} ms how long to keep listening before accepting the answer
+ * @returns {Promise<any[]>}
+ */
+export function settled(ms) {
+  const now = discover();
+  if (now.length) return Promise.resolve(now);
+
+  return new Promise((resolve) => {
+    /** @type {ReturnType<typeof setTimeout>} */
+    let timer;
+    const done = () => {
+      clearTimeout(timer);
+      window.removeEventListener(REGISTER, tick);
+      resolve(qualified());
+    };
+    // Registered after discover()'s own listener, so by the time this runs the
+    // wallet that fired the event is already in `found`.
+    const tick = () => {
+      if (qualified().length) done();
+    };
+    window.addEventListener(REGISTER, tick);
+    timer = setTimeout(done, ms);
+  });
 }
 
 /**

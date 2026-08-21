@@ -91,6 +91,34 @@ const CSS = `
 .swx-go:disabled{opacity:.55;cursor:not-allowed}
 .swx-go.busy{cursor:progress}
 /*
+ * Buy and its alternative, side by side.
+ *
+ * The second control is the only way across the one gap a web page cannot close
+ * by itself — a desktop screen to a phone's camera, or a phone's browser into a
+ * wallet's own — so it stands next to the trade rather than hiding behind it.
+ *
+ * Equal halves, so the pair reads as two ways of doing one thing rather than an
+ * action and its afterthought. Which one leads is said by fill instead of by
+ * width: the green is a solid block of brand colour and the other is an outline
+ * on the panel, which is a louder difference than any ratio and one that
+ * survives the row being any width at all.
+ *
+ * Scoped to the row rather than expressed as modifier classes on the buttons,
+ * because the confirmation screen appends its own .swx-go straight into the
+ * dialog body. Anything hung on .swx-go itself would follow it there and
+ * restyle a screen this has no business touching.
+ *
+ * The border is --f rather than the --b hairline the secondary carries
+ * elsewhere: at 4.65:1 it reads as a button sitting beside another button
+ * instead of a panel edge. Not a white fill — --pn is #fff in light but #303134
+ * in dark, so a literal white would invert the hierarchy in one of the two
+ * themes and outrank the primary at 13:1 against its own panel. The seg control
+ * above documents that same mistake being taken back out.
+ */
+.swx-act{display:flex;gap:8px;align-items:stretch}
+.swx-act>*{flex:1 1 0;width:auto;min-width:0}
+.swx-act .swx-2nd{margin-top:12px;border-color:var(--f)}
+/*
  * Confirmation screen. The two panes and the arrow are the form's, restyled
  * only where they stop being interactive, so the trade does not appear to
  * change shape between reviewing it and sending it.
@@ -116,6 +144,25 @@ const CSS = `
 .swx-2nd:hover:not(:disabled){background:var(--hover)}
 .swx-2nd:disabled{opacity:.55;cursor:not-allowed}
 .swx-acct{font-size:12px;color:var(--f);font-variant-numeric:tabular-nums}
+/*
+ * The hand-off screen — a QR on a desktop, wallet links on a phone.
+ *
+ * The links are anchors rather than buttons because a deeplink is a navigation
+ * and has to survive being opened in a new tab, long-pressed, or copied. They
+ * borrow the secondary button's shape so the screen does not introduce a third
+ * kind of control.
+ *
+ * The code is boxed at 220px and never stretched: a QR that has been scaled to
+ * a non-integer multiple of its module size is a QR whose edges land mid-pixel,
+ * which is the one thing crispEdges cannot fix. max-width keeps it inside the
+ * bottom sheet on a narrow phone, where it is decoration rather than the point.
+ */
+.swx-lnk{display:block;width:100%;margin-top:8px;border:1px solid var(--b);
+ border-radius:999px;padding:10px;background:none;color:var(--t);
+ font:600 14px/1.2 var(--ff);text-align:center;text-decoration:none}
+.swx-lnk:hover{background:var(--hover)}
+.swx-qr{width:220px;max-width:100%;margin:14px auto 0}
+.swx-qr svg{display:block;width:100%;height:auto;border-radius:6px}
 `;
 
 /** Called once the trade dialog is about to render its form. */

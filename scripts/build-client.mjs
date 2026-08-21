@@ -120,7 +120,7 @@ const PAGES = [
  * once someone presses Login, so counting either against a first-load window
  * would be measuring bytes nobody waits for.
  */
-const LAZY = ["swap.js", "connect.js"];
+const LAZY = ["swap.js", "connect.js", "qr.js"];
 
 /**
  * The legal documents: readable HTML under client/legal/, published as the
@@ -204,6 +204,18 @@ const connectOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "connect", "main.js")],
   outfile: path.join(outDir, "connect.js"),
+};
+
+/**
+ * The QR encoder. Its own bundle rather than part of swap.js because the code
+ * only exists for the crossing a page cannot make by itself — a desktop screen
+ * to a phone's camera — and everyone trading on the device they are already
+ * holding never draws one. See client/qr/main.js.
+ */
+const qrOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "qr", "main.js")],
+  outfile: path.join(outDir, "qr.js"),
 };
 
 /** The wallet page's own bundle. Shares helpers with app.js, not bytes. */
@@ -339,7 +351,7 @@ async function buildCss(name) {
   return minifyCss(source);
 }
 
-async function buildHtml(css, jsHash, swapHash, connectHash) {
+async function buildHtml(css, jsHash, swapHash, connectHash, qrHash) {
   let raw = readFileSync(path.join(clientDir, "index.html"), "utf8");
   verifyLoadingChrome(raw);
 
@@ -379,6 +391,12 @@ async function buildHtml(css, jsHash, swapHash, connectHash) {
     `data-cn="/connect.js?v=${connectHash}"`,
     "connect.js attribute",
   );
+  raw = replaceOnce(
+    raw,
+    /data-qr="\/qr\.js"/,
+    `data-qr="/qr.js?v=${qrHash}"`,
+    "qr.js attribute",
+  );
 
   writeFileSync(path.join(outDir, "index.html"), await minifyDoc(raw));
 }
@@ -414,7 +432,7 @@ function minifyDoc(raw) {
  * server-side state, because the server does not know whose wallet it is. That
  * is what lets it be a plain precompressed file rather than a template.
  */
-async function buildWalletHtml(css, walletHash, connectHash, swapHash) {
+async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash) {
   let raw = readFileSync(path.join(clientDir, "wallet.html"), "utf8");
 
   raw = replaceOnce(
@@ -448,6 +466,12 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash) {
     /data-sw="\/swap\.js"/,
     `data-sw="/swap.js?v=${swapHash}"`,
     "wallet swap.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-qr="\/qr\.js"/,
+    `data-qr="/qr.js?v=${qrHash}"`,
+    "wallet qr.js attribute",
   );
 
   writeFileSync(path.join(outDir, "wallet.html"), await minifyDoc(raw));
@@ -649,10 +673,11 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , css, walletCss] = await Promise.all([
+  const [, , , , , css, walletCss] = await Promise.all([
     esbuild.build(jsOpts),
     esbuild.build(swapOpts),
     esbuild.build(connectOpts),
+    esbuild.build(qrOpts),
     esbuild.build(walletOpts),
     buildCss("app.css"),
     buildCss("wallet.css"),
@@ -661,10 +686,11 @@ async function buildAssets() {
   const hash = (file) => contentHash(readFileSync(path.join(outDir, file)));
   const connectHash = hash("connect.js");
   const swapHash = hash("swap.js");
+  const qrHash = hash("qr.js");
 
   await Promise.all([
-    buildHtml(css, hash("app.js"), swapHash, connectHash),
-    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash),
+    buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash),
+    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash),
   ]);
   buildLegal();
   precompress();
