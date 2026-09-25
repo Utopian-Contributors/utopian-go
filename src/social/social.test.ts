@@ -1,0 +1,757 @@
+import assert from "node:assert/strict";
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from "crypto";
+import express from "express";
+import { mkdtempSync, rmSync } from "fs";
+import { createServer, type Server } from "http";
+import { tmpdir } from "os";
+import path from "path";
+import { Client } from "pg";
+import test, { after } from "node:test";
+import { checkPassword, newPassword, openPhrase, sealPhrase, stale } from "./auth";
+import { jpegSize } from "./jpeg";
+import {
+  base58,
+  base58Decode,
+  ed25519Public,
+  mnemonicFromEntropy,
+  mnemonicToSeed,
+  normalizeMnemonic,
+  slip10ed25519,
+  solanaAddress,
+  solanaSeed,
+} from "./keys";
+import { parseSol, transferMessage, unsignedTransfer } from "./pay";
+import { signTransaction } from "./swap";
+import { associatedTokenAccount, onCurve } from "./send";
+import { scrub } from "./guard";
+import { postWait, username, waitText } from "./limits";
+import { sendAvatar, sendPostPhoto, socialRouter } from "./routes";
+import { TIMELINE_PAGE, closePool, databaseUrl, ensureSchema, resetSocial } from "./db";
+import { WORDLIST } from "./wordlist";
+
+const dir = mkdtempSync(path.join(tmpdir(), "social-"));
+process.env.SOCIAL_DIR = dir;
+after(async () => {
+  await closePool();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+/**
+ * Accounts, posts, and saves are truncated between runs. That has to happen
+ * in a database of its own, or `npm test` would empty the one the app uses.
+ */
+async function useTestDatabase(): Promise<void> {
+  const current = databaseUrl();
+  const url = new URL(current);
+  const baseName = url.pathname.replace(/^\//, "").replace(/_test$/, "");
+  const name = `${baseName}_test`;
+  if (!/^[A-Za-z0-9_-]+$/.test(name)) throw new Error(`refusing test database name ${name}`);
+  const admin = new URL(current);
+  admin.pathname = "/postgres";
+  const client = new Client({ connectionString: admin.toString() });
+  await client.connect();
+  try {
+    const found = await client.query("SELECT 1 FROM pg_database WHERE datname = $1", [name]);
+    if (found.rowCount === 0) await client.query(`CREATE DATABASE "${name}"`);
+  } finally {
+    await client.end();
+  }
+  url.pathname = `/${name}`;
+  process.env.DATABASE_URL = url.toString();
+}
+
+const ABANDON =
+  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+test("recovery phrase is BIP39 and the Solana account Phantom imports", () => {
+  assert.equal(mnemonicFromEntropy(Buffer.alloc(16)), ABANDON);
+  assert.equal(
+    mnemonicToSeed(ABANDON).toString("hex"),
+    "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4",
+  );
+
+  // SLIP-0010 ed25519 test vector 1.
+  const seed = Buffer.from("000102030405060708090a0b0c0d0e0f", "hex");
+  const master = slip10ed25519(seed, []);
+  assert.equal(master.toString("hex"), "2b4be7f19ee27bbf30c667b642d5f4aa69fd169872f8fc3059c08ebae2eb19e7");
+  assert.equal(
+    ed25519Public(master).toString("hex"),
+    "a4b2856bfec510abab89753fac1ac0e1112364e7d250545963f135f2a33188ed",
+  );
+  const child = slip10ed25519(seed, [0x80000000]);
+  assert.equal(child.toString("hex"), "68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3");
+
+  // m/44'/501'/0'/0' for that phrase, checked against ed25519-hd-key and web3.js.
+  assert.equal(solanaAddress(ABANDON), "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk");
+  assert.equal(base58(Buffer.from([0, 0, 1])), "112");
+});
+
+test("phrase opens only with the password that sealed it", async () => {
+  const box = await sealPhrase("abandon about", "correct horse");
+  assert.equal(await openPhrase(box, "correct horse"), "abandon about");
+  await assert.rejects(() => openPhrase(box, "nope"));
+  const pass = await newPassword("correct horse");
+  assert.equal(await checkPassword("correct horse", pass.salt, pass.hash), true);
+  assert.equal(await checkPassword("nope", pass.salt, pass.hash), false);
+  assert.equal(stale(pass.salt), false);
+});
+
+test("a hash from before the cost went up still verifies, and reads as stale", async () => {
+  // N=2^14 with a bare salt: what every account created before versioning holds.
+  const { scryptSync } = await import("crypto");
+  const salt = Buffer.alloc(16, 7).toString("base64url");
+  const hash = scryptSync("correct horse", Buffer.from(salt, "base64url"), 32, { N: 2 ** 14, r: 8, p: 1 });
+  assert.equal(await checkPassword("correct horse", salt, hash.toString("base64url")), true);
+  assert.equal(stale(salt), true);
+});
+
+test("a typed phrase is forgiven its case and spacing, not a wrong word", () => {
+  assert.equal(normalizeMnemonic(`  ${ABANDON.toUpperCase().replace(/ /g, "\n ")} `), ABANDON);
+  assert.equal(normalizeMnemonic(ABANDON.replace(/about$/, "abandon")), null, "checksum");
+  assert.equal(normalizeMnemonic(ABANDON.replace(/about$/, "abouts")), null, "not a word");
+  assert.equal(normalizeMnemonic(ABANDON + " about"), null, "13 words");
+  assert.equal(normalizeMnemonic(42), null);
+});
+
+test("a portrait jpeg is measured and a wide one is wide", () => {
+  const portrait = Buffer.from([
+    0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x14, 0x00, 0x0a, 0x01, 0x01, 0x11, 0x00, 0xff, 0xd9,
+  ]);
+  assert.deepEqual(jpegSize(portrait), { w: 10, h: 20 });
+  const wide = Buffer.from(portrait);
+  wide[7] = 0x00;
+  wide[8] = 0x0a;
+  wide[9] = 0x00;
+  wide[10] = 0x14;
+  assert.deepEqual(jpegSize(wide), { w: 20, h: 10 });
+  assert.equal(jpegSize(Buffer.from("nope")), null);
+});
+
+test("a solana address round-trips and a transfer is signed by that key", () => {
+  const address = solanaAddress(ABANDON);
+  const pub = base58Decode(address);
+  assert.ok(pub);
+  assert.equal(pub.length, 32);
+  assert.equal(base58(pub), address);
+  assert.equal(parseSol("1.5"), 1_500_000_000n);
+  assert.equal(parseSol("0"), null);
+  assert.equal(parseSol("0.0000000001"), null);
+  const to = Buffer.alloc(32, 2);
+  const hash = Buffer.alloc(32, 3);
+  const message = transferMessage(pub, to, 5n, hash);
+  assert.equal(message[0], 1);
+  assert.ok(message.includes(pub));
+  const seed = slip10ed25519(mnemonicToSeed(ABANDON), [44, 501, 0, 0].map((i) => i + 0x80000000));
+  const blank = unsignedTransfer(pub, to, 5n, hash);
+  assert.equal(blank[0], 1);
+  assert.ok(blank.subarray(1, 65).every((byte) => byte === 0));
+  // The wallet's signature over this message verifies against the address.
+  const pkcs8 = Buffer.from("302e020100300506032b657004220420", "hex");
+  const priv = createPrivateKey({ key: Buffer.concat([pkcs8, seed]), format: "der", type: "pkcs8" });
+  const sig = sign(null, message, priv);
+  assert.equal(verify(null, message, createPublicKey(priv), sig), true);
+  assert.equal(ed25519Public(seed).equals(pub), true);
+  seed.fill(0);
+});
+
+test("a response cannot carry a password hash, a sealed phrase, or a passkey key", () => {
+  const clean = scrub(
+    {
+      name: "ada",
+      passHash: "h",
+      phraseCt: "c",
+      passkey: { id: "i", challenge: "ch", cose: "secret", count: 3 },
+      nested: { phraseSalt: "s", passkey: true },
+    },
+    false,
+  );
+  assert.deepEqual(clean, {
+    name: "ada",
+    passkey: { id: "i", challenge: "ch" },
+    nested: { passkey: true },
+  });
+  assert.deepEqual(scrub({ phrase: "abandon about" }, false), {});
+  assert.deepEqual(scrub({ phrase: "abandon about" }, true), { phrase: "abandon about" });
+});
+
+test("the server signs only a transaction whose one signer is the account", () => {
+  const seed = solanaSeed(ABANDON);
+  const owner = ed25519Public(seed);
+  const other = Buffer.alloc(32, 9);
+  const message = (payer: Buffer, signers = 1) =>
+    Buffer.concat([Buffer.from([0x80, signers, 0, 1, 2]), payer, other, Buffer.alloc(40)]);
+  const tx = (m: Buffer, sigs = 1) => Buffer.concat([Buffer.from([sigs]), Buffer.alloc(64 * sigs), m]);
+  const m = message(owner);
+  const signed = signTransaction(tx(m), owner, seed);
+  const publicKey = createPublicKey({
+    key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), owner]),
+    format: "der",
+    type: "spki",
+  });
+  assert.equal(verify(null, m, publicKey, signed.subarray(1, 65)), true);
+  assert.throws(() => signTransaction(tx(message(other)), owner, seed));
+  assert.throws(() => signTransaction(tx(message(owner, 2), 2), owner, seed));
+  seed.fill(0);
+});
+
+test("a token account address is the one the associated token program derives", () => {
+  // The largest $UTCC holder on mainnet (itself a program address), and the account holding that balance.
+  const owner = base58Decode("ED8PSBD3NvEHiBgaTxkL1QXTjGVDxTYZx2uzdKGdKngq")!;
+  const mint = base58Decode("HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA")!;
+  const token = base58Decode("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")!;
+  const account = associatedTokenAccount(owner, mint, token);
+  assert.equal(base58(account), "AZtgHrsQtx49euvbeuz2THkqmDWa7pCu395Dn2w3P8ug");
+  assert.equal(onCurve(account), false);
+  const seed = solanaSeed(ABANDON);
+  assert.equal(onCurve(ed25519Public(seed)), true);
+  seed.fill(0);
+});
+
+test("posting waits ten minutes", () => {
+  const now = 1_000_000;
+  assert.equal(postWait(0, now), 0);
+  assert.equal(postWait(now, now), 10 * 60 * 1000);
+  assert.equal(postWait(now - 10 * 60 * 1000, now), 0);
+  assert.match(waitText(10 * 60 * 1000), /10 min/);
+  assert.equal(username(" Ada "), "ada");
+  assert.equal(username("no"), null);
+});
+
+function packPost(text: string, photos: [Buffer, Buffer][]): Buffer {
+  const encoded = Buffer.from(text);
+  const head = Buffer.alloc(2);
+  head.writeUInt16BE(encoded.length);
+  const parts: Buffer[] = [head, encoded, Buffer.from([photos.length])];
+  for (const [small, full] of photos) {
+    const len = Buffer.alloc(8);
+    len.writeUInt32BE(small.length, 0);
+    len.writeUInt32BE(full.length, 4);
+    parts.push(len, small, full);
+  }
+  return Buffer.concat(parts);
+}
+
+function jpeg(w: number, h: number): Buffer {
+  const buf = Buffer.from([
+    0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x11, 0x00, 0xff, 0xd9,
+  ]);
+  buf.writeUInt16BE(h, 7);
+  buf.writeUInt16BE(w, 9);
+  return buf;
+}
+
+function coseP256(x: Buffer, y: Buffer): Buffer {
+  return Buffer.concat([
+    Buffer.from([0xa5, 0x01, 0x02, 0x03, 0x26, 0x20, 0x01, 0x21, 0x58, 0x20]),
+    x,
+    Buffer.from([0x22, 0x58, 0x20]),
+    y,
+  ]);
+}
+
+function authData(rpId: string, flags: number, count: number, credId: Uint8Array | null, cose: Uint8Array | null): Buffer {
+  const counter = Buffer.alloc(4);
+  counter.writeUInt32BE(count);
+  const parts: Uint8Array[] = [createHash("sha256").update(rpId).digest(), Buffer.from([flags]), counter];
+  if (credId && cose) {
+    const len = Buffer.alloc(2);
+    len.writeUInt16BE(credId.length);
+    parts.push(Buffer.alloc(16), len, credId, cose);
+  }
+  return Buffer.concat(parts);
+}
+
+test("accounts, posts, friends, phrase, and a passkey", async () => {
+  await useTestDatabase();
+  await ensureSchema();
+  await resetSocial();
+  const app = express();
+  app.set("trust proxy", true);
+  app.use("/api/social", socialRouter);
+  app.get("/social/a/:name", sendAvatar);
+  app.get("/social/i/:id/:n", sendPostPhoto);
+  const server: Server = await new Promise((resolve) => {
+    const listening = createServer(app);
+    listening.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const base = `http://127.0.0.1:${address.port}`;
+  let jar = "";
+  let client = "10.0.0.1";
+
+  async function call(method: string, urlPath: string, body?: Buffer | Record<string, unknown> | string) {
+    const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": client };
+    if (jar) headers.Cookie = jar;
+    let payload: Buffer | string | undefined;
+    if (Buffer.isBuffer(body)) {
+      headers["Content-Type"] = urlPath.endsWith("/avatar") ? "image/jpeg" : "application/octet-stream";
+      payload = body;
+    } else if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      payload = typeof body === "string" ? body : JSON.stringify(body);
+    }
+    const res = await fetch(base + urlPath, { method, headers, body: payload });
+    const set = res.headers.getSetCookie?.() ?? [];
+    const map = new Map(
+      jar
+        .split("; ")
+        .filter(Boolean)
+        .map((part) => {
+          const i = part.indexOf("=");
+          return [part.slice(0, i), part.slice(i + 1)] as const;
+        }),
+    );
+    for (const cookie of set) {
+      const pair = cookie.split(";")[0];
+      const i = pair.indexOf("=");
+      const name = pair.slice(0, i);
+      const value = pair.slice(i + 1);
+      if (/Max-Age=0/i.test(cookie)) map.delete(name);
+      else map.set(name, value);
+    }
+    jar = [...map].map(([key, value]) => `${key}=${value}`).join("; ");
+    const text = await res.text();
+    let json: Record<string, unknown> | null = null;
+    try {
+      json = text ? (JSON.parse(text) as Record<string, unknown>) : null;
+    } catch {
+      json = { raw: text };
+    }
+    return { status: res.status, json, text };
+  }
+
+  try {
+    const ada = await call("POST", "/api/social/register", {
+      username: "Ada",
+      password: "password1",
+    });
+    assert.equal(ada.status, 200);
+    assert.equal(ada.json?.name, "ada");
+    assert.equal(typeof ada.json?.address, "string");
+    assert.equal(JSON.stringify(ada.json).includes("phrase"), false);
+    const adaAddress = String(ada.json?.address);
+    jar = "";
+    const secret = /passHash|pass_hash|phraseCt|phrase_ct|phraseSalt|phrase_salt|"cose"/;
+    const pub = await call("GET", "/api/social/u/ada");
+    assert.equal(pub.status, 200);
+    assert.equal(secret.test(pub.text), false);
+    assert.equal((await call("GET", "/api/social/saved")).status, 401);
+    assert.equal((await call("GET", "/api/social/friends")).status, 401);
+    assert.equal((await call("GET", "/api/social/users?q=ada")).status, 401);
+    assert.equal((await call("POST", "/api/social/phrase", { password: "password1" })).status, 401);
+    assert.equal((await call("POST", "/api/social/pay", { to: adaAddress, sol: "0.1" })).status, 400);
+
+    const ben = await call("POST", "/api/social/register", {
+      username: "ben",
+      password: "password2",
+    });
+    assert.equal(ben.status, 200);
+    jar = "";
+
+    const taken = await call("POST", "/api/social/register", {
+      username: "ada",
+      password: "password1",
+    });
+    assert.equal(taken.status, 409);
+
+    const bad = await call("POST", "/api/social/login", { username: "ada", password: "nope" });
+    assert.equal(bad.status, 401);
+
+    const login = await call("POST", "/api/social/login", { username: "ada", password: "password1" });
+    assert.equal(login.status, 200);
+    assert.ok(jar.includes("soc="));
+
+    const timeline = await call("GET", "/api/social/timeline");
+    assert.equal((timeline.json?.me as { name: string }).name, "ada");
+
+    const post = await call("POST", "/api/social/post", { text: "hello @Ben" });
+    assert.equal(post.status, 200);
+    const postId = String((post.json?.post as { id: string }).id);
+    assert.equal((post.json?.post as { text: string }).text, "hello @Ben");
+
+    const again = await call("POST", "/api/social/post", { text: "too soon" });
+    assert.equal(again.status, 429);
+    assert.match(String(again.json?.error), /10 min/);
+
+    const selfComment = await call("POST", "/api/social/comment", { post: postId, text: "myself" });
+    assert.equal(selfComment.status, 200);
+
+    const home = await call("GET", "/api/social/timeline");
+    assert.equal((home.json?.notes as unknown[]).length, 0);
+
+    await call("POST", "/api/social/logout", {});
+    assert.equal(jar.includes("soc="), false);
+
+    const benIn = await call("POST", "/api/social/login", { username: "ben", password: "password2" });
+    assert.equal(benIn.status, 200);
+
+    const pair = (): [Buffer, Buffer] => [jpeg(8, 8), jpeg(8, 8)];
+    const tooMany = await call("POST", "/api/social/post", packPost("x", [pair(), pair(), pair(), pair(), pair()]));
+    assert.equal(tooMany.status, 400);
+    assert.match(String(tooMany.json?.error), /Four photos/);
+    const notJpeg = await call("POST", "/api/social/post", packPost("", [[Buffer.from("nope"), jpeg(8, 8)]]));
+    assert.equal(notJpeg.status, 400);
+
+    const phone0 = Buffer.concat([jpeg(16, 12), Buffer.from([1])]);
+    const desk0 = jpeg(40, 20);
+    const pictured = await call(
+      "POST",
+      "/api/social/post",
+      packPost("", [
+        [phone0, desk0],
+        [jpeg(12, 16), jpeg(20, 30)],
+      ]),
+    );
+    assert.equal(pictured.status, 200);
+    const picturedPost = pictured.json?.post as { id: string; text: string; photos: number };
+    assert.equal(picturedPost.text, "");
+    assert.equal(picturedPost.photos, 2);
+    const shot = await fetch(`${base}/social/i/${picturedPost.id}/0`);
+    assert.equal(shot.status, 200);
+    assert.equal(shot.headers.get("content-type"), "image/jpeg");
+    assert.equal((await shot.arrayBuffer()).byteLength, desk0.length);
+    const phoneShot = await fetch(`${base}/social/i/${picturedPost.id}/0?m=1`);
+    assert.equal(phoneShot.status, 200);
+    assert.equal((await phoneShot.arrayBuffer()).byteLength, phone0.length);
+    assert.equal((await fetch(`${base}/social/i/${picturedPost.id}/1`)).status, 200);
+    assert.equal((await fetch(`${base}/social/i/${picturedPost.id}/2`)).status, 404);
+    const feed = await call("GET", "/api/social/timeline");
+    const card = (feed.json?.posts as { by: string; photos: number; text: string }[]).find((row) => row.by === "ben");
+    assert.equal(card?.photos, 2);
+    assert.equal(card?.text, "");
+
+    const comment = await call("POST", "/api/social/comment", { post: postId, text: "nice @ada" });
+    assert.equal(comment.status, 200);
+    const lookup = await call("GET", "/api/social/users?q=ad");
+    assert.equal(lookup.status, 200);
+    assert.equal(/pass_hash|phrase_ct|passkey_cose/.test(lookup.text), false);
+    const people = lookup.json?.users as { name: string; friend: boolean }[];
+    assert.equal(people.length, 1);
+    assert.equal(people[0].name, "ada");
+    assert.equal(people[0].friend, false);
+    const wild = await call("GET", "/api/social/users?q=" + encodeURIComponent("a_"));
+    assert.equal((wild.json?.users as unknown[]).length, 0);
+    const self = await call("GET", "/api/social/users?q=ben");
+    assert.equal((self.json?.users as unknown[]).length, 0);
+    const blank = await call("GET", "/api/social/users");
+    assert.equal((blank.json?.users as unknown[]).length, 0);
+    await call("POST", "/api/social/logout", {});
+    const found = await call("GET", "/api/social/people?q=" + encodeURIComponent("@Ada"));
+    assert.equal(found.status, 200);
+    assert.equal(/pass_hash|phrase_ct|passkey_cose|address/.test(found.text), false);
+    assert.deepEqual((found.json?.people as { name: string }[]).map((p) => p.name), ["ada"]);
+    assert.equal(((await call("GET", "/api/social/people?q=ad")).json?.people as unknown[]).length, 0);
+    assert.equal(((await call("GET", "/api/social/people?q=a_%25")).json?.people as unknown[]).length, 0);
+    await call("POST", "/api/social/login", { username: "ben", password: "password2" });
+
+    const added = await call("POST", "/api/social/friends", { username: "ada" });
+    assert.equal(added.status, 200);
+    assert.equal((added.json?.friends as { name: string }[])[0].name, "ada");
+    const friends = await call("GET", "/api/social/friends");
+    assert.equal((friends.json?.friends as { name: string }[])[0].name, "ada");
+    const marked = await call("GET", "/api/social/users?q=ada");
+    assert.equal((marked.json?.users as { friend: boolean }[])[0].friend, true);
+    await call("POST", "/api/social/logout", {});
+
+    const adaIn = await call("POST", "/api/social/login", { username: "ada", password: "password1" });
+    assert.equal(adaIn.status, 200);
+    const noted = await call("GET", "/api/social/timeline");
+    const notes = noted.json?.notes as { from: string; post: string }[];
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].from, "ben");
+    assert.equal(notes[0].post, postId);
+
+    const phrase = await call("POST", "/api/social/phrase", { password: "password1" });
+    const adaPhrase = String(phrase.json?.phrase);
+    assert.equal(phrase.status, 200);
+    const words = String(phrase.json?.phrase).split(" ");
+    assert.equal(words.length, 12);
+    for (const word of words) assert.ok(WORDLIST.includes(word));
+    assert.equal(solanaAddress(String(phrase.json?.phrase)), adaAddress);
+
+    const wrong = await call("POST", "/api/social/phrase", { password: "nope" });
+    assert.equal(wrong.status, 403);
+
+    const frozen = await call("POST", "/api/social/profile", { username: "eve", bio: "nope" });
+    assert.equal(frozen.status, 400);
+    assert.match(String(frozen.json?.error), /can't be changed/);
+
+    const saved = await call("POST", "/api/social/profile", { bio: "hello there", loc: "Lisbon" });
+    assert.equal(saved.status, 200);
+    const profile = await call("GET", "/api/social/u/ada");
+    const user = profile.json?.user as { bio: string; loc: string; name: string };
+    assert.equal(user.bio, "hello there");
+    assert.equal(user.loc, "Lisbon");
+    assert.equal(user.name, "ada");
+
+    const wide = await call("POST", "/api/social/avatar", jpeg(20, 10));
+    assert.equal(wide.status, 400);
+    assert.match(String(wide.json?.error), /portrait/);
+
+    const photo = await call("POST", "/api/social/avatar", jpeg(10, 20));
+    assert.equal(photo.status, 200);
+    const avatar = await fetch(`${base}/social/a/ada?v=${photo.json?.avatarRev}`);
+    assert.equal(avatar.status, 200);
+    assert.equal(avatar.headers.get("content-type"), "image/jpeg");
+
+    const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const jwk = publicKey.export({ format: "jwk" }) as { x: string; y: string };
+    const cose = coseP256(Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url"));
+    const credId = Buffer.from("credential-id-001");
+    assert.equal((await call("POST", "/api/social/passkey/options", {})).status, 403, "needs the password");
+    const options = await call("POST", "/api/social/passkey/options", { password: "password1" });
+    assert.equal(options.status, 200);
+    const challenge = Buffer.from(String(options.json?.challenge), "base64url");
+    const rpId = "127.0.0.1";
+    const regClient = Buffer.from(
+      JSON.stringify({
+        type: "webauthn.create",
+        challenge: String(options.json?.challenge),
+        origin: base,
+      }),
+    );
+    const regAuth = authData(rpId, 0x45, 0, credId, cose);
+    const attestation = Buffer.concat([
+      Buffer.from([0xa3]),
+      Buffer.from([0x63]),
+      Buffer.from("fmt"),
+      Buffer.from([0x64]),
+      Buffer.from("none"),
+      Buffer.from([0x67]),
+      Buffer.from("attStmt"),
+      Buffer.from([0xa0]),
+      Buffer.from([0x68]),
+      Buffer.from("authData"),
+      Buffer.from([0x58, regAuth.length]),
+      regAuth,
+    ]);
+    const enrolled = await call("POST", "/api/social/passkey", {
+      id: credId.toString("base64url"),
+      challenge: String(options.json?.challenge),
+      clientData: regClient.toString("base64url"),
+      attestation: attestation.toString("base64url"),
+    });
+    assert.equal(enrolled.status, 200, enrolled.text);
+
+    await call("POST", "/api/social/logout", {});
+    const needsKey = await call("POST", "/api/social/login", {
+      username: "ada",
+      password: "password1",
+    });
+    assert.equal(needsKey.status, 200);
+    assert.ok(needsKey.json?.passkey);
+    assert.equal(jar.includes("soc="), false);
+
+    const loginChallenge = String((needsKey.json?.passkey as { challenge: string }).challenge);
+    const getClient = Buffer.from(
+      JSON.stringify({ type: "webauthn.get", challenge: loginChallenge, origin: base }),
+    );
+    const getAuth = authData(rpId, 0x05, 1, null, null);
+    const signed = Buffer.concat([getAuth, createHash("sha256").update(getClient).digest()]);
+    const signature = sign("sha256", signed, privateKey);
+    const authed = await call("POST", "/api/social/login/passkey", {
+      username: "ada",
+      challenge: loginChallenge,
+      clientData: getClient.toString("base64url"),
+      authenticatorData: getAuth.toString("base64url"),
+      signature: signature.toString("base64url"),
+    });
+    assert.equal(authed.status, 200, authed.text);
+    assert.ok(jar.includes("soc="));
+
+    const seen = await call("GET", "/api/social/timeline");
+    assert.equal((seen.json?.me as { passkey: boolean }).passkey, true);
+    assert.equal(challenge.length, 32);
+
+    await call("POST", "/api/social/logout", {});
+    const alone = await call("POST", "/api/social/passkey/login", {});
+    assert.equal(alone.status, 200, alone.text);
+    const aloneChallenge = String(alone.json?.challenge);
+    const aloneClient = Buffer.from(
+      JSON.stringify({ type: "webauthn.get", challenge: aloneChallenge, origin: base }),
+    );
+    const aloneAuth = authData(rpId, 0x05, 2, null, null);
+    const aloneSig = sign(
+      "sha256",
+      Buffer.concat([aloneAuth, createHash("sha256").update(aloneClient).digest()]),
+      privateKey,
+    );
+    const byKey = await call("POST", "/api/social/login/passkey", {
+      id: credId.toString("base64url"),
+      challenge: aloneChallenge,
+      clientData: aloneClient.toString("base64url"),
+      authenticatorData: aloneAuth.toString("base64url"),
+      signature: aloneSig.toString("base64url"),
+    });
+    assert.equal(byKey.status, 200, byKey.text);
+    assert.equal(byKey.json?.name, "ada");
+    assert.ok(jar.includes("soc="));
+    assert.equal(((await call("GET", "/api/social/me")).json?.me as { name: string }).name, "ada");
+
+    // Its own address: the secrets bucket is five calls deep, and the phrase tests above spent it.
+    client = "10.0.0.2";
+    async function unlock(count: number, signer = privateKey) {
+      const opt = await call("POST", "/api/social/phrase/passkey/options", {});
+      assert.equal(opt.status, 200, opt.text);
+      assert.equal(opt.json?.id, credId.toString("base64url"));
+      const ch = String(opt.json?.challenge);
+      const cdata = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: ch, origin: base }));
+      const auth = authData(rpId, 0x05, count, null, null);
+      const sig = sign("sha256", Buffer.concat([auth, createHash("sha256").update(cdata).digest()]), signer);
+      return call("POST", "/api/social/phrase/passkey", {
+        challenge: ch,
+        clientData: cdata.toString("base64url"),
+        authenticatorData: auth.toString("base64url"),
+        signature: sig.toString("base64url"),
+      });
+    }
+    const byPasskey = await unlock(3);
+    assert.equal(byPasskey.status, 200, byPasskey.text);
+    assert.equal(byPasskey.json?.phrase, adaPhrase);
+    assert.equal(/key_ct|keyBox|phrase_ct/.test(byPasskey.text), false);
+    const otherKey = generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey;
+    assert.equal((await unlock(4, otherKey)).status, 403);
+    assert.equal((await unlock(5)).status, 200);
+
+    const swap = (body: Record<string, unknown>) => call("POST", "/api/social/swap", body);
+    const sol = "So11111111111111111111111111111111111111112";
+    const usdc = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+    assert.equal((await swap({ inputMint: sol, outputMint: sol, amount: "1" })).status, 400);
+    assert.equal((await swap({ inputMint: sol, outputMint: usdc, amount: "0" })).status, 400);
+    assert.equal((await swap({ inputMint: sol, outputMint: usdc, amount: "1.5" })).status, 400);
+    assert.equal((await swap({ inputMint: sol, outputMint: usdc, amount: "1", slippageBps: 5000 })).status, 400);
+    const send = (body: Record<string, unknown>) => call("POST", "/api/social/send", body);
+    assert.equal((await send({ to: "nope", mint: sol, amount: "1" })).status, 400);
+    assert.equal((await send({ to: adaAddress, mint: sol, amount: "1" })).status, 400);
+    assert.equal((await send({ to: usdc, mint: sol, amount: "-1" })).status, 400);
+
+    await call("POST", "/api/social/logout", {});
+    assert.equal((await call("POST", "/api/social/login", { username: "ben", password: "password2" })).status, 200);
+    const plus = await call("POST", "/api/social/plus", { post: postId });
+    assert.equal(plus.status, 200, plus.text);
+    assert.equal(plus.json?.saved, true);
+    const savedList = await call("GET", "/api/social/saved");
+    const savedPosts = savedList.json?.posts as { id: string; saved: boolean }[];
+    assert.equal(savedPosts[0].id, postId);
+    assert.equal(savedPosts[0].saved, true);
+    const plusAgain = await call("POST", "/api/social/plus", { post: postId });
+    assert.equal(plusAgain.status, 200, plusAgain.text);
+    assert.equal(plusAgain.json?.saved, false);
+    const savedGone = await call("GET", "/api/social/saved");
+    assert.equal((savedGone.json?.posts as unknown[]).length, 0);
+    const repost = await call("POST", "/api/social/repost", { post: postId });
+    assert.equal(repost.status, 200, repost.text);
+    const copied = ((await call("GET", "/api/social/timeline")).json?.posts as {
+      id: string;
+      by: string;
+      repost: string;
+      repostBy: string;
+    }[]).find((post) => post.repost === postId);
+    assert.equal(copied?.by, "ben");
+    assert.equal(copied?.repostBy, "ada");
+    const repostAgain = await call("POST", "/api/social/repost", { post: postId });
+    assert.equal(repostAgain.status, 400);
+    const repostCopy = await call("POST", "/api/social/repost", { post: copied?.id });
+    assert.equal(repostCopy.status, 400);
+    await call("POST", "/api/social/logout", {});
+    const adaBack = await call("POST", "/api/social/login", { username: "ada", password: "password1" });
+    const againChallenge = String((adaBack.json?.passkey as { challenge: string }).challenge);
+    const againClient = Buffer.from(
+      JSON.stringify({ type: "webauthn.get", challenge: againChallenge, origin: base }),
+    );
+    const againAuth = authData(rpId, 0x05, 7, null, null);
+    const againSig = sign(
+      "sha256",
+      Buffer.concat([againAuth, createHash("sha256").update(againClient).digest()]),
+      privateKey,
+    );
+    assert.equal(
+      (
+        await call("POST", "/api/social/login/passkey", {
+          username: "ada",
+          challenge: againChallenge,
+          clientData: againClient.toString("base64url"),
+          authenticatorData: againAuth.toString("base64url"),
+          signature: againSig.toString("base64url"),
+        })
+      ).status,
+      200,
+    );
+    const noted2 = await call("GET", "/api/social/timeline");
+    const kinds = (noted2.json?.notes as { kind: string; from: string }[]).map((note) => note.kind).sort();
+    assert.deepEqual(kinds, ["comment", "repost"]);
+    const opened = await call("POST", "/api/social/open", { post: postId });
+    assert.equal(opened.status, 200, opened.text);
+    assert.equal((opened.json?.me as { name: string }).name, "ada");
+    assert.equal((opened.json?.post as { views: number; comments: number }).views, 1);
+    assert.equal((opened.json?.post as { comments: number }).comments, 2);
+    const openedComments = opened.json?.comments as { avatarRev: number }[];
+    assert.equal(openedComments.length, 2);
+    assert.equal(typeof openedComments[0].avatarRev, "number");
+    const openedAgain = await call("POST", "/api/social/open", { post: postId });
+    assert.equal((openedAgain.json?.post as { views: number }).views, 2);
+    const selfPay = await call("POST", "/api/social/pay", { to: adaAddress, sol: "0.1", from: adaAddress, password: "password1" });
+    assert.equal(selfPay.status, 400);
+    assert.equal(JSON.stringify(selfPay.json).includes("phrase"), false);
+    assert.equal((await call("POST", "/api/social/pay", { to: adaAddress, sol: "0", from: adaAddress })).status, 400);
+
+    const filler = new Client({ connectionString: process.env.DATABASE_URL });
+    await filler.connect();
+    try {
+      for (let i = 0; i < TIMELINE_PAGE; i++) {
+        await filler.query("INSERT INTO posts (id, by_name, text, at) VALUES ($1, 'ada', $2, $3)", [
+          `old${i}`,
+          `old ${i}`,
+          1_000_000 + i,
+        ]);
+      }
+    } finally {
+      await filler.end();
+    }
+    const firstPage = await call("GET", "/api/social/timeline");
+    const firstPosts = firstPage.json?.posts as { id: string }[];
+    assert.equal(firstPosts.length, TIMELINE_PAGE);
+    const cursor = firstPage.json?.next as { at: number; id: string };
+    assert.equal(typeof cursor.at, "number");
+    assert.equal(typeof cursor.id, "string");
+    const secondPage = await call(
+      "GET",
+      `/api/social/timeline?before=${cursor.at}&id=${encodeURIComponent(cursor.id)}`,
+    );
+    const secondPosts = secondPage.json?.posts as { id: string }[];
+    assert.equal(secondPosts.length, 3);
+    assert.equal(secondPage.json?.next, null);
+    assert.deepEqual(secondPage.json?.notes, []);
+    const seenIds = new Set(firstPosts.map((post) => post.id));
+    for (const post of secondPosts) assert.equal(seenIds.has(post.id), false);
+    assert.equal((await call("GET", "/api/social/timeline?before=nope&id=x")).status, 400);
+
+    // Recovery: the phrase alone, a new password, every old session gone.
+    const oldJar = jar;
+    assert.equal((await call("POST", "/api/social/recover", { phrase: "one two", password: "password9" })).status, 400);
+    const stranger = await call("POST", "/api/social/recover", { phrase: ABANDON, password: "password9" });
+    assert.equal(stranger.status, 401);
+    const back = await call("POST", "/api/social/recover", {
+      phrase: `  ${adaPhrase.toUpperCase()} `,
+      password: "password9",
+    });
+    assert.equal(back.status, 200, back.text);
+    assert.equal(back.json?.name, "ada");
+    assert.equal(((await call("GET", "/api/social/timeline")).json?.me as { name: string }).name, "ada");
+    const newJar = jar;
+    jar = oldJar;
+    assert.equal((await call("GET", "/api/social/timeline")).json?.me, null, "old cookie is revoked");
+    jar = newJar;
+    await call("POST", "/api/social/logout", {});
+    assert.equal((await call("POST", "/api/social/login", { username: "ada", password: "password1" })).status, 401);
+    // The passkey went with the old password, so this logs straight in.
+    const fresh = await call("POST", "/api/social/login", { username: "ada", password: "password9" });
+    assert.equal(fresh.status, 200, fresh.text);
+    assert.equal(fresh.json?.name, "ada");
+    const reread = await call("POST", "/api/social/phrase", { password: "password9" });
+    assert.equal(reread.json?.phrase, adaPhrase);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});

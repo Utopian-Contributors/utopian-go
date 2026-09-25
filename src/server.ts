@@ -16,6 +16,8 @@ import { iconFile } from "./lib/tokens/icons";
 import { startTokenIndex } from "./lib/tokens/store";
 import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
 import { apiRouter } from "./routes/api";
+import { ensureSchema } from "./social/db";
+import { sendAvatar, sendPostPhoto, socialRouter } from "./social/routes";
 
 const app = express();
 const publicDir = path.join(__dirname, "..", "public");
@@ -336,6 +338,8 @@ try {
  *  - `img-src https:` — results carry thumbnails from Brave and from whatever
  *    publisher a result points at. The host set is the open web, so it cannot
  *    be enumerated; `data:` covers wallet icons, which arrive as data URIs.
+ *    `blob:` is only the post composer's preview of a picture this page just
+ *    compressed. That address is created here; markup cannot name one.
  *  - `connect-src` — /api/* on this origin, plus Jupiter's keyless swap API,
  *    which the browser calls directly for quotes and to build a transaction.
  *  - `base-uri 'none'` — without it, one injected `<base>` tag repoints every
@@ -347,7 +351,7 @@ const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https:",
+  "img-src 'self' blob: data: https:",
   "connect-src 'self' https://lite-api.jup.ag",
   "font-src 'self'",
   "form-action 'self'",
@@ -412,6 +416,20 @@ app.get(WALLET_PATH, (req, _res, next) => {
   next();
 });
 
+/**
+ * Social is one static document, same as the wallet page.
+ *
+ * Timeline, friends and a profile are the same file. The script reads the
+ * path, and who is logged in lives in a cookie, so the HTML never varies and
+ * can be handed out precompressed. Avatars and post pictures are the
+ * exception: they are bytes on disk, and they have to be answered before the
+ * rewrite below turns every other /social URL into that document.
+ */
+app.get("/social.html", (req, res) => {
+  const qs = req.originalUrl.slice(req.path.length);
+  res.redirect(308, `/social${qs}`);
+});
+
 app.get("/icon/:mint", (req, res) => {
   const file = iconFile(req.params.mint);
   if (!file) {
@@ -420,6 +438,19 @@ app.get("/icon/:mint", (req, res) => {
   }
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.type("webp").sendFile(file);
+});
+
+app.get("/social/a/:name", sendAvatar);
+app.get("/social/t/:name", sendAvatar);
+app.get("/social/i/:id/:n", sendPostPhoto);
+
+app.use((req, _res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  const p = req.path;
+  if (p !== "/social" && !p.startsWith("/social/")) return next();
+  if (p.startsWith("/social/a/") || p.startsWith("/social/t/") || p.startsWith("/social/i/")) return next();
+  req.url = "/social.html" + req.originalUrl.slice(p.length);
+  next();
 });
 
 // Negotiated compression for everything generated per request (API JSON).
@@ -499,13 +530,14 @@ app.use(
       // `wallet.html`. Matching the bare name alone silently missed every
       // compressed response — which is every real one.
       const name = path.basename(filePath).replace(/\.(br|gz)$/, "");
-      if (name === "index.html" || name === "wallet.html") {
+      if (name === "index.html" || name === "wallet.html" || name === "social.html") {
         res.setHeader("Cache-Control", "no-cache");
       }
     },
   }),
 );
 
+app.use("/api/social", socialRouter);
 app.use(apiRouter);
 
 function sendIndex(
@@ -631,6 +663,10 @@ const server = app.listen(PORT, () => {
   }
   startTokenIndex();
 });
+
+// Social's tables, made ready ahead of the first request. Search never waits
+// on this; if the database is down, only /api/social answers 503.
+ensureSchema().catch((err) => console.error("[social] database:", err));
 
 /**
  * Idle-connection timeouts, ordered against the proxy in front of us.
