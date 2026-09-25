@@ -1,12 +1,13 @@
 import express, { NextFunction, Request, Response, Router } from "express";
 import { fetchBalances, isPubkey } from "../lib/balances";
 import { fetchHoldings } from "../lib/holdings";
-import { BRAVE_MAX_OFFSET } from "../config";
+import { BRAVE_MAX_OFFSET, TOKEN_TOP_COUNT } from "../config";
 import { BraveApiError, braveImageSearch, braveSearch } from "../lib/brave";
 import { DEFAULT_LANG, isLanguage } from "../lib/lang";
 import { asString } from "../lib/query";
 import { rateLimit } from "../lib/rateLimit";
-import { lookupTokens } from "../lib/tokens/store";
+import { tokenDetail } from "../lib/tokens/detail";
+import { lookupTokens, searchTokens, topTokens } from "../lib/tokens/store";
 import {
   BalancesApiResponse,
   HoldingsApiResponse,
@@ -290,6 +291,41 @@ apiRouter.post(
       };
       res.status(502).json(body);
     }
+  }),
+);
+
+/** The same list for everyone, read from memory, so it may be cached for a minute. */
+apiRouter.get("/api/tokens/top", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "public, max-age=60");
+  res.json({ tokens: topTokens(TOKEN_TOP_COUNT) });
+});
+
+/** Searches the in-memory index only; nothing upstream is asked. */
+apiRouter.get("/api/tokens", searchLimit, (req: Request, res: Response) => {
+  const q = asString(req.query.q).slice(0, 64);
+  res.setHeader("Cache-Control", "public, max-age=60");
+  res.json({ tokens: searchTokens(q, TOKEN_TOP_COUNT) });
+});
+
+/** Every row click on the wallet page is one of these; each mint reaches Jupiter at most every 30 s. */
+const detailLimit = rateLimit({ perMinute: 120, burst: 40 });
+
+apiRouter.get(
+  "/api/tokens/:mint",
+  detailLimit,
+  wrap(async (req: Request, res: Response) => {
+    const mint = req.params.mint;
+    if (!isPubkey(mint)) {
+      res.status(400).json({ error: "Invalid mint." });
+      return;
+    }
+    const detail = await tokenDetail(mint);
+    if (!detail) {
+      res.status(404).json({ error: "We don't index that token." });
+      return;
+    }
+    res.setHeader("Cache-Control", "public, max-age=30");
+    res.json(detail);
   }),
 );
 

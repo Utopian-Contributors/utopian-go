@@ -5,8 +5,9 @@ import {
   TOKEN_INDEX_INTERVAL_MS,
   TOKEN_PRICE_TTL_MS,
 } from "../../config";
-import { TokenQuote, TokenRecord } from "../../types";
+import { TokenQuote, TokenRecord, TopToken } from "../../types";
 import { fetchPrice } from "./helius";
+import { hasIcon, restoreIcons, syncIcons } from "./icons";
 import { fetchTokenRecords } from "./jupiter";
 import { MAX_CANDIDATES, TokenIndex, matchTokens } from "./match";
 import {
@@ -28,6 +29,8 @@ let index: TokenIndex = {
   byMint: new Map(),
 };
 let updatedAt = 0;
+/** Verified records by 24h volume, highest first. Volume only changes on a rebuild. */
+let ranked: TokenRecord[] = [];
 
 /** In-flight price refreshes, keyed by mint, so N searches cause one fetch. */
 const inFlight = new Map<string, Promise<void>>();
@@ -62,6 +65,9 @@ function buildIndex(list: TokenRecord[]): TokenIndex {
 function adopt(list: TokenRecord[]): void {
   records = list;
   index = buildIndex(list);
+  ranked = list
+    .filter((r) => r.verified && (r.volume24h ?? 0) > 0)
+    .sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0));
   updatedAt = Date.now();
 }
 
@@ -161,6 +167,9 @@ async function refreshIndex(): Promise<void> {
     console.warn("[tokens] index refresh failed:", err);
     return;
   }
+
+  // Every indexed logo, busiest first, since the wallet page's filter can list any of them.
+  void syncIcons([...records].sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0)));
 
   // Outside the try on purpose: the line is decoration on top of a working
   // index, and the index is already adopted and saved by the time this runs.
@@ -276,6 +285,57 @@ export function lookupMints(mints: string[]): Map<string, TokenRecord> {
   return out;
 }
 
+function toTop(rec: TokenRecord): TopToken {
+  return {
+    mint: rec.mint,
+    symbol: rec.symbol,
+    name: rec.name,
+    price: rec.price,
+    ...(rec.change24h != null ? { change24h: rec.change24h } : {}),
+    ...(rec.decimals != null ? { decimals: rec.decimals } : {}),
+    volume: rec.volume24h ?? 0,
+    ...(hasIcon(rec.mint) ? { icon: true as const } : {}),
+  };
+}
+
+/** The most-traded verified tokens, for the wallet page. */
+export function topTokens(limit: number): TopToken[] {
+  return ranked.slice(0, limit).map(toTop);
+}
+
+/**
+ * The wallet page's filter: every indexed token whose mint, symbol or name
+ * matches, closest first, then verified, then by volume.
+ */
+export function searchTokens(raw: string, limit: number): TopToken[] {
+  const q = raw.trim().replace(/^\$/, "").toLowerCase();
+  if (!q) return topTokens(limit);
+  const hits: { rec: TokenRecord; rank: number }[] = [];
+  for (const rec of records) {
+    const sym = rec.symbol.toLowerCase();
+    const name = rec.name.toLowerCase();
+    const rank =
+      rec.mint === raw.trim() || sym === q
+        ? 0
+        : sym.startsWith(q)
+          ? 1
+          : name.startsWith(q)
+            ? 2
+            : name.includes(q) || sym.includes(q)
+              ? 3
+              : -1;
+    if (rank >= 0) hits.push({ rec, rank });
+  }
+  hits.sort(
+    (a, b) =>
+      a.rank - b.rank ||
+      Number(b.rec.verified) - Number(a.rec.verified) ||
+      (b.rec.volume24h ?? 0) - (a.rec.volume24h ?? 0) ||
+      b.rec.liquidity - a.rec.liquidity,
+  );
+  return hits.slice(0, limit).map((hit) => toTop(hit.rec));
+}
+
 /** Single best quote, for callers that render exactly one cell. */
 export function lookupToken(query: string): TokenQuote | null {
   return lookupTokens(query, 1)[0] ?? null;
@@ -296,6 +356,7 @@ const COLD_RETRY_MS = [5_000, 15_000, 60_000, 300_000];
 
 /** Load any snapshot, then refresh now and hourly thereafter. */
 export function startTokenIndex(): void {
+  restoreIcons();
   if (loadSnapshot()) {
     const age = Math.round((Date.now() - updatedAt) / 60_000);
     console.log(`[tokens] loaded ${records.length} mints from snapshot (${age}m old)`);

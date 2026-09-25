@@ -81,6 +81,26 @@ export const TOKEN_INDEX_TIMEOUT_MS = 20_000;
 /** Disk snapshot so a restart doesn't cold-start the index. */
 export const TOKEN_INDEX_FILE = path.join(process.cwd(), ".cache", "tokens.json");
 
+// —— Wallet page ——
+
+/** Rows in the wallet page's most-traded list. */
+export const TOKEN_TOP_COUNT = 30;
+
+/** Thumbnails are a cache: lost on redeploy, rebuilt by the next sync. */
+export const TOKEN_ICON_DIR = path.join(process.cwd(), ".cache", "icons");
+
+/** Drawn at 24–32 CSS px, so 64 covers a 2x screen. */
+export const TOKEN_ICON_EDGE = 64;
+
+export const TOKEN_ICON_MAX_BYTES = 1_048_576;
+export const TOKEN_ICON_TIMEOUT_MS = 8_000;
+
+/** A logo rarely changes. */
+export const TOKEN_ICON_TTL_MS = 7 * 86_400_000;
+
+/** A failed logo is tried again on the next hourly sync. */
+export const TOKEN_ICON_RETRY_MS = 50 * 60_000;
+
 // —— 24h ticks ——
 
 /**

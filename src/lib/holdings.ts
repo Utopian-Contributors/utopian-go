@@ -5,6 +5,7 @@ import {
 } from "../config";
 import { Holding, Holdings } from "../types";
 import { decodeTicks, encodeTicks } from "./tokens/ticks";
+import { hasIcon } from "./tokens/icons";
 import { lookupMints } from "./tokens/store";
 
 /**
@@ -330,6 +331,7 @@ async function lookup(owner: string): Promise<Holdings> {
       price: rec.price,
       usd,
       ...(rec.change24h != null ? { change24h: rec.change24h } : {}),
+      ...(hasIcon(mint) ? { icon: true as const } : {}),
     });
   }
 

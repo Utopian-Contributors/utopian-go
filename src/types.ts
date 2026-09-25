@@ -146,6 +146,10 @@ export interface TokenRecord {
    */
   tickLo?: number;
   tickHi?: number;
+  /** 24h traded volume, USD, buys plus sells. */
+  volume24h?: number;
+  /** Where Jupiter says the logo lives. Server-side only; the client gets /icon/<mint>. */
+  icon?: string;
   /** Epoch ms the price itself was sourced — drives the age shown to users. */
   priceAt: number;
   /**
@@ -195,6 +199,55 @@ export interface Holding {
   usd: number;
   /** 24h price change, percent. */
   change24h?: number;
+  /** A thumbnail is served at /icon/<mint>. */
+  icon?: true;
+}
+
+/** One row of the wallet page's most-traded list. */
+export interface TopToken {
+  mint: string;
+  symbol: string;
+  name: string;
+  price: number;
+  change24h?: number;
+  decimals?: number;
+  /** 24h traded volume, USD. */
+  volume: number;
+  icon?: true;
+}
+
+export interface TokenWindow {
+  change?: number;
+  buyVolume?: number;
+  sellVolume?: number;
+  buys?: number;
+  sells?: number;
+  traders?: number;
+}
+
+/**
+ * The wallet page's side panel for one indexed token. Market data comes from
+ * Jupiter and may be missing; the price and the line come from the index.
+ */
+export interface TokenDetail {
+  mint: string;
+  symbol: string;
+  name: string;
+  price: number;
+  decimals?: number;
+  priceSol?: number;
+  liquidity?: number;
+  fdv?: number;
+  mcap?: number;
+  holders?: number;
+  /** As TokenQuote.ticks, with the price range so a hovered hour can be read as a price. */
+  ticks?: string;
+  tickLo?: number;
+  tickHi?: number;
+  icon?: true;
+  /** https only. */
+  links: { website?: string; twitter?: string; telegram?: string; discord?: string };
+  windows: { "5m"?: TokenWindow; "1h"?: TokenWindow; "6h"?: TokenWindow; "24h"?: TokenWindow };
 }
 
 /**
@@ -354,6 +407,16 @@ export interface BraveSearchResponse {
 }
 
 /** Loose Jupiter Tokens V2 entry (fields we read only). */
+/** One trading window of a Jupiter token. */
+export interface JupStats {
+  priceChange?: number;
+  buyVolume?: number;
+  sellVolume?: number;
+  numBuys?: number;
+  numSells?: number;
+  numTraders?: number;
+}
+
 export interface JupToken {
   id?: string;
   symbol?: string;
@@ -361,10 +424,20 @@ export interface JupToken {
   decimals?: number;
   usdPrice?: number;
   mcap?: number;
+  fdv?: number;
   liquidity?: number;
+  holderCount?: number;
   isVerified?: boolean;
   tags?: string[];
-  stats24h?: { priceChange?: number };
+  icon?: string;
+  website?: string;
+  twitter?: string;
+  telegram?: string;
+  discord?: string;
+  stats5m?: JupStats;
+  stats1h?: JupStats;
+  stats6h?: JupStats;
+  stats24h?: JupStats;
 }
 
 /** Loose Helius DAS `getAsset` response (fields we read only). */

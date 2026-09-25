@@ -12,6 +12,7 @@ import {
   PORT,
   SITE_URL,
 } from "./config";
+import { iconFile } from "./lib/tokens/icons";
 import { startTokenIndex } from "./lib/tokens/store";
 import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
 import { apiRouter } from "./routes/api";
@@ -409,6 +410,16 @@ app.get(WALLET_PATH, (req, _res, next) => {
   // req.url, so pointing it at the built file is all this takes.
   req.url = WALLET_FILE + req.originalUrl.slice(req.path.length);
   next();
+});
+
+app.get("/icon/:mint", (req, res) => {
+  const file = iconFile(req.params.mint);
+  if (!file) {
+    res.status(404).type("text").send("Not found.");
+    return;
+  }
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.type("webp").sendFile(file);
 });
 
 // Negotiated compression for everything generated per request (API JSON).

@@ -12,16 +12,23 @@
     "build:server": "tsc",
     "build": "npm run build:client && npm run build:server",
     "start": "NODE_ENV=production node dist/server.js",
-    "size": "node scripts/build-client.mjs"
+    "size": "node scripts/build-client.mjs",
+    "test": "npm run build:server && node --test dist/social/social.test.js"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
     "compression": "^1.8.1",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "pg": "^8.23.0",
+    "prisma": "7.10.0",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",
     "@types/express": "^4.17.21",
     "@types/node": "^22.5.0",
+    "@types/pg": "^8.23.1",
     "esbuild": "^0.25.12",
     "html-minifier-terser": "^7.2.0",
     "lightningcss": "^1.33.0",

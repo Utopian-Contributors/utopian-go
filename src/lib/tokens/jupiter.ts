@@ -109,6 +109,8 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
   const change24h = Number(t.stats24h?.priceChange);
   const mcap = Number(t.mcap);
   const decimals = Number(t.decimals);
+  const volume24h = (Number(t.stats24h?.buyVolume) || 0) + (Number(t.stats24h?.sellVolume) || 0);
+  const icon = typeof t.icon === "string" && t.icon.startsWith("https://") ? t.icon : "";
   const aliases = isEquity
     ? equityAliases(symbol, name || symbol)
     : [wrappedAlias(name || symbol)].filter((a): a is string => !!a);
@@ -125,6 +127,8 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
     verified,
     ...(isEquity ? { equity: true } : {}),
     ...(aliases.length ? { aliases } : {}),
+    ...(volume24h > 0 ? { volume24h } : {}),
+    ...(icon ? { icon } : {}),
     priceAt: now,
     checkedAt: now,
   };
