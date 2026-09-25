@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Social</title>
+    <link rel="icon" href="/go-favicon.png" type="image/png" />
+    <link rel="stylesheet" href="/social.css" />
+  </head>
+  <body class="res soc" data-qr="/qr.js">
+    <svg width="0" height="0" aria-hidden="true" style="position: absolute">
+      <symbol id="pi" viewBox="0 0 24 24">
+        <rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" />
+        <circle cx="8.5" cy="10" r="1.5" fill="currentColor" />
+        <path d="M4 17l4.5-4 3 2.5L14 13l6 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+      </symbol>
+    </svg>
+    <div class="chrome" id="chrome">
+      <header id="hd">
+        <a class="lg" href="/" id="lg" aria-label="utopian-go home">
+          <img
+            class="lg-mark"
+            src="/go-wordmark.svg"
+            alt=""
+            width="188"
+            height="64"
+            decoding="async"
+          />
+        </a>
+        <form class="sf" id="f" role="search" action="/" method="get">
+          <input
+            id="q"
+            name="q"
+            type="search"
+            enterkeyhint="search"
+            placeholder="Search"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div class="sf-actions">
+            <button id="go" type="submit" class="sf-go" aria-label="Search">
+              <span class="bl" aria-hidden="true">↵</span>
+            </button>
+          </div>
+        </form>
+        <nav id="ac" aria-label="Account">
+          <a class="ac-w" href="/wallet">Wallet</a>
+          <a class="ac-b" href="/">Go Search</a>
+          <button type="button" id="out" hidden>Log out</button>
+        </nav>
+      </header>
+      <nav id="tb" aria-label="Social">
+        <a class="tab" href="/social" data-nav="timeline">Timeline<i id="badge" hidden></i></a>
+        <a class="tab" href="/social/saved" data-nav="saved">Saved</a>
+        <a class="tab" href="/social/friends" data-nav="friends">Friends</a>
+        <a class="tab" href="/social" id="me" data-nav="profile" hidden>My Profile</a>
+      </nav>
+    </div>
+
+    <div id="mn">
+      <div id="m">
+        <p class="muted">…</p>
+        <noscript><p>Social needs JavaScript.</p></noscript>
+      </div>
+      <div id="sc">
+        <aside id="sd">
+          <div class="pn" id="side"></div>
+        </aside>
+        <footer id="ft">
+          <a href="/terms.pdf" target="_blank" rel="noopener">Terms</a>
+          <a href="/privacy.pdf" target="_blank" rel="noopener">Privacy</a>
+          <a href="https://x.com/UtopianContrib" target="_blank" rel="noopener">X</a>
+          <a
+            href="https://pump.fun/coin/HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA"
+            target="_blank"
+            rel="noopener"
+            >$UTCC</a
+          >
+        </footer>
+      </div>
+    </div>
+
+    <dialog id="qd" aria-labelledby="qt">
+      <h2 id="qt">Solana wallet</h2>
+      <div id="qc"></div>
+      <p id="qa" class="addr"></p>
+      <p id="qk" class="hint" hidden>Copied</p>
+      <form id="pf">
+        <label for="pamt">Amount in SOL</label>
+        <div class="pay-line">
+          <input id="pamt" inputmode="decimal" autocomplete="off" placeholder="0.00" />
+          <button type="submit" id="py">Pay</button>
+        </div>
+        <p id="phint" class="hint">Your wallet signs this payment.</p>
+        <p id="pe" class="err" role="alert"></p>
+        <p id="pok" class="hint" hidden></p>
+      </form>
+      <button type="button" id="qx" class="ghost">Close</button>
+    </dialog>
+    <dialog id="d" aria-labelledby="dt">
+      <form id="auth">
+        <!--
+          One dialog, three modes. Each element names the modes it belongs to
+          in data-m, and openAuth() shows exactly those, so the copy for every
+          mode lives here rather than in the bundle.
+        -->
+        <h2 id="dt">
+          <span data-m="login">Log in</span>
+          <span data-m="register" hidden>Create account</span>
+          <span data-m="recover" hidden>Recover account</span>
+        </h2>
+        <p class="hint" data-m="login">Use the username and password for your account.</p>
+        <p class="hint" data-m="register" hidden>Pick a username. It cannot be changed later.</p>
+        <p class="hint" data-m="recover" hidden>
+          Enter the 12-word recovery phrase from your profile and a new password. This removes any
+          passkey and signs out your other devices.
+        </p>
+        <div data-m="login register">
+          <label for="au">Username</label>
+          <input id="au" name="username" required maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" />
+          <p class="hint" data-m="register" hidden>3–16 letters, numbers, or _.</p>
+        </div>
+        <div data-m="recover" hidden>
+          <label for="rp">Recovery phrase</label>
+          <textarea id="rp" rows="3" required disabled autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+        </div>
+        <label for="ap"><span data-m="login register">Password</span><span data-m="recover" hidden>New password</span></label>
+        <input id="ap" name="password" type="password" required minlength="8" maxlength="128" autocomplete="current-password" />
+        <p class="hint" data-m="register recover" hidden>At least 8 characters.</p>
+        <button type="button" id="af" class="ghost" data-m="login">Forgot password?</button>
+        <p id="ae" class="err" role="alert"></p>
+        <button type="submit" id="ag">
+          <span data-m="login">Log in</span>
+          <span data-m="register" hidden>Create account</span>
+          <span data-m="recover" hidden>Recover account</span>
+        </button>
+      </form>
+      <div data-m="login">
+        <p class="or">or</p>
+        <button type="button" id="pk">Use a passkey</button>
+      </div>
+      <div class="dlg-foot">
+        <button type="button" id="as">
+          <span data-m="login">Create account</span>
+          <span data-m="register" hidden>I have an account</span>
+          <span data-m="recover" hidden>Back to log in</span>
+        </button>
+        <button type="button" id="ax">Close</button>
+      </div>
+    </dialog>
+    <script src="/social.js" defer></script>
+  </body>
+</html>

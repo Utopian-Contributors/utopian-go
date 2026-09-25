@@ -2,7 +2,7 @@
  * Connecting a wallet, on its own — no trade attached.
  *
  * A separate bundle from the buy panel because the two are wanted at different
- * moments: the header's Login button and the wallet page both need to reach a
+ * moments: the wallet page's Login button and the buy panel both need to reach a
  * wallet, and neither should drag in a quote engine and a confirmation screen
  * to do it. What they share is the dialog, the chooser and the Wallet Standard
  * module itself, so the two screens are the same screen.

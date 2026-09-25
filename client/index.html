@@ -115,7 +115,7 @@
           <a href="/terms.pdf" target="_blank" rel="noopener">Terms</a>
           <a href="/privacy.pdf" target="_blank" rel="noopener">Privacy</a>
           <a href="https://x.com/UtopianContrib" target="_blank" rel="noopener"
-            >@UtopianContrib</a
+            >X</a
           >
           <a
             href="https://pump.fun/coin/HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA"
@@ -139,6 +139,17 @@
             the two together; drift here costs a default, not a failed search.
           -->
           <span class="ft-lang">
+            <!--
+              The label is a span and the select sits over it invisibly.
+
+              A select is always as wide as its widest option, whichever one is
+              selected — here "Português (BR)", which left every shorter
+              language trailing fifty-odd pixels of dead space inside the
+              control. Drawn as its own label it is as wide as it looks, which
+              is what lets the home footer centre it. lang.js keeps the two in
+              step; aria-hidden because the select announces the same value.
+            -->
+            <span id="lgl" class="ft-lang-t" aria-hidden="true">English</span>
             <select id="lang" aria-label="Result language">
               <option value="en">English</option>
               <option value="en-gb">English (UK)</option>

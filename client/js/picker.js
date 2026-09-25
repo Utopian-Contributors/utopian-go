@@ -1,7 +1,7 @@
 /**
  * "Which wallet?", as one implementation.
  *
- * Asked from two places — the Login button, and the buy panel when a trade
+ * Asked from two places — the wallet page's Login button, and the buy panel when a trade
  * needs a wallet it has not got — and there is no reason for them to be two
  * screens. The buy panel renders this into the dialog it already has open;
  * the login bundle opens a dialog for it. Same markup either way.

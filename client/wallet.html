@@ -11,7 +11,7 @@
     <meta name="robots" content="noindex, nofollow" />
     <link rel="stylesheet" href="/wallet.css" />
   </head>
-  <body data-cn="/connect.js" data-sw="/swap.js" data-qr="/qr.js">
+  <body data-cn="/connect.js" data-sw="/swap.js" data-qr="/qr.js" data-ks="/keys.js">
     <!-- One header row: the mark on the left, the account on the right. The
          search shell has to pin its account control out of flow because it has
          two header layouts to avoid disturbing; this page has one, so the
@@ -31,39 +31,53 @@
     </header>
 
     <main class="wrap" id="wl">
-      <!-- Shipped in its final geometry, the same bargain the search shell
-           makes: this is exactly what the page looks like while the lookup is
-           in flight, so the bundle taking over moves nothing. The figure is a
-           dash rather than a zero — nobody's balance should read as empty
-           before it has been read. -->
-      <div class="wl-tot">
-        <span class="wl-k">Total value</span>
-        <div class="wl-vr">
-          <strong class="wl-v" id="wl-v">—</strong>
-          <span class="wl-d" id="wl-d" hidden></span>
-        </div>
-        <!-- The 24h line, drawn from a shape the server computes and sends
-             with the holdings. Hidden until there is one: a chart box that
-             reserves height before it has anything in it is a hole in the
-             page, and one that appears afterwards moves the list under it. -->
-        <div class="wl-c" id="wl-c" hidden></div>
-        <p class="wl-cap" id="wl-cap" hidden></p>
+      <div class="wl-main">
+        <div class="wl-ph" id="wl-ph" hidden></div>
+        <section class="wl-pf" aria-labelledby="wl-pf-h">
+          <!-- Shipped in its final geometry so the bundle taking over moves
+               nothing. A dash, not a zero: no balance reads as empty before it
+               has been read. -->
+          <div class="wl-tot">
+            <h2 class="wl-k" id="wl-pf-h">Portfolio</h2>
+            <div class="wl-vr">
+              <strong class="wl-v" id="wl-v">—</strong>
+              <span class="wl-d" id="wl-d" hidden></span>
+            </div>
+            <div class="wl-c" id="wl-c" hidden></div>
+            <div class="wl-acts" id="wl-acts" hidden>
+              <button type="button" class="wl-a" data-act="receive">Receive</button>
+              <button type="button" class="wl-a" data-act="send">Send</button>
+              <button type="button" class="wl-a" data-act="swap">Swap</button>
+            </div>
+          </div>
+          <div id="wl-l"></div>
+          <p class="wl-n" id="wl-n">Reading your wallet…</p>
+          <div id="wl-x"></div>
+        </section>
+        <section class="wl-top" aria-labelledby="wl-th">
+          <h2 class="wl-k" id="wl-th">Trending</h2>
+          <input
+            class="wl-q"
+            id="wl-q"
+            type="search"
+            placeholder="Search all tokens"
+            aria-label="Search all tokens"
+            autocomplete="off"
+            spellcheck="false"
+            maxlength="64"
+          />
+          <div id="wl-tl"></div>
+          <p class="wl-n" id="wl-tn" hidden></p>
+        </section>
       </div>
-      <div id="wl-l"></div>
-      <p class="wl-n" id="wl-n">Reading your wallet…</p>
-      <!-- Whatever the current state offers to do about itself: connect a
-           wallet, or try the lookup again. Its own element because the state
-           is rebuilt from scratch on every render, and a control appended as a
-           sibling of the note above outlived that rebuild — every failed retry
-           left another "Try again" button behind it. -->
-      <div id="wl-x"></div>
+      <aside class="wl-side" id="wl-s" aria-label="Selected token" aria-live="polite"></aside>
     </main>
 
     <footer id="ft" class="wrap">
       <a href="/terms.pdf" target="_blank" rel="noopener">Terms</a>
       <a href="/privacy.pdf" target="_blank" rel="noopener">Privacy</a>
       <a href="https://x.com/UtopianContrib" target="_blank" rel="noopener"
-        >@UtopianContrib</a
+        >X</a
       >
       <a
         href="https://pump.fun/coin/HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA"

@@ -80,11 +80,15 @@ const CSS = `
 
 /*
  * Direction is carried by colour as well as by the label: green to acquire,
- * an orange-red to exit. Both hold >4.5:1 against white in either theme, so
- * the fill can stay fixed rather than flipping with the palette.
+ * an orange-red to exit. The green comes off the palette as a fill and an ink
+ * together (--buy/--buy-ink, defined in both app.css and wallet.css, since the
+ * dialog opens over either page) — after dark it goes bioluminescent and its
+ * label flips to near-black with it, so the pair clears 4.5:1 whichever way the
+ * theme falls. Orange stays put: it is legible under both skies, and the two
+ * ends of a direction have to stay told apart first.
  */
 .swx-go{width:100%;margin-top:12px;border:0;border-radius:999px;padding:12px;
- background:#167c3c;color:#fff;font:600 15px/1.2 var(--ff);cursor:pointer;
+ background:var(--buy);color:var(--buy-ink);font:600 15px/1.2 var(--ff);cursor:pointer;
  transition:background .18s}
 .swx-go.sell{background:#c2410c}
 .swx-go:hover:not(:disabled){filter:brightness(1.1)}

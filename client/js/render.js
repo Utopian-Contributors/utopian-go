@@ -38,6 +38,7 @@ import { tokenCards } from "./token.js";
  *   offset: number,
  *   more: boolean,
  *   feeding: boolean,
+ *   people: {name: string, bio: string, loc: string, avatarRev: number}[],
  * }} ViewState
  */
 
@@ -144,6 +145,7 @@ export function createRenderer(state) {
       const tokens = state.data?.tokens;
       if (tokens?.length) results.append(tokenCards(tokens));
       paintWeb(state.data?.results || []);
+      paintPeople();
       paintSide();
     } else if (state.tab === "news") {
       paintList(state.data?.news || [], false);
@@ -160,7 +162,8 @@ export function createRenderer(state) {
       state.tab === "web" &&
       !(state.data?.results || []).length &&
       !state.data?.infobox &&
-      !state.data?.tokens?.length
+      !state.data?.tokens?.length &&
+      !state.people.length
     ) {
       setStatus("No results.");
     }
@@ -171,6 +174,25 @@ export function createRenderer(state) {
 
     // Keep sticky chrome height + side max in sync after layout changes
     syncSideMax();
+  }
+
+  function paintPeople() {
+    if (state.tab !== "web" || !state.people.length) return;
+    results.prepend(
+      el(
+        "div",
+        { class: "ppg" },
+        ...state.people.map((p) =>
+          el(
+            "a",
+            { class: "pp", href: `/social/u/${p.name}` },
+            p.avatarRev ? el("img", { src: `/social/t/${p.name}?v=${p.avatarRev}`, alt: "", width: "40" }) : null,
+            el("b", { text: p.name }),
+            el("span", { text: p.bio || p.loc }),
+          ),
+        ),
+      ),
+    );
   }
 
   /** @param {WebResult[]} items */
@@ -900,6 +922,7 @@ export function createRenderer(state) {
     ensureTabAvailable,
     renderTabs,
     paint,
+    paintPeople,
     clearSide,
     syncSideMax,
     closeImage,

@@ -17,10 +17,11 @@
  *   (HTTP/2). Summing a document with its subresources measures a flight that
  *   never happens; each gets its own budget instead.
  *
- *   There are two documents. The search shell is one; the wallet page is a
+ *   There are three documents. The search shell is one; the wallet page is a
  *   second, with its own stylesheet and its own bundle, because it shares
  *   almost nothing with search and serving it app.css to use a tenth of it
- *   would cost more than the whole page weighs.
+ *   would cost more than the whole page weighs. Social is a third, for the
+ *   same reason, and its document is capped at 14KB gzip.
  */
 import * as esbuild from "esbuild";
 import { minify as minifyHtml } from "html-minifier-terser";
@@ -112,6 +113,13 @@ const PAGES = [
     doc: { file: "wallet.html", gzip: FLIGHT, raw: 32_768 },
     parallel: [{ file: "wallet.js", gzip: FLIGHT, raw: 16_384 }],
   },
+  {
+    name: "Social",
+    // Same results layout as search, so the document inlines that stylesheet.
+    // The 14KB cap is the gzip load. Raw is the parse weight, as on search.
+    doc: { file: "social.html", gzip: Math.min(FLIGHT, 14 * 1024), raw: 49_152 },
+    parallel: [{ file: "social.js", gzip: FLIGHT, raw: 24_576 }],
+  },
 ];
 
 /**
@@ -120,7 +128,7 @@ const PAGES = [
  * once someone presses Login, so counting either against a first-load window
  * would be measuring bytes nobody waits for.
  */
-const LAZY = ["swap.js", "connect.js", "qr.js"];
+const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js"];
 
 /**
  * The legal documents: readable HTML under client/legal/, published as the
@@ -146,8 +154,17 @@ const LEGAL_MAX = 14_336;
  * Requested on first load but never render-blocking, and already compressed as
  * far as they go. Listed so the accounting is honest about total first-load
  * bytes, not budgeted, since no paint waits on them.
+ *
+ * The two banners are one line item between them, not two. They are the home
+ * page's wordmark by day and by night, declared as a prefers-color-scheme pair
+ * of background images in app.css, so a visitor fetches exactly one of them —
+ * and only on the home page, where the mark is large enough to carry a scene.
  */
-const STATIC_FIRST_LOAD = ["go-favicon.png"];
+const STATIC_FIRST_LOAD = [
+  "go-favicon.png",
+  "banner-light.webp",
+  "banner-dark.webp",
+];
 
 const STATIC_EXT = new Set([".png", ".svg", ".ico", ".webp", ".jpg", ".jpeg"]);
 
@@ -167,7 +184,7 @@ const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
  * public/ waiting for something to serve it by mistake. The wallet page has no
  * per-request content at all, so for it the file *is* the response.
  */
-const PRECOMPRESS_HTML = ["wallet.html"];
+const PRECOMPRESS_HTML = ["wallet.html", "social.html"];
 
 const watch = process.argv.includes("--watch");
 
@@ -218,6 +235,13 @@ const qrOpts = {
   outfile: path.join(outDir, "qr.js"),
 };
 
+/** The wallet page's recovery-phrase dialog. */
+const keysOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "keys", "main.js")],
+  outfile: path.join(outDir, "keys.js"),
+};
+
 /** The wallet page's own bundle. Shares helpers with app.js, not bytes. */
 const walletOpts = {
   ...jsOpts,
@@ -225,8 +249,48 @@ const walletOpts = {
   outfile: path.join(outDir, "wallet.js"),
 };
 
-/** @returns {Promise<string>} */
-async function minifyCss(source) {
+/** Social's own bundle. It shares nothing with search or the wallet page. */
+const socialOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "social", "main.js")],
+  outfile: path.join(outDir, "social.js"),
+};
+
+/**
+ * Drop the selectors that name a class or id this page never writes.
+ *
+ * `names` is every word in the page's built bundle and markup, which is a
+ * superset of the classes and ids it can produce: esbuild keeps string
+ * literals intact, so a class assembled in code still appears as its parts.
+ * Only top-level compounds are judged. Anything inside :not() or :has() is
+ * left alone, so a rule is removed only when it provably cannot match.
+ *
+ * @param {Set<string>} names
+ */
+function pruneVisitor(names) {
+  const possible = (selector) =>
+    selector.every((c) => !((c.type === "class" || c.type === "id") && !names.has(c.name)));
+  return {
+    Rule: {
+      style(rule) {
+        const selectors = rule.value.selectors.filter(possible);
+        if (!selectors.length) return [];
+        // Untouched rules are not handed back: lightningcss cannot always
+        // re-read a rule it serialised, and there is nothing to change.
+        if (selectors.length === rule.value.selectors.length) return undefined;
+        rule.value.selectors = selectors;
+        return rule;
+      },
+    },
+  };
+}
+
+/**
+ * @param {string} source
+ * @param {Set<string>} [names] prune to these class and id names
+ * @returns {Promise<string>}
+ */
+async function minifyCss(source, names) {
   try {
     const { transform } = await import("lightningcss");
     const { code } = transform({
@@ -238,10 +302,13 @@ async function minifyCss(source) {
         firefox: 90 << 16,
         safari: (14 << 16) | (1 << 8),
       },
+      visitor: names ? pruneVisitor(names) : undefined,
     });
     return code.toString("utf8");
-  } catch {
-    // Fallback if lightningcss native binary is unavailable
+  } catch (err) {
+    // Fallback if lightningcss native binary is unavailable. Said out loud,
+    // because the fallback cannot prune and the page would silently grow.
+    console.warn(`[css] lightningcss failed, using esbuild: ${err.message}`);
     const result = await esbuild.transform(source, {
       loader: "css",
       minify: true,
@@ -345,10 +412,35 @@ function inlineWordmark() {
  * @param {string} name page stylesheet under client/
  */
 async function buildCss(name) {
-  const source =
+  return minifyCss(
     readFileSync(path.join(clientDir, name), "utf8") +
-    readFileSync(path.join(clientDir, "acct.css"), "utf8");
-  return minifyCss(source);
+      readFileSync(path.join(clientDir, "acct.css"), "utf8"),
+  );
+}
+
+/**
+ * Social's sheet: the search sheet's layout, then its own rules, pruned.
+ *
+ * Social reuses the results layout — header, tabs, the two columns, the
+ * panel, the footer — so it builds on app.css rather than keeping a copy that
+ * would drift. Most of app.css is search's own (results, token card, images,
+ * lightbox, the home banner), and inlining it would put about 3KB of gzip on
+ * every social load for rules that cannot match. Pruning against what the
+ * page actually writes keeps the one source and drops the dead weight. It
+ * runs after social.js is built, since that bundle is the list of names.
+ */
+async function buildSocialCss() {
+  const words = (text) => text.match(/[A-Za-z_][\w-]*/g) ?? [];
+  const names = new Set([
+    ...words(readFileSync(path.join(outDir, "social.js"), "utf8")),
+    ...words(readFileSync(path.join(clientDir, "social.html"), "utf8")),
+  ]);
+  return minifyCss(
+    ["app.css", "acct.css", "social.css"]
+      .map((name) => readFileSync(path.join(clientDir, name), "utf8"))
+      .join(""),
+    names,
+  );
 }
 
 async function buildHtml(css, jsHash, swapHash, connectHash, qrHash) {
@@ -432,7 +524,7 @@ function minifyDoc(raw) {
  * server-side state, because the server does not know whose wallet it is. That
  * is what lets it be a plain precompressed file rather than a template.
  */
-async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash) {
+async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, keysHash) {
   let raw = readFileSync(path.join(clientDir, "wallet.html"), "utf8");
 
   raw = replaceOnce(
@@ -473,8 +565,48 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash) {
     `data-qr="/qr.js?v=${qrHash}"`,
     "wallet qr.js attribute",
   );
+  raw = replaceOnce(
+    raw,
+    /data-ks="\/keys\.js"/,
+    `data-ks="/keys.js?v=${keysHash}"`,
+    "wallet keys.js attribute",
+  );
 
   writeFileSync(path.join(outDir, "wallet.html"), await minifyDoc(raw));
+}
+
+/**
+ * Social's document: its pruned sheet inlined (see buildSocialCss), and the
+ * wordmark inlined for the same reason it is on the other two documents: the
+ * header should not wait on a second request.
+ */
+async function buildSocialHtml(css, socialHash, qrHash) {
+  let raw = readFileSync(path.join(clientDir, "social.html"), "utf8");
+  raw = replaceOnce(
+    raw,
+    /<link rel="stylesheet" href="\/social\.css"\s*\/?>/,
+    `<style>${css}</style>`,
+    "social stylesheet link",
+  );
+  raw = replaceOnce(
+    raw,
+    /<img\b[^>]*class="lg-mark"[^>]*\/>/,
+    inlineWordmark(),
+    "social wordmark img",
+  );
+  raw = replaceOnce(
+    raw,
+    /src="\/social\.js"/,
+    `src="/social.js?v=${socialHash}"`,
+    "social.js src",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-qr="\/qr\.js"/,
+    `data-qr="/qr.js?v=${qrHash}"`,
+    "social qr.js attribute",
+  );
+  writeFileSync(path.join(outDir, "social.html"), await minifyDoc(raw));
 }
 
 /** Typeset the legal documents into public/ as PDFs. */
@@ -558,7 +690,7 @@ function measure(file) {
 
 function row(file, m, tag) {
   return (
-    `  ${file.padEnd(14)} ${fmt(m.raw)} B  ` +
+    `  ${file.padEnd(17)} ${fmt(m.raw)} B  ` +
     `(gzip ${fmt(m.gzip)} B, br ${fmt(m.br)} B)` +
     (tag ? `  [${tag}]` : "")
   );
@@ -673,12 +805,14 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , css, walletCss] = await Promise.all([
+  const [, , , , , , socialCss, css, walletCss] = await Promise.all([
     esbuild.build(jsOpts),
+    esbuild.build(keysOpts),
     esbuild.build(swapOpts),
     esbuild.build(connectOpts),
     esbuild.build(qrOpts),
     esbuild.build(walletOpts),
+    esbuild.build(socialOpts).then(buildSocialCss),
     buildCss("app.css"),
     buildCss("wallet.css"),
   ]);
@@ -690,7 +824,8 @@ async function buildAssets() {
 
   await Promise.all([
     buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash),
-    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash),
+    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js")),
+    buildSocialHtml(socialCss, hash("social.js"), qrHash),
   ]);
   buildLegal();
   precompress();

@@ -1,0 +1,758 @@
+/* Only what the search sheet does not already draw. The page is body.res.
+   Buttons and links use the greens search already has: --go to read,
+   --buy to press. */
+
+a {
+  color: var(--go);
+}
+
+a:hover {
+  color: var(--buy);
+}
+
+a.tab,
+a.tab:hover {
+  text-decoration: none;
+  color: var(--f);
+}
+
+a.tab.on,
+a.tab.on:hover {
+  color: var(--go);
+  border-bottom-color: var(--go);
+}
+
+#ac .ac-b {
+  color: var(--go);
+}
+
+body.res #ac {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#badge {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--dn);
+  color: var(--bg);
+  font: 600 11px/1.6 var(--ff);
+  font-style: normal;
+}
+
+.muted { color: var(--f); }
+.err { color: var(--dn); min-height: 1.2em; }
+
+.tools textarea,
+.tools input,
+.cmt input,
+.find input,
+dialog input,
+dialog textarea {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--b);
+  border-radius: 8px;
+  background: var(--bg);
+  font: inherit;
+  color: inherit;
+  outline: 0;
+}
+
+/* Same lift as the search field (.sf:focus-within). No browser focus ring. */
+.tools textarea:focus,
+.tools input:focus,
+.cmt input:focus,
+.find input:focus,
+dialog input:focus,
+dialog textarea:focus {
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+}
+
+dialog textarea { resize: none; }
+
+/*
+ * Every pressable pill. It comes before the rules that size particular pills,
+ * so those win on order where the specificity ties.
+ */
+.composer .post-go,
+.cmt button[type="submit"],
+.tools button[type="submit"],
+.sec > button:not(.ghost),
+.pn .in,
+.qr,
+#out,
+#pk,
+#ag,
+#py {
+  border: 0;
+  border-radius: 999px;
+  background: var(--buy);
+  color: var(--buy-ink);
+  font: 600 13px/1 var(--ff);
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.composer .post-go:hover:not(:disabled),
+.cmt button[type="submit"]:hover,
+.tools button[type="submit"]:hover,
+.sec > button:not(.ghost):hover,
+.pn .in:hover,
+.qr:hover,
+#out:hover,
+#ag:hover,
+#py:hover {
+  filter: brightness(1.08);
+}
+
+#out {
+  background: var(--dn);
+  color: var(--bg);
+}
+
+/* The passkey is the second way in, so it is drawn as an outline. */
+#pk {
+  border: 1px solid var(--buy);
+  background: none;
+  color: var(--buy);
+}
+
+#pk:hover {
+  background: var(--buy);
+  color: var(--buy-ink);
+}
+
+.composer {
+  margin: 0 0 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--b);
+}
+
+.compose-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.compose-top .mini { margin-top: 6px; }
+
+.composer textarea {
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 4px 0 0;
+  border: 0;
+  border-radius: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  font: 20px/1.35 var(--ff);
+  color: inherit;
+}
+
+.composer textarea::placeholder { color: var(--f); }
+.composer textarea:focus { outline: none; }
+
+.compose-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.tool {
+  border: 0;
+  padding: 6px;
+  background: none;
+  color: var(--m);
+  line-height: 0;
+  cursor: pointer;
+}
+
+.tool:hover { color: var(--go); }
+.tool:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+
+.composer .post-go {
+  margin-left: auto;
+  padding: 9px 18px;
+  font: 700 15px/1 var(--ff);
+}
+
+.composer .post-go:disabled {
+  background: var(--ln);
+  color: var(--f);
+  opacity: 1;
+  filter: none;
+  cursor: default;
+}
+
+.shots,
+.gallery {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+}
+
+.shots { margin-top: 8px; }
+
+.shots figure {
+  position: relative;
+  flex: none;
+  margin: 0;
+}
+
+.shots img,
+.gallery img {
+  display: block;
+  flex: none;
+  height: 200px;
+  width: auto;
+  max-width: 100%;
+  object-fit: cover;
+  border-radius: 16px;
+  background: var(--ch);
+}
+
+.shots img {
+  height: 120px;
+  max-width: 200px;
+  scroll-snap-align: start;
+}
+
+.gallery { margin: 8px 0 0; }
+
+.gallery picture {
+  display: block;
+  flex: none;
+  max-width: 85%;
+  scroll-snap-align: start;
+}
+
+.gallery picture:only-child {
+  width: 100%;
+  max-width: 100%;
+}
+
+.gallery picture:only-child img {
+  width: 100%;
+  height: auto;
+  max-height: 320px;
+  object-fit: contain;
+}
+
+.shots button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0 0 3px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 65%);
+  color: #fff;
+  font: 600 15px/1 var(--ff);
+  cursor: pointer;
+}
+
+.composer .wait {
+  color: var(--dn);
+  font-size: 13px;
+}
+
+.cmt {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--f);
+}
+
+.or {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--f);
+}
+
+.dlg-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.sec h3 {
+  margin: 18px 0 0;
+  font: 600 14px/1.3 var(--ff);
+  color: var(--t);
+}
+
+.sec {
+  margin-top: 8px;
+  padding-top: 4px;
+}
+
+.sec + .sec {
+  margin-top: 8px;
+  border-top: 1px solid var(--b);
+}
+
+.file {
+  position: relative;
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--go);
+  font: 600 13px/1.2 var(--ff);
+  cursor: pointer;
+}
+
+.file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+}
+
+#ag,
+#pk {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+}
+
+/* Profile actions hug their label. The sign-in dialog keeps full-width buttons. */
+.tools button[type="submit"],
+.sec > button:not(.ghost) {
+  display: inline-block;
+  width: auto;
+  margin-top: 12px;
+  padding: 7px 16px;
+}
+
+.who-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.via { color: var(--f); font-weight: 400; }
+
+.pn .in {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 7px 16px;
+}
+
+.ghost,
+#as,
+#ax {
+  background: none;
+  color: var(--go);
+  border: 0;
+  padding: 8px 0;
+  font: 600 13px/1 var(--ff);
+  cursor: pointer;
+}
+
+.ghost:hover,
+#as:hover,
+#ax:hover {
+  color: var(--buy);
+}
+
+button:disabled { opacity: 0.55; cursor: default; }
+
+.notes {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  list-style: none;
+  background: var(--ch);
+  border-radius: 8px;
+}
+
+.notes li { margin: 4px 0; }
+
+.post { padding: 14px 0; cursor: pointer; }
+
+.post-row { display: flex; gap: 12px; align-items: flex-start; }
+.post-main { min-width: 0; flex: 1; }
+
+.mini {
+  display: block;
+  width: 40px;
+  height: auto;
+  border-radius: 0;
+}
+
+.mini-link { flex: none; line-height: 0; }
+
+.friend {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+}
+
+.friend + .friend { border-top: 1px solid var(--b); }
+.friend-main { min-width: 0; flex: 1; }
+.friend .ghost { margin-left: auto; }
+.friends { margin-top: 8px; }
+
+.find { position: relative; }
+
+.hits {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 4px;
+  border: 1px solid var(--b);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.hits .empty {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--f);
+}
+
+.hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hit .who { font-weight: 600; }
+.hit .mini { flex: none; }
+
+.hit .muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hit .tag {
+  margin-left: auto;
+  flex: none;
+  color: var(--go);
+  font: 600 13px/1 var(--ff);
+}
+
+.hit:disabled { opacity: 1; cursor: default; }
+.hit:disabled .tag { color: var(--f); font-weight: 400; }
+
+.hit.on,
+.hit:hover:not(:disabled) { background: var(--ch); }
+.post + .post { border-top: 1px solid var(--b); }
+
+.acts { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+
+.act {
+  border: 0;
+  text-decoration: none;
+  padding: 0;
+  background: none;
+  color: var(--go);
+  font: 600 13px/1 var(--ff);
+  cursor: pointer;
+}
+
+.act:disabled { color: var(--f); cursor: default; }
+.act:hover:not(:disabled) { color: var(--buy); text-decoration: none; }
+.act.saved,
+.act.saved:hover { color: var(--f); }
+.post .who { font-weight: 600; }
+.post time,
+.notes time { color: var(--f); font-size: 13px; margin-left: 6px; }
+.post p { margin: 6px 0; overflow-wrap: anywhere; }
+
+.comments { margin: 8px 0 0; list-style: none; }
+.comments li { margin: 10px 0; font-size: 14px; }
+
+.reply .cmt {
+  flex-wrap: nowrap;
+  margin-top: 8px;
+}
+
+.reply .cmt input {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.reply .cmt button { flex: none; }
+.reply .err { min-height: 0; }
+
+.comment { display: flex; gap: 10px; align-items: flex-start; }
+.comment-main { min-width: 0; }
+
+.detail-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 4px;
+}
+
+a.back {
+  color: var(--go);
+  font: 600 13px/1 var(--ff);
+  text-decoration: none;
+}
+
+a.back:hover { color: var(--buy); text-decoration: none; }
+
+.views {
+  margin: 0;
+  color: var(--f);
+  font-size: 13px;
+  text-align: right;
+}
+
+.more { height: 1px; }
+
+/*
+ * The uploaded frame, at 200px across.
+ *
+ * Height stays automatic so a portrait stays a portrait. No radius: the
+ * picture is the file, not a circle cropped out of it.
+ */
+img.pfp {
+  display: block;
+  width: 200px;
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 12px;
+  border-radius: 0;
+}
+
+.name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+}
+
+.name h2 { margin: 0; }
+
+.qr {
+  display: inline-block;
+  width: auto;
+  margin-top: 8px;
+  padding: 7px 16px;
+}
+
+#qc svg {
+  width: min(220px, 100%);
+  height: auto;
+  display: block;
+  margin: 12px auto 0;
+}
+
+#qd { text-align: center; }
+#qd .addr { margin: 0 auto; max-width: 24ch; }
+#pf { margin-top: 12px; text-align: left; }
+#pf button { margin-top: 0; }
+
+.pay-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pay-line input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  margin-top: 0;
+}
+
+.pay-line button { flex: none; }
+#pok a { margin-left: 8px; }
+
+.addr {
+  overflow-wrap: anywhere;
+  font: 13px/1.4 var(--ff);
+}
+
+.tools { margin: 14px 0; }
+.tools label { display: block; margin-top: 10px; font-size: 13px; color: var(--m); }
+
+.phrase {
+  padding: 10px 12px;
+  background: var(--ch);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+dialog {
+  width: min(360px, calc(100% - 32px));
+  padding: 18px;
+  border: 1px solid var(--b);
+  border-radius: 12px;
+  background: var(--pn);
+  color: var(--t);
+}
+
+dialog::backdrop { background: rgb(0 0 0 / 40%); }
+dialog h2 { margin: 0; font-size: 18px; }
+dialog label { display: block; margin-top: 14px; font-size: 13px; color: var(--m); }
+dialog #ag { margin-top: 16px; }
+
+/* Timeline, saved, and friends: a narrow column. A profile uses the full right side. */
+#m {
+  width: 100%;
+  max-width: 60ch;
+  margin-inline: auto;
+  padding: 0 16px;
+}
+
+/*
+ * The footer is the last row of the page. #m takes whatever height is left
+ * and stops on the footer's top edge. The document itself does not scroll.
+ */
+body.soc {
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+body.soc .chrome { flex: none; }
+
+body.soc #mn {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+  align-items: stretch;
+  padding-bottom: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  row-gap: 0;
+}
+
+/* The wrapper has no box, so the card and the footer sit on #mn's grid. */
+body.soc #sc {
+  display: contents;
+}
+
+body.soc #m {
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 0;
+  align-self: stretch;
+  padding-bottom: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+body.soc #sd {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+body.soc .pn {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body.soc #ft {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin-top: 0;
+  padding-left: 0;
+}
+
+@media (max-width: 900px) {
+  body.soc #mn {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  body.soc #m {
+    order: 0;
+    flex: 1 1 auto;
+    height: auto;
+  }
+
+  body.soc #sd {
+    order: -1;
+    flex: none;
+    display: block;
+    max-height: 38vh;
+    margin-bottom: 20px;
+  }
+
+  body.soc .pn { max-height: 38vh; }
+
+  body.soc #ft { order: 1; }
+}
+
+/*
+ * Profile: the card is the left column, posts the right one.
+ *
+ * The document order stays card-second, which is what the other pages want.
+ * Placement, not a second document, is what swaps them here. This sits after
+ * the body.soc placement above so it wins at the same specificity.
+ */
+@media (min-width: 901px) {
+  body.profile #mn {
+    grid-template-columns: minmax(340px, var(--side)) minmax(0, 1fr);
+  }
+
+  body.profile #sd { grid-column: 1; }
+
+  body.profile #m {
+    grid-column: 2;
+    margin: 0;
+  }
+
+  /* The rule sits between the card and the posts, so it moves to the right edge. */
+  body.profile .pn {
+    border-left: 0;
+    border-right: 1px solid var(--b);
+    padding: 20px 20px 0 4px;
+  }
+}

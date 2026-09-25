@@ -27,6 +27,7 @@ const state = {
   more: false,
   /** A continuation page is in flight; only ever one at a time. */
   feeding: false,
+  people: [],
 };
 
 const form = /** @type {HTMLFormElement} */ ($("f"));
@@ -198,6 +199,19 @@ async function runSearch(query, pushState, opts = {}) {
   if (state.imagesQuery !== query) {
     state.images = null;
     state.imagesQuery = "";
+  }
+
+  state.people = [];
+  const who = query.replace(/^@/, "").toLowerCase();
+  if (/^[a-z0-9_]{3,16}$/.test(who)) {
+    fetch(`/api/social/people?q=${who}`, { signal: state.activeController.signal })
+      .then((res) => res.json())
+      .then((json) => {
+        if (id !== state.requestId || !json.people?.length) return;
+        state.people = json.people;
+        if (!document.body.classList.contains("ld")) ui.paintPeople();
+      })
+      .catch(() => {});
   }
 
   document.body.className = "res";

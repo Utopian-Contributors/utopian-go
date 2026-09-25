@@ -9,6 +9,18 @@
   --b: #dfe1e5;
   --a: #1a73e8;
   --go: #39a11c;
+  /*
+   * The two greens, and why there are two.
+   *
+   * --go is a green to read: the up arrow, a settled trade, a price that rose.
+   * --buy is a green to press, and it is darker because it carries text — 15px
+   * at 600 needs 4.5:1 against its own fill, which the lighter one does not
+   * give. Each names the ink that goes on it, so a theme can move the fill and
+   * the label together instead of leaving white on top of whatever lands.
+   */
+  --go-ink: #fff;
+  --buy: #167c3c;
+  --buy-ink: #fff;
   --dn: #d93025;
   --ln: #ebebeb;
   --pn: #fff;
@@ -55,7 +67,23 @@
     --l: #8ab4f8;
     --b: #5f6368;
     --a: #8ab4f8;
-    --go: #34a853;
+    /*
+     * Both greens go bioluminescent after dark — the light off the mushrooms
+     * and the fireflies in the night banner, and the same #75FFBE the wordmark
+     * takes (see .lg-mark). A leaf green is a colour lit from outside; on an
+     * unlit page there is nothing to light it, and #34a853 sat on #202124 like
+     * paint in a dark room. This one is the thing giving off the light, which
+     * is the only kind of green a night scene has.
+     *
+     * The pair converges here: the fill no longer has to be darkened for white
+     * text because it no longer carries white text. Its ink flips to the page's
+     * own near-black, so the button reads as a lit panel with the label cut out
+     * of it — 13:1, against 5.9:1 for the daylight pair.
+     */
+    --go: #75ffbe;
+    --go-ink: #202124;
+    --buy: #75ffbe;
+    --buy-ink: #202124;
     --dn: #f28b82;
     --ln: #3c4043;
     --pn: #303134;
@@ -173,9 +201,71 @@ body.home #hd {
   margin: 0;
 }
 
+/*
+ * Twice the height it was, because on this page the mark is the page.
+ *
+ * At 144px the viewBox draws 528px wide, which lands just inside the 584px
+ * #hd caps the column at — so the mark and the search field under it read as
+ * one stack of about the same width rather than a small logo above a wide box.
+ * That is the ceiling on this number: past ~159px the mark would start being
+ * squeezed by max-width, and `object-fit: contain` would letterbox it inside
+ * an anchor the banner is positioned against — see below.
+ *
+ * Desktop only. The phone rule further down keeps its 56px; 528px has nowhere
+ * to go on a 390px screen.
+ */
 body.home .lg-mark {
-  height: 72px;
+  height: 144px;
   width: auto;
+}
+
+/*
+ * And on the home page it carries the banner.
+ *
+ * "Utopian" in the mark is a bar rather than a word — one <rect> in the SVG,
+ * standing on the cap line and baseline the glyphs used to sit on. This lays
+ * the scene over exactly that rect, so the mark reads as [jungle] GO without
+ * the SVG, or anything that measures it, having to change: the insets are the
+ * rect's own coordinates (x 0.78 → 36.17, y 3.43 → 12) as shares of the 55×15
+ * viewBox, and since the mark is drawn at its intrinsic ratio — a height and
+ * `width: auto` — the anchor's box and that viewBox are the same box.
+ *
+ * The rect stays underneath, which is what holds the slot while the image is
+ * in flight and what is still there if it never arrives.
+ *
+ * Home only, deliberately. In the results header the mark is 40px tall, and a
+ * rainforest rendered 94px wide beside the search field is a smudge; there it
+ * stays a bar. It is the home page's 144px mark that earns the scene: the slot
+ * is 340px wide there, which is enough of it to see.
+ */
+body.home .lg {
+  position: relative;
+}
+
+body.home .lg::after {
+  content: "";
+  position: absolute;
+  /* top | right | bottom | left — the rect, as fractions of the viewBox. */
+  inset: 22.8667% 34.2364% 20% 1.4182%;
+  background: url("/banner-light.webp") 0 0 / 100% 100% no-repeat;
+}
+
+/*
+ * Night in the same clearing.
+ *
+ * A background rather than an <img> with two sources precisely so this works:
+ * only the matching rule's URL is ever fetched, so the page pays for one
+ * banner and not both. Neither is on the document's critical path — the shell
+ * paints off the first flight with the bar in place and the scene lands on top
+ * of it — which is what lets these be 22–33 KB apiece. They are kept at the
+ * originals' own 787px, a little over 2× the 340px the slot is drawn at its
+ * widest, so a 2× screen has all of it and a 3× one is close. The originals
+ * themselves live in assets/, out of the way of the build's static copy.
+ */
+@media (prefers-color-scheme: dark) {
+  body.home .lg::after {
+    background-image: url("/banner-dark.webp");
+  }
 }
 
 body.home .sf {
@@ -229,6 +319,16 @@ body.home #st {
 
 #ac > * {
   pointer-events: auto;
+}
+
+/*
+ * Home has no header row to centre the control in, so the top pad is the
+ * distance the results page already gives it: 16px of header pad, then the
+ * centering of a 16px mark inside the 44px field. (44 − 16) / 2 + 16 = 30.
+ * The link's own 6px pad and −6px margin cancel, so this is the glyph's top.
+ */
+body.home #ac {
+  padding-top: 30px;
 }
 
 /*
@@ -389,6 +489,26 @@ body.res .sf {
   object-fit: contain;
 }
 
+/*
+ * The mark's ink after dark.
+ *
+ * #3CC316 is a fill attribute on the SVG's root, and build-client.mjs inlines
+ * the wordmark into the document, so a rule here reaches it and beats the
+ * attribute. Daylight is left to the attribute rather than restated: the file
+ * stays the one place that green is written, which is where og-image.mjs
+ * reads it from to keep the social card the same colour as the header.
+ *
+ * The night value is the luminescence out of the dark banner — the mushrooms
+ * and the fireflies — rather than a dimmer leaf green, so the mark lifts off
+ * #202124 instead of sinking into it. Kept in step with wallet.css, which
+ * inlines the same mark into its own header.
+ */
+@media (prefers-color-scheme: dark) {
+  .lg-mark {
+    fill: #75ffbe;
+  }
+}
+
 /* —— Search field —— */
 .sf {
   display: flex;
@@ -501,8 +621,8 @@ body.res .sf {
   padding: 0 14px;
   border: 0;
   border-radius: 18px;
-  background: var(--go);
-  color: #fff;
+  background: var(--buy);
+  color: var(--buy-ink);
   font: 600 18px/1 var(--ff);
   cursor: pointer;
   position: relative;
@@ -518,7 +638,7 @@ body.res .sf {
 }
 
 .sf-go:focus-visible {
-  outline: 2px solid var(--go);
+  outline: 2px solid var(--buy);
   outline-offset: 2px;
 }
 
@@ -532,8 +652,10 @@ body.res .sf {
   display: none;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
+  /* currentColor, so the ring follows whatever ink the button it sits in is
+     using — white on the daylight green, near-black on the night one. */
+  border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   margin: auto;
@@ -635,6 +757,7 @@ body.ld .sp {
 }
 
 #mn.solo {
+  height: max-content;
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -647,7 +770,6 @@ body.ld .sp {
 
 #mn.solo #ft {
   padding-left: 0;
-  padding-bottom: 64px;
 }
 
 #st {
@@ -692,10 +814,18 @@ body.ld .sp {
   /* Clear of the panel above it, and lined up with the panel's text rather
      than its rule: .pn insets its content by its own 1px border plus 20px. */
   margin-top: 18px;
-  gap: 4px 16px;
+  /*
+   * One bar on every shell. 14px above and below a 13px semibold line, and
+   * 8px when the links wrap — 4px reads as one crammed row. Home restates
+   * the 14px only because it also sets the side padding. wallet.css repeats
+   * the box, because that page does not load this sheet.
+   */
+  gap: 8px 16px;
+  padding-block: 14px;
   padding-left: 21px;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.5;
   color: var(--f);
 }
 
@@ -708,12 +838,12 @@ body.ld .sp {
 }
 
 /*
- * The result language, at the far end of the row.
+ * The result language, at the end of the row.
  *
  * `margin-left: auto` rather than an order or a float: it takes whatever space
- * the flex line has left, so the control sits against the right edge on a wide
- * footer and simply follows the links on a narrow one — where the row has
- * already wrapped and there is no free space left to take.
+ * the flex line has left, so the control sits against the right edge of the
+ * column, under the knowledge panel. Home centres its footer instead and gives
+ * the margin back — see body.home #ft below.
  */
 #ft .ft-lang {
   position: relative;
@@ -726,28 +856,39 @@ body.ld .sp {
  * Stripped back to text. A native select is a bordered 30-odd-pixel control in
  * the system font; every one of its neighbours here is a 13px semibold link,
  * and the row reads as one thing only if this does too.
+ *
+ * Hence the split: the span is what is drawn and what gives the control its
+ * width, the select is laid over it at zero opacity and is what opens, takes
+ * focus and gets read out. A select cannot be sized any other way — it is as
+ * wide as its widest option no matter which one is showing, and the fifty
+ * here are as wide as "Português (BR)". That went unseen only while the
+ * control was pinned to the right edge and its dead space fell off the end of
+ * the row; the moment the footer centres, the label is what has to be centred.
  */
+#ft .ft-lang-t {
+  /* Room for the caret drawn after it. */
+  padding-right: 14px;
+  white-space: nowrap;
+}
+
 #ft select {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   appearance: none;
   -webkit-appearance: none;
   margin: 0;
-  padding: 0 14px 0 0;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: none;
   font: inherit;
   line-height: inherit;
   color: inherit;
+  opacity: 0;
   cursor: pointer;
-  /*
-   * A select is as wide as its widest option, always — here that is
-   * "Português (BR)", and every shorter language left a gap of dead space
-   * between its own label and the caret. The box still takes that width; this
-   * puts the label at the end of it, against the caret, so the control reads
-   * as one word and a chevron whichever language is showing. Unsupported it
-   * degrades to the gap, which is untidy rather than broken.
-   */
-  text-align: right;
 }
 
 /*
@@ -782,7 +923,11 @@ body.ld .sp {
   color: var(--t);
 }
 
-#ft select:focus-visible {
+/*
+ * The ring goes round the wrapper, because the thing being focused is
+ * invisible and opacity takes an outline with it.
+ */
+#ft .ft-lang:has(select:focus-visible) {
   outline: 2px solid var(--a);
   outline-offset: 2px;
 }
@@ -813,6 +958,22 @@ body.home #ft {
   margin: 0;
   padding: 14px var(--pad);
   background: var(--bg);
+  /* On the page's own axis, with the wordmark and the field above it, rather
+     than split against the two edges of the window. */
+  justify-content: center;
+}
+
+/*
+ * And the language gives its margin back.
+ *
+ * An auto margin eats a flex line's free space before justify-content is ever
+ * consulted, so the control stayed hard right whatever the row was told to do
+ * — and on a phone, where the four links fill the line on their own and the
+ * language wraps to one of its own, hard right is a control abandoned in the
+ * corner. Centred, the wrap reads as the second row it is.
+ */
+body.home #ft .ft-lang {
+  margin-left: 0;
 }
 
 /*
@@ -848,8 +1009,9 @@ body.home #sc {
   min-width: 0;
   animation: enter 0.24s both;
   animation-delay: calc(var(--i, 0) * 1ms);
+  /* Kept in step with .sk, which mirrors this box so nothing shifts when the
+     results land on top of the skeleton. */
   padding: 8px;
-  border-radius: 8px;
   max-width: 70ch;
 }
 
@@ -1131,11 +1293,6 @@ body.home #sc {
   cursor: progress;
 }
 
-
-.r:hover {
-  background: var(--hover);
-}
-
 /* —— Infinite feed —— */
 /*
  * One element under the last result, in three states: the box the observer
@@ -1227,6 +1384,20 @@ body.home #sc {
 
 .r h3 a {
   color: var(--l);
+}
+
+/*
+ * Pointing at the card underlines its title.
+ *
+ * The card used to take a tint instead, and a filled row on a page of them
+ * reads as one that is selected rather than one that is merely under the
+ * cursor — it also put a second surface next to the knowledge panel's, which
+ * is the only thing on the page that is meant to look like a surface. The
+ * underline answers where the click is going, and it is the same underline a
+ * hover on the title itself draws, so the card and the link say one thing.
+ */
+.r:hover h3 a {
+  text-decoration: underline;
 }
 
 .r .s {
@@ -1771,6 +1942,11 @@ body.lb-on {
     padding-top: 18vh;
   }
 
+  /* Results stacks here: the control is centred on the 36px mark under 12px. */
+  body.home #ac {
+    padding-top: 22px;
+  }
+
   body.home .lg-mark {
     height: 56px;
   }
@@ -1861,7 +2037,6 @@ body.lb-on {
     order: 1;
     margin-top: 0;
     padding-left: 0;
-    padding-bottom: 48px;
   }
 
   .pn {
@@ -1938,4 +2113,46 @@ body.lb-on {
     flex-wrap: wrap;
     gap: 2px 10px;
   }
+}
+
+/* People whose name the query is: above everything, and never waited on. */
+.ppg {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 70ch;
+}
+
+.pp {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid var(--b);
+  border-radius: 12px;
+  background: var(--pn);
+  color: var(--t);
+  text-decoration: none;
+  animation: enter 0.24s both;
+}
+
+.pp:hover {
+  background: var(--hover);
+}
+
+.pp img {
+  grid-row: span 2;
+  width: 40px;
+  height: auto;
+  border-radius: 0;
+}
+
+.pp span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--m);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -16,6 +16,7 @@ import { load } from "../js/lazy.js";
 // page rather than defined twice, so a balance reads the same in both places.
 import { dollars as usd } from "../js/num.js";
 import { renderPicker } from "../js/picker.js";
+import { account } from "../js/me.js";
 import { onSession, readSession, shortAddr } from "../js/session.js";
 import { dialog } from "../js/ui.js";
 import { restore, settled, signAndSend } from "../js/wallet.js";
@@ -124,6 +125,8 @@ let session = null;
  * remembered one is not this visitor's session any more.
  */
 onSession(() => {
+  // The signed-in account's wallet is not the browser wallet this event is about.
+  if (session?.custodial) return;
   const saved = readSession();
   if (!saved || saved.address !== session?.account?.address) session = null;
 });
@@ -187,6 +190,23 @@ function defaultAmount(preset, decimals, spendable) {
   return toDecimal(units.toString(), decimals);
 }
 
+/** The server re-quotes the same pair and amount for the account, then signs and sends. */
+async function serverSwap(q) {
+  const res = await fetch("/api/social/swap", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      inputMint: q.inputMint,
+      outputMint: q.outputMint,
+      amount: q.inAmount,
+      slippageBps: SLIPPAGE_BPS,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || typeof data.signature !== "string") throw new Error(data.error || "Swap failed.");
+  return data.signature;
+}
+
 /**
  * @param {{mint: string, symbol: string, decimals?: number, fallback: string}} t
  */
@@ -237,8 +257,17 @@ function open(t) {
   // balance, and no Connect step in front of any of it. Deliberately not
   // awaited: the form is on screen and priced from the page's own numbers
   // while this runs, and it repaints only if a wallet actually answers.
-  if (!session) {
-    void restore().then((found) => {
+  // A signed-in account trades from its own wallet, which the server signs for.
+  if (!session?.custodial) {
+    void account().then(async (me) => {
+      if (!body.isConnected) return;
+      if (me) {
+        session = { custodial: true, account: { address: me.address } };
+        form();
+        return;
+      }
+      if (session) return;
+      const found = await restore();
       if (!found || session || !body.isConnected) return;
       session = found;
       form();
@@ -1069,17 +1098,20 @@ function open(t) {
         leave();
         go.disabled = true;
         go.classList.add("busy");
-        go.textContent = "Confirm in wallet…";
+        go.textContent = session.custodial ? "Sending…" : "Confirm in wallet…";
         back.disabled = true;
         setRNote("");
 
         try {
-          const tx = await build({
-            quote: current,
-            taker: session.account.address,
-            feeAccount,
-          });
-          const sig = toBase58(await signAndSend(session.wallet, session.account, tx));
+          const sig = session.custodial
+            ? await serverSwap(current)
+            : toBase58(
+                await signAndSend(
+                  session.wallet,
+                  session.account,
+                  await build({ quote: current, taker: session.account.address, feeAccount }),
+                ),
+              );
           done = true;
           sent = true;
           // "Sent", not "Bought". signAndSend resolves when the wallet has
@@ -1107,7 +1139,7 @@ function open(t) {
           back.disabled = false;
           back.textContent = "Done";
         } catch (err) {
-          const msg = /reject|denied|cancel|user/i.test(err?.message ?? "")
+          const msg = !session?.custodial && /reject|denied|cancel|user/i.test(err?.message ?? "")
             ? "Cancelled."
             : err?.message || "Swap failed.";
           setRNote(msg, "err");

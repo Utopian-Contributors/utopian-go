@@ -20,12 +20,16 @@
   --l: #1a0dab;
   --b: #dfe1e5;
   --a: #1a73e8;
+  /* A green to read and a green to press; see the note in app.css. */
   --go: #39a11c;
+  --go-ink: #fff;
+  --buy: #167c3c;
+  --buy-ink: #fff;
   --dn: #d93025;
   --pn: #fff;
   --hover: #f1f3f4;
   --ff: system-ui, Helvetica, Arial, sans-serif;
-  --shell: 720px;
+  --shell: none;
   --pad: 28px;
 }
 
@@ -38,7 +42,12 @@
     --l: #8ab4f8;
     --b: #5f6368;
     --a: #8ab4f8;
-    --go: #34a853;
+    /* Bioluminescent after dark, both of them, and the fill's ink flips with
+       it — again, app.css carries the reasoning. */
+    --go: #75ffbe;
+    --go-ink: #202124;
+    --buy: #75ffbe;
+    --buy-ink: #202124;
     --dn: #f28b82;
     --pn: #303134;
     --hover: #2c2c2e;
@@ -100,6 +109,16 @@ a:hover {
   display: block;
   height: 34px;
   width: auto;
+}
+
+/* The same night ink the search shell gives the mark, for the same reason —
+   see the note on .lg-mark in app.css. Repeated rather than shared because
+   each page's stylesheet already carries its own copy of the mark's rules;
+   the two are the one mark and must not drift. */
+@media (prefers-color-scheme: dark) {
+  .lg-mark {
+    fill: #75ffbe;
+  }
 }
 
 /* —— The number the page exists for —— */
@@ -246,20 +265,6 @@ a:hover {
   pointer-events: none;
 }
 
-/*
- * What the line is, stated under it.
- *
- * It has to be said. The line is today's balances priced backwards, not a
- * record of what was held — this site keeps no transaction history — and a
- * portfolio chart with no caption is read as the second thing.
- */
-.wl-cap {
-  margin: 7px 0 0;
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--f);
-}
-
 /* —— Holdings —— */
 
 /*
@@ -288,11 +293,21 @@ a:hover {
   align-items: baseline;
   gap: 9px;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
   color: var(--t);
+  cursor: pointer;
 }
 
 .wl-id:hover {
-  text-decoration: none;
+  color: var(--a);
+}
+
+/* The row whose token is in the panel. */
+.wl-r.on .wl-sym {
   color: var(--a);
 }
 
@@ -335,8 +350,13 @@ a:hover {
  * The same two fills the trade dialog's own action button uses, so pressing
  * the green one leads to a green "Review buy" and the orange one to an orange
  * "Review sell" — the direction is stated once and never changes colour on the
- * way. Both hold >4.5:1 against white in either theme, which is why the fill
- * is fixed rather than flipping with the palette.
+ * way. Stated once literally now: both are the --buy/--buy-ink pair off the
+ * palette, which is what keeps this circle and the dialog's button the same
+ * green after dark, when the green is the one that glows.
+ *
+ * Sell does not move. Orange is orange under either sky, and a direction told
+ * by colour needs the two ends to stay told apart more than it needs both to
+ * follow the theme.
  */
 .wl-act {
   display: flex;
@@ -355,8 +375,8 @@ a:hover {
   padding: 0 0 2px;
   border: 0;
   border-radius: 50%;
-  background: #167c3c;
-  color: #fff;
+  background: var(--buy);
+  color: var(--buy-ink);
   font: 500 16px/1 var(--ff);
   display: flex;
   align-items: center;
@@ -394,6 +414,470 @@ a:hover {
   min-width: 84px;
 }
 
+/* Token logos may be round; only a person's picture keeps its own shape. */
+.wl-ic {
+  flex: none;
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--hover);
+}
+
+/* —— Receive, send, swap —— */
+
+.wl-acts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.wl-acts[hidden] {
+  display: none;
+}
+
+/* A tile: the mark above the word. The marks are masks, so they take --go in either theme. */
+.wl-a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 6px 13px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--hover);
+  color: var(--t);
+  font: 600 13px/1.2 var(--ff);
+  cursor: pointer;
+}
+
+.wl-a::before {
+  content: "";
+  width: 24px;
+  height: 24px;
+  background: var(--go);
+  -webkit-mask: var(--ic) center / contain no-repeat;
+  mask: var(--ic) center / contain no-repeat;
+}
+
+.wl-a:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+
+.wl-a:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* A plus in a green disc rather than a mask: the plus takes --go-ink, so it stays legible in either theme. */
+[data-act="receive"]::before {
+  border-radius: 50%;
+  background:
+    linear-gradient(var(--go-ink), var(--go-ink)) center / 14px 3px no-repeat,
+    linear-gradient(var(--go-ink), var(--go-ink)) center / 3px 14px no-repeat,
+    var(--go);
+  -webkit-mask: none;
+  mask: none;
+}
+
+[data-act="send"] {
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M21 3 3 10.5l7 2.5 2.5 7z'/%3E%3Cpath d='m10 13 5-5' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+[data-act="swap"] {
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8h15l-4-4M20 16H5l4 4'/%3E%3C/svg%3E");
+}
+
+/* —— Most traded —— */
+
+.wl-pf {
+  margin-top: 24px;
+}
+
+.wl-tot > h2.wl-k {
+  margin: 0;
+  font-weight: 400;
+}
+
+.wl-top {
+  margin-top: 36px;
+}
+
+.wl-q {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 6px 0 4px;
+  padding: 9px 14px;
+  border: 1px solid var(--b);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--t);
+  font: inherit;
+}
+
+/* —— The chosen token —— */
+
+.wl-side {
+  margin-top: 32px;
+}
+
+.wl-side:empty {
+  display: none;
+}
+
+.wl-side[aria-busy] {
+  opacity: 0.6;
+}
+
+.tp-h {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tp-h .wl-ic {
+  width: 32px;
+  height: 32px;
+}
+
+.tp-t {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.tp-t strong {
+  font-size: 18px;
+}
+
+.wl-cta.tp-buy {
+  margin: 0;
+  background: var(--buy);
+  color: var(--buy-ink);
+}
+
+.tp-lk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.tp-lk a {
+  padding: 3px 11px;
+  border: 1px solid var(--b);
+  border-radius: 999px;
+  color: var(--t);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.tp-lk a:hover {
+  background: var(--hover);
+  text-decoration: none;
+}
+
+.tp-h + .wl-vr,
+.tp-lk + .wl-vr {
+  margin-top: 16px;
+}
+
+.tp-v {
+  font: 600 28px/1.15 var(--ff);
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-c {
+  height: 160px;
+}
+
+.tp-g {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.tp-cell {
+  padding: 8px 10px;
+  border: 1px solid var(--b);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.tp-cell strong,
+.tp-st strong {
+  display: block;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.tp-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 16px;
+  border: 1px solid var(--b);
+  border-radius: 8px 8px 0 0;
+  overflow: hidden;
+}
+
+.tp-tabs button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 0;
+  border-left: 1px solid var(--b);
+  background: none;
+  color: var(--f);
+  font: 12px/1.3 var(--ff);
+  cursor: pointer;
+}
+
+.tp-tabs button:first-child {
+  border-left: 0;
+}
+
+.tp-tabs button[aria-pressed="true"] {
+  background: var(--hover);
+  color: var(--t);
+}
+
+.tp-tabs strong {
+  font-size: 14px;
+}
+
+.tp-st {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 20px;
+  padding: 14px;
+  border: 1px solid var(--b);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+}
+
+.tp-l,
+.tp-r {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.tp-l {
+  padding-right: 20px;
+  border-right: 1px solid var(--b);
+}
+
+.tp-two {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tp-bar {
+  display: flex;
+  gap: 3px;
+  height: 5px;
+  margin-top: 6px;
+}
+
+.tp-bar i {
+  border-radius: 3px;
+  background: var(--go);
+}
+
+.tp-bar i + i {
+  background: var(--dn);
+}
+
+.wl-top .wl-k {
+  margin: 0 0 4px;
+  font-weight: 400;
+}
+
+.wl-tr {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
+.wl-px {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.wl-px .wl-d {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.wl-vol {
+  min-width: 56px;
+  text-align: right;
+  font-size: 12.5px;
+  color: var(--f);
+  font-variant-numeric: tabular-nums;
+}
+
+/* —— Recovery phrase —— */
+
+/* Who this wallet belongs to, above what can be done with it. */
+.wl-ph {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.wl-ph[hidden] {
+  display: none;
+}
+
+.wl-ka {
+  min-width: 0;
+  flex: 1 1 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--f);
+}
+
+.ks {
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid var(--b);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--pn);
+  color: var(--t);
+}
+
+.ks::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.ks h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.ks-n {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--f);
+}
+
+.ks-f {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.ks-f label {
+  font-size: 12.5px;
+  color: var(--f);
+}
+
+.ks-f input,
+.ks-f select {
+  padding: 9px 10px;
+  border: 1px solid var(--b);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--t);
+  font: inherit;
+}
+
+.ks-f .wl-cta {
+  justify-self: start;
+  margin-top: 6px;
+}
+
+.ks-warn {
+  margin-top: -8px;
+  color: var(--dn);
+  font-weight: 600;
+}
+
+.ks-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ks-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ks-side {
+  flex: none;
+  padding: 0 12px;
+  border: 1px solid var(--b);
+  border-radius: 8px;
+  background: var(--hover);
+  color: var(--t);
+  font: 600 12.5px/1 var(--ff);
+  cursor: pointer;
+}
+
+.ks-mono,
+.ks-a {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+}
+
+.ks-a {
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+/* White behind the code in either theme: a camera reads dark on light. */
+.ks-qr {
+  width: 200px;
+  margin: 8px auto 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.ks-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.ks > .wl-cta {
+  display: block;
+  margin: 14px auto 0;
+}
+
+.ks-err {
+  min-height: 1.2em;
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--dn);
+}
+
+/* Numbered two columns down, the order a wallet asks for them in. */
+.ks-w {
+  columns: 2;
+  margin: 4px 0 0;
+  padding-left: 2.2em;
+  font: 600 15px/1.9 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ks-x {
+  display: block;
+  margin: 16px 0 0 auto;
+}
+
 /* —— States and asides —— */
 
 .wl-n {
@@ -407,6 +891,7 @@ a:hover {
 }
 
 .wl-cta {
+  display: inline-block;
   margin-top: 18px;
   border: 0;
   border-radius: 999px;
@@ -434,15 +919,87 @@ a:hover {
   text-decoration: underline;
 }
 
+/* —— Two halves, one screen ——
+   On a desktop the page is exactly the viewport: the lists scroll inside the
+   left half and the page itself never does. */
+
+@media (min-width: 960px) {
+  body {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .wl-h {
+    padding-block: 14px 12px;
+  }
+
+  #wl {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 48px;
+  }
+
+  .wl-main {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* The scrollbar gets its own lane beside the rows, clear of the + and − buttons. */
+  #wl-l,
+  #wl-tl {
+    scrollbar-gutter: stable;
+    padding-right: 12px;
+  }
+
+  #wl-l {
+    max-height: 30vh;
+    overflow-y: auto;
+  }
+
+  .wl-top {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-top: 20px;
+  }
+
+  #wl-tl {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* Fits on a laptop screen; scrolls on its own below that rather than moving the page. */
+  .wl-side {
+    min-height: 0;
+    margin-top: 0;
+    overflow-y: auto;
+  }
+
+  #ft {
+    padding-block: 10px;
+  }
+}
+
 /* —— Footer —— */
 
+/* The same bar as #ft in app.css: 14px around a 13px semibold line. */
 #ft {
   margin-top: auto;
-  padding-block: 40px 28px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 18px;
-  font-size: 12px;
+  gap: 8px 16px;
+  padding-block: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--f);
 }
 
 #ft a {

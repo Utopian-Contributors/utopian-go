@@ -19,6 +19,8 @@ const STORE_KEY = "ug.lang";
 
 /** @type {HTMLSelectElement} */
 let sel;
+/** The control's visible half — see #ft .ft-lang-t. @type {HTMLElement} */
+let label;
 let current = DEFAULT_LANG;
 
 /**
@@ -68,6 +70,9 @@ function apply() {
   const tag = (opt && opt.dataset.l) || current;
   $("rs").lang = tag;
   $("sd").lang = tag;
+  // The select over it is invisible and sized to its widest option; this span
+  // is the language anyone actually sees, and the width the footer lays out.
+  if (opt) label.textContent = opt.textContent;
 }
 
 /** The language in force. */
@@ -113,6 +118,7 @@ export function setLang(code) {
  */
 export function mountLang(fromUrl, onPick) {
   sel = /** @type {HTMLSelectElement} */ ($("lang"));
+  label = $("lgl");
   current = [fromUrl, stored()].find(offered) || DEFAULT_LANG;
   sel.value = current;
   apply();
