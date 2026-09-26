@@ -1,3 +1,4 @@
+import "./threads";
 import compression from "compression";
 import express from "express";
 import { existsSync, readFileSync, watch } from "fs";
