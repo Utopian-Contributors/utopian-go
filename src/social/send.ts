@@ -4,10 +4,10 @@ import { SocialError } from "./limits";
 import { rpc } from "./pay";
 
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
-const SYSTEM = Buffer.alloc(32);
-const TOKEN = base58Decode("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")!;
-const TOKEN_2022 = base58Decode("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")!;
-const ATA_PROGRAM = base58Decode("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")!;
+export const SYSTEM = Buffer.alloc(32);
+export const TOKEN = base58Decode("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")!;
+export const TOKEN_2022 = base58Decode("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")!;
+export const ATA_PROGRAM = base58Decode("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")!;
 
 const P = 2n ** 255n - 19n;
 
@@ -131,7 +131,7 @@ async function blockhash(): Promise<Buffer> {
 }
 
 /** The mint's token program and decimals, read from the chain. */
-async function mintInfo(mint: Buffer): Promise<{ program: Buffer; decimals: number }> {
+export async function mintInfo(mint: Buffer): Promise<{ program: Buffer; decimals: number }> {
   const info = (await rpc("getAccountInfo", [base58(mint), { encoding: "base64" }])) as {
     value?: { owner?: string; data?: [string, string] };
   };

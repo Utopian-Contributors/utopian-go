@@ -200,6 +200,9 @@ async function serverSwap(q) {
       outputMint: q.outputMint,
       amount: q.inAmount,
       slippageBps: SLIPPAGE_BPS,
+      // What this screen showed. The server's own quote may not pay less than
+      // this, less the slippage, or it refuses instead of trading.
+      quotedOut: q.outAmount,
     }),
   });
   const data = await res.json().catch(() => ({}));
