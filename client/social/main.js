@@ -7,28 +7,24 @@
  */
 import { $, el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
+import { LOGIN } from "../js/acct.js";
+import { open as openLogin } from "../js/login.js";
 import { writeName } from "../js/me.js";
+import { dismissible } from "../js/sheet.js";
 import { b64u, needPasskey, u8, why } from "../js/passkey.js";
 import { connect, settled, signAndSend } from "../js/wallet.js";
 import { toBase58 } from "../swap/jup.js";
 
 const main = $("m");
-const dialog = $("d");
-const authForm = $("auth");
-const authUser = $("au");
-const authPass = $("ap");
-const authPhrase = $("rp");
-const authErr = $("ae");
-const authGo = $("ag");
-const authSwap = $("as");
-const authPasskey = $("pk");
+/** Matches MAX_POST in src/social/limits.ts. */
+const MAX_POST = 256;
 
 /** @type {null | {name: string, address: string, bio: string, loc: string, avatarRev: number, passkey: boolean, wait: number, unseen: number}} */
 let me = null;
-/** "login", "register" or "recover": which of the three the sign-in dialog is. See data-m in social.html. */
-let mode = "login";
 /** Object URLs of photos in an open composer, freed when the page is redrawn. */
 const drafts = [];
+/** A link sent over by a search result's Comment button, for the next composer. */
+let handed = new URLSearchParams(location.search).get("text") || "";
 
 function ago(at) {
   const s = Math.max(0, (Date.now() - at) / 1000);
@@ -46,8 +42,11 @@ function waitLabel(ms) {
 function route() {
   const m = location.pathname
     .replace(/\/+$/, "")
-    .match(/^\/social(?:\/(saved|friends)|\/p\/([A-Za-z0-9_-]{1,32})|\/u\/([a-z0-9_]{3,16}))?$/);
+    .match(
+      /^\/social(?:\/(saved|friends|edit|c)|\/p\/([A-Za-z0-9_-]{1,32})|\/u\/([a-z0-9_]{3,16})|\/c\/[a-z0-9_]{3,16})?$/,
+    );
   if (!m) return { page: "missing" };
+  if (m[1] === "c" || location.pathname.startsWith("/social/c/")) return { page: "chat" };
   if (m[2]) return { page: "post", id: m[2] };
   if (m[3]) return { page: "profile", name: m[3] };
   return { page: m[1] || "timeline" };
@@ -58,25 +57,47 @@ function applyMe(next) {
   const link = $("me");
   const badge = $("badge");
   const search = document.querySelector("#ac .ac-b");
-  link.hidden = $("out").hidden = !me;
+  link.hidden = $("out").hidden = $("aw").hidden = !me;
+  $("in").hidden = !!me;
+  // Logged out, the side panel (with Log in) is the left column, as in Messenger.
+  document.body.classList.toggle("out", !me);
   if (search) search.hidden = !!me;
+  const unread = $("mbadge");
   badge.hidden = !(me?.unseen > 0);
+  unread.hidden = !(me?.unread > 0);
   if (!me) return;
   link.href = `/social/u/${me.name}`;
   badge.textContent = me.unseen;
+  unread.textContent = me.unread;
 }
 
 function markNav() {
   const { page, name } = route();
   // "profile" is the My Profile tab, so another person's page must not light it.
-  const key = page !== "profile" ? page : me && name === me.name ? page : "";
+  const key =
+    page === "edit"
+      ? "profile"
+      : page !== "profile"
+        ? page
+        : me && name === me.name
+          ? page
+          : "";
   for (const a of document.querySelectorAll("#tb [data-nav]")) {
     const on = a.dataset.nav === key;
     a.classList.toggle("on", on);
+    // Phones have no Saved tab: it is a switch inside Timeline, which stays lit.
+    a.classList.toggle("up", key === "saved" && a.dataset.nav === "timeline");
     if (on) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   }
-  const titles = { timeline: "Timeline", saved: "Saved", friends: "Friends", post: "Post" };
+  const titles = {
+    timeline: "Timeline",
+    saved: "Saved",
+    edit: "Edit profile",
+    friends: "Friends",
+    post: "Post",
+    chat: "Messenger",
+  };
   document.title = `${titles[page] || name || "Social"} — Social`;
 }
 
@@ -108,59 +129,9 @@ function send(path, obj) {
   return pull(path, { method: "POST", body: JSON.stringify(obj || {}) });
 }
 
+/** The one login dialog (client/js/login.js); signed in, the page redraws. */
 function openAuth(next) {
-  mode = next;
-  for (const node of dialog.querySelectorAll("[data-m]")) node.hidden = !node.dataset.m.includes(mode);
-  // Disabled as well as hidden: a hidden required field would still block the form.
-  authUser.disabled = mode === "recover";
-  authPhrase.disabled = mode !== "recover";
-  authPass.autocomplete = mode === "login" ? "current-password" : "new-password";
-  authErr.textContent = "";
-  if (!dialog.open) dialog.showModal();
-  (mode === "recover" ? authPhrase : authUser).focus();
-}
-
-/**
- * Sign in with a passkey. With a username the password came first and `opt.id`
- * names the one key that may answer; without, the authenticator names the
- * account itself.
- */
-async function passkey(opt, username) {
-  needPasskey();
-  const cred = await navigator.credentials.get({
-    publicKey: {
-      challenge: u8(opt.challenge),
-      rpId: location.hostname,
-      allowCredentials: opt.id ? [{ type: "public-key", id: u8(opt.id) }] : undefined,
-      userVerification: "required",
-      timeout: 60_000,
-    },
-  });
-  if (!cred) throw new Error("Passkey was cancelled.");
-  const response = /** @type {AuthenticatorAssertionResponse} */ (cred.response);
-  await send("/api/social/login/passkey", {
-    ...(username ? { username } : { id: cred.id }),
-    challenge: opt.challenge,
-    clientData: b64u(response.clientDataJSON),
-    authenticatorData: b64u(response.authenticatorData),
-    signature: b64u(response.signature),
-  });
-}
-
-/** Every way into an account ends the same: the dialog shuts and the page redraws signed in. */
-async function signIn(button, task) {
-  authErr.textContent = "";
-  button.disabled = true;
-  try {
-    await task();
-    authPass.value = authPhrase.value = "";
-    dialog.close();
-    show();
-  } catch (cause) {
-    authErr.textContent = why(cause);
-  } finally {
-    button.disabled = false;
-  }
+  openLogin(next, show);
 }
 
 /**
@@ -239,16 +210,54 @@ function packPost(text, shots) {
   return bin([head, ...shots.flatMap((s) => [lens(s.small, s.full), s.small, s.full])]);
 }
 
+/** A web address, or an @name. The address is tried first, so a name inside one stays part of it. */
+const LINK = /(https?:\/\/|www\.)[^\s<>"]+|(^|[^a-z0-9_])@([a-z0-9_]{3,16})/gi;
+
+/** Drops the punctuation a sentence puts after an address, and a ")" that closes the sentence's bracket rather than the address's. */
+function trimUrl(raw) {
+  let url = raw;
+  for (;;) {
+    const end = url.at(-1);
+    if (/[.,;:!?'\]]/.test(end) || (end === ")" && url.split(")").length > url.split("(").length)) url = url.slice(0, -1);
+    else return url;
+  }
+}
+
+/** An anchor for an address typed into a post, or null when it does not parse. */
+function webLink(url) {
+  const href = /^www\./i.test(url) ? `https://${url}` : url;
+  try {
+    new URL(href);
+  } catch {
+    return null;
+  }
+  const bare = url.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, "");
+  return el("a", {
+    href,
+    target: "_blank",
+    rel: "noopener nofollow ugc",
+    title: href,
+    text: bare.length > 40 ? `${bare.slice(0, 39)}…` : bare,
+  });
+}
+
 function linkedText(text) {
   const frag = document.createDocumentFragment();
-  const re = /(^|[^a-z0-9_])@([a-z0-9_]{3,16})/gi;
   let last = 0;
-  for (const match of text.matchAll(re)) {
-    const start = match.index + match[1].length;
+  for (const match of text.matchAll(LINK)) {
+    if (match[1]) {
+      const url = trimUrl(match[0]);
+      const link = webLink(url);
+      if (!link) continue;
+      frag.append(text.slice(last, match.index), link);
+      last = match.index + url.length;
+      continue;
+    }
+    const start = match.index + match[2].length;
     frag.append(text.slice(last, start));
-    const name = match[2].toLowerCase();
+    const name = match[3].toLowerCase();
     frag.append(el("a", { href: `/social/u/${name}`, text: `@${name}` }));
-    last = start + match[0].length - match[1].length;
+    last = start + match[0].length - match[2].length;
   }
   frag.append(text.slice(last));
   return frag;
@@ -339,13 +348,13 @@ function sideOff() {
   else renderSide(null);
 }
 
-function renderSide(person, tools) {
+function renderSide(person) {
   useSide(true);
   const side = $("side");
   if (!person) {
     side.replaceChildren(
       el("p", { class: "ld", text: "Log in to post, add friends, and keep a profile." }),
-      el("button", { type: "button", class: "in", text: "Log in", onclick: () => openAuth("login") }),
+      el("button", { type: "button", class: "ac-go", text: LOGIN, onclick: () => openAuth("login") }),
     );
     return;
   }
@@ -358,9 +367,16 @@ function renderSide(person, tools) {
       person.loc ? el("span", { class: "muted", text: person.loc }) : null,
     ),
     person.bio ? el("p", { class: "ld", text: person.bio }) : null,
-    // On your own profile the button lives in the Wallet section.
-    tools ? null : walletButton(person.address, person.name),
-    ...(tools || []),
+    walletButton(person.address, person.name),
+    !me
+      ? null
+      : me.name === person.name
+        ? el("a", { class: "dm", href: "/social/edit", text: "Edit profile" })
+        : el("a", {
+            class: "dm",
+            href: `/social/c/${person.name}`,
+            text: "Message",
+          }),
   ];
   side.replaceChildren(...bits.filter(Boolean));
 }
@@ -444,7 +460,7 @@ function react(kind, post, inDetail, label, props) {
 
 function postActions(post, inDetail, comments) {
   const plus = react("plus", post, inDetail, post.saved ? "−" : "+", {
-    class: post.saved ? "act saved" : "act",
+    class: post.saved ? "act plus saved" : "act plus",
     "aria-label": post.saved ? "Remove from saved" : "Save",
   });
   // A re-post already points at an original. Another re-post would chain a copy.
@@ -571,12 +587,14 @@ function composer() {
   const until = Date.now() + me.wait;
   let busy = 0;
   const area = el("textarea", {
-    maxlength: "160",
+    maxlength: String(MAX_POST),
     rows: "1",
     placeholder: "What’s happening?",
     "aria-label": "What’s happening?",
   });
   const shots = [];
+  // A textarea holds no anchors, so the addresses in it are drawn under it, as the post will draw them.
+  const links = el("div", { class: "compose-links", hidden: true });
   const strip = el("div", { class: "shots", hidden: true });
   const file = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true });
   const add = el("button", { type: "button", class: "tool", "aria-label": "Add photos" });
@@ -584,6 +602,14 @@ function composer() {
   add.innerHTML = '<svg width="22" height="22" aria-hidden="true"><use href="#pi"/></svg>';
   const button = el("button", { type: "submit", class: "post-go", text: "Post", disabled: true });
   const note = el("span", { class: "wait", hidden: me.wait <= 0, text: waitLabel(me.wait) });
+  const count = el("span", { class: "count", "aria-live": "polite" });
+
+  function tally() {
+    const used = area.value.length;
+    count.textContent = `${used}/${MAX_POST}`;
+    count.classList.toggle("low", MAX_POST - used < 25);
+  }
+  tally();
 
   function ready() {
     return !busy && Date.now() >= until && (area.value.trim().length > 0 || shots.length > 0);
@@ -591,6 +617,25 @@ function composer() {
 
   function sync() {
     button.disabled = !ready();
+  }
+
+  function paintLinks() {
+    const found = [...area.value.matchAll(LINK)]
+      .filter((match) => match[1])
+      .map((match) => webLink(trimUrl(match[0])))
+      .filter(Boolean);
+    links.replaceChildren(...found);
+    links.hidden = !found.length;
+  }
+
+  if (handed) {
+    area.value = handed.slice(0, MAX_POST);
+    handed = "";
+    history.replaceState(history.state, "", location.pathname);
+    setTimeout(() => {
+      area.focus();
+      area.dispatchEvent(new Event("input"));
+    });
   }
 
   if (me.wait > 0) {
@@ -651,7 +696,9 @@ function composer() {
   area.addEventListener("input", () => {
     area.style.height = "auto";
     area.style.height = `${area.scrollHeight}px`;
+    tally();
     sync();
+    paintLinks();
   });
   area.addEventListener("keydown", (e) => {
     // Enter while an IME is composing picks a candidate; it is not a send.
@@ -664,8 +711,9 @@ function composer() {
     "form",
     { class: "composer" },
     el("div", { class: "compose-top" }, thumb(me.name, me.avatarRev), area),
+    links,
     strip,
-    el("div", { class: "compose-bar" }, add, file, button),
+    el("div", { class: "compose-bar" }, add, file, count, button),
     note,
   );
   form.addEventListener("submit", async (e) => {
@@ -739,10 +787,27 @@ async function loadMore(gen) {
   }
 }
 
+/** Timeline or Saved, for phones, where the bottom bar has room for only one of them. */
+function feedSwitch(on) {
+  const tab = (href, text, key) =>
+    el(
+      "a",
+      key === on
+        ? { href, text, class: "on", "aria-current": "page" }
+        : { href, text },
+    );
+  return el(
+    "nav",
+    { class: "feeds", "aria-label": "Timeline" },
+    tab("/social", "Timeline", "timeline"),
+    tab("/social/saved", "Saved", "saved"),
+  );
+}
+
 function renderTimeline(data) {
   const gen = feedGen;
   sideOff();
-  const kids = [];
+  const kids = [feedSwitch("timeline")];
   if (data.notes?.length) {
     const list = el("ul", { class: "notes" });
     for (const note of data.notes) {
@@ -781,6 +846,7 @@ function renderSaved(data) {
   sideOff();
   main.replaceChildren(
     ...[
+      feedSwitch("saved"),
       composer(),
       data.posts.length ? null : el("p", { class: "muted", text: "Nothing saved." }),
       ...data.posts.map((post) => renderPost(post)),
@@ -812,30 +878,60 @@ function renderFriends(data) {
   let busy = false;
   let shown = "";
 
+  function row(friend) {
+    return el(
+      "article",
+      { class: "friend" },
+      thumb(friend.name, friend.avatarRev),
+      el(
+        "div",
+        { class: "friend-main" },
+        el("a", {
+          class: "who",
+          href: `/social/u/${friend.name}`,
+          text: friend.name,
+        }),
+        friend.loc ? el("div", { class: "muted", text: friend.loc }) : null,
+        friend.bio ? el("div", { text: friend.bio }) : null,
+      ),
+      el("button", {
+        type: "button",
+        class: "ghost",
+        text: "Remove",
+        onclick: () => remove(friend.name),
+      }),
+    );
+  }
+
+  /** A to Z like a contact book, one heading per letter. Digits and _ go last, under #. */
   function paint(friends) {
+    if (!friends.length)
+      return list.replaceChildren(
+        el("p", { class: "muted", text: "No friends yet." }),
+      );
+    const letter = (name) =>
+      /^[a-z]/.test(name) ? name[0].toUpperCase() : "#";
+    const sorted = [...friends].sort((a, b) => {
+      const la = letter(a.name);
+      const lb = letter(b.name);
+      if (la !== lb) return la === "#" ? 1 : lb === "#" ? -1 : la < lb ? -1 : 1;
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+    });
+    const groups = [];
+    for (const friend of sorted) {
+      const key = letter(friend.name);
+      if (groups.at(-1)?.key !== key) groups.push({ key, rows: [] });
+      groups.at(-1).rows.push(row(friend));
+    }
     list.replaceChildren(
-      ...(friends.length
-        ? friends.map((friend) =>
-            el(
-              "article",
-              { class: "friend" },
-              thumb(friend.name, friend.avatarRev),
-              el(
-                "div",
-                { class: "friend-main" },
-                el("a", { class: "who", href: `/social/u/${friend.name}`, text: friend.name }),
-                friend.loc ? el("div", { class: "muted", text: friend.loc }) : null,
-                friend.bio ? el("div", { text: friend.bio }) : null,
-              ),
-              el("button", {
-                type: "button",
-                class: "ghost",
-                text: "Remove",
-                onclick: () => remove(friend.name),
-              }),
-            ),
-          )
-        : [el("p", { class: "muted", text: "No friends yet." })]),
+      ...groups.map((group) =>
+        el(
+          "section",
+          { class: "abc", "aria-label": group.key },
+          el("h3", { class: "abc-h", text: group.key }),
+          ...group.rows,
+        ),
+      ),
     );
   }
 
@@ -1004,6 +1100,9 @@ async function addPasskey(password) {
       },
       timeout: 60_000,
       attestation: "none",
+      // No `prf` here. Asking for it at creation made Firefox on macOS offer
+      // only a security key, never the Mac's own passkey sheet. Messenger asks
+      // for PRF when it signs in with the passkey (chat/main.js).
     },
   });
   if (!cred) throw new Error("Passkey was cancelled.");
@@ -1014,126 +1113,220 @@ async function addPasskey(password) {
     clientData: b64u(response.clientDataJSON),
     attestation: b64u(response.attestationObject),
   });
-  show();
 }
 
+/** Your profile as others see it: the card and the posts, nothing to edit. */
 function renderProfile(data) {
   const user = data.user;
-  const self = me && me.name === user.name;
-  /** @type {Node[]} */
-  const tools = [];
-  if (self) {
-    const bioInput = el("textarea", { id: "bio", maxlength: "160", text: me.bio });
-    const locInput = el("input", { id: "loc", maxlength: "40", value: me.loc });
-    const saveErr = el("p", { class: "err" });
-    const save = el(
-      "form",
-      { class: "tools" },
-      el("label", { for: "bio" }, "Bio"),
-      bioInput,
-      el("p", { class: "hint", text: "Up to 160 characters." }),
-      el("label", { for: "loc" }, "Location"),
-      locInput,
-      el("p", { class: "hint", text: "Up to 40 characters. Leave blank to clear." }),
-      el("button", { type: "submit", text: "Save" }),
-      saveErr,
-    );
-    save.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      saveErr.textContent = "";
-      try {
-        await send("/api/social/profile", { bio: bioInput.value, loc: locInput.value });
-        show();
-      } catch (cause) {
-        saveErr.textContent = cause.message;
-      }
-    });
-
-    const photoErr = el("p", { class: "err" });
-    const file = el("input", { type: "file", accept: "image/*", id: "pic" });
-    file.addEventListener("change", async () => {
-      const picked = file.files && file.files[0];
-      photoErr.textContent = "";
-      if (!picked) return;
-      try {
-        // The profile copy stays within 14KB at the uploaded shape. The
-        // timeline copy is at most 80px wide and 2KB: enough to see a face
-        // beside a post, not enough to make a feed of them slow.
-        const [full, tiny] = await shrink(picked, [
-          [480, 0, 14 * 1024, 0.86],
-          [80, 1, 2 * 1024, 0.7],
-        ], 1);
-        const result = await pull("/api/social/avatar", { method: "POST", body: bin([lens(tiny, full), tiny, full]) });
-        me.avatarRev = result.avatarRev;
-        show();
-      } catch (cause) {
-        photoErr.textContent = cause.message;
-      }
-      file.value = "";
-    });
-
-    const phraseBox = el("div", {});
-    const phraseForm = passForm("phrase", "Enter your password to see your recovery phrase.", "Show phrase", async (password) => {
-      const result = await send("/api/social/phrase", { password });
-      phraseBox.replaceChildren(
-        el("p", { class: "phrase", text: result.phrase }),
-        el("p", { class: "hint", text: "Write this down. It recovers this account and wallet if you forget your password." }),
-        el("button", {
-          type: "button",
-          class: "ghost",
-          text: "Hide",
-          onclick: () => phraseBox.replaceChildren(),
-        }),
-      );
-    }, phraseBox);
-
-    tools.push(
-      el(
-        "section",
-        { class: "sec" },
-        el("h3", { text: "General" }),
-        el("p", { class: "hint", text: "Square or portrait. The profile keeps that shape at 200px. The timeline uses a smaller copy." }),
-        el("label", { class: "file", for: "pic" }, me.avatarRev ? "Change photo" : "Add photo", file),
-        photoErr,
-        save,
-        passForm(
-          "pkp",
-          me.passkey
-            ? "A passkey is on this account. Enter your password to replace it."
-            : "Add a passkey to sign in without a password. Enter your password first.",
-          me.passkey ? "Replace passkey" : "Add passkey",
-          addPasskey,
-        ),
-      ),
-      el(
-        "section",
-        { class: "sec" },
-        el("h3", { text: "Wallet" }),
-        walletButton(me.address, me.name),
-        phraseForm,
-      ),
-    );
-  }
-  renderSide(user, self ? tools : null);
+  renderSide(user);
   const posts = user.posts.length
     ? user.posts.map((p) => renderPost(p))
     : [el("p", { class: "muted", text: "No posts yet." })];
   main.replaceChildren(...posts);
 }
 
+/** Edit profile: only the settings, no card and no posts. */
+async function renderEdit() {
+  if (!me) await pull("/api/social/me");
+  if (!me) {
+    renderSide(null);
+    main.replaceChildren(
+      el("p", { class: "muted", text: "Log in to edit your profile." }),
+    );
+    return;
+  }
+  useSide(false);
+  const bioInput = el("textarea", {
+    id: "bio",
+    maxlength: "160",
+    text: me.bio,
+  });
+  const locInput = el("input", { id: "loc", maxlength: "40", value: me.loc });
+  const saveErr = el("p", { class: "err" });
+  const save = el(
+    "form",
+    { class: "tools" },
+    el("label", { for: "bio" }, "Bio"),
+    bioInput,
+    el("p", { class: "hint", text: "Up to 160 characters." }),
+    el("label", { for: "loc" }, "Location"),
+    locInput,
+    el("p", {
+      class: "hint",
+      text: "Up to 40 characters. Leave blank to clear.",
+    }),
+    el("button", { type: "submit", text: "Save" }),
+    saveErr,
+  );
+  save.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    saveErr.textContent = "";
+    try {
+      await send("/api/social/profile", {
+        bio: bioInput.value,
+        loc: locInput.value,
+      });
+      show();
+    } catch (cause) {
+      saveErr.textContent = cause.message;
+    }
+  });
+
+  const photoErr = el("p", { class: "err" });
+  const file = el("input", { type: "file", accept: "image/*", id: "pic" });
+  file.addEventListener("change", async () => {
+    const picked = file.files && file.files[0];
+    photoErr.textContent = "";
+    if (!picked) return;
+    try {
+      // The profile copy stays within 14KB at the uploaded shape. The
+      // timeline copy is at most 80px wide and 2KB: enough to see a face
+      // beside a post, not enough to make a feed of them slow.
+      const [full, tiny] = await shrink(
+        picked,
+        [
+          [480, 0, 14 * 1024, 0.86],
+          [80, 1, 2 * 1024, 0.7],
+        ],
+        1,
+      );
+      const result = await pull("/api/social/avatar", {
+        method: "POST",
+        body: bin([lens(tiny, full), tiny, full]),
+      });
+      me.avatarRev = result.avatarRev;
+      show();
+    } catch (cause) {
+      photoErr.textContent = cause.message;
+    }
+    file.value = "";
+  });
+
+  const phraseBox = el("div", {});
+  /**
+   * The words leave the page on Hide, after two minutes, or as soon as the
+   * tab is put away, whichever comes first: a phrase left on an unattended
+   * screen is a wallet left open.
+   */
+  let phraseTimer = 0;
+  const hidePhrase = () => {
+    clearTimeout(phraseTimer);
+    document.removeEventListener("visibilitychange", onPhraseAway);
+    phraseBox.replaceChildren();
+  };
+  const onPhraseAway = () => {
+    if (document.hidden || !phraseBox.isConnected) hidePhrase();
+  };
+  const phraseForm = passForm(
+    "phrase",
+    "Enter your password to see your recovery phrase.",
+    "Show phrase",
+    async (password) => {
+      const result = await send("/api/social/phrase", { password });
+      phraseBox.replaceChildren(
+        el("p", { class: "phrase", text: result.phrase }),
+        el("p", {
+          class: "hint",
+          text: "Write this down. It recovers this account and wallet if you forget your password. It hides itself after two minutes.",
+        }),
+        el("button", {
+          type: "button",
+          class: "ghost",
+          text: "Hide",
+          onclick: hidePhrase,
+        }),
+      );
+      clearTimeout(phraseTimer);
+      phraseTimer = window.setTimeout(hidePhrase, 120_000);
+      document.addEventListener("visibilitychange", onPhraseAway);
+    },
+    phraseBox,
+  );
+
+  main.replaceChildren(
+    el(
+      "div",
+      { class: "detail-bar" },
+      el("a", { class: "back", href: `/social/u/${me.name}`, text: "Back" }),
+    ),
+    el("h2", { class: "ed-h", text: "Edit profile" }),
+    el(
+      "section",
+      { class: "sec" },
+      el("h3", { text: "General" }),
+      face(me.name, me.avatarRev),
+      el("p", {
+        class: "hint",
+        text: "Square or portrait. The profile keeps that shape at 200px. The timeline uses a smaller copy.",
+      }),
+      el(
+        "label",
+        { class: "file", for: "pic" },
+        me.avatarRev ? "Change photo" : "Add photo",
+        file,
+      ),
+      photoErr,
+      save,
+      passForm(
+        "pkp",
+        me.passkey
+          ? "A passkey is on this account. Enter your password to replace it."
+          : "Add a passkey to sign in without a password. Enter your password first.",
+        me.passkey ? "Replace passkey" : "Add passkey",
+        async (password) => {
+          await addPasskey(password);
+          show();
+        },
+      ),
+    ),
+    el("section", { class: "sec" }, el("h3", { text: "Wallet" }), phraseForm),
+  );
+}
+
+/** Stops the open Messenger, which polls while it is on screen. */
+let leaveChat = null;
+
+/** Messenger is its own bundle, handed this one's helpers so it carries no copies. */
+async function renderChat() {
+  if (!me) await pull("/api/social/me");
+  const chat = await load("ch", "__chat");
+  leaveChat = chat.mount({
+    main,
+    side: $("side"),
+    me: () => me,
+    pull,
+    send,
+    shrink,
+    face,
+    ago,
+    linkedText,
+    useSide,
+    renderSide,
+    addPasskey,
+  });
+}
+
 async function show() {
   const here = route();
+  if (leaveChat) leaveChat();
+  leaveChat = null;
   stopMore();
   for (const url of drafts.splice(0)) URL.revokeObjectURL(url);
   if (here.page !== "post") detail = null;
   document.body.classList.toggle("profile", here.page === "profile");
   main.replaceChildren(el("p", { class: "muted", text: "…" }));
   try {
-    if (here.page === "timeline") renderTimeline(await pull("/api/social/timeline"));
-    else if (here.page === "saved") renderSaved(await pull("/api/social/saved"));
-    else if (here.page === "friends") renderFriends(await pull("/api/social/friends"));
-    else if (here.page === "profile") renderProfile(await pull(`/api/social/u/${here.name}`));
+    if (here.page === "timeline")
+      renderTimeline(await pull("/api/social/timeline"));
+    else if (here.page === "saved")
+      renderSaved(await pull("/api/social/saved"));
+    else if (here.page === "friends")
+      renderFriends(await pull("/api/social/friends"));
+    else if (here.page === "edit") await renderEdit();
+    else if (here.page === "profile")
+      renderProfile(await pull(`/api/social/u/${here.name}`));
     else if (here.page === "post") await renderPostPage(here.id);
+    else if (here.page === "chat") await renderChat();
     else {
       renderSide(me);
       main.replaceChildren(el("p", { text: "Not found." }));
@@ -1148,28 +1341,26 @@ async function show() {
   markNav();
 }
 
-authForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  signIn(authGo, async () => {
-    if (mode === "recover") return send("/api/social/recover", { phrase: authPhrase.value, password: authPass.value });
-    const data = await send(mode === "register" ? "/api/social/register" : "/api/social/login", {
-      username: authUser.value,
-      password: authPass.value,
-    });
-    if (data.passkey) await passkey(data.passkey, authUser.value.trim().toLowerCase());
-  });
-});
+/*
+ * The header's Back (phones only) is whatever back link the page drew: a post's
+ * Back, an open chat's Chats. It shows while there is one to press.
+ */
+new MutationObserver(() => {
+  document.body.classList.toggle("deep", !!main.querySelector(".back"));
+}).observe(main, { childList: true, subtree: true });
+$("bk").addEventListener("click", () => main.querySelector(".back")?.click());
 
-authSwap.addEventListener("click", () => openAuth(mode === "login" ? "register" : "login"));
-$("af").addEventListener("click", () => openAuth("recover"));
-authPasskey.addEventListener("click", () =>
-  signIn(authPasskey, async () => passkey(await send("/api/social/passkey/login"))),
-);
-$("ax").addEventListener("click", () => dialog.close());
-$("qx").addEventListener("click", () => $("qd").close());
+$("in").addEventListener("click", () => openAuth("login"));
+dismissible(/** @type {HTMLDialogElement} */ ($("qd")));
 $("out").addEventListener("click", async () => {
   try {
     await send("/api/social/logout");
+    // Messenger's opened key (client/chat) is this device's, not the next person's.
+    try {
+      indexedDB.deleteDatabase("ug-chat");
+    } catch {
+      // Storage is off, so nothing was kept.
+    }
     applyMe(null);
     writeName("");
     show();

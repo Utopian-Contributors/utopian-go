@@ -156,27 +156,19 @@ export function openForServer(box: KeyBox): string {
  *
  * The social pages are a static file precisely so the document stays inside
  * one window. Who is asking lives in this cookie; the file never varies.
- * The secret is created once per data directory so a restart does not sign
- * everyone out, and an env var replaces it where the disk is ephemeral.
+ *
+ * SOCIAL_SECRET sets the signing key. Without it the key is derived from
+ * WALLET_KEY, so it is the same on every boot and on every disk without being
+ * a constant in the source: a key anyone could read would let anyone mint a
+ * cookie for any account, and every account here holds a wallet.
  */
 let cached: Buffer | null = null;
 
 function secret(): Buffer {
   if (cached) return cached;
-  if (process.env.SOCIAL_SECRET) {
-    cached = createHmac("sha256", "social").update(process.env.SOCIAL_SECRET).digest();
-    return cached;
-  }
-  if (process.env.NODE_ENV === "production") {
-    console.warn("[social] SOCIAL_SECRET is unset; sessions end whenever the data directory does.");
-  }
-  const file = path.join(socialDir(), "secret");
-  if (existsSync(file)) cached = readFileSync(file);
-  else {
-    cached = randomBytes(32);
-    mkdirSync(socialDir(), { recursive: true });
-    writeFileSync(file, cached, { mode: 0o600 });
-  }
+  cached = process.env.SOCIAL_SECRET
+    ? createHmac("sha256", "social").update(process.env.SOCIAL_SECRET).digest()
+    : createHmac("sha256", walletKey()).update("social session cookie").digest();
   return cached;
 }
 

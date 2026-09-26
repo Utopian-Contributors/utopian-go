@@ -1,19 +1,19 @@
 /*
  * The wallet page — its own stylesheet, and deliberately not app.css.
  *
- * This page has no search field, no tabs, no results list, no knowledge panel
- * and no skeletons, which is most of app.css. Serving it the search shell's
- * stylesheet to use a tenth of it would cost more than the page weighs.
- * build-client.mjs inlines this into wallet.html the same way it inlines
- * app.css into the search shell, so the page still paints off the first flight.
+ * This page has no tabs, no results list, no knowledge panel and no
+ * skeletons, which is most of app.css. build-client.mjs builds this page's
+ * sheet as this + header.css + acct.css, so the header is the search
+ * header without the rest of the search sheet, and inlines it into
+ * wallet.html so the page paints off the first flight.
  *
- * The palette is app.css's, repeated rather than shared: these are eleven
- * custom properties, and a second request to fetch them would cost far more
- * than restating them does.
+ * The palette is app.css's, repeated rather than shared: a handful of custom
+ * properties, and a second request to fetch them would cost far more than
+ * restating them does.
  */
 :root {
   color-scheme: light dark;
-  --bg: #fff;
+  --bg: #fffff6;
   --t: #202124;
   --m: #4d5156;
   --f: #70757a;
@@ -29,13 +29,17 @@
   --pn: #fff;
   --hover: #f1f3f4;
   --ff: system-ui, Helvetica, Arial, sans-serif;
+  /* Full width with a fixed gutter, for the header and the page alike. */
   --shell: none;
   --pad: 28px;
+  /* The header's spacer (header.css) sizes itself off these, as on search. */
+  --side: 480px;
+  --col-gap: 40px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #202124;
+    --bg: #292124;
     --t: #e8eaed;
     --m: #bdc1c6;
     --f: #9aa0a6;
@@ -83,6 +87,14 @@ a:hover {
   text-decoration: underline;
 }
 
+[hidden] {
+  display: none !important;
+}
+
+.chrome {
+  flex: none;
+}
+
 .wrap {
   width: 100%;
   max-width: var(--shell);
@@ -90,34 +102,33 @@ a:hover {
   padding-inline: var(--pad);
 }
 
-/* One row: the mark, and the account control pushed to the far end. */
-.wl-h {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding-block: 22px 26px;
+/* Clear of the header's bottom edge, which on search is the tab bar's. */
+#wl {
+  padding-top: 18px;
 }
 
-.lg {
-  display: inline-flex;
-  align-items: center;
-  line-height: 0;
-}
+/* Phones: straight under the header, whose bottom pad is gap enough. */
+@media (max-width: 900px) {
+  #wl {
+    padding-top: 0;
+  }
 
-.lg-mark {
-  display: block;
-  height: 34px;
-  width: auto;
-}
+  /* Its margin parts it from the notice above; with none, it is the top. */
+  .wl-ph[hidden] + .wl-pf {
+    margin-top: 0;
+  }
 
-/* The same night ink the search shell gives the mark, for the same reason —
-   see the note on .lg-mark in app.css. Repeated rather than shared because
-   each page's stylesheet already carries its own copy of the mark's rules;
-   the two are the one mark and must not drift. */
-@media (prefers-color-scheme: dark) {
-  .lg-mark {
-    fill: #75ffbe;
+  /* One view at a time: the lists, or the token picked from them. Back (the
+     header's, in the search field's place) returns to the lists. */
+  body:not(.deep) .wl-side,
+  body.deep .wl-main {
+    display: none;
+  }
+
+  /* Alone on screen, it sits under the header like the lists do. Qualified to
+     outrank the base .wl-side rule further down. */
+  body.deep .wl-side {
+    margin-top: 0;
   }
 }
 
@@ -873,9 +884,31 @@ a:hover {
   font: 600 15px/1.9 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.ks-x {
-  display: block;
-  margin: 16px 0 0 auto;
+/* Inside a step the grid's gap is the only spacing, so a paragraph's own
+   margins do not stack on top of it. */
+.ks-f > p {
+  margin: 0;
+}
+
+.ks-f > .ks-a {
+  text-align: left;
+}
+
+/* The confirm button and Back, one height, side by side. */
+.ks-f > .ks-row {
+  margin-top: 8px;
+}
+
+.ks-row > .wl-cta {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+/* Nothing to say yet: no blank line at the bottom of the dialog. */
+.ks-err:empty,
+.ks > .ks-n:empty {
+  display: none;
 }
 
 /* —— States and asides —— */
@@ -928,10 +961,6 @@ a:hover {
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
-  }
-
-  .wl-h {
-    padding-block: 14px 12px;
   }
 
   #wl {
@@ -992,6 +1021,8 @@ a:hover {
 /* The same bar as #ft in app.css: 14px around a 13px semibold line. */
 #ft {
   margin-top: auto;
+  /* Outranks .wrap's pad, so the gutter is restated. */
+  padding-inline: var(--pad);
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;

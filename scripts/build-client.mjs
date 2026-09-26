@@ -128,7 +128,7 @@ const PAGES = [
  * once someone presses Login, so counting either against a first-load window
  * would be measuring bytes nobody waits for.
  */
-const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js"];
+const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "chat.js", "login.js", "hive.js"];
 
 /**
  * The legal documents: readable HTML under client/legal/, published as the
@@ -242,11 +242,35 @@ const keysOpts = {
   outfile: path.join(outDir, "keys.js"),
 };
 
+/**
+ * The Log in dialog, for search and the wallet page: fetched the first time
+ * someone presses Log in. Social bundles the same module into social.js.
+ */
+const loginOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "login", "main.js")],
+  outfile: path.join(outDir, "login.js"),
+};
+
+/** Places, the honeycomb of links left search for: fetched on its button. */
+const hiveOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "hive", "main.js")],
+  outfile: path.join(outDir, "hive.js"),
+};
+
 /** The wallet page's own bundle. Shares helpers with app.js, not bytes. */
 const walletOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "wallet", "main.js")],
   outfile: path.join(outDir, "wallet.js"),
+};
+
+/** Messenger, fetched by social.js on /social/c only. */
+const chatOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "chat", "main.js")],
+  outfile: path.join(outDir, "chat.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -401,11 +425,13 @@ function inlineWordmark() {
 }
 
 /**
- * A page's stylesheet, plus the account control's.
+ * A page's stylesheet, plus the header's and the account control's.
  *
- * acct.css is appended to both rather than living in either, because the
- * control appears on both pages and a second copy of its rules is a second
- * chance for the header to look different depending on where you are standing.
+ * header.css and acct.css are appended to every page's sheet rather than
+ * living in any one of them, because every page wears the same header and a
+ * second copy of its rules is a second chance for it to look different
+ * depending on where you are standing. It is also what lets the wallet page
+ * have the search header without inlining the rest of app.css.
  * Concatenated at build time rather than fetched as a second file: it is a few
  * hundred bytes, and both stylesheets are inlined into their document anyway.
  *
@@ -414,6 +440,7 @@ function inlineWordmark() {
 async function buildCss(name) {
   return minifyCss(
     readFileSync(path.join(clientDir, name), "utf8") +
+      readFileSync(path.join(clientDir, "header.css"), "utf8") +
       readFileSync(path.join(clientDir, "acct.css"), "utf8"),
   );
 }
@@ -427,23 +454,26 @@ async function buildCss(name) {
  * lightbox, the home banner), and inlining it would put about 3KB of gzip on
  * every social load for rules that cannot match. Pruning against what the
  * page actually writes keeps the one source and drops the dead weight. It
- * runs after social.js is built, since that bundle is the list of names.
+ * runs after social.js and chat.js are built, since those bundles are the
+ * list of names. Messenger's rules ride in this document, not in its bundle:
+ * a few hundred bytes of gzip, and no second request before it can paint.
  */
 async function buildSocialCss() {
   const words = (text) => text.match(/[A-Za-z_][\w-]*/g) ?? [];
   const names = new Set([
     ...words(readFileSync(path.join(outDir, "social.js"), "utf8")),
+    ...words(readFileSync(path.join(outDir, "chat.js"), "utf8")),
     ...words(readFileSync(path.join(clientDir, "social.html"), "utf8")),
   ]);
   return minifyCss(
-    ["app.css", "acct.css", "social.css"]
+    ["app.css", "header.css", "acct.css", "social.css"]
       .map((name) => readFileSync(path.join(clientDir, name), "utf8"))
       .join(""),
     names,
   );
 }
 
-async function buildHtml(css, jsHash, swapHash, connectHash, qrHash) {
+async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, hiveHash) {
   let raw = readFileSync(path.join(clientDir, "index.html"), "utf8");
   verifyLoadingChrome(raw);
 
@@ -489,6 +519,18 @@ async function buildHtml(css, jsHash, swapHash, connectHash, qrHash) {
     `data-qr="/qr.js?v=${qrHash}"`,
     "qr.js attribute",
   );
+  raw = replaceOnce(
+    raw,
+    /data-lg="\/login\.js"/,
+    `data-lg="/login.js?v=${loginHash}"`,
+    "login.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-hv="\/hive\.js"/,
+    `data-hv="/hive.js?v=${hiveHash}"`,
+    "hive.js attribute",
+  );
 
   writeFileSync(path.join(outDir, "index.html"), await minifyDoc(raw));
 }
@@ -524,7 +566,7 @@ function minifyDoc(raw) {
  * server-side state, because the server does not know whose wallet it is. That
  * is what lets it be a plain precompressed file rather than a template.
  */
-async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, keysHash) {
+async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, keysHash, loginHash) {
   let raw = readFileSync(path.join(clientDir, "wallet.html"), "utf8");
 
   raw = replaceOnce(
@@ -571,6 +613,12 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
     `data-ks="/keys.js?v=${keysHash}"`,
     "wallet keys.js attribute",
   );
+  raw = replaceOnce(
+    raw,
+    /data-lg="\/login\.js"/,
+    `data-lg="/login.js?v=${loginHash}"`,
+    "wallet login.js attribute",
+  );
 
   writeFileSync(path.join(outDir, "wallet.html"), await minifyDoc(raw));
 }
@@ -580,7 +628,7 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
  * wordmark inlined for the same reason it is on the other two documents: the
  * header should not wait on a second request.
  */
-async function buildSocialHtml(css, socialHash, qrHash) {
+async function buildSocialHtml(css, socialHash, qrHash, chatHash) {
   let raw = readFileSync(path.join(clientDir, "social.html"), "utf8");
   raw = replaceOnce(
     raw,
@@ -605,6 +653,12 @@ async function buildSocialHtml(css, socialHash, qrHash) {
     /data-qr="\/qr\.js"/,
     `data-qr="/qr.js?v=${qrHash}"`,
     "social qr.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-ch="\/chat\.js"/,
+    `data-ch="/chat.js?v=${chatHash}"`,
+    "social chat.js attribute",
   );
   writeFileSync(path.join(outDir, "social.html"), await minifyDoc(raw));
 }
@@ -805,14 +859,16 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , , socialCss, css, walletCss] = await Promise.all([
+  const [, , , , , , , , socialCss, css, walletCss] = await Promise.all([
     esbuild.build(jsOpts),
     esbuild.build(keysOpts),
+    esbuild.build(loginOpts),
     esbuild.build(swapOpts),
     esbuild.build(connectOpts),
     esbuild.build(qrOpts),
+    esbuild.build(hiveOpts),
     esbuild.build(walletOpts),
-    esbuild.build(socialOpts).then(buildSocialCss),
+    Promise.all([esbuild.build(socialOpts), esbuild.build(chatOpts)]).then(buildSocialCss),
     buildCss("app.css"),
     buildCss("wallet.css"),
   ]);
@@ -821,11 +877,12 @@ async function buildAssets() {
   const connectHash = hash("connect.js");
   const swapHash = hash("swap.js");
   const qrHash = hash("qr.js");
+  const loginHash = hash("login.js");
 
   await Promise.all([
-    buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash),
-    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js")),
-    buildSocialHtml(socialCss, hash("social.js"), qrHash),
+    buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, hash("hive.js")),
+    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash),
+    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("chat.js")),
   ]);
   buildLegal();
   precompress();

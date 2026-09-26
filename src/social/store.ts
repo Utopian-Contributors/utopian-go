@@ -107,3 +107,44 @@ export function removePostPhotos(id: string, count: number): void {
     }
   }
 }
+
+function chatDir(): string {
+  return path.join(socialDir(), "chat");
+}
+
+function chatPhotoPath(id: string, n: number): string {
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(id) || !Number.isInteger(n) || n < 0 || n > 3) {
+    throw new Error("chat photo path");
+  }
+  const file = path.join(chatDir(), `${id}-${n}.bin`);
+  if (!file.startsWith(chatDir() + path.sep)) throw new Error("chat photo path");
+  return file;
+}
+
+/** Sealed on the sender's device. The server never holds the key to these bytes. */
+export function chatPhotoFile(id: string, n: number): string | null {
+  try {
+    const file = chatPhotoPath(id, n);
+    return existsSync(file) ? file : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeChatPhotos(id: string, photos: Buffer[]): void {
+  if (!photos.length) return;
+  mkdirSync(chatDir(), { recursive: true });
+  try {
+    photos.forEach((bytes, n) => writeFileSync(chatPhotoPath(id, n), bytes, { mode: 0o600 }));
+  } catch (err) {
+    removeChatPhotos(id, photos.length);
+    throw err;
+  }
+}
+
+export function removeChatPhotos(id: string, count: number): void {
+  for (let n = 0; n < count; n++) {
+    const file = chatPhotoPath(id, n);
+    if (existsSync(file)) unlinkSync(file);
+  }
+}

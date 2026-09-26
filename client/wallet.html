@@ -11,24 +11,46 @@
     <meta name="robots" content="noindex, nofollow" />
     <link rel="stylesheet" href="/wallet.css" />
   </head>
-  <body data-cn="/connect.js" data-sw="/swap.js" data-qr="/qr.js" data-ks="/keys.js">
-    <!-- One header row: the mark on the left, the account on the right. The
-         search shell has to pin its account control out of flow because it has
-         two header layouts to avoid disturbing; this page has one, so the
-         control is simply in it. -->
-    <header class="wl-h wrap">
-      <a class="lg" href="/" aria-label="utopian-go home">
-        <img
-          class="lg-mark"
-          src="/go-wordmark.svg"
-          alt="utopian-go"
-          width="188"
-          height="64"
-          decoding="async"
-        />
-      </a>
-      <nav id="ac" aria-label="Account"></nav>
-    </header>
+  <body class="res wl-pg" data-lg="/login.js" data-cn="/connect.js" data-sw="/swap.js" data-qr="/qr.js" data-ks="/keys.js">
+    <!-- The search header, as on search and Social: the mark, the field, the
+         account control. app.css (built into this page's sheet) lays it out. -->
+    <div class="chrome" id="chrome">
+      <header id="hd">
+        <a class="lg" href="/" id="lg" aria-label="utopian-go home">
+          <img
+            class="lg-mark"
+            src="/go-wordmark.svg"
+            alt=""
+            width="188"
+            height="64"
+            decoding="async"
+          />
+        </a>
+        <form class="sf" id="f" role="search" action="/" method="get">
+          <input
+            id="q"
+            name="q"
+            type="search"
+            enterkeyhint="search"
+            placeholder="Search"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div class="sf-actions">
+            <button id="go" type="submit" class="sf-go" aria-label="Search">
+              <span class="bl" aria-hidden="true">↵</span>
+            </button>
+          </div>
+        </form>
+        <button type="button" class="hb" id="bk">
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Back
+        </button>
+        <nav id="ac" aria-label="Account"></nav>
+      </header>
+    </div>
 
     <main class="wrap" id="wl">
       <div class="wl-main">

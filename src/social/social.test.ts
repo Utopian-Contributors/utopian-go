@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from "crypto";
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, webcrypto } from "crypto";
 import express from "express";
 import { mkdtempSync, rmSync } from "fs";
 import { createServer, type Server } from "http";
@@ -21,8 +21,8 @@ import {
   solanaSeed,
 } from "./keys";
 import { parseSol, transferMessage, unsignedTransfer } from "./pay";
-import { signTransaction } from "./swap";
-import { associatedTokenAccount, onCurve } from "./send";
+import { checkSwapInstructions, parseMessage, reviewedFloor, signTransaction, slippageFor } from "./swap";
+import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMessage, onCurve } from "./send";
 import { scrub } from "./guard";
 import { postWait, username, waitText } from "./limits";
 import { sendAvatar, sendPostPhoto, socialRouter } from "./routes";
@@ -207,6 +207,78 @@ test("a token account address is the one the associated token program derives", 
   seed.fill(0);
 });
 
+test("a swap is signed only when every instruction is one a swap needs", () => {
+  const owner = Buffer.alloc(32, 1);
+  const other = Buffer.alloc(32, 2);
+  const jupiter = base58Decode("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4")!;
+  const budget = base58Decode("ComputeBudget111111111111111111111111111111")!;
+  const wsol = base58Decode(SOL_MINT)!;
+  const wsolAta = associatedTokenAccount(owner, wsol, TOKEN);
+  const u32 = (tag: number, n: number) => {
+    const b = Buffer.alloc(5);
+    b[0] = tag;
+    b.writeUInt32LE(n, 1);
+    return b;
+  };
+  const u64 = (tag: number, n: bigint, width = 9) => {
+    const b = Buffer.alloc(width);
+    b.writeUInt32LE(tag, 0);
+    b.writeBigUInt64LE(n, width - 8);
+    return b;
+  };
+  const price = (microLamports: bigint) => {
+    const b = Buffer.alloc(9);
+    b[0] = 3;
+    b.writeBigUInt64LE(microLamports, 1);
+    return b;
+  };
+  const meta = (key: Buffer, signer = false, writable = true) => ({ key, signer, writable });
+  const jupiterSwap = [
+    { program: budget, keys: [], data: u32(2, 300_000) },
+    { program: budget, keys: [], data: price(10_000n) },
+    {
+      program: ATA_PROGRAM,
+      keys: [meta(owner, true), meta(wsolAta), meta(owner, false, false), meta(wsol, false, false), meta(SYSTEM, false, false), meta(TOKEN, false, false)],
+      data: Buffer.from([1]),
+    },
+    { program: SYSTEM, keys: [meta(owner, true), meta(wsolAta)], data: u64(2, 1_000_000n, 12) },
+    { program: TOKEN, keys: [meta(wsolAta)], data: Buffer.from([17]) },
+    { program: jupiter, keys: [meta(owner, true), meta(wsolAta), meta(other)], data: Buffer.from([1, 2, 3]) },
+    { program: TOKEN, keys: [meta(wsolAta), meta(owner), meta(owner, true)], data: Buffer.from([9]) },
+  ];
+  const check = (ixs: typeof jupiterSwap) =>
+    checkSwapInstructions(parseMessage(compileMessage(owner, ixs, Buffer.alloc(32, 9))), owner);
+  check(jupiterSwap);
+
+  const refused = [
+    // SOL straight out to someone else.
+    { program: SYSTEM, keys: [meta(owner, true), meta(other)], data: u64(2, 1_000_000n, 12) },
+    // Tokens straight out: Transfer, then Approve a delegate, then a new owner.
+    { program: TOKEN, keys: [meta(wsolAta), meta(other), meta(owner, true)], data: u64(3, 5n) },
+    { program: TOKEN, keys: [meta(wsolAta), meta(other), meta(owner, true)], data: u64(4, 5n) },
+    { program: TOKEN, keys: [meta(wsolAta), meta(owner, true)], data: Buffer.from([6, 2, 1, ...other]) },
+    // Closing the owner's account into someone else's.
+    { program: TOKEN, keys: [meta(wsolAta), meta(other), meta(owner, true)], data: Buffer.from([9]) },
+    // A program the swap API never emits.
+    { program: Buffer.alloc(32, 5), keys: [meta(owner, true)], data: Buffer.from([0]) },
+    // A priority fee that would burn the balance.
+    { program: budget, keys: [], data: price(10n ** 12n) },
+  ];
+  for (const bad of refused) assert.throws(() => check([...jupiterSwap, bad]));
+});
+
+test("a swap never pays out below what was reviewed, less its slippage", () => {
+  assert.equal(reviewedFloor(1_000_000n, 100), 990_000n);
+  // Same price: the requested slippage stands.
+  assert.equal(slippageFor(1_000_000n, 990_000n, 100), 100);
+  // Moved against the person: narrowed so the on-chain minimum is still the floor.
+  const s = slippageFor(995_000n, 990_000n, 100);
+  assert.ok(s < 100 && s >= 0);
+  assert.ok((995_000n * BigInt(10_000 - s)) / 10_000n >= 990_000n);
+  // Moved past the floor: refused.
+  assert.equal(slippageFor(989_999n, 990_000n, 100), -1);
+});
+
 test("posting waits ten minutes", () => {
   const now = 1_000_000;
   assert.equal(postWait(0, now), 0);
@@ -279,9 +351,18 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
   const base = `http://127.0.0.1:${address.port}`;
   let jar = "";
   let client = "10.0.0.1";
+  /**
+   * Password routes allow three calls a minute per address. Each one here
+   * stands for its own visitor, unless `pinned` holds the address still to
+   * test that limit itself.
+   */
+  const PASSWORD_ROUTE = /^\/api\/social\/(login|register|recover|phrase|passkey\/options)$/;
+  let visitors = 0;
+  let pinned = false;
 
   async function call(method: string, urlPath: string, body?: Buffer | Record<string, unknown> | string) {
-    const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": client };
+    const from = PASSWORD_ROUTE.test(urlPath) && !pinned ? `10.9.${++visitors >> 8}.${visitors & 255}` : client;
+    const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": from };
     if (jar) headers.Cookie = jar;
     let payload: Buffer | string | undefined;
     if (Buffer.isBuffer(body)) {
@@ -380,8 +461,30 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const home = await call("GET", "/api/social/timeline");
     assert.equal((home.json?.notes as unknown[]).length, 0);
 
+    const beforeLogout = jar;
     await call("POST", "/api/social/logout", {});
     assert.equal(jar.includes("soc="), false);
+    // Logging out ends the session everywhere, not only in this browser.
+    jar = beforeLogout;
+    assert.equal((await call("GET", "/api/social/me")).json?.me, null, "a copied cookie dies with logout");
+    jar = "";
+
+    // A throwaway account for the guessing limits, so nobody below is held up.
+    assert.equal((await call("POST", "/api/social/register", { username: "cat", password: "password3" })).status, 200);
+    jar = "";
+    // Three password guesses a minute from one address, whatever the account.
+    pinned = true;
+    client = "10.0.0.9";
+    for (let i = 0; i < 3; i++) {
+      assert.equal((await call("POST", "/api/social/login", { username: "cat", password: "wrong" + i })).status, 401);
+    }
+    assert.equal((await call("POST", "/api/social/login", { username: "cat", password: "password3" })).status, 429);
+    pinned = false;
+    client = "10.0.0.1";
+    // And three wrong a minute per account, from any number of addresses.
+    const catLocked = await call("POST", "/api/social/login", { username: "cat", password: "password3" });
+    assert.equal(catLocked.status, 429, "cat's three misses above hold the account for a minute");
+    assert.match(String(catLocked.json?.error), /Too many wrong passwords/);
 
     const benIn = await call("POST", "/api/social/login", { username: "ben", password: "password2" });
     assert.equal(benIn.status, 200);
@@ -465,6 +568,23 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const phrase = await call("POST", "/api/social/phrase", { password: "password1" });
     const adaPhrase = String(phrase.json?.phrase);
     assert.equal(phrase.status, 200);
+
+    // A token the index cannot price is never inside what a session may send alone.
+    const unpriced = await call("POST", "/api/social/send", {
+      to: base58(Buffer.alloc(32, 7)),
+      mint: base58(Buffer.alloc(32, 9)),
+      amount: "1",
+    });
+    assert.equal(unpriced.status, 403, unpriced.text);
+    assert.equal(unpriced.json?.stepUp, true);
+    // A swap states the output it reviewed, or it is not a swap the server will make.
+    const unreviewed = await call("POST", "/api/social/swap", {
+      inputMint: SOL_MINT,
+      outputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      amount: "1000",
+      slippageBps: 100,
+    });
+    assert.equal(unreviewed.status, 400);
     const words = String(phrase.json?.phrase).split(" ");
     assert.equal(words.length, 12);
     for (const word of words) assert.ok(WORDLIST.includes(word));
@@ -751,6 +871,260 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(fresh.json?.name, "ada");
     const reread = await call("POST", "/api/social/phrase", { password: "password9" });
     assert.equal(reread.json?.phrase, adaPhrase);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+/**
+ * Messenger, driven the way the browser drives it: WebCrypto for the keys and
+ * the sealing, a signed passkey assertion to publish a key. The server is
+ * checked for what it must never see and what it must refuse.
+ */
+test("messenger keeps only ciphertext and refuses stale or foreign keys", async () => {
+  await useTestDatabase();
+  await ensureSchema();
+  await resetSocial();
+  const app = express();
+  app.set("trust proxy", true);
+  app.use("/api/social", socialRouter);
+  const server: Server = await new Promise((resolve) => {
+    const listening = createServer(app);
+    listening.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const base = `http://127.0.0.1:${address.port}`;
+  const rpId = "127.0.0.1";
+  const subtle = globalThis.crypto.subtle;
+  const te = new TextEncoder();
+  let ip = 0;
+
+  function person() {
+    let jar = "";
+    return async function call(method: string, urlPath: string, body?: Buffer | Record<string, unknown>) {
+      const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": `10.1.0.${++ip % 250}` };
+      if (jar) headers.Cookie = jar;
+      let payload: Buffer | string | undefined;
+      if (Buffer.isBuffer(body)) {
+        headers["Content-Type"] = "application/octet-stream";
+        payload = body;
+      } else if (body !== undefined) {
+        headers["Content-Type"] = "application/json";
+        payload = JSON.stringify(body);
+      }
+      const res = await fetch(base + urlPath, { method, headers, body: payload });
+      for (const cookie of res.headers.getSetCookie?.() ?? []) jar = cookie.split(";")[0];
+      const raw = Buffer.from(await res.arrayBuffer());
+      let json: Record<string, any> | null = null;
+      try {
+        json = JSON.parse(raw.toString("utf8"));
+      } catch {
+        json = null;
+      }
+      return { status: res.status, json, raw, text: raw.toString("utf8") };
+    };
+  }
+
+  async function join(name: string) {
+    const call = person();
+    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1" })).status, 200);
+    return call;
+  }
+
+  async function enroll(call: ReturnType<typeof person>, tag: string) {
+    const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const jwk = publicKey.export({ format: "jwk" }) as { x: string; y: string };
+    const cose = coseP256(Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url"));
+    const credId = Buffer.from(`cred-${tag}`);
+    const options = await call("POST", "/api/social/passkey/options", { password: "password1" });
+    const regAuth = authData(rpId, 0x45, 0, credId, cose);
+    const attestation = Buffer.concat([
+      Buffer.from([0xa3, 0x63]), Buffer.from("fmt"), Buffer.from([0x64]), Buffer.from("none"),
+      Buffer.from([0x67]), Buffer.from("attStmt"), Buffer.from([0xa0]),
+      Buffer.from([0x68]), Buffer.from("authData"), Buffer.from([0x58, regAuth.length]), regAuth,
+    ]);
+    const enrolled = await call("POST", "/api/social/passkey", {
+      id: credId.toString("base64url"),
+      challenge: String(options.json?.challenge),
+      clientData: Buffer.from(JSON.stringify({ type: "webauthn.create", challenge: String(options.json?.challenge), origin: base })).toString("base64url"),
+      attestation: attestation.toString("base64url"),
+    });
+    assert.equal(enrolled.status, 200, enrolled.text);
+    let count = 0;
+    return async function assertion(signer = privateKey) {
+      const opt = await call("POST", "/api/social/ck/options", {});
+      assert.equal(opt.status, 200, opt.text);
+      assert.equal(opt.json?.id, credId.toString("base64url"));
+      const ch = String(opt.json?.challenge);
+      const cdata = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: ch, origin: base }));
+      const auth = authData(rpId, 0x05, ++count, null, null);
+      const sig = sign("sha256", Buffer.concat([auth, createHash("sha256").update(cdata).digest()]), signer);
+      return {
+        challenge: ch,
+        clientData: cdata.toString("base64url"),
+        authenticatorData: auth.toString("base64url"),
+        signature: sig.toString("base64url"),
+      };
+    };
+  }
+
+  const ECDH = { name: "ECDH", namedCurve: "P-256" };
+
+  async function hkdf(bytes: ArrayBuffer, info: string) {
+    const baseKey = await subtle.importKey("raw", bytes, "HKDF", false, ["deriveKey"]);
+    return subtle.deriveKey(
+      { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: te.encode(info) },
+      baseKey,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"],
+    );
+  }
+
+  async function newKey() {
+    const pair = await subtle.generateKey(ECDH, true, ["deriveBits"]);
+    const pub = Buffer.from(await subtle.exportKey("raw", pair.publicKey)).toString("base64url");
+    return { priv: pair.privateKey, pub };
+  }
+
+  async function pairKey(me: string, myV: number, priv: webcrypto.CryptoKey, peer: string, theirV: number, pub: string) {
+    const theirs = await subtle.importKey("raw", Buffer.from(pub, "base64url"), ECDH, false, []);
+    const bits = await subtle.deriveBits({ name: "ECDH", public: theirs }, priv, 256);
+    return hkdf(bits, `ug chat ${[`${me}.${myV}`, `${peer}.${theirV}`].sort().join(" ")}`);
+  }
+
+  function pack(head: Record<string, unknown>, photos: Buffer[] = []): Buffer {
+    const json = Buffer.from(JSON.stringify(head));
+    const len = Buffer.alloc(2);
+    len.writeUInt16BE(json.length);
+    const parts: Buffer[] = [len, json, Buffer.from([photos.length])];
+    for (const photo of photos) {
+      const n = Buffer.alloc(4);
+      n.writeUInt32BE(photo.length);
+      parts.push(n, photo);
+    }
+    return Buffer.concat(parts);
+  }
+
+  try {
+    const ada = await join("ada");
+    const bob = await join("bob");
+    const eve = await join("eve");
+
+    assert.equal((await ada("GET", "/api/social/ck")).json?.cred, null);
+    assert.equal((await ada("POST", "/api/social/ck/options", {})).status, 400, "a passkey comes first");
+
+    const adaProof = await enroll(ada, "ada");
+    const bobProof = await enroll(bob, "bob");
+    const adaKey = await newKey();
+    const bobKey = await newKey();
+    const box = { iv: Buffer.alloc(12, 1).toString("base64url"), ct: Buffer.alloc(64, 2).toString("base64url") };
+
+    const forged = await ada("POST", "/api/social/ck", {
+      ...(await adaProof(generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey)),
+      pub: adaKey.pub,
+      ...box,
+    });
+    assert.equal(forged.status, 403, "a session alone cannot publish a key");
+    const offCurve = Buffer.alloc(65, 7);
+    offCurve[0] = 4;
+    const bad = await ada("POST", "/api/social/ck", { ...(await adaProof()), pub: offCurve.toString("base64url"), ...box });
+    assert.equal(bad.status, 400);
+    const published = await ada("POST", "/api/social/ck", { ...(await adaProof()), pub: adaKey.pub, ...box });
+    assert.equal(published.status, 200, published.text);
+    assert.equal(published.json?.v, 1);
+    const mine = await ada("GET", "/api/social/ck");
+    assert.equal(mine.json?.key.v, 1);
+    assert.equal(mine.json?.key.ct, box.ct, "the owner gets the sealed box back");
+    assert.equal(mine.json?.key.cred, mine.json?.cred);
+
+    const toBob = await ada("GET", "/api/social/c/bob");
+    assert.equal(toBob.status, 200);
+    assert.deepEqual(toBob.json?.peer.keys, [], "bob has not turned Messenger on");
+    const early = await ada("POST", "/api/social/c/bob", pack({ kf: 1, kt: 1, iv: box.iv, ct: box.ct }));
+    assert.equal(early.status, 409);
+    assert.equal(early.json?.stale, true);
+
+    assert.equal((await bob("POST", "/api/social/ck", { ...(await bobProof()), pub: bobKey.pub, ...box })).status, 200);
+
+    const words = "meet at the fountain at noon";
+    const adaPair = await pairKey("ada", 1, adaKey.priv, "bob", 1, bobKey.pub);
+    const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+    const ivText = Buffer.from(iv).toString("base64url");
+    const ct = Buffer.from(await subtle.encrypt({ name: "AES-GCM", iv, additionalData: te.encode("ada>bob") }, adaPair, te.encode(words)));
+    const jpegBytes = jpeg(10, 20);
+    const piv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+    const photo = Buffer.concat([
+      piv,
+      Buffer.from(await subtle.encrypt({ name: "AES-GCM", iv: piv, additionalData: te.encode(`ada>bob ${ivText} 0`) }, adaPair, jpegBytes)),
+    ]);
+    const sent = await ada("POST", "/api/social/c/bob", pack({ kf: 1, kt: 1, iv: ivText, ct: ct.toString("base64url") }, [photo]));
+    assert.equal(sent.status, 200, sent.text);
+    const id = String(sent.json?.message.id);
+    assert.equal(sent.json?.message.photos, 1);
+
+    const inbox = await bob("GET", "/api/social/c");
+    assert.equal(inbox.json?.me.unread, 1);
+    assert.equal(inbox.json?.chats[0].with, "ada");
+    assert.equal(inbox.json?.chats[0].unread, 1);
+    assert.equal(inbox.json?.chats[0].pub, adaKey.pub, "the row carries the key its preview was sealed with");
+    assert.equal(inbox.text.includes(words), false);
+
+    const opened = await bob("GET", "/api/social/c/ada");
+    const got = opened.json?.messages[0];
+    const bobPair = await pairKey("bob", 1, bobKey.priv, "ada", 1, opened.json?.peer.keys[0].pub);
+    const plain = await subtle.decrypt(
+      { name: "AES-GCM", iv: Buffer.from(got.iv, "base64url"), additionalData: te.encode(`${got.from}>bob`) },
+      bobPair,
+      Buffer.from(got.ct, "base64url"),
+    );
+    assert.equal(new TextDecoder().decode(plain), words, "the recipient opens what the sender sealed");
+    await assert.rejects(
+      subtle.decrypt({ name: "AES-GCM", iv: Buffer.from(got.iv, "base64url"), additionalData: te.encode("bob>ada") }, bobPair, Buffer.from(got.ct, "base64url")),
+      "the direction is bound in",
+    );
+    assert.equal((await bob("GET", "/api/social/me")).json?.me.unread, 0, "opening reads it");
+
+    const sealedPhoto = await bob("GET", `/api/social/cp/${id}/0`);
+    assert.equal(sealedPhoto.status, 200);
+    assert.deepEqual(sealedPhoto.raw, photo, "photos come back exactly as sealed");
+    assert.equal((await eve("GET", `/api/social/cp/${id}/0`)).status, 404, "only the two people");
+    assert.equal((await bob("GET", `/api/social/cp/${id}/1`)).status, 404);
+    assert.equal((await eve("GET", "/api/social/c")).json?.chats.length, 0);
+
+    const empty = await ada("POST", "/api/social/c/bob", pack({ kf: 1, kt: 1, iv: ivText, ct: Buffer.alloc(16).toString("base64url") }));
+    assert.equal(empty.status, 400, "an empty message needs a photo");
+    assert.equal((await ada("POST", "/api/social/c/ada", pack({ kf: 1, kt: 1, iv: ivText, ct: ct.toString("base64url") }))).status, 400);
+
+    // Bob's new key makes Ada's copy of it stale, and her next send is refused until she fetches it.
+    const bobKey2 = await newKey();
+    assert.equal((await bob("POST", "/api/social/ck", { ...(await bobProof()), pub: bobKey2.pub, ...box })).json?.v, 2);
+    const stale = await ada("POST", "/api/social/c/bob", pack({ kf: 1, kt: 1, iv: ivText, ct: ct.toString("base64url") }));
+    assert.equal(stale.status, 409);
+    const keys = (await ada("GET", "/api/social/c/bob")).json?.peer.keys;
+    assert.deepEqual(keys.map((k: { v: number }) => k.v), [1, 2], "old keys stay, so old messages stay readable");
+
+    for (let i = 0; i < 34; i++) {
+      const res = await ada("POST", "/api/social/c/bob", pack({ kf: 1, kt: 2, iv: ivText, ct: ct.toString("base64url") }));
+      assert.equal(res.status, 200, res.text);
+    }
+    const page = await bob("GET", "/api/social/c/ada");
+    assert.equal(page.json?.messages.length, 30);
+    assert.ok(page.json?.next);
+    assert.ok(page.json?.messages[0].at <= page.json?.messages[29].at, "oldest first");
+    const above = await bob(
+      "GET",
+      `/api/social/c/ada?before=${page.json?.next.at}&id=${encodeURIComponent(page.json?.next.id)}`,
+    );
+    assert.equal(above.json?.messages.length, 5);
+    assert.equal(above.json?.next, null);
+    assert.equal(above.json?.peer, undefined);
+    const lastSeen = page.json?.messages[29];
+    const poll = await bob("GET", `/api/social/c/ada?after=${lastSeen.at}&id=${encodeURIComponent(lastSeen.id)}`);
+    assert.equal(poll.json?.messages.length, 0);
+    const moved = await bob("GET", `/api/social/c?after=${page.json?.messages[29].at}`);
+    assert.equal(moved.json?.chats[0].with, "ada");
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }

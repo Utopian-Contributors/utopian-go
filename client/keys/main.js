@@ -3,6 +3,7 @@
  * bundle, fetched the first time any of them is opened.
  */
 import { el } from "../js/dom.js";
+import { dismissible } from "../js/sheet.js";
 import { load } from "../js/lazy.js";
 import { b64u, needPasskey, u8, why } from "../js/passkey.js";
 
@@ -17,7 +18,13 @@ async function send(path, body) {
     body: JSON.stringify(body || {}),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || "Something went wrong."), { setup: data.setup });
+  if (!res.ok) {
+    throw Object.assign(new Error(data.error || "Something went wrong."), {
+      setup: data.setup,
+      stepUp: data.stepUp,
+      passkey: data.passkey,
+    });
+  }
   return data;
 }
 
@@ -28,8 +35,8 @@ function modal(title, ...kids) {
     { class: "ks", "aria-label": title },
     el("h2", { text: title }),
     ...kids,
-    el("button", { type: "button", class: "wl-b ks-x", text: "Close", onclick: () => dialog.close() }),
   );
+  dismissible(/** @type {HTMLDialogElement} */ (dialog));
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
   dialog.showModal();
@@ -50,10 +57,6 @@ function toDecimal(units, decimals) {
   const whole = s.slice(0, s.length - decimals);
   const frac = s.slice(s.length - decimals).replace(/0+$/, "");
   return frac ? `${whole}.${frac}` : whole;
-}
-
-function short(a) {
-  return `${a.slice(0, 4)}…${a.slice(-4)}`;
 }
 
 /** @param {{passkey: boolean}} me */
@@ -86,6 +89,8 @@ function phrase(me) {
     if (key) key.hidden = true;
     err.textContent = "";
     out.replaceChildren(el("ol", { class: "ks-w" }, ...words.split(" ").map((word) => el("li", { text: word }))));
+    // Same as the Social profile: the words do not outlast two minutes.
+    setTimeout(() => out.replaceChildren(), 120_000);
   }
 
   form.addEventListener("submit", async (e) => {
@@ -232,11 +237,8 @@ function transfer(me, holdings, onSent) {
   });
 
   function label() {
-    const h = held();
     const addr = to.value.trim();
-    go.textContent = amount.value && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)
-      ? `Send ${amount.value} ${h.symbol} to ${short(addr)}`
-      : "Send";
+    go.textContent = amount.value && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) ? "Review" : "Send";
   }
 
   const form = el(
@@ -252,33 +254,146 @@ function transfer(me, holdings, onSent) {
   );
   for (const input of [pick, to, amount]) input.addEventListener("input", label);
 
-  form.addEventListener("submit", async (e) => {
+  /**
+   * The second screen. Enter in the form lands here, never on a send: the
+   * whole address is spelled out, since a lookalike that matches only its
+   * first and last few characters is exactly how a poisoned address works.
+   */
+  const review = el("div", { class: "ks-f", hidden: true });
+  /** @type {{to: string, mint: string, amount: string, text: string, symbol: string} | null} */
+  let pending = null;
+
+  function back() {
+    review.hidden = true;
+    review.replaceChildren();
+    form.hidden = false;
+    pending = null;
+    err.textContent = "";
+    to.focus();
+  }
+
+  function showReview() {
+    const p = /** @type {NonNullable<typeof pending>} */ (pending);
+    const confirm = el("button", { type: "button", class: "wl-cta", text: `Send ${p.text} ${p.symbol}` });
+    confirm.addEventListener("click", () => submit(confirm, {}));
+    review.replaceChildren(
+      el("p", { class: "ks-n", text: `Send ${p.text} ${p.symbol} to this address:` }),
+      el("p", { class: "ks-a", text: p.to }),
+      el("p", { class: "ks-n ks-warn", text: "Check every character. A sent transfer cannot be undone." }),
+      el("div", { class: "ks-row" }, confirm, el("button", { type: "button", class: "ks-side", text: "Back", onclick: back })),
+    );
+    form.hidden = true;
+    review.hidden = false;
+    confirm.focus();
+  }
+
+  /** Over the day's allowance: the server wants the password or the passkey again. */
+  function stepUp(withPasskey) {
+    const pass = el("input", {
+      type: "password",
+      id: "ks-sp",
+      autocomplete: "current-password",
+      required: true,
+      minlength: "8",
+      maxlength: "128",
+    });
+    const ok = el("button", { type: "submit", class: "wl-cta", text: "Confirm and send" });
+    const check = el(
+      "form",
+      { class: "ks-f" },
+      el("label", { for: "ks-sp", text: "Password" }),
+      pass,
+      ok,
+    );
+    check.addEventListener("submit", (e) => {
+      e.preventDefault();
+      submit(ok, { password: pass.value });
+    });
+    const key =
+      withPasskey && window.PublicKeyCredential
+        ? el("button", {
+            type: "button",
+            class: "wl-b",
+            text: "Confirm with passkey",
+            onclick: async () => {
+              err.textContent = "";
+              try {
+                needPasskey();
+                const opt = await send("/api/social/send/passkey/options");
+                const cred = await navigator.credentials.get({
+                  publicKey: {
+                    challenge: u8(opt.challenge),
+                    rpId: location.hostname,
+                    allowCredentials: [{ type: "public-key", id: u8(opt.id) }],
+                    userVerification: "required",
+                    timeout: 60_000,
+                  },
+                });
+                if (!cred) throw new Error("Passkey was cancelled.");
+                const response = /** @type {AuthenticatorAssertionResponse} */ (cred.response);
+                await submit(key, {
+                  challenge: opt.challenge,
+                  clientData: b64u(response.clientDataJSON),
+                  authenticatorData: b64u(response.authenticatorData),
+                  signature: b64u(response.signature),
+                });
+              } catch (cause) {
+                err.textContent = why(cause);
+              }
+            },
+          })
+        : null;
+    review.append(el("p", { class: "ks-n", text: "This is more than a session can send on its own today." }), key, check);
+    (key || pass).focus();
+  }
+
+  /** @param {HTMLButtonElement} button @param {Record<string, string>} proof */
+  async function submit(button, proof) {
+    if (!pending) return;
+    err.textContent = "";
+    button.disabled = true;
+    const was = button.textContent;
+    button.textContent = "Sending…";
+    try {
+      const { signature } = await send("/api/social/send", {
+        to: pending.to,
+        mint: pending.mint,
+        amount: pending.amount,
+        ...proof,
+      });
+      review.hidden = true;
+      done.replaceChildren(
+        `Sent ${pending.text} ${pending.symbol}. `,
+        el("a", { href: `https://solscan.io/tx/${signature}`, target: "_blank", rel: "noopener", text: "Check the transaction" }),
+      );
+      pending = null;
+      onSent();
+    } catch (cause) {
+      if (cause.stepUp && !Object.keys(proof).length) {
+        button.hidden = true;
+        stepUp(cause.passkey);
+      } else err.textContent = cause.message;
+    } finally {
+      button.disabled = false;
+      button.textContent = was;
+    }
+  }
+
+  form.addEventListener("submit", (e) => {
     e.preventDefault();
     err.textContent = "";
     done.replaceChildren();
     const h = held();
+    const addr = to.value.trim();
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return void (err.textContent = "That isn't a Solana address.");
     const units = toUnits(amount.value, h.decimals);
     if (units == null || units <= 0n) return void (err.textContent = "Enter an amount.");
     if (units > BigInt(h.amount)) return void (err.textContent = `You hold ${toDecimal(BigInt(h.amount), h.decimals)} ${h.symbol}.`);
-    go.disabled = true;
-    go.textContent = "Sending…";
-    try {
-      const { signature } = await send("/api/social/send", { to: to.value.trim(), mint: h.mint, amount: units.toString() });
-      form.hidden = true;
-      done.replaceChildren(
-        `Sent ${amount.value} ${h.symbol}. `,
-        el("a", { href: `https://solscan.io/tx/${signature}`, target: "_blank", rel: "noopener", text: "Check the transaction" }),
-      );
-      onSent();
-    } catch (cause) {
-      err.textContent = cause.message;
-    } finally {
-      go.disabled = false;
-      label();
-    }
+    pending = { to: addr, mint: h.mint, amount: units.toString(), text: toDecimal(units, h.decimals), symbol: h.symbol };
+    showReview();
   });
 
-  modal("Send", holdings.length ? form : el("p", { class: "ks-n", text: "This wallet holds nothing to send yet." }), err, done);
+  modal("Send", holdings.length ? form : el("p", { class: "ks-n", text: "This wallet holds nothing to send yet." }), review, err, done);
 }
 
 window.__keys = { open: phrase, receive, send: transfer };

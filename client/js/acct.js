@@ -1,28 +1,55 @@
 /**
- * The account control in the top right: Wallet, then the signed-in Social
- * name linking to that profile, or Get Social. Connecting a wallet is no
- * longer a header action; the trade dialog asks for one when it needs to sign.
+ * The account control in the top right. Signed in: Wallet, then the Social
+ * name linking to that profile. Signed out: Log in, which opens the one login
+ * dialog, then Get Social. Connecting a wallet is not a header action; the
+ * trade dialog asks for one when it needs to sign.
  */
 import { el } from "./dom.js";
+import { load } from "./lazy.js";
 import { onName, readName } from "./me.js";
 
 /** Where the Wallet button goes, and what the wallet page is. */
 export const WALLET_PAGE = "/wallet";
 
+/** The one label for logging in, on every button that opens the login dialog. */
+export const LOGIN = "Log in";
+
+/**
+ * Open the login dialog from a page that fetches it lazily (data-lg).
+ *
+ * @param {() => void} [onDone]
+ */
+export async function openLogin(onDone) {
+  try {
+    (await load("lg", "__login")).open("login", onDone);
+  } catch {
+    // The bundle would not load; Social has the same dialog built in.
+    location.href = "/social";
+  }
+}
+
 /**
  * @param {HTMLElement} node the page's #ac slot
- * @param {{self?: boolean}} [opts] `self` on the wallet page, so the button says it is the current page.
+ * @param {{self?: boolean, onLogin?: () => void}} [opts] `self` on the wallet page, so the button
+ *   says it is the current page; `onLogin` runs once the dialog has signed someone in.
  */
 export function mountAccount(node, opts = {}) {
   function paint() {
     const name = readName();
     node.replaceChildren(
-      el("a", {
-        class: "ac-w",
-        href: WALLET_PAGE,
-        text: "Wallet",
-        ...(opts.self ? { "aria-current": "page" } : {}),
-      }),
+      name
+        ? el("a", {
+            class: "ac-w",
+            href: WALLET_PAGE,
+            text: "Wallet",
+            ...(opts.self ? { "aria-current": "page" } : {}),
+          })
+        : el("button", {
+            class: "ac-w ac-in",
+            type: "button",
+            text: LOGIN,
+            onclick: () => openLogin(opts.onLogin),
+          }),
       name
         ? el("a", { class: "ac-me", href: `/social/u/${name}`, text: name, title: "My Profile" })
         : el(

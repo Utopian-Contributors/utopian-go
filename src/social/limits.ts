@@ -15,7 +15,10 @@ export const TINY_BYTES = 2 * 1024;
 
 export const POST_EVERY_MS = 10 * 60 * 1000;
 
+/** A comment. */
 export const MAX_TEXT = 160;
+/** The words on a post. */
+export const MAX_POST = 256;
 /** A post takes this many comments, and the post page shows all of them. */
 export const MAX_COMMENTS = 100;
 export const MAX_BIO = 160;
@@ -31,6 +34,17 @@ export const PHOTO_EDGE = 1600;
 /** Phone copy. Same byte ceiling as a profile photo, at about half the edge. */
 export const PHOTO_SMALL_BYTES = SOCIAL_BYTES;
 export const PHOTO_SMALL_EDGE = 640;
+
+/**
+ * Messenger. The server sees ciphertext only, so these bound bytes, not
+ * characters: a message is AES-GCM over at most MAX_CHAT UTF-8 characters,
+ * and a photo is a 12-byte IV, the sealed JPEG, and a 16-byte tag.
+ */
+export const MAX_CHAT = 500;
+export const CHAT_CT_BYTES = MAX_CHAT * 4 + 16;
+export const CHAT_PHOTO_BYTES = PHOTO_BYTES + 28;
+export const MAX_CHAT_KEEP = 1000;
+export const CHAT_PAGE = 30;
 
 /** Usernames are permanent, so the alphabet is closed at creation. */
 export const NAME = /^[a-z0-9_]{3,16}$/;
@@ -82,7 +96,7 @@ export function postText(input: unknown): { ok: true; text: string } | { ok: fal
     .replace(/[\u0000-\u001f\u007f]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (text.length > MAX_TEXT) return { ok: false, error: `Keep it to ${MAX_TEXT} characters.` };
+  if (text.length > MAX_POST) return { ok: false, error: `Keep it to ${MAX_POST} characters.` };
   return { ok: true, text };
 }
 

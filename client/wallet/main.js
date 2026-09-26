@@ -7,7 +7,7 @@
  * any public address, so neither needs a wallet prompt to paint.
  */
 import { $, el } from "../js/dom.js";
-import { mountAccount } from "../js/acct.js";
+import { LOGIN, mountAccount, openLogin } from "../js/acct.js";
 import { load } from "../js/lazy.js";
 import { account as whoami } from "../js/me.js";
 import { dollars, fiat, percent, tokenPrice } from "../js/num.js";
@@ -29,7 +29,8 @@ const filter = /** @type {HTMLInputElement} */ ($("wl-q"));
 const side = $("wl-s");
 
 const actions = $("wl-acts");
-const account = whoami();
+/** Re-asked once the login dialog signs someone in. */
+let account = whoami();
 
 async function owner() {
   return (await account)?.address || readSession()?.address || "";
@@ -155,9 +156,38 @@ function choose(mint, scroll) {
     r.classList.toggle("on", /** @type {HTMLElement} */ (r).dataset.mint === mint);
   }
   void select(mint);
-  // Stacked on a phone, the panel is below the lists.
-  if (scroll && !matchMedia("(min-width: 960px)").matches) side.scrollIntoView({ behavior: "smooth" });
+  if (!scroll || matchMedia("(min-width: 960px)").matches) return;
+  // On a phone the panel replaces the lists (wallet.css); stacked a little
+  // wider, it sits below them.
+  if (phone.matches) {
+    if (!document.body.classList.contains("deep")) history.pushState({ wlDeep: true }, "");
+    document.body.classList.add("deep");
+    window.scrollTo(0, 0);
+  } else {
+    document.body.classList.add("deep");
+    side.scrollIntoView({ behavior: "smooth" });
+  }
 }
+
+/** Where wallet.css shows the lists and the panel one at a time; header.css's Back breakpoint. */
+const phone = matchMedia("(max-width: 900px)");
+
+/** Back to the lists, onto the row that was open. */
+function shallow() {
+  document.body.classList.remove("deep");
+  const on = document.querySelector(".wl-r.on");
+  (on || $("wl")).scrollIntoView({ block: "center" });
+}
+
+// The phone's own back gesture leaves the panel the same way the header's Back does.
+window.addEventListener("popstate", () => {
+  if (document.body.classList.contains("deep")) shallow();
+});
+
+$("bk").addEventListener("click", () => {
+  if (history.state?.wlDeep) history.back();
+  else shallow();
+});
 
 /** The first thing listed is shown until someone picks something. */
 function chooseFirst(mint) {
@@ -238,9 +268,11 @@ filter.addEventListener("input", () => {
 });
 
 /** Receive, send and swap: the signed-in account's own wallet only. */
+let wired = false;
 async function paintActions() {
   const me = await account;
-  if (!me) return;
+  if (!me || wired) return;
+  wired = true;
   const dialogs = () => load("ks", "__keys");
   for (const button of actions.querySelectorAll("button")) {
     button.addEventListener("click", async () => {
@@ -321,8 +353,17 @@ function offer() {
   shown = null;
   paintTotal({ total: NaN });
   total.textContent = "—";
-  setNote("Sign in to see your wallet.");
-  extra.append(el("a", { class: "wl-cta", href: "/social", text: "Sign in" }));
+  setNote("Log in to see your wallet.");
+  extra.append(el("button", { class: "ac-go", type: "button", text: LOGIN, onclick: () => openLogin(signedIn) }));
+}
+
+/** The dialog has signed someone in: ask the server who, and paint their wallet. */
+function signedIn() {
+  window.__ugme = null;
+  account = whoami();
+  refresh();
+  paintKeys();
+  paintActions();
 }
 
 /** POSTed so the address stays out of request logs. Throws on anything that is not an answer. */
@@ -401,7 +442,7 @@ async function settle() {
   setNote("Trade sent, but your balance has not changed yet. It can take a moment — reload to check again.");
 }
 
-mountAccount($("ac"), { self: true });
+mountAccount($("ac"), { self: true, onLogin: signedIn });
 onSession(refresh);
 refresh();
 paintTop();

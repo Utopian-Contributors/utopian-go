@@ -3,8 +3,8 @@ import { randomBytes } from "crypto";
 import { readFileSync } from "fs";
 import path from "path";
 import { Pool, type PoolClient, types } from "pg";
-import { MAX_COMMENTS, SocialError, postWait } from "./limits";
-import { removePostPhotos, writePostPhotos } from "./store";
+import { CHAT_PAGE, MAX_CHAT_KEEP, MAX_COMMENTS, SocialError, postWait } from "./limits";
+import { removeChatPhotos, removePostPhotos, writeChatPhotos, writePostPhotos } from "./store";
 
 // int8 comes back as a string. Post times fit in a JS number.
 types.setTypeParser(20, (value) => Number(value));
@@ -127,6 +127,41 @@ ALTER TABLE users DROP COLUMN IF EXISTS prf_ct;
 -- /pay and recovery find an account by address, passkey login by credential.
 CREATE UNIQUE INDEX IF NOT EXISTS users_address ON users (address);
 CREATE UNIQUE INDEX IF NOT EXISTS users_passkey ON users (passkey_id);
+-- Messenger. Every column the server holds is public key, ciphertext, or who and when.
+-- A key's private half is sealed under the passkey (PRF) that cred names.
+CREATE TABLE IF NOT EXISTS chat_keys (
+  name text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+  v integer NOT NULL,
+  pub text NOT NULL,
+  cred text NOT NULL,
+  iv text NOT NULL,
+  ct text NOT NULL,
+  at bigint NOT NULL,
+  PRIMARY KEY (name, v)
+);
+CREATE TABLE IF NOT EXISTS messages (
+  id text PRIMARY KEY,
+  pair text NOT NULL,
+  from_name text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+  to_name text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+  at bigint NOT NULL,
+  kf integer NOT NULL,
+  kt integer NOT NULL,
+  iv text NOT NULL,
+  ct text NOT NULL,
+  photos integer NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS messages_pair ON messages (pair, at DESC, id DESC);
+-- One row per person per conversation: the sidebar, newest first.
+CREATE TABLE IF NOT EXISTS chats (
+  owner text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+  peer text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+  at bigint NOT NULL,
+  last text NOT NULL,
+  unread integer NOT NULL DEFAULT 0,
+  PRIMARY KEY (owner, peer)
+);
+CREATE INDEX IF NOT EXISTS chats_owner_at ON chats (owner, at DESC, peer DESC);
 `;
 
 let ready: Promise<void> | null = null;
@@ -328,12 +363,14 @@ export async function insertUser(user: User): Promise<boolean> {
   return res.rowCount === 1;
 }
 
-export async function countUnseen(name: string): Promise<number> {
-  const row = await one<{ n: number }>(
-    "SELECT count(*)::int AS n FROM notes WHERE to_name = $1 AND seen = false",
+/** Unseen notes, and messages not yet opened. One round trip for both badges. */
+export async function countUnseen(name: string): Promise<{ unseen: number; unread: number }> {
+  const row = await one<{ unseen: number; unread: number }>(
+    `SELECT (SELECT count(*) FROM notes WHERE to_name = $1 AND seen = false)::int AS unseen,
+            (SELECT COALESCE(sum(unread), 0) FROM chats WHERE owner = $1)::int AS unread`,
     [name],
   );
-  return row?.n ?? 0;
+  return { unseen: row?.unseen ?? 0, unread: row?.unread ?? 0 };
 }
 
 type CardRow = {
@@ -755,6 +792,11 @@ export async function bumpPasskeyCount(name: string, count: number): Promise<voi
   if (!res.rowCount) throw new SocialError(401, "Passkey was not accepted.");
 }
 
+/** Every cookie signed for this account so far stops working. */
+export async function endSessions(name: string): Promise<void> {
+  await db().query("UPDATE users SET epoch = epoch + 1 WHERE name = $1", [name]);
+}
+
 export async function bumpAvatar(name: string): Promise<number> {
   const row = await one<{ avatar_rev: number }>(
     "UPDATE users SET avatar_rev = avatar_rev + 1 WHERE name = $1 RETURNING avatar_rev",
@@ -762,4 +804,277 @@ export async function bumpAvatar(name: string): Promise<number> {
   );
   if (!row) throw new SocialError(401, "Log in first.");
   return row.avatar_rev;
+}
+
+export interface ChatKey {
+  v: number;
+  pub: string;
+  cred: string;
+  iv: string;
+  ct: string;
+}
+
+export interface Message {
+  id: string;
+  from: string;
+  at: number;
+  /** Key versions of sender and recipient: which pair of keys this was sealed between. */
+  kf: number;
+  kt: number;
+  iv: string;
+  ct: string;
+  photos: number;
+}
+
+export interface Chat {
+  with: string;
+  avatarRev: number;
+  at: number;
+  unread: number;
+  pub: string | null;
+  last: Message;
+}
+
+type MessageRow = {
+  id: string;
+  from_name: string;
+  at: number;
+  kf: number;
+  kt: number;
+  iv: string;
+  ct: string;
+  photos: number;
+};
+
+const MESSAGE_COLS = "m.id, m.from_name, m.at, m.kf, m.kt, m.iv, m.ct, m.photos";
+
+function messageFrom(row: MessageRow): Message {
+  return {
+    id: row.id,
+    from: row.from_name,
+    at: Number(row.at),
+    kf: row.kf,
+    kt: row.kt,
+    iv: row.iv,
+    ct: row.ct,
+    photos: row.photos,
+  };
+}
+
+function pairOf(a: string, b: string): string {
+  return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+/** The newest key, sealed box included. Only its owner is shown the box. */
+export async function chatKey(name: string): Promise<ChatKey | null> {
+  return one<ChatKey>(
+    "SELECT v, pub, cred, iv, ct FROM chat_keys WHERE name = $1 ORDER BY v DESC LIMIT 1",
+    [name],
+  );
+}
+
+/** Every public key a person has had. Older messages were sealed to older ones. */
+export async function chatKeys(name: string): Promise<{ v: number; pub: string }[]> {
+  return many<{ v: number; pub: string }>("SELECT v, pub FROM chat_keys WHERE name = $1 ORDER BY v", [name]);
+}
+
+export async function addChatKey(
+  name: string,
+  key: { pub: string; cred: string; iv: string; ct: string },
+  at: number,
+): Promise<number> {
+  return tx(async (client) => {
+    // The user row is the lock, so two devices turning Messenger on get two versions, not one.
+    const user = await one<{ name: string }>("SELECT name FROM users WHERE name = $1 FOR UPDATE", [name], client);
+    if (!user) throw new SocialError(401, "Log in first.");
+    const row = await one<{ v: number }>(
+      "SELECT COALESCE(max(v), 0) + 1 AS v FROM chat_keys WHERE name = $1",
+      [name],
+      client,
+    );
+    const v = row?.v ?? 1;
+    await client.query(
+      "INSERT INTO chat_keys (name, v, pub, cred, iv, ct, at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+      [name, v, key.pub, key.cred, key.iv, key.ct, at],
+    );
+    return v;
+  });
+}
+
+/**
+ * One message, and both sidebars.
+ *
+ * The versions have to be the newest on both sides: a message sealed to a
+ * key its recipient has since replaced could never be opened, so it is
+ * refused and the sender fetches the new key. Past MAX_CHAT_KEEP in one
+ * conversation the oldest go, with their photos.
+ */
+export async function sendMessage(
+  from: string,
+  to: string,
+  sealed: { kf: number; kt: number; iv: string; ct: string },
+  photos: Buffer[],
+  at: number,
+): Promise<Message | { stale: true }> {
+  const id = newId();
+  writeChatPhotos(id, photos);
+  let result: { message: Message; dropped: { id: string; photos: number }[] } | { stale: true };
+  try {
+    result = await tx(async (client) => {
+      const keys = await client.query<{ name: string; v: number }>(
+        "SELECT name, max(v) AS v FROM chat_keys WHERE name = ANY($1) GROUP BY name",
+        [[from, to]],
+      );
+      const current = new Map(keys.rows.map((row) => [row.name, row.v]));
+      if (current.get(from) !== sealed.kf || current.get(to) !== sealed.kt) return { stale: true as const };
+      const pair = pairOf(from, to);
+      await client.query(
+        `INSERT INTO messages (id, pair, from_name, to_name, at, kf, kt, iv, ct, photos)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [id, pair, from, to, at, sealed.kf, sealed.kt, sealed.iv, sealed.ct, photos.length],
+      );
+      await client.query(
+        `INSERT INTO chats (owner, peer, at, last, unread) VALUES ($1,$2,$3,$4,0), ($2,$1,$3,$4,1)
+         ON CONFLICT (owner, peer) DO UPDATE SET at = EXCLUDED.at, last = EXCLUDED.last,
+           unread = chats.unread + EXCLUDED.unread`,
+        [from, to, at, id],
+      );
+      const dropped = await client.query<{ id: string; photos: number }>(
+        `DELETE FROM messages WHERE pair = $1 AND (at, id) < (
+           SELECT at, id FROM messages WHERE pair = $1 ORDER BY at DESC, id DESC OFFSET $2 LIMIT 1
+         ) RETURNING id, photos`,
+        [pair, MAX_CHAT_KEEP - 1],
+      );
+      return {
+        message: { id, from, at, kf: sealed.kf, kt: sealed.kt, iv: sealed.iv, ct: sealed.ct, photos: photos.length },
+        dropped: dropped.rows,
+      };
+    });
+  } catch (err) {
+    removeChatPhotos(id, photos.length);
+    throw err;
+  }
+  if ("stale" in result) {
+    removeChatPhotos(id, photos.length);
+    return result;
+  }
+  for (const gone of result.dropped) removeChatPhotos(gone.id, gone.photos);
+  return result.message;
+}
+
+/**
+ * `chats.at` is always its last message's time, so `m.at` stands for both.
+ * `pub` is the other person's key that message was sealed with, which is
+ * all the sidebar needs to show a preview.
+ */
+const CHAT_ROW = `
+  SELECT c.peer, c.unread, u.avatar_rev, k.pub, ${MESSAGE_COLS}
+  FROM chats c
+  JOIN users u ON u.name = c.peer
+  JOIN messages m ON m.id = c.last
+  LEFT JOIN chat_keys k ON k.name = c.peer AND k.v = CASE WHEN m.from_name = c.peer THEN m.kf ELSE m.kt END
+`;
+
+type ChatRow = MessageRow & { peer: string; unread: number; avatar_rev: number; pub: string | null };
+
+function chatFrom(row: ChatRow): Chat {
+  return {
+    with: row.peer,
+    avatarRev: row.avatar_rev,
+    at: Number(row.at),
+    unread: row.unread,
+    pub: row.pub,
+    last: messageFrom(row),
+  };
+}
+
+/**
+ * The sidebar. `before` pages back through it. `after` is the poll: every
+ * conversation that moved at or after that time, which the client merges.
+ */
+export async function chatList(
+  owner: string,
+  opts: { before?: { at: number; peer: string } | null; after?: number | null },
+): Promise<{ chats: Chat[]; next: { at: number; peer: string } | null }> {
+  if (opts.after != null) {
+    const rows = await many<ChatRow>(
+      `${CHAT_ROW} WHERE c.owner = $1 AND c.at >= $2 ORDER BY c.at DESC, c.peer DESC LIMIT 50`,
+      [owner, opts.after],
+    );
+    return { chats: rows.map(chatFrom), next: null };
+  }
+  const params: unknown[] = [owner];
+  let where = "WHERE c.owner = $1";
+  if (opts.before) {
+    params.push(opts.before.at, opts.before.peer);
+    where += " AND (c.at, c.peer) < ($2::bigint, $3::text)";
+  }
+  params.push(CHAT_PAGE + 1);
+  const rows = await many<ChatRow>(
+    `${CHAT_ROW} ${where} ORDER BY c.at DESC, c.peer DESC LIMIT $${params.length}`,
+    params,
+  );
+  const more = rows.length > CHAT_PAGE;
+  const page = more ? rows.slice(0, CHAT_PAGE) : rows;
+  const last = page[page.length - 1];
+  return {
+    chats: page.map(chatFrom),
+    next: more && last ? { at: Number(last.at), peer: last.peer } : null,
+  };
+}
+
+/**
+ * One conversation, oldest first. With no cursor it is the newest page;
+ * `before` is the page above it; `after` is the poll. Reading the newest
+ * messages marks the conversation read.
+ */
+export async function thread(
+  owner: string,
+  peer: string,
+  opts: { before?: { at: number; id: string } | null; after?: { at: number; id: string } | null },
+): Promise<{ messages: Message[]; next: { at: number; id: string } | null }> {
+  const pair = pairOf(owner, peer);
+  let rows: MessageRow[];
+  let more = false;
+  if (opts.after) {
+    rows = await many<MessageRow>(
+      `SELECT ${MESSAGE_COLS} FROM messages m
+       WHERE m.pair = $1 AND (m.at, m.id) > ($2::bigint, $3::text)
+       ORDER BY m.at, m.id LIMIT 200`,
+      [pair, opts.after.at, opts.after.id],
+    );
+  } else {
+    const params: unknown[] = [pair];
+    let where = "WHERE m.pair = $1";
+    if (opts.before) {
+      params.push(opts.before.at, opts.before.id);
+      where += " AND (m.at, m.id) < ($2::bigint, $3::text)";
+    }
+    params.push(CHAT_PAGE + 1);
+    rows = await many<MessageRow>(
+      `SELECT ${MESSAGE_COLS} FROM messages m ${where}
+       ORDER BY m.at DESC, m.id DESC LIMIT $${params.length}`,
+      params,
+    );
+    more = rows.length > CHAT_PAGE;
+    if (more) rows = rows.slice(0, CHAT_PAGE);
+    rows.reverse();
+  }
+  if (!opts.before) {
+    await db().query("UPDATE chats SET unread = 0 WHERE owner = $1 AND peer = $2 AND unread > 0", [owner, peer]);
+  }
+  const first = rows[0];
+  return {
+    messages: rows.map(messageFrom),
+    next: more && first ? { at: Number(first.at), id: first.id } : null,
+  };
+}
+
+/** How many photos a message has, when `viewer` is one of its two people. */
+export async function chatPhotoCount(id: string, viewer: string): Promise<number> {
+  const row = await one<{ photos: number }>(
+    "SELECT photos FROM messages WHERE id = $1 AND (from_name = $2 OR to_name = $2)",
+    [id, viewer],
+  );
+  return row?.photos ?? 0;
 }

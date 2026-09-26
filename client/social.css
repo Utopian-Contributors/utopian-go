@@ -32,7 +32,8 @@ body.res #ac {
   gap: 10px;
 }
 
-#badge {
+#badge,
+#mbadge {
   margin-left: 4px;
   padding: 0 5px;
   border-radius: 99px;
@@ -51,6 +52,7 @@ body.res #ac {
 .find input,
 dialog input,
 dialog textarea {
+  box-sizing: border-box;
   width: 100%;
   margin-top: 4px;
   padding: 8px 10px;
@@ -82,11 +84,10 @@ dialog textarea { resize: none; }
 .cmt button[type="submit"],
 .tools button[type="submit"],
 .sec > button:not(.ghost),
-.pn .in,
 .qr,
+.dm,
+.go-pill,
 #out,
-#pk,
-#ag,
 #py {
   border: 0;
   border-radius: 999px;
@@ -101,10 +102,10 @@ dialog textarea { resize: none; }
 .cmt button[type="submit"]:hover,
 .tools button[type="submit"]:hover,
 .sec > button:not(.ghost):hover,
-.pn .in:hover,
 .qr:hover,
+.dm:hover,
+.go-pill:hover:not(:disabled),
 #out:hover,
-#ag:hover,
 #py:hover {
   filter: brightness(1.08);
 }
@@ -154,6 +155,16 @@ dialog textarea { resize: none; }
   color: inherit;
 }
 
+.compose-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0 0 52px;
+  font-size: 14px;
+}
+
+.compose-links a { overflow-wrap: anywhere; }
+
 .composer textarea::placeholder { color: var(--f); }
 .composer textarea:focus { outline: none; }
 
@@ -176,8 +187,17 @@ dialog textarea { resize: none; }
 .tool:hover { color: var(--go); }
 .tool:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
 
-.composer .post-go {
+.composer .count {
   margin-left: auto;
+  padding-right: 8px;
+  color: var(--f);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.composer .count.low { color: var(--dn); }
+
+.composer .post-go {
   padding: 9px 18px;
   font: 700 15px/1 var(--ff);
 }
@@ -265,7 +285,7 @@ dialog textarea { resize: none; }
 }
 
 .composer .wait {
-  color: var(--dn);
+  color: var(--ff);
   font-size: 13px;
 }
 
@@ -281,20 +301,6 @@ dialog textarea { resize: none; }
   font-size: 12px;
   line-height: 1.4;
   color: var(--f);
-}
-
-.or {
-  margin: 16px 0 0;
-  text-align: center;
-  font-size: 13px;
-  color: var(--f);
-}
-
-.dlg-foot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 8px;
 }
 
 .sec h3 {
@@ -333,14 +339,7 @@ dialog textarea { resize: none; }
   border: 0;
 }
 
-#ag,
-#pk {
-  display: block;
-  width: 100%;
-  margin-top: 12px;
-}
-
-/* Profile actions hug their label. The sign-in dialog keeps full-width buttons. */
+/* Profile actions hug their label. */
 .tools button[type="submit"],
 .sec > button:not(.ghost) {
   display: inline-block;
@@ -357,15 +356,7 @@ dialog textarea { resize: none; }
 
 .via { color: var(--f); font-weight: 400; }
 
-.pn .in {
-  display: inline-block;
-  margin-top: 12px;
-  padding: 7px 16px;
-}
-
-.ghost,
-#as,
-#ax {
+.ghost {
   background: none;
   color: var(--go);
   border: 0;
@@ -374,9 +365,7 @@ dialog textarea { resize: none; }
   cursor: pointer;
 }
 
-.ghost:hover,
-#as:hover,
-#ax:hover {
+.ghost:hover {
   color: var(--buy);
 }
 
@@ -417,6 +406,17 @@ button:disabled { opacity: 0.55; cursor: default; }
 .friend-main { min-width: 0; flex: 1; }
 .friend .ghost { margin-left: auto; }
 .friends { margin-top: 8px; }
+
+/* The letter over each group of friends, as in a contact book. */
+.abc-h {
+  margin: 12px 0 0;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--b);
+  color: var(--go);
+  font: 600 13px/1.3 var(--ff);
+}
+
+.abc:first-child .abc-h { margin-top: 0; }
 
 .find { position: relative; }
 
@@ -475,12 +475,23 @@ button:disabled { opacity: 0.55; cursor: default; }
 .hit:hover:not(:disabled) { background: var(--ch); }
 .post + .post { border-top: 1px solid var(--b); }
 
-.acts { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+/* The spacing between actions is their own padding. */
+.acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 8px 0 0 -12px; }
 
+/*
+ * Every post action is a pill bigger than its label, so it is easy to hit.
+ * min-width, not width, so an error that borrows a label still fits.
+ */
 .act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 12px;
   border: 0;
+  border-radius: 999px;
   text-decoration: none;
-  padding: 0;
   background: none;
   color: var(--go);
   font: 600 13px/1 var(--ff);
@@ -488,9 +499,23 @@ button:disabled { opacity: 0.55; cursor: default; }
 }
 
 .act:disabled { color: var(--f); cursor: default; }
-.act:hover:not(:disabled) { color: var(--buy); text-decoration: none; }
+.act:hover:not(:disabled) { background: var(--ch); color: var(--buy); text-decoration: none; }
 .act.saved,
 .act.saved:hover { color: var(--f); }
+
+/* The + and − glyphs sit low in their line; the bottom pad lifts them to center. */
+.act.plus {
+  padding: 0 8px 4px;
+  font-size: 18px;
+}
+
+@media (max-width: 900px) {
+  .act {
+    min-width: 36px;
+    height: 36px;
+  }
+}
+
 .post .who { font-weight: 600; }
 .post time,
 .notes time { color: var(--f); font-size: 13px; margin-left: 6px; }
@@ -629,7 +654,6 @@ dialog {
 dialog::backdrop { background: rgb(0 0 0 / 40%); }
 dialog h2 { margin: 0; font-size: 18px; }
 dialog label { display: block; margin-top: 14px; font-size: 13px; color: var(--m); }
-dialog #ag { margin-top: 16px; }
 
 /* Timeline, saved, and friends: a narrow column. A profile uses the full right side. */
 #m {
@@ -717,42 +741,417 @@ body.soc #ft {
     height: auto;
   }
 
+  /* No top pad on phones: the header's own bottom pad is gap enough. */
+  body.soc #mn { padding-top: 0; }
+
   body.soc #sd {
     order: -1;
     flex: none;
     display: block;
     max-height: 38vh;
+    margin-top: 0;
     margin-bottom: 20px;
   }
 
-  body.soc .pn { max-height: 38vh; }
+  body.soc .pn { max-height: 38vh; padding-top: 0; }
 
   body.soc #ft { order: 1; }
+
+  /*
+   * A profile on phones: the card is centered above the posts and the two
+   * scroll together, so the card never gets a scroll box of its own.
+   */
+  body.profile #mn {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  body.profile #sd { max-height: none; }
+
+  body.profile #m {
+    flex: none;
+    overflow: visible;
+  }
+
+  body.profile .pn {
+    max-height: none;
+    overflow: visible;
+    padding: 16px 16px 0;
+    border: 0;
+    text-align: center;
+  }
+
+  body.profile img.pfp { margin-inline: auto; }
+  body.profile .name { justify-content: center; }
 }
 
 /*
- * Profile: the card is the left column, posts the right one.
+ * Profile, and every page while logged out: the card is the left column, the
+ * posts the right one — the side Messenger keeps its list on.
  *
  * The document order stays card-second, which is what the other pages want.
  * Placement, not a second document, is what swaps them here. This sits after
  * the body.soc placement above so it wins at the same specificity.
  */
 @media (min-width: 901px) {
-  body.profile #mn {
+  body.profile #mn,
+  body.out #mn {
     grid-template-columns: minmax(340px, var(--side)) minmax(0, 1fr);
   }
 
-  body.profile #sd { grid-column: 1; }
+  body.profile #sd,
+  body.out #sd { grid-column: 1; }
 
-  body.profile #m {
+  body.profile #m,
+  body.out #m {
     grid-column: 2;
     margin: 0;
   }
 
   /* The rule sits between the card and the posts, so it moves to the right edge. */
-  body.profile .pn {
+  body.profile .pn,
+  body.out .pn {
     border-left: 0;
     border-right: 1px solid var(--b);
     padding: 20px 20px 0 4px;
   }
 }
+
+/* A profile's Message, beside Pay via QR code. */
+.dm,
+.go-pill {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 7px 16px;
+  text-decoration: none;
+}
+
+.dm { margin-left: 8px; }
+
+.dm:hover,
+.go-pill:hover {
+  color: var(--buy-ink);
+  text-decoration: none;
+}
+
+/*
+ * Messenger: chats on the left, the conversation on the right, and its
+ * composer on the bottom edge of the page. Only the message list scrolls.
+ */
+body.chat #ft { display: none; }
+body.chat #mn { grid-template-rows: minmax(0, 1fr); }
+
+body.chat #m {
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 0 20px;
+  overflow: hidden;
+}
+
+/* The friends page's search box, at its width: #m's 60ch less its 16px sides. */
+body.chat .find {
+  max-width: calc(60ch - 32px);
+  margin-inline: auto;
+}
+
+.chats {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 12px;
+}
+
+.chats .empty { padding: 8px; font-size: 13px; }
+.list-err { margin: 4px 0 0; min-height: 0; }
+
+a.crow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 8px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.crow:hover,
+a.crow.on {
+  background: var(--ch);
+  color: inherit;
+  text-decoration: none;
+}
+
+.crow-main { min-width: 0; flex: 1; }
+.crow-top { display: flex; align-items: baseline; gap: 8px; }
+.crow-top b { font-weight: 600; }
+.crow-top time { margin-left: auto; flex: none; color: var(--f); font-size: 12px; }
+
+.crow .prev,
+.crow .fresh {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.crow .prev { color: var(--f); }
+.crow .fresh { color: var(--go); font-weight: 700; }
+
+.chat-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--b);
+}
+
+.chat-head .who { font-weight: 600; }
+.chat-head .muted { margin-left: auto; font-size: 12px; }
+.chat-back { display: none; }
+.pad { padding: 12px 0; }
+
+.msgs {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 12px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.msg {
+  align-self: flex-start;
+  max-width: min(75%, 52ch);
+}
+
+.msg.mine { align-self: flex-end; }
+
+.msg p {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 16px;
+  background: var(--ch);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg.mine p { background: var(--buy); color: var(--buy-ink); }
+.msg.mine p a { color: inherit; text-decoration: underline; }
+
+.msg p.closed {
+  background: none;
+  border: 1px dashed var(--b);
+  color: var(--f);
+  font-style: italic;
+}
+
+.msg time {
+  display: block;
+  margin: 2px 8px 8px;
+  color: var(--f);
+  font-size: 11px;
+}
+
+.msg.mine time { text-align: right; }
+
+.pics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.msg.mine .pics { justify-content: flex-end; }
+
+/* A fixed height, so a photo opening late cannot move the conversation. */
+.pics img {
+  display: block;
+  height: 180px;
+  width: auto;
+  min-width: 120px;
+  max-width: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+  background: var(--ch);
+}
+
+.pics img.gone { min-width: 0; height: auto; padding: 8px; color: var(--f); font-size: 12px; }
+
+.chat-compose {
+  flex: none;
+  margin: 0;
+  padding: 8px 0 12px;
+  border-top: 1px solid var(--b);
+  border-bottom: 0;
+}
+
+.chat-compose .compose-bar { align-items: flex-end; margin-top: 0; }
+.chat-compose .shots { margin: 0 0 8px; }
+
+.chat-compose textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-height: 160px;
+  padding: 8px 12px;
+  border-radius: 18px;
+  background: var(--ch);
+  font-size: 16px;
+  line-height: 1.35;
+  overflow-y: auto;
+}
+
+.chat-compose .post-go { margin-left: 4px; }
+.chat-off { flex: none; padding: 12px 0; border-top: 1px solid var(--b); }
+
+.lock { max-width: 44ch; padding: 20px 0; }
+.lock h2 { margin: 0 0 8px; font-size: 18px; }
+.lock p { margin: 0 0 4px; }
+
+@media (min-width: 901px) {
+  body.chat #mn { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); }
+  body.chat #sd { grid-column: 1; }
+  body.chat #m { grid-column: 2; }
+
+  body.chat .pn {
+    border-left: 0;
+    border-right: 1px solid var(--b);
+    padding: 16px 16px 0 4px;
+  }
+}
+
+/* Phones: the list, or one conversation, never both. */
+@media (max-width: 900px) {
+  body.chat #sd {
+    flex: 1 1 auto;
+    max-height: none;
+    margin: 0;
+  }
+
+  body.chat .pn { max-height: none; height: 100%; padding: 0; border: 0; }
+  body.chat .find { width: calc(100% - 32px); }
+  body.chat #m { display: none; padding: 0; }
+  body.chat.open #sd { display: none; }
+  body.chat.open #m { display: flex; }
+  .msg { max-width: 85%; }
+}
+
+/*
+ * The section tabs. Across the top on wider screens, text only; on phones a
+ * bottom navigation with an icon over each label.
+ *
+ * The page is already a 100dvh column that does not scroll, so the bar is not
+ * fixed: .chrome drops its box and the tabs take the last row of that column,
+ * under #mn. #hd stays the account control's containing block.
+ */
+.tab .ni { display: none; }
+.tab .my { font-weight: inherit; }
+
+/* The Timeline/Saved switch is for phones; wider screens have Saved as a tab. */
+.feeds { display: none; }
+
+.feeds {
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--ln);
+}
+
+.feeds a {
+  flex: 1 1 0;
+  padding: 7px 0;
+  border-radius: 8px;
+  color: var(--f);
+  font: 500 14px/1.3 var(--ff);
+  text-align: center;
+  text-decoration: none;
+}
+
+.feeds a:hover { color: var(--f); text-decoration: none; }
+
+.feeds a.on,
+.feeds a.on:hover {
+  background: var(--bg);
+  color: var(--go);
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  body.soc .chrome { display: contents; }
+
+  /* No web search here; the logo goes back to it. The footer is search's too. */
+  body.soc #hd .sf,
+  body.soc #ft { display: none; }
+
+  /* The header's Back stands in for these. */
+  body.soc #m .back { display: none; }
+  body.soc .detail-bar { justify-content: flex-end; }
+
+  .feeds { display: flex; }
+  body.soc #tb .tab.tab-sv { display: none; }
+
+  body.soc #tb {
+    order: 1;
+    flex: none;
+    max-width: none;
+    margin: 0;
+    padding: 0 0 env(safe-area-inset-bottom);
+    gap: 0;
+    overflow: visible;
+    border-top: 1px solid var(--ln);
+    border-bottom: 0;
+    background: var(--bg);
+  }
+
+  body.soc #tb .tab {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 7px 2px 6px;
+    min-height: 56px;
+    border-bottom: 0;
+    font-size: 11px;
+    font-weight: 500;
+    text-align: center;
+  }
+
+  body.soc #tb .tab[hidden] { display: none; }
+
+  body.soc #tb .tab > span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body.soc .tab .ni {
+    display: block;
+    width: 24px;
+    height: 24px;
+  }
+
+  body.soc .tab .my { display: none; }
+
+  body.soc #tb .tab.up { color: var(--go); }
+
+  body.soc #badge,
+  body.soc #mbadge {
+    position: absolute;
+    top: 3px;
+    left: calc(50% + 6px);
+    margin: 0;
+  }
+}
+
+/* Edit profile: the settings alone, in the feed's column. */
+.ed-h { margin: 4px 0 0; font: 600 20px/1.3 var(--ff); }
