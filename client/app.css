@@ -1,7 +1,7 @@
 /* utopian-go shell — system UI, light/dark, no web fonts */
 :root {
   color-scheme: light dark;
-  --bg: #fff;
+  --bg: #fffff6;
   --t: #202124;
   --m: #4d5156;
   --f: #70757a;
@@ -60,7 +60,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #202124;
+    --bg: #282124;
     --t: #e8eaed;
     --m: #bdc1c6;
     --f: #9aa0a6;
@@ -138,7 +138,6 @@ a:hover {
   text-decoration: underline;
 }
 
-body.res #hd,
 body.res #tb,
 body.res #st,
 body.res #mn {
@@ -146,16 +145,6 @@ body.res #mn {
   max-width: var(--shell);
   margin-inline: auto;
   padding-inline: var(--pad);
-}
-
-/* Sticky search chrome (header + tabs) on results */
-body.res .chrome {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  background: var(--bg);
-  /* Full-bleed bg so results don’t show through while scrolling */
-  width: 100%;
 }
 
 /* Home: let #hd participate in body flex centering */
@@ -168,35 +157,43 @@ body.home {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   /*
-   * Two jobs, deliberately left as two numbers.
+   * Room kept under the first screen's centring region. Two jobs, deliberately
+   * left as two numbers.
    *
-   * The first is the footer's. It is fixed to the window here, so nothing in
-   * flow reserves room for it, and without this the centred field would sit
-   * under the bar on a short viewport.
+   * The first is the footer's: with no saved links it sits right under the
+   * header, and without this the centred field would sit on top of it on a
+   * short viewport.
    *
-   * The second is optical. justify-content centres the block in the content
-   * box, and a block on the exact middle of a window reads as sitting low —
-   * the eye puts the centre of a page a little above its geometric one, and
-   * the footer pinned along the bottom edge adds weight down there that drags
-   * the impression lower still. Padding the bottom lifts the centring region
-   * rather than nudging the block with a margin, so the field stays honestly
-   * centred in what is left of the window and simply lands where it reads as
-   * centred. Capped: past a point this stops being a correction and starts
-   * being a search field sitting high on a very tall monitor.
+   * The second is optical. A block on the exact middle of a window reads as
+   * sitting low — the eye puts the centre of a page a little above its
+   * geometric one, and the footer along the bottom edge adds weight down there
+   * that drags the impression lower still. Shortening the centring region
+   * rather than nudging the block with a margin keeps the field honestly
+   * centred in what is left of the window, where it reads as centred. Capped:
+   * past a point this stops being a correction and starts being a search field
+   * sitting high on a very tall monitor.
    */
-  padding: 24px 16px calc(76px + clamp(24px, 6vh, 64px));
-  min-height: 100vh;
+  --lift: calc(76px + clamp(24px, 6vh, 64px));
+  padding: 24px 16px 0;
+  min-height: 100svh;
 }
 
+/*
+ * The first screen. The header is as tall as the window less the lift and
+ * centres its own contents, so whatever follows it — saved links, then the
+ * footer — starts where the window ends instead of pulling the field off
+ * centre.
+ */
 body.home #hd {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 28px;
   width: 100%;
   max-width: 584px;
+  min-height: calc(100svh - 24px - var(--lift));
   padding: 0;
   margin: 0;
 }
@@ -278,50 +275,6 @@ body.home #st {
 }
 
 /*
- * The account control, out of flow on every page.
- *
- * That is the whole design. This stylesheet has two entirely different header
- * layouts — a centred column on the home page, a row on results, each stacking
- * differently on a phone — and adding a fifth item to either would have meant
- * re-deriving the spacer maths that lands the search field on the results
- * column's edge. Out of flow it reserves no space, so it changes no geometry on
- * any page at any width, and the layout shift it can contribute is exactly zero.
- *
- * Pinned to the window here, which is the home page's answer to where it goes:
- * the header there is a column centred in the middle of the viewport, so there
- * is no row for the control to sit on and it is simply a bar along the top.
- * Results have a row, and pin it to that instead — see body.res #ac.
- *
- * The wallet page needs none of this: one header, one row, control in it.
- */
-#ac {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  justify-content: flex-end;
-  width: 100%;
-  max-width: var(--shell);
-  /* left/right pinned and width capped, so auto margins centre it — the bar
-     tracks the shell's right edge rather than the viewport's, which on a wide
-     monitor is several hundred pixels further out than any content. */
-  margin-inline: auto;
-  padding: 13px var(--pad);
-  /*
-   * A full-width bar across the top of a page whose search field is also at
-   * the top of the page. Without this it would swallow every click aimed at
-   * the wordmark and the first ~50px of the field — an invisible one, since
-   * the bar has no background of its own.
-   */
-  pointer-events: none;
-}
-
-#ac > * {
-  pointer-events: auto;
-}
-
-/*
  * Home has no header row to centre the control in, so the top pad is the
  * distance the results page already gives it: 16px of header pad, then the
  * centering of a 16px mark inside the 44px field. (44 − 16) / 2 + 16 = 30.
@@ -329,37 +282,6 @@ body.home #st {
  */
 body.home #ac {
   padding-top: 30px;
-}
-
-/*
- * On results, positioned by the header rather than by the window.
- *
- * Fixed at `top: 0` it sat 18px above the line the wordmark and the search
- * field share, and no padding written here could have found that line: the row
- * is as tall as the field, the field is as tall as the buttons inside it, and
- * none of that is a number this rule has any business knowing. Absolute inside
- * #hd and spanning it pad to pad, the box simply is the row — so the
- * `align-items: center` it already had lands the control on the wordmark's
- * centre line, and keeps it there if the row's height ever changes.
- *
- * Still out of flow, so it still reserves nothing and still shifts nothing.
- *
- * `right` resolves against #hd's padding box, so var(--pad) puts the control's
- * edge on the header's content edge — the same line the spacer stops the search
- * field on, and the same place the fixed bar's capped width and auto margins
- * were reaching for.
- */
-body.res #ac {
-  position: absolute;
-  top: var(--hd-pt);
-  right: var(--pad);
-  bottom: var(--hd-pb);
-  left: auto;
-  /* Out of the full-width bar and back to hugging its contents. */
-  width: auto;
-  max-width: none;
-  margin-inline: 0;
-  padding: 0;
 }
 
 /* Home-only price strip. Hidden by default so it never becomes a flex item in
@@ -409,243 +331,6 @@ body.home #hm-tk i.up {
 
 body.home #hm-tk i.dn {
   color: var(--dn);
-}
-
-/* —— Results chrome —— */
-body.res #hd {
-  /* The wordmark's height and the header's own pads, named rather than written
-     where they are used, because the account control is positioned off all
-     three and they are the only numbers in this row it may rely on. */
-  --lg-h: 40px;
-  --hd-pt: 16px;
-  --hd-pb: 8px;
-  /* The containing block for #ac; see there. */
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding-block: var(--hd-pt) var(--hd-pb);
-}
-
-/* The wordmark sizes to itself and the field takes what is left, so the field
-   starts beside the wordmark rather than in the middle of the page. */
-body.res .lg {
-  flex: 0 0 auto;
-}
-
-/* What lands the field's right edge on the results column's right edge: the
-   spacer stands in for everything #mn puts to the right of that column — the
-   knowledge panel and the gutter before it — less the header's own gap, which
-   already sits between the field and the spacer. It does not shrink, so the
-   field is the one that gives when the row runs short, exactly as the results
-   column gives to the panel beside it. */
-body.res #hd::after {
-  content: "";
-  /* Shrinks, but only just: at 0.001 its share of any squeeze is under a
-     quarter-pixel across the whole range where the field is still giving, so
-     the field remains the item that gives and the edges stay in line. What the
-     factor buys is the end of that range — once the field is down on its
-     min-width and frozen, the spacer is the only item left to take the rest,
-     and the row narrows instead of overflowing the page. */
-  flex: 0 0.001 calc(var(--side) + var(--col-gap) - 20px);
-}
-
-body.res .lg-mark {
-  height: var(--lg-h);
-  width: auto;
-}
-
-body.res .sf {
-  /* Not the whole run left of the spacer — the wordmark already fills the left
-     of the row, and a field stretched across everything after it reads as a
-     banner rather than a field. It takes a set width and sits straight after
-     the wordmark, so the slack collects to its right.
-     It is also the only item on the row that gives, which is what ties it to
-     the results below: once the window is narrow enough that the slack is
-     gone, every pixel the row loses comes off the field, and its right edge
-     tracks the results column's edge down exactly.
-     It tracks it down to a floor and no further. Below roughly a 1050px
-     window the column is too narrow to be worth following: matching it would
-     leave a field with less room in it than the query it is holding, so the
-     field stops there and overhangs the column instead. 340px keeps ~225px of
-     text visible past the buttons — about thirty characters — which is the
-     same floor the knowledge-panel track holds itself to. */
-  flex: 0 1 560px;
-  min-width: 340px;
-}
-
-.lg {
-  display: inline-flex;
-  align-items: center;
-  text-decoration: none;
-  line-height: 0;
-}
-
-.lg-mark {
-  display: block;
-  height: 40px;
-  width: auto;
-  max-width: 100%;
-  object-fit: contain;
-}
-
-/*
- * The mark's ink after dark.
- *
- * #3CC316 is a fill attribute on the SVG's root, and build-client.mjs inlines
- * the wordmark into the document, so a rule here reaches it and beats the
- * attribute. Daylight is left to the attribute rather than restated: the file
- * stays the one place that green is written, which is where og-image.mjs
- * reads it from to keep the social card the same colour as the header.
- *
- * The night value is the luminescence out of the dark banner — the mushrooms
- * and the fireflies — rather than a dimmer leaf green, so the mark lifts off
- * #202124 instead of sinking into it. Kept in step with wallet.css, which
- * inlines the same mark into its own header.
- */
-@media (prefers-color-scheme: dark) {
-  .lg-mark {
-    fill: #75ffbe;
-  }
-}
-
-/* —— Search field —— */
-.sf {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 6px 0 16px;
-  border: 1px solid var(--b);
-  border-radius: 24px;
-  background: var(--bg);
-}
-
-.sf:focus-within {
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
-}
-
-.sf input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  font: 16px var(--ff);
-  color: var(--t);
-  padding: 10px 0;
-  /* Use our clear control instead of the native search cancel */
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.sf input::-webkit-search-decoration,
-.sf input::-webkit-search-cancel-button {
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.sf input::placeholder {
-  color: var(--f);
-}
-.sf-actions {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  margin: 4px 0 4px 0;
-  /* Space clear · divider · search evenly */
-  gap: 6px;
-}
-
-.sf-clear {
-  box-sizing: border-box;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: var(--ch);
-  color: var(--f);
-  font: inherit;
-  line-height: 0;
-  cursor: pointer;
-}
-
-/* Icon glyph — square metrics so × is truly centered */
-.sf-clear span {
-  display: grid;
-  place-items: center;
-  width: 1em;
-  height: 1em;
-  font-size: 20px;
-  font-weight: 500;
-  line-height: 1;
-  /* × sits slightly low on the baseline in most UI fonts */
-  transform: translateY(-0.09em);
-}
-
-.sf-clear:hover {
-  color: var(--t);
-  filter: brightness(0.96);
-}
-
-.sf-clear:focus-visible {
-  outline: 2px solid var(--a);
-  outline-offset: 2px;
-}
-
-.sf-clear[hidden] {
-  display: none !important;
-}
-
-.sf-sep {
-  width: 1px;
-  height: 18px;
-  margin: 0;
-  background: var(--b);
-  flex-shrink: 0;
-}
-
-.sf-sep[hidden] {
-  display: none !important;
-}
-
-.sf-go {
-  flex-shrink: 0;
-  min-width: 40px;
-  height: 36px;
-  margin: 0;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 18px;
-  background: var(--buy);
-  color: var(--buy-ink);
-  font: 600 18px/1 var(--ff);
-  cursor: pointer;
-  position: relative;
-}
-
-.sf-go .bl {
-  display: block;
-  line-height: 1;
-}
-
-.sf-go:hover {
-  filter: brightness(1.08);
-}
-
-.sf-go:focus-visible {
-  outline: 2px solid var(--buy);
-  outline-offset: 2px;
-}
-
-.sf-go:disabled {
-  opacity: 0.55;
-  cursor: default;
-  filter: none;
 }
 
 .sp {
@@ -817,8 +502,7 @@ body.ld .sp {
   /*
    * One bar on every shell. 14px above and below a 13px semibold line, and
    * 8px when the links wrap — 4px reads as one crammed row. Home restates
-   * the 14px only because it also sets the side padding. wallet.css repeats
-   * the box, because that page does not load this sheet.
+   * the 14px only because it also sets the side padding.
    */
   gap: 8px 16px;
   padding-block: 14px;
@@ -945,19 +629,12 @@ body.ld #ft {
 }
 
 /*
- * Home: a line along the bottom of the window.
- *
- * Fixed rather than in flow because body.home centres its children — in flow
- * it would be centred with the search field instead of sitting under it.
- * body.home's bottom padding is what keeps the two from meeting on a short
- * viewport.
+ * Home: a line along the bottom of the page, under the saved links when there
+ * are any and along the bottom of the window when there are not.
  */
 body.home #ft {
-  position: fixed;
-  inset: auto 0 0;
   margin: 0;
-  padding: 14px var(--pad);
-  background: var(--bg);
+  padding: 14px 0;
   /* On the page's own axis, with the wordmark and the field above it, rather
      than split against the two edges of the window. */
   justify-content: center;
@@ -976,6 +653,44 @@ body.home #ft .ft-lang {
   margin-left: 0;
 }
 
+/* Places: opens hive.js. Absolute, so appearing after boot moves nothing. */
+body.home #hm-tk {
+  position: relative;
+}
+
+.hvb {
+  position: absolute;
+  top: calc(100% + 20px);
+  left: 50%;
+  width: 36px;
+  height: 36px;
+  margin-left: -18px;
+  border: 0;
+  border-radius: 8px;
+  padding: 5px;
+  background: none;
+  color: var(--m);
+  cursor: pointer;
+}
+
+.hvb::before {
+  content: "";
+  display: block;
+  height: 100%;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.1' stroke-linejoin='round'%3E%3Cpath d='M8 1.5l5.6 3.25v6.5L8 14.5l-5.6-3.25v-6.5z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.1' stroke-linejoin='round'%3E%3Cpath d='M8 1.5l5.6 3.25v6.5L8 14.5l-5.6-3.25v-6.5z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.hvb:hover {
+  color: var(--t);
+}
+
+.hvb:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: 2px;
+}
+
 /*
  * Home has no second column, so #mn is not a grid there — it stays in the flow
  * as a plain block carrying nothing but the footer. Hiding #mn outright, as
@@ -983,6 +698,8 @@ body.home #ft .ft-lang {
  */
 body.home #mn {
   display: block;
+  width: 100%;
+  margin-top: auto;
   padding-block: 0;
 }
 
@@ -997,6 +714,86 @@ body.home #sc {
   margin-top: 0;
 }
 
+/*
+ * Saved links: under the first screen, so the home page is unchanged until
+ * someone scrolls. The lift is the room the header leaves under itself, so
+ * the top margin puts the list where the window ends.
+ */
+#bm {
+  width: 100%;
+  max-width: 70ch;
+  margin-top: var(--lift, 0px);
+  padding: 24px 0 48px;
+}
+
+body:not(.home) #bm {
+  display: none;
+}
+
+/*
+ * Comment and Save on a result, Remove on a saved one. Drawn over the card's
+ * top right corner on hover only, so the list reads as it always has. The
+ * background covers whatever cite line runs under them.
+ */
+.ra {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+  border-radius: 8px;
+  background: var(--bg);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.r:hover .ra,
+.ra:focus-within {
+  opacity: 1;
+}
+
+.ra-b {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--m);
+  cursor: pointer;
+}
+
+.ra-b:hover {
+  background: rgba(127, 127, 127, 0.16);
+  color: var(--t);
+}
+
+.ra-b svg {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ra-b.on {
+  color: var(--a);
+}
+
+.ra-b.on svg {
+  fill: currentcolor;
+}
+
+/* Desktop only: a phone has no hover to reveal them. */
+@media (hover: none), (max-width: 900px) {
+  .ra,
+  #bm {
+    display: none;
+  }
+}
+
 /* —— Result cards —— */
 .rs {
   display: flex;
@@ -1006,6 +803,7 @@ body.home #sc {
 }
 
 .r {
+  position: relative;
   min-width: 0;
   animation: enter 0.24s both;
   animation-delay: calc(var(--i, 0) * 1ms);
@@ -1938,8 +1736,12 @@ body.lb-on {
   }
 
   body.home {
-    justify-content: flex-start;
     padding-top: 18vh;
+  }
+
+  body.home #hd {
+    justify-content: flex-start;
+    min-height: 0;
   }
 
   /* Results stacks here: the control is centred on the 36px mark under 12px. */
@@ -1949,56 +1751,6 @@ body.lb-on {
 
   body.home .lg-mark {
     height: 56px;
-  }
-
-  body.res #hd {
-    --lg-h: 36px;
-    --hd-pt: 12px;
-    --hd-pb: 10px;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-    padding-block: var(--hd-pt) var(--hd-pb);
-  }
-
-  /* Stacked layout: no centring spacer, and the wordmark sizes to its content
-     rather than flexing to fill a row. */
-  body.res #hd::after {
-    display: none;
-  }
-
-  /*
-   * Cross axis, not main: the stacked header is a column, so `flex` above sizes
-   * the wordmark's height and it is `align-self` that stops the anchor being
-   * stretched to the full width of the phone. It looked identical either way —
-   * the mark is left-aligned inside it — but the stretched box carried a
-   * "go home" hit area right across the row, including the corner the account
-   * control sits in.
-   */
-  body.res .lg {
-    flex: 0 0 auto;
-    align-self: flex-start;
-  }
-
-  /*
-   * Stacked, the header's box is the wordmark, the field, and the gap between
-   * them, and centring in all of that would float the control in the gap. The
-   * wordmark's row is the one it shares a line with, so it takes that row's
-   * height and centres in it instead.
-   */
-  body.res #ac {
-    bottom: auto;
-    height: var(--lg-h);
-  }
-
-  body.res .sf {
-    /* Reset the desktop basis: in a column container it would size the
-       field's height, not its width. The floor goes with it — the field is
-       the width of the stack here, and on a narrow phone that is under it. */
-    flex: 0 0 auto;
-    min-width: 0;
-    max-width: none;
-    width: 100%;
   }
 
   #mn {

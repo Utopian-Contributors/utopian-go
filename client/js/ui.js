@@ -32,9 +32,11 @@ const CSS = `
 .swx-h{display:flex;align-items:center;justify-content:space-between;
  margin-bottom:14px}
 .swx-t{font-size:15px;font-weight:600;color:var(--t)}
-.swx-x{border:0;background:none;color:var(--f);font-size:20px;line-height:1;
- cursor:pointer;padding:2px 6px;border-radius:6px}
-.swx-x:hover{background:var(--hover);color:var(--t)}
+.swx-x{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;
+ border-radius:50%;background:rgba(127,127,127,.16);color:var(--t);font-size:20px;line-height:1;cursor:pointer}
+.swx-x:hover{background:rgba(127,127,127,.28)}
+.swx-x svg{display:block}
+.swx-h .swx-x{margin:-4px -4px -4px 0}
 .swx-lbl{display:flex;justify-content:space-between;align-items:center;
  font-size:12px;color:var(--f);margin-bottom:6px}
 
@@ -51,9 +53,13 @@ const CSS = `
 .swx-w button:hover:not(:disabled){border-color:var(--a)}
 .swx-w button:disabled{opacity:.6;cursor:progress}
 .swx-w img{width:22px;height:22px;border-radius:6px}
-@media (max-width:520px){.swx{align-items:flex-end;padding:0}
+@media (max-width:620px){.swx{align-items:flex-end;padding:0}
  .swx-d{max-width:none;border-radius:16px 16px 0 0;border-bottom:0}}
 `;
+
+/** The close button's X. Static markup, so it goes in as HTML: el() builds in the HTML namespace. */
+export const X_ICON =
+  '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 
 /**
  * Add a stylesheet once per page.
@@ -98,9 +104,10 @@ export function dialog(title, onClose) {
     class: "swx-x",
     type: "button",
     "aria-label": "Close",
-    text: "×",
     onclick: close,
   });
+  // Drawn, not the × character, which sits below the middle of its line box.
+  closeBtn.innerHTML = X_ICON;
 
   const heading = el("div", { class: "swx-t", text: title });
 
