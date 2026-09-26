@@ -46,7 +46,7 @@ graph LR
         S[index.html + app.js<br/>Search]
         W[wallet.html + wallet.js<br/>Wallet]
         P[social.html + social.js<br/>Timeline, profiles, chat]
-        L[lazy bundles<br/>swap.js · connect.js · qr.js]
+        L[lazy bundles<br/>swap.js · connect.js · qr.js · login.js · hive.js]
     end
     subgraph Server["Express (src/server.ts)"]
         API[/api/*]
@@ -71,18 +71,24 @@ Anything that is only needed after a click is a lazy bundle.
 
 | Surface | Path | Document | Bundle | Lazy |
 |---|---|---|---|---|
-| Search | `/`, `/?q=` | `index.html` | `app.js` | `swap.js`, `connect.js`, `qr.js` |
-| Wallet | `/wallet` | `wallet.html` | `wallet.js` | `connect.js`, `swap.js`, `qr.js`, `keys.js` |
-| Social | `/social/*` | `social.html` | `social.js` | `qr.js` |
+| Search | `/`, `/?q=` | `index.html` | `app.js` | `swap.js`, `connect.js`, `qr.js`, `login.js`, `hive.js` |
+| Wallet | `/wallet` | `wallet.html` | `wallet.js` | `connect.js`, `swap.js`, `qr.js`, `keys.js`, `login.js` |
+| Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js` |
 
-Every page's header ends with a **Wallet** button (a small pill with a wallet mark and the
-word) and then the signed-in username, which opens My Profile, or **Get Social** when
-nobody is signed in. Social remembers the name in `localStorage` (`ug.me`), so search
-paints it without a request. There is no wallet Login in the header: an account comes with
-a wallet, and the trade dialog connects a browser wallet only for visitors without one.
+Every page wears the same header as search: the wordmark, the search field, and the
+account control. Signed in, the control is a **Wallet** button (a small pill with a wallet
+mark and the word) and then the username, which opens My Profile. Signed out, the Wallet
+pill is a **Log in** pill (a person mark) that opens the login dialog in place, followed by
+**Get Social** (on Social itself, Go Search). Social remembers the name in `localStorage`
+(`ug.me`), so search paints it without a request. Log in is always the Social account; the
+trade dialog connects a browser wallet only for visitors without one.
 
-Chat is part of Social: one more tab and one more route in the same document and bundle,
-served by the same API and stored in the same database.
+There is one login dialog (`client/js/login.js`): log in, create an account, or recover
+one. Social bundles it; search and the wallet page fetch it as `login.js` on the first
+click. Every Log in button, in a header or on a page, opens it and never navigates away.
+
+Messenger is part of Social: one more tab and one more route in the same document, with
+its own lazy bundle (`chat.js`), served by the same API and stored in the same database.
 
 ### API / Interface
 
@@ -100,9 +106,10 @@ GET /social                   timeline
 GET /social/saved             saved posts
 GET /social/friends           friends, and search for people
 GET /social/u/<name>          profile: card left, posts right (stacked on phones)
+GET /social/edit              edit profile: photo, bio, location, passkey, recovery phrase
 GET /social/p/<id>            one post with its comments
-GET /social/c                 chat threads                      (new)
-GET /social/c/<handle>        one conversation                  (new)
+GET /social/c                 Messenger: chats left, "pick a chat" right
+GET /social/c/<handle>        Messenger with that conversation open
 GET /social/a/<name>          profile photo, full
 GET /social/t/<name>          profile photo, timeline copy
 GET /social/i/<id>/<n>[?m=1]  post photo n; m=1 is the phone copy
@@ -141,7 +148,7 @@ Every write requires a matching `Origin`. Errors have the form `{error: string}`
 
 ```typescript
 type Me = { name: string; address: string; bio: string; loc: string;
-            avatarRev: number; passkey: boolean; wait: number; unseen: number };
+            avatarRev: number; passkey: boolean; wait: number; unseen: number; unread: number };
 type Card = { id: string; by: string; text: string; at: number; views: number;
               comments: number; saved: boolean; reposted: boolean; repost: string | null;
               repostBy: string | null; originalRev: number; avatarRev: number; photos: number };
@@ -151,7 +158,7 @@ POST /api/social/login         {username, password}          → {name} | {passk
 POST /api/social/login/passkey {username?, id?, challenge, clientData, authenticatorData, signature} → {name}
 POST /api/social/passkey/login {}                            → {challenge}
 POST /api/social/recover       {phrase, password}            → {name}
-POST /api/social/logout        {}                            → {ok}
+POST /api/social/logout        {}                            → {ok}   ends every session of the account
 GET  /api/social/me                                          → {me: Me | null}
 
 GET  /api/social/timeline?before&id → {me, posts: Card[], notes, next: {at, id} | null}
@@ -176,35 +183,74 @@ POST /api/social/phrase  {password}      → {phrase}
 POST /api/social/phrase/passkey/options {} → {challenge, id}
 POST /api/social/phrase/passkey {challenge, clientData, authenticatorData, signature}
                                          → {phrase} | 409 {setup: true}
-POST /api/social/swap {inputMint, outputMint, amount, slippageBps ≤ 300} → {signature, outAmount}
-POST /api/social/send {to, mint, amount}                                 → {signature}
+POST /api/social/swap {inputMint, outputMint, amount, slippageBps ≤ 300, quotedOut}
+                      → {signature, outAmount} | 409 {requote: true}
+POST /api/social/send {to, mint, amount, password? | challenge, clientData, authenticatorData, signature}
+                      → {signature} | 403 {stepUp: true, passkey}
+POST /api/social/send/passkey/options {} → {challenge, id}
 POST /api/social/passkey/options {password} → {challenge, uid}
 POST /api/social/passkey {id, challenge, clientData, attestation} → {ok}
 POST /api/social/pay     {to, from, sol} → {transaction}   (unsigned; the payer's wallet signs)
 ```
 
-#### Chat (new)
+#### Messenger
 
-Chat uses the same session, `Origin` check, error shapes and write limiter as the rest of
-Social. It adds `unread: number` to `Me`, so the Chat tab shows a count on every page
+Messenger uses the same session, `Origin` check, error shapes and limiters as the rest of
+Social. `Me` gains `unread: number`, so the Messenger tab shows a count on every page
 without a request of its own.
 
-```typescript
-type Thread = { with: string; avatarRev: number; last: string; at: number; unread: number };
-type Message = { id: string; from: string; text: string; at: number };
+Messages are end-to-end encrypted. The server stores public keys, ciphertext, and who
+wrote to whom and when; it never holds a key that opens a message.
 
-GET  /api/social/c                     → {me, threads: Thread[]}          newest first
-GET  /api/social/c/<name>?after=<at>   → {me, messages: Message[]}        oldest first; marks them seen
-POST /api/social/c/<name> {text}       → {message: Message}
+```typescript
+type ChatKey = { v: number; pub: string; cred: string; iv: string; ct: string };
+type Message = { id: string; from: string; at: number; kf: number; kt: number;
+                 iv: string; ct: string; photos: number };
+type Chat = { with: string; avatarRev: number; at: number; unread: number;
+              pub: string | null; last: Message };
+
+GET  /api/social/ck                         → {cred: string | null, key: ChatKey | null}
+POST /api/social/ck/options {}              → {challenge, id}
+POST /api/social/ck {pub, iv, ct, challenge, clientData, authenticatorData, signature} → {v}
+GET  /api/social/c[?before=<at>&peer=<name> | ?after=<at>]
+                                            → {me, chats: Chat[], next: {at, peer} | null}
+GET  /api/social/c/<name>[?before=<at>&id= | ?after=<at>&id=]
+                                            → {me, peer?: {name, avatarRev, keys: {v, pub}[]},
+                                               messages: Message[], next: {at, id} | null}
+POST /api/social/c/<name>  application/octet-stream → {message: Message} | 409 {stale: true}
+GET  /api/social/cp/<id>/<n>                → sealed photo bytes, to the two people only
 ```
 
-- A message is one line of text, up to 160 characters, checked by the same `shortText` as a
-  comment. It has no photos, link previews, reactions or edits.
-- Anyone signed in can message anyone. Being friends is not required, so a person can be
-  reached from any connection, not only the ones they already have.
-- Delivery is polling, not a socket. An open conversation asks for `?after=<last at>` every
-  5 s while `document.visibilityState` is `visible`, and stops when the page is hidden.
-  Every other page learns about new messages from `me.unread`.
+- **Keys.** Turning Messenger on makes an ECDH P-256 key in the browser. Its private half
+  (PKCS#8) is sealed with AES-GCM under HKDF(PRF output of the account's passkey), and
+  `pub`, `iv`, `ct` and the passkey's credential id (`cred`) are stored as the next version
+  in `chat_keys`. Publishing needs a passkey assertion the server verifies, so a stolen
+  session alone cannot swap in its own key. Old versions stay, so the other person can
+  still open what was sealed to them.
+- **Opening on a device.** The passkey's PRF output opens the box, and the key is kept in
+  IndexedDB (`ug-chat`) as a non-extractable `CryptoKey`: one passkey prompt per device,
+  none per visit. Logging out deletes the store.
+- **Sealing.** A conversation key is HKDF(ECDH(mine, theirs)), with both names and key
+  versions as `info`. Text is AES-GCM with `from>to` as additional data; each photo is its
+  own IV and AES-GCM over the JPEG, with `from>to <message iv> <n>` as additional data. The
+  POST body is a u16 header length, the header JSON `{kf, kt, iv, ct}`, a photo count,
+  then each sealed photo as a u32 length and its bytes.
+- **Stale keys.** `kf` and `kt` must be both people's newest versions. Otherwise the POST
+  is `409 {stale: true}`, and the client fetches the keys again and reseals.
+- A message is up to 500 characters and any number of lines, with up to four photos (the
+  post composer's photo button and strip). Enter sends; Shift+Enter is a new line.
+- Anyone signed in can message anyone who has turned Messenger on. Being friends is not
+  required. Someone without a key is shown as not reachable yet.
+- **The sidebar** is a filter input ("Message @handle") above the chats, newest first. The
+  input narrows the loaded chats and suggests matching people to start a chat with. The
+  list pages 30 at a time as it scrolls. A chat with unread messages shows **"N new
+  messages"** in bold green instead of its preview.
+- **The conversation** pages 30 messages at a time upward as it scrolls, keeping its
+  place. The composer sits on the bottom edge of the page. On a phone the list and the
+  conversation are separate screens.
+- Delivery is polling, not a socket. While the page is visible, `?after=` on the chat list
+  runs every 5 s. A moved conversation that is open pulls its new messages, which also
+  marks them read.
 - Every profile other than your own shows a **Message** button that opens
   `/social/c/<name>`.
 
@@ -221,7 +267,9 @@ comments id PK, post, by_name, text, at
 notes    id PK, to_name, from_name, post, at, seen, kind            (newest 100 per person)
 saves    post, by_name, at                                          (PK post, by_name)
 friends  owner, friend                                              (PK owner, friend)
-messages id PK, from_name, to_name, text, at, seen                  (new; newest 200 per pair)
+chat_keys name, v, pub, cred, iv, ct, at                          (PK name, v)
+messages id PK, pair, from_name, to_name, at, kf, kt, iv, ct, photos   (newest 1,000 per pair)
+chats    owner, peer, at, last → messages.id, unread               (PK owner, peer)
 ```
 
 Pictures are files, not rows:
@@ -231,6 +279,7 @@ data/social/avatars/<name>.jpg     profile, ≤ 14 KB, width ≤ height, no crop
 data/social/avatars/<name>.t.jpg   timeline copy, ≤ 2 KB, ≤ 80 px wide
 data/social/posts/<id>-<n>.jpg     ≤ 48 KB, ≤ 1600 px edge
 data/social/posts/<id>-<n>.m.jpg   phone copy, ≤ 14 KB, ≤ 640 px edge
+data/social/chat/<id>-<n>.bin      sealed message photo: IV + AES-GCM(JPEG ≤ 48 KB)
 .cache/icons/<mint>.webp           token logo, 64 × 64, about 1 KB; a cache, rebuilt by the sync
 ```
 
@@ -246,14 +295,15 @@ The limits live in `src/social/limits.ts`:
 
 | What | Limit |
 |---|---|
-| Post, comment, bio | 160 characters, one line |
+| Post | 256 characters, one line |
+| Comment, bio | 160 characters, one line |
 | Location | 40 characters |
 | Photos per post | 4 |
 | Comments per post | 100 |
 | Friends | 200 |
 | Time between posts | 10 minutes |
-| Chat message | 160 characters, one line |
-| Messages kept per conversation | 200, oldest dropped |
+| Message | 500 characters, 4 photos |
+| Messages kept per conversation | 1,000, oldest dropped with their photos |
 
 **Profile picture shape.** The picture is drawn at its own aspect ratio, anywhere from
 square to portrait. The browser scales it before upload, and nothing crops it. It is shown
@@ -289,15 +339,42 @@ entry; until then swap, send and passkey reveal answer `409 {setup: true}`.
 
 **Swapping and sending.** The server signs only what it built or fetched itself:
 
-1. Swap: the browser quotes for display, then posts the pair, amount and slippage. The
-   server asks Jupiter for its own quote and transaction for the account's address, checks
-   that the transaction has exactly one signer and that the signer is the account, signs,
-   and submits through Helius. The output always lands in the account's own token account.
+1. Swap: the browser quotes for display, then posts the pair, amount, slippage and the
+   output it showed (`quotedOut`). The server asks Jupiter for its own quote; one below
+   `quotedOut` less the slippage is refused (`409 {requote: true}`), and the slippage it
+   builds with is narrowed so Jupiter's on-chain minimum stays at or above that floor.
+   Before signing, the transaction must have one signer, the account, as fee payer, and
+   every instruction must be Jupiter's program or one of the few forms around it: compute
+   budget (priority fee capped), funding and syncing the account's own wrapped SOL,
+   opening the account's own token accounts, and closing them back to the account. A
+   simulation then has to show at most `amount` leaving, at least the floor arriving in
+   the account's own token account, and no more SOL spent than fees and rent. Only then
+   is it signed and submitted through Helius.
 2. Send: the server compiles the transfer itself. SOL is a system transfer. A token first
    opens the recipient's associated token account (idempotent, paid by the sender), then
-   `TransferChecked`, so a brand-new wallet can receive anything.
+   `TransferChecked`, so a brand-new wallet can receive anything. A session alone may send
+   up to $25 a day, valued from the token index; beyond that, or for a token the index
+   cannot price, the request needs the password or a passkey assertion and otherwise gets
+   `403 {stepUp: true}`. The dialog always shows a review step with the full address.
 3. A rent failure ("Every Solana account must keep about 0.001 SOL") is explained, not
    reported as a generic error.
+
+**Places.** Every link someone follows off search to another host (click or middle
+click) is kept in `localStorage` (`tr`), and nowhere else: one entry per host with the
+favicon, newest first, each holding its pages (URL, link text) newest first. At most 120
+hosts and 60 pages a host.
+
+1. Web, news, video and discussion results carry `meta_url.favicon`, Brave's 32 px proxy
+   URL, passed through only when it is on `imgs.search.brave.com`. Results never draw it.
+2. With a trail, home shows a hexagon button centred under the price strip. It is
+   absolutely placed, so appearing after boot moves nothing. It loads `hive.js`, which
+   injects its own sheet.
+3. `hive.js` fills the page under the search header, which switches to its results row
+   and stays usable; a search or the wordmark closes Places. Each host is its 32 px
+   favicon in a grey circle, newest in the middle and the rest in hexagonal rings. The canvas is a native scroll box sized to
+   the honeycomb, so panning (touch, trackpad, or mouse drag) stops at its edges.
+4. A host zooms into its pages, which ring it the same way; the host again folds them
+   back. Edit removes a host or a page, and Clear all forgets the trail.
 
 **The wallet page's dialogs** live in `keys.js`: Recovery phrase (password or passkey),
 Receive (address as a QR code, plus Copy), and Send (token, recipient with Paste, amount
@@ -310,14 +387,18 @@ with Max).
 3. On a computer, the user enters an amount. `POST /pay` returns an unsigned transfer, and
    the browser's wallet signs and sends it. The server never holds the payer's key.
 
-**Chatting.**
+**Messaging.**
 
-1. On a profile, **Message** opens `/social/c/<name>`. The page loads the last 200 messages
-   of that conversation in one request.
-2. Sending posts one line. The message is appended to the list as soon as the server
+1. With no passkey on the account, Messenger asks for the password and adds one in place,
+   the same enrolment the profile runs. Then **Turn on Messenger**: one more passkey
+   prompt (browsers want a fresh tap for it) makes the key, seals it, and proves it to the
+   server.
+2. On another device, or after the store was cleared, **Unlock messages** asks the passkey
+   once and opens the stored box. A passkey that was replaced cannot open the old box, so
+   the page offers **Start a new key**; messages sealed to the old key stay closed there.
+3. Typing a handle into the filter and pressing Enter, a suggestion, or a profile's
+   **Message** button opens a conversation. Sending appends the message once the server
    returns it; there is no optimistic copy to reconcile.
-3. While the conversation is visible, it polls for newer messages every 5 s. Opening a
-   conversation marks its messages seen and lowers `me.unread`.
 
 ## Constraints
 
@@ -357,6 +438,28 @@ with Max).
 
 - Branding is limited to the wordmark, one green (`--go #39a11c`, `--buy #167c3c`),
   pill-shaped primary buttons, and the search field.
+
+**One design language across the super app**
+
+Search, the wallet page, Social and Messenger are one app, so the same action looks, reads
+and behaves the same wherever it appears. Before adding a button, reuse the one that
+already exists for that action.
+
+- **One header.** Every page has search's header: wordmark, search field, account control.
+  Its rules live once, in `header.css` and `acct.css`, which the build appends to every
+  page's sheet; a page's sheet adds to them and never copies them. That is also what lets
+  the wallet page have the header without inlining the rest of `app.css`.
+- **One component per action.** Log in is `.ac-in` in a header and `.ac-go` on a page, and
+  both open the one login dialog. A dialog shared by several pages is one module (see
+  `login.js`, `ui.js`), not a copy per page.
+- **One label per action.** The words live in one constant (`LOGIN` in `acct.js`) and are
+  not respelled: "Log in", not "Sign in" or "Login".
+- **One set of shapes.** Header controls are small outlined pills. The primary action on a
+  page or in a dialog is a filled `--buy` pill. Secondary actions are text buttons.
+- **No reserved space for what is not there.** An empty error or status line takes no
+  room; it appears when it has something to say.
+- **Same layout for the same state.** A side panel that stands alone (Messenger's chat
+  list, a profile card, the signed-out Log in panel) is the left column.
 - Targets: ES2020; Chrome 90, Firefox 90, Safari 14.1.
 
 **Code**
@@ -379,9 +482,22 @@ with Max).
   alongside `/api/search`. Matches show as cards above the results; nothing waits on them.
 - Passwords are hashed with scrypt at N=2^15, off the event loop. Hashes from an older cost
   are resealed at login.
-- Sessions are HMAC cookies that carry the account's `epoch`. Recovery bumps the epoch.
-- There are separate rate limits for login, recovery, secrets, payments, writes, and
-  search. On top of those, a 15-minute lock follows 10 wrong passwords on one account.
+- Sessions are HMAC cookies that carry the account's `epoch`. Recovery and logout bump
+  the epoch, so logging out ends the session on every device. The signing key is
+  `SOCIAL_SECRET` when set, otherwise derived from `WALLET_KEY`: stable across boots and
+  disks, and never a constant in the source.
+- Every `/api/social` route has a per-address rate limit. Anything that checks a password
+  (login, phrase, adding a passkey, confirming a send) shares one limit of 3 a minute;
+  registering and recovery each allow 3 a minute. Per account, 3 wrong passwords a minute
+  or 10 in 15 minutes hold further guesses back.
+- Every server call to `lite-api.jup.ag` (hourly index, detail panel, swaps) spends from
+  one budget in `lib/jupiterGate.ts`, under Jupiter's keyless per-IP limit, with a reserve
+  only trades may use. A 429 pauses all of them for its `Retry-After`. The detail panel
+  asks Jupiter only when it is opened on data older than a minute, and falls back to the
+  last answer.
+- Token logos are fetched only from public addresses (the resolver the socket uses
+  refuses private ones), only as PNG, JPEG, GIF, WebP or AVIF, and resized with a
+  5-second limit. libuv's pool is 16 threads so hashing and resizing don't hold up files.
 
 **User input**
 
@@ -444,7 +560,20 @@ ever executed or parsed as markup in the browser.
   - *Alternatives rejected:* A component library, which costs more than the entire page
     budget.
 
-- **Decision:** Chat as a `messages` table next to `posts`, delivered by polling
+- **Decision:** Messages end-to-end encrypted, keys sealed under the passkey's PRF
+  - *Why:* Conversations are private in a way posts are not, and a database copy or a
+    curious operator should read nothing. The passkey already exists for sign-in, so it
+    is the key-holder with no new secret to manage, and asking it once per device keeps
+    Messenger as effortless as the rest of the app.
+  - *Alternatives rejected:* Server-held keys like the wallet's, which would not be end to
+    end. A password-derived key, which the server sees at every login. Per-message
+    ephemeral keys (forward secrecy), which need prekeys and a ratchet before the first
+    message.
+  - *Cost:* Messenger needs a passkey whose authenticator supports PRF. Losing every copy
+    of the passkey, or recovering the account with the phrase, loses this side of the
+    history.
+
+- **Decision:** Chat as `messages` and `chats` tables next to `posts`, delivered by polling
   - *Why:* It reuses the session, limits, guard and database that Social already has, and
     adds one table, three routes and no dependency. Polling a visible conversation every
     5 s costs one small request and survives every proxy, VPN and in-app browser.
@@ -485,9 +614,11 @@ ever executed or parsed as markup in the browser.
 
 ## Open Questions
 
+- [ ] **Key verification.** The server hands out public keys, so it could hand out its own.
+      Should a conversation show a safety number both people can compare?
 - [ ] **Unwanted messages.** Anyone can message anyone. Is the rate limit enough, or does a
       person need a way to mute a sender, or to see messages from non-friends separately?
-- [ ] **How long messages are kept.** The spec keeps the newest 200 per conversation. Should
+- [ ] **How long messages are kept.** The spec keeps the newest 1,000 per conversation. Should
       messages also expire by age, so the server holds as little as possible?
 - [ ] **Shapes beyond the photo's own outline.** Today a picture's shape is its aspect ratio.
       Should a person also be able to draw an outline, stored as a short `clip-path` polygon on
@@ -503,19 +634,16 @@ ever executed or parsed as markup in the browser.
 - [ ] **Volume or organic volume.** The most-traded list sorts by raw 24h volume from
       Jupiter. Wash trading inflates it for some tokens. Should it sort by
       `buyOrganicVolume + sellOrganicVolume` instead?
-- [ ] **Session theft.** A stolen session can swap and send. Should sends above an amount,
-      or to a new address, ask for the password or passkey again?
-- [ ] **Jupiter's keyless budget.** Server-side swaps spend from the same per-IP budget
-      as the hourly index. Is it time for an `api.jup.ag` key?
+- [ ] **Jupiter's keyless budget.** Server-side calls share one budget of 50 a minute, with a
+      reserve for trades. If trading grows past that, is it time for an `api.jup.ag` key?
 - [ ] **A leftover `data/social/db.json`** from an earlier store holds old hashes and sealed
       phrases. Should it be deleted?
 
 ## Out of Scope
 
-- Group chats, media in messages, voice, and video.
+- Group chats, voice, and video.
 - Notifications outside the page (push, email).
 - Moderation tooling beyond the rate limits and the per-account lock.
-- End-to-end encryption of messages. The server can read them, the same as posts.
 - Custom themes, dark-mode toggles, and user-chosen accent colours. The system decides.
 - Native apps. The web app is the app, including inside wallet in-app browsers.
 - Search index or crawler of our own. Results come from Brave.
