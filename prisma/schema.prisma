@@ -1,0 +1,115 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  moduleFormat    = "cjs"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  name         String    @id
+  uid          String    @unique
+  passSalt     String    @map("pass_salt")
+  passHash     String    @map("pass_hash")
+  phraseSalt   String    @map("phrase_salt")
+  phraseIv     String    @map("phrase_iv")
+  phraseTag    String    @map("phrase_tag")
+  phraseCt     String    @map("phrase_ct")
+  address      String    @unique(map: "users_address")
+  bio          String    @default("")
+  loc          String    @default("")
+  avatarRev    Int       @default(0) @map("avatar_rev")
+  lastPost     BigInt    @default(0) @map("last_post")
+  created      BigInt
+  passkeyId    String?   @unique(map: "users_passkey") @map("passkey_id")
+  passkeyCose  String?   @map("passkey_cose")
+  passkeyAlg   Int?      @map("passkey_alg")
+  passkeyCount Int?      @map("passkey_count")
+  /// Session counter. A cookie signed under another value is refused.
+  epoch        Int       @default(0)
+  posts        Post[]
+  comments     Comment[]
+  saves        Save[]
+  friends      Friend[]  @relation("owner")
+  friendOf     Friend[]  @relation("friend")
+  notes        Note[]    @relation("to")
+  notesSent    Note[]    @relation("from")
+
+  @@map("users")
+}
+
+model Friend {
+  owner      String
+  friend     String
+  ownerUser  User   @relation("owner", fields: [owner], references: [name], onDelete: Cascade, onUpdate: NoAction)
+  friendUser User   @relation("friend", fields: [friend], references: [name], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([owner, friend])
+  @@map("friends")
+}
+
+model Post {
+  id       String    @id
+  byName   String    @map("by_name")
+  text     String
+  at       BigInt
+  views    Int       @default(0)
+  photos   Int       @default(0)
+  repost   String?
+  author   User      @relation(fields: [byName], references: [name], onDelete: NoAction, onUpdate: NoAction)
+  original Post?     @relation("repost", fields: [repost], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reposts  Post[]    @relation("repost")
+  comments Comment[]
+  saves    Save[]
+
+  /// One re-post per person per post, which also answers "did I re-post this".
+  @@unique([repost, byName], map: "posts_repost", where: raw("(repost IS NOT NULL)"))
+  @@index([at(sort: Desc), id(sort: Desc)], map: "posts_at_id")
+  @@index([byName, at(sort: Desc)], map: "posts_by_at")
+  @@map("posts")
+}
+
+model Comment {
+  id     String @id
+  postId String @map("post")
+  byName String @map("by_name")
+  text   String
+  at     BigInt
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  author User   @relation(fields: [byName], references: [name], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([postId], map: "comments_post")
+  @@map("comments")
+}
+
+/// Newest 100 per person; older ones are dropped as new ones arrive.
+model Note {
+  id       String  @id
+  toName   String  @map("to_name")
+  fromName String  @map("from_name")
+  post     String
+  at       BigInt
+  seen     Boolean @default(false)
+  kind     String  @default("comment")
+  to       User    @relation("to", fields: [toName], references: [name], onDelete: Cascade, onUpdate: NoAction)
+  from     User    @relation("from", fields: [fromName], references: [name], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([toName, seen], map: "notes_to")
+  @@index([toName, at(sort: Desc)], map: "notes_to_at")
+  @@map("notes")
+}
+
+model Save {
+  postId String @map("post")
+  byName String @map("by_name")
+  at     BigInt
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user   User   @relation(fields: [byName], references: [name], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([postId, byName])
+  @@index([byName, at(sort: Desc)], map: "saves_by_at")
+  @@map("saves")
+}
