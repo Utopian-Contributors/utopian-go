@@ -124,14 +124,18 @@ export async function braveImageSearch(
   return { query, images };
 }
 
+const FAVICON = /^https:\/\/imgs\.search\.brave\.com\/[\w\-./:=%]+$/;
+
 function meta(m?: {
   netloc?: string;
   path?: string;
+  favicon?: string;
 }): MetaUrl | undefined {
   if (!m) return undefined;
   return {
     ...(m.netloc ? { netloc: plainText(m.netloc) } : {}),
     ...(m.path ? { path: plainText(m.path) } : {}),
+    ...(m.favicon && FAVICON.test(m.favicon) ? { favicon: m.favicon } : {}),
   };
 }
 

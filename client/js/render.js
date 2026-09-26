@@ -15,6 +15,7 @@ import { appendSanitized, host, plainText, safeUrl } from "./text.js";
 import { TABS, writeUrl } from "./url.js";
 import { langParam } from "./lang.js";
 import { cite, resultCard, snippet, titleLink, videoThumb } from "./pieces.js";
+import { resultActions } from "./saved.js";
 import { tokenCards } from "./token.js";
 
 /** @typedef {import('../../src/types').SearchApiResponse} SearchApiResponse */
@@ -199,7 +200,13 @@ export function createRenderer(state) {
   function paintWeb(items) {
     const frag = document.createDocumentFragment();
     items.forEach((item, i) => {
-      const card = resultCard(i, cite(item), titleLink(item), snippet(item));
+      const card = resultCard(
+        i,
+        cite(item),
+        titleLink(item),
+        snippet(item),
+        resultActions(item),
+      );
       if (item.cluster?.length) {
         const sl = el("div", { class: "sl" });
         for (const c of item.cluster) {
@@ -354,10 +361,16 @@ export function createRenderer(state) {
         const thumb = "thumbnail" in item ? item.thumbnail?.src : null;
         const body = el("div", null, cite(item), titleLink(item), snippet(item));
         frag.append(
-          resultCard(i, el("div", { class: "vr" }, videoThumb(thumb), body)),
+          resultCard(
+            i,
+            el("div", { class: "vr" }, videoThumb(thumb), body),
+            resultActions(item),
+          ),
         );
       } else {
-        frag.append(resultCard(i, cite(item), titleLink(item), snippet(item)));
+        frag.append(
+          resultCard(i, cite(item), titleLink(item), snippet(item), resultActions(item)),
+        );
       }
     });
     results.append(frag);

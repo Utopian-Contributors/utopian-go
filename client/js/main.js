@@ -4,11 +4,15 @@
  * Home (centered search) ↔ results (tabs + list + knowledge panel).
  * Source is modular; `scripts/build-client.mjs` bundles + minifies to public/.
  */
-import { $, clearResults, hideSkeleton, setLoading, setStatus, showSkeleton } from "./dom.js";
+import { $, clearResults, el, hideSkeleton, setLoading, setStatus, showSkeleton } from "./dom.js";
 import { mountAccount } from "./acct.js";
 import { readUrlState, writeUrl } from "./url.js";
 import { langParam, mountLang, setLang } from "./lang.js";
 import { createRenderer } from "./render.js";
+import { paintSaved } from "./saved.js";
+import { readTrail, record } from "./trail.js";
+import { load } from "./lazy.js";
+import { host } from "./text.js";
 
 /** @typedef {import('../../src/types').SearchApiResponse} SearchApiResponse */
 
@@ -57,6 +61,43 @@ function syncClearButton() {
 // buttons, and the corner of the page it fills is otherwise empty until it
 // runs. Nothing here fetches, and nothing here waits on a search.
 mountAccount($("ac"));
+paintSaved();
+
+const hiveBtn = el("button", { type: "button", class: "hvb", "aria-label": "Places", title: "Places" });
+$("hm-tk").append(hiveBtn);
+paintHiveBtn();
+hiveBtn.addEventListener("click", () => {
+  load("hv", "ugHive")
+    .then((hive) => hive.open(hiveBtn, paintHiveBtn))
+    .catch(() => {});
+});
+
+function paintHiveBtn() {
+  hiveBtn.hidden = !readTrail().length;
+}
+
+/** @param {string} h */
+function iconFor(h) {
+  const d = state.data;
+  if (!d) return;
+  for (const list of [d.results, d.news, d.videos, d.discussions])
+    for (const r of list || [])
+      if (r.meta_url?.favicon && host(r.url) === h) return r.meta_url.favicon;
+}
+
+/** @param {MouseEvent} e */
+function trailClick(e) {
+  if (e.type === "auxclick" && e.button !== 1) return;
+  const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+  if (!(a instanceof HTMLAnchorElement) || a.hostname === location.hostname) return;
+  if (a.closest("#hv.ed")) return;
+  if (a.protocol !== "https:" && a.protocol !== "http:") return;
+  const url = new URL(a.href);
+  const title = (a.textContent || a.title || "").replace(/\s+/g, " ").trim();
+  record(url, title, iconFor(url.hostname.replace(/^www\./, "")));
+}
+document.addEventListener("click", trailClick, true);
+document.addEventListener("auxclick", trailClick, true);
 
 logo.addEventListener("click", (e) => {
   e.preventDefault();
@@ -147,6 +188,7 @@ function relanguage() {
 // —— Navigation ——
 
 function goHome() {
+  window.ugHive?.close(true);
   state.activeController?.abort();
   state.requestId += 1;
   state.data = null;
@@ -168,6 +210,8 @@ function goHome() {
   $("sd").hidden = true;
   $("sd").replaceChildren();
   $("tb").hidden = true;
+  paintSaved();
+  paintHiveBtn();
   writeUrl("", "web", "push");
 }
 
@@ -177,6 +221,7 @@ function goHome() {
  * @param {{ keepTab?: boolean }} [opts]
  */
 async function runSearch(query, pushState, opts = {}) {
+  window.ugHive?.close(true);
   const id = ++state.requestId;
   state.activeController?.abort();
   state.activeController = new AbortController();
