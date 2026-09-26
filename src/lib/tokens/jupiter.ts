@@ -4,6 +4,7 @@ import {
   TOKEN_MIN_LIQUIDITY_USD,
   TOKEN_PINNED_MINTS,
 } from "../../config";
+import { jupFetch } from "../jupiterGate";
 import { JupToken, TokenRecord } from "../../types";
 
 /**
@@ -30,9 +31,11 @@ const SOURCES = [
 ];
 
 async function fetchList(url: string): Promise<JupToken[]> {
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(TOKEN_INDEX_TIMEOUT_MS),
+  // Waits its turn in the shared lite-api budget: an hourly rebuild can
+  // afford a minute, and must not crowd out a trade.
+  const res = await jupFetch(url, { headers: { Accept: "application/json" } }, "index", {
+    timeoutMs: TOKEN_INDEX_TIMEOUT_MS,
+    maxWaitMs: 120_000,
   });
   if (!res.ok) throw new Error(`Jupiter responded ${res.status} for ${url}`);
   const body = (await res.json()) as unknown;

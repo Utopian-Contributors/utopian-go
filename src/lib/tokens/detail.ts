@@ -1,13 +1,21 @@
 import { JUP_TOKENS_ENDPOINT, TOKEN_PRICE_TIMEOUT_MS } from "../../config";
 import { JupStats, JupToken, TokenDetail, TokenRecord, TokenWindow } from "../../types";
+import { JupiterBusy, jupFetch } from "../jupiterGate";
 import { hasIcon } from "./icons";
 import { lookupMints } from "./store";
 
 const WSOL_MINT = "So11111111111111111111111111111111111111112";
-const TTL_MS = 30_000;
+/** Market stats this recent are served as they are. */
+const FRESH_MS = 60_000;
+/** After a failed or refused refresh, wait this long before asking again. */
+const RETRY_MS = 30_000;
 const MAX_CACHED = 500;
 
-const cache = new Map<string, { at: number; token: JupToken | null }>();
+/**
+ * Last good answer per mint. A failure never replaces one: stale stats are
+ * still the right shape, and the price and the line come from the index.
+ */
+const cache = new Map<string, { at: number; token: JupToken | null; triedAt: number }>();
 const inFlight = new Map<string, Promise<JupToken | null>>();
 
 function num(v: unknown): number | undefined {
@@ -37,31 +45,47 @@ function toWindow(s: JupStats | undefined): TokenWindow | undefined {
 }
 
 async function fetchJup(mint: string): Promise<JupToken | null> {
-  const res = await fetch(`${JUP_TOKENS_ENDPOINT}/search?query=${encodeURIComponent(mint)}`, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(TOKEN_PRICE_TIMEOUT_MS),
-  });
+  const res = await jupFetch(
+    `${JUP_TOKENS_ENDPOINT}/search?query=${encodeURIComponent(mint)}`,
+    { headers: { Accept: "application/json" } },
+    "detail",
+    { timeoutMs: TOKEN_PRICE_TIMEOUT_MS },
+  );
   if (!res.ok) throw new Error(`Jupiter responded ${res.status}`);
   const body = (await res.json()) as unknown;
   return Array.isArray(body) ? ((body as JupToken[]).find((t) => t.id === mint) ?? null) : null;
 }
 
-/** Jupiter's market data for one mint, held for 30 s so a page of clicks is one upstream call each. */
+function remember(mint: string, entry: { at: number; token: JupToken | null; triedAt: number }): void {
+  cache.delete(mint);
+  cache.set(mint, entry);
+  if (cache.size > MAX_CACHED) cache.delete(cache.keys().next().value!);
+}
+
+/**
+ * Jupiter's market data for one mint, fetched only when a panel asks for it.
+ *
+ * Fresh for a minute. Past that it is refreshed if the shared lite-api budget
+ * has room above what trades need; otherwise, or when Jupiter fails, the last
+ * answer is served. A mint nobody opens is never asked about.
+ */
 async function marketData(mint: string): Promise<JupToken | null> {
+  const now = Date.now();
   const hit = cache.get(mint);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.token;
+  if (hit && (now - hit.at < FRESH_MS || now - hit.triedAt < RETRY_MS)) return hit.token;
   let task = inFlight.get(mint);
   if (!task) {
     task = fetchJup(mint)
-      .catch((err: unknown) => {
-        console.warn(`[tokens] detail failed for ${mint}:`, err);
-        return null;
-      })
       .then((token) => {
-        cache.delete(mint);
-        cache.set(mint, { at: Date.now(), token });
-        if (cache.size > MAX_CACHED) cache.delete(cache.keys().next().value!);
+        const at = Date.now();
+        remember(mint, { at, token, triedAt: at });
         return token;
+      })
+      .catch((err: unknown) => {
+        if (!(err instanceof JupiterBusy)) console.warn(`[tokens] detail failed for ${mint}:`, err);
+        const prior = cache.get(mint);
+        remember(mint, { at: prior?.at ?? 0, token: prior?.token ?? null, triedAt: Date.now() });
+        return prior?.token ?? null;
       })
       .finally(() => inFlight.delete(mint));
     inFlight.set(mint, task);

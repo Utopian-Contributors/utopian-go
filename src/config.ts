@@ -167,8 +167,21 @@ export const TOKEN_TICKS_TIMEOUT_MS = 8_000;
  * this endpoint would put every visitor's traffic on the server's single IP and
  * starve the index, which is what every price card on the site is built from.
  * The browser calls it directly, once a wallet is connected, on its own budget.
+ *
+ * Two server callers do exist: the wallet page's detail panel, and trades a
+ * Social account asks the server to sign. Both go through lib/jupiterGate.ts,
+ * which holds every lite-api request from this IP to the budget below.
  */
 export const JUP_SWAP_ENDPOINT = "https://lite-api.jup.ag/swap/v1";
+
+/**
+ * Our share of lite-api's per-IP limit, for every server-side call together.
+ * Jupiter's keyless tier allows about 60 a minute; this stays under it.
+ */
+export const JUP_LITE_PER_MIN = 50;
+export const JUP_LITE_BURST = 20;
+/** Tokens only a trade may spend. A trade is two calls, quote and build. */
+export const JUP_LITE_TRADE_RESERVE = 8;
 
 /**
  * Referral account from https://referral.jup.ag. Kept for provenance — the swap
