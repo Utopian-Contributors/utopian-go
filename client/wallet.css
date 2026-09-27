@@ -28,6 +28,8 @@
   --dn: #d93025;
   --pn: #fff;
   --hover: #f1f3f4;
+  /* Behind token logos: the page's extreme, so a transparent logo reads as drawn. */
+  --ic: #fff;
   --ff: system-ui, Helvetica, Arial, sans-serif;
   /* Full width with a fixed gutter, for the header and the page alike. */
   --shell: none;
@@ -55,6 +57,7 @@
     --dn: #f28b82;
     --pn: #303134;
     --hover: #2c2c2e;
+    --ic: #000;
   }
 }
 
@@ -432,7 +435,23 @@ a:hover {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--hover);
+  border: 1px solid var(--b);
+  background: var(--ic);
+}
+
+/* No logo, or one that would not load. The glyph sits on the baseline, so
+   the padding lifts it to the disc's optical centre. */
+.wl-coin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 1px;
+  background: var(--b);
+  color: var(--m);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
 }
 
 /* —— Receive, send, swap —— */
@@ -550,6 +569,11 @@ a:hover {
 .tp-h .wl-ic {
   width: 32px;
   height: 32px;
+}
+
+.tp-h .wl-coin {
+  padding-bottom: 2px;
+  font-size: 18px;
 }
 
 .tp-t {

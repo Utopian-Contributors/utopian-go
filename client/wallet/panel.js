@@ -14,19 +14,25 @@ const LINKS = [
   ["discord", "Discord"],
 ];
 
-/** The synced thumbnail, or an empty disc the same size so the tickers stay in line. */
+/** A plain gray coin, for a token with no logo or one that fails to load. */
+function coin() {
+  return el("span", { class: "wl-ic wl-coin", text: "$", "aria-hidden": "true" });
+}
+
+/** The synced thumbnail, or a coin the same size so the tickers stay in line. */
 export function icon(t, size = 20) {
-  return t.icon
-    ? el("img", {
-        class: "wl-ic",
-        src: `/icon/${t.mint}`,
-        alt: "",
-        width: String(size),
-        height: String(size),
-        loading: "lazy",
-        decoding: "async",
-      })
-    : el("span", { class: "wl-ic" });
+  if (!t.icon) return coin();
+  const img = el("img", {
+    class: "wl-ic",
+    src: `/icon/${t.mint}`,
+    alt: "",
+    width: String(size),
+    height: String(size),
+    loading: "lazy",
+    decoding: "async",
+  });
+  img.addEventListener("error", () => img.replaceWith(coin()), { once: true });
+  return img;
 }
 
 function dirOf(v) {
