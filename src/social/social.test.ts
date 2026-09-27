@@ -21,7 +21,7 @@ import {
   solanaSeed,
 } from "./keys";
 import { parseSol, transferMessage, unsignedTransfer } from "./pay";
-import { checkSwapInstructions, parseMessage, reviewedFloor, signTransaction, slippageFor } from "./swap";
+import { checkSwapInstructions, parseMessage, reviewedFloor, signTransaction, simulationError, slippageFor } from "./swap";
 import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMessage, onCurve } from "./send";
 import { scrub } from "./guard";
 import { postWait, username, waitText } from "./limits";
@@ -1128,4 +1128,31 @@ test("messenger keeps only ciphertext and refuses stale or foreign keys", async 
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
+});
+
+test("a swap that fails for want of SOL says so, with the amounts", () => {
+  // A wallet that has never held SOL simulates as AccountNotFound.
+  const empty = simulationError("AccountNotFound", [], { have: 0n, need: 2_100_000n, spendsSol: false });
+  assert.equal(empty.status, 400);
+  assert.equal(empty.extra.needsSol, true);
+  assert.match(empty.message, /Not enough SOL for network fees.*0\.0021 SOL.*has 0 SOL/);
+
+  // A failed wrap deep in the route is the same shortage.
+  const wrap = simulationError(
+    { InstructionError: [2, { Custom: 1 }] },
+    ["Program 11111111111111111111111111111111 invoke [1]", "Transfer: insufficient lamports 100, need 2039280"],
+    { have: 100n, need: 1_000_000n, spendsSol: true },
+  );
+  assert.match(wrap.message, /^Not enough SOL\. This trade needs about 0\.001 SOL/);
+
+  const moved = simulationError(
+    { InstructionError: [3, { Custom: 6001 }] },
+    ["Program log: Error: custom program error: 0x1771"],
+    { have: 5_000_000_000n, need: 10_000n, spendsSol: false },
+  );
+  assert.equal(moved.status, 409);
+  assert.equal(moved.extra.requote, true);
+
+  const other = simulationError({ InstructionError: [3, { Custom: 42 }] }, [], { have: 5_000_000_000n, need: 10_000n, spendsSol: false });
+  assert.match(other.message, /would fail right now/);
 });

@@ -5,6 +5,7 @@ import {
   JUP_SWAP_ENDPOINT,
 } from "../config";
 import { JupiterBusy, jupFetch } from "../lib/jupiterGate";
+import { waitForSignature } from "../lib/txStatus";
 import { base58, base58Decode, signEd25519, solanaSeed } from "./keys";
 import { SocialError } from "./limits";
 import { rpc } from "./pay";
@@ -24,6 +25,21 @@ const COMPUTE_BUDGET = base58Decode("ComputeBudget111111111111111111111111111111
 const SOL_OVERHEAD = 10_000_000n;
 /** Priority fee ceiling: compute-unit price times limit, in lamports. */
 const MAX_PRIORITY_LAMPORTS = 5_000_000n;
+
+/**
+ * What we ask Jupiter to tip validators, at most: 0.0003 SOL.
+ *
+ * Was "high" up to 0.002 SOL. Measured on a $2.43 trade, "high" came to
+ * 471,690 lamports — 2.3% of the trade, paid on top of it — where "medium"
+ * came to 30,866. A tip is a flat cost, so on the small trades this dialog
+ * mostly sees it was the worst rate on the screen and the one not shown.
+ */
+const PRIORITY_MAX_LAMPORTS = 300_000;
+
+/** Rent a token account holds while it exists, in lamports (165 bytes). */
+const TOKEN_ACCOUNT_RENT = 2_039_280n;
+/** The signature fee every transaction pays. */
+const BASE_FEE = 5_000n;
 
 function shortvecAt(buf: Buffer, off: number): [number, number] {
   let value = 0;
@@ -101,7 +117,7 @@ function same(a: Buffer | null, b: Buffer): boolean {
  * the swap API emits, and anything else (a transfer out, an approval, a new
  * authority) is refused before a signature exists.
  */
-export function checkSwapInstructions(msg: ParsedMessage, owner: Buffer): void {
+export function checkSwapInstructions(msg: ParsedMessage, owner: Buffer): bigint {
   const wsolAta = associatedTokenAccount(owner, base58Decode(SOL_MINT)!, TOKEN);
   let unitPrice = 0n;
   let unitLimit = 200_000n;
@@ -134,7 +150,9 @@ export function checkSwapInstructions(msg: ParsedMessage, owner: Buffer): void {
     }
     throw new Error("program not allowed");
   }
-  if ((unitPrice * unitLimit) / 1_000_000n > MAX_PRIORITY_LAMPORTS) throw new Error("priority fee");
+  const priority = (unitPrice * unitLimit) / 1_000_000n;
+  if (priority > MAX_PRIORITY_LAMPORTS) throw new Error("priority fee");
+  return priority;
 }
 
 /**
@@ -214,6 +232,54 @@ function readAccount(acc: unknown, kind: Watched["kind"]): bigint {
   return tokenAmount(Buffer.from(a.data?.[0] ?? "", "base64"));
 }
 
+/** Lamports as SOL, rounded up to four places so a requirement is never understated. */
+function sol(lamports: bigint, up = false): string {
+  const n = Number(lamports) / 1e9;
+  const r = (up ? Math.ceil(n * 1e4) : Math.floor(n * 1e4)) / 1e4;
+  return r.toLocaleString("en-US", { maximumFractionDigits: 4 });
+}
+
+/**
+ * Say why a simulation failed, in the terms someone can act on.
+ *
+ * By far the usual cause is a wallet with too little SOL for the network fee,
+ * which the chain reports as anything from AccountNotFound (a wallet that has
+ * never held SOL) to a failed transfer deep in the route. "This trade would
+ * fail" is true of all of them and useful for none.
+ */
+export function simulationError(
+  err: unknown,
+  logs: string[],
+  funds: { have: bigint; need: bigint; spendsSol: boolean },
+): SocialError {
+  const text = JSON.stringify(err);
+  const joined = logs.join("\n");
+  const lamportsShort =
+    /AccountNotFound|InsufficientFundsForFee|InsufficientFundsForRent/.test(text) ||
+    /insufficient lamports/i.test(joined) ||
+    funds.have < funds.need;
+  if (lamportsShort) {
+    const need = sol(funds.need, true);
+    const have = sol(funds.have);
+    return new SocialError(
+      400,
+      funds.spendsSol
+        ? `Not enough SOL. This trade needs about ${need} SOL including network fees, and the wallet has ${have} SOL. Try a smaller amount.`
+        : `Not enough SOL for network fees. Trading needs about ${need} SOL in this wallet, and it has ${have} SOL. Add a little SOL and try again.`,
+      { needsSol: true },
+    );
+  }
+  // Jupiter's 6001, SlippageToleranceExceeded: the price already moved.
+  if (/0x1771\b/.test(joined) || /"Custom":6001\b/.test(text)) {
+    return new SocialError(409, "The price moved. Review the trade again.", { requote: true });
+  }
+  if (/insufficient funds/i.test(joined)) {
+    return new SocialError(400, "Not enough of this token in the wallet for that amount.");
+  }
+  console.warn("[swap] simulation failed:", text, logs.slice(-5));
+  return new SocialError(400, "This trade would fail right now. Try again in a moment.");
+}
+
 /**
  * Run the signed transaction without sending it, and refuse unless the
  * owner's balances move the way the trade says: at most `amount` of the
@@ -223,7 +289,7 @@ function readAccount(acc: unknown, kind: Watched["kind"]): bigint {
 async function simulateSwap(
   signed: Buffer,
   owner: Buffer,
-  p: { input: string; output: string; amount: bigint; floor: bigint },
+  p: { input: string; output: string; amount: bigint; floor: bigint; priority: bigint },
 ): Promise<void> {
   const watched: Watched[] = [{ address: base58(owner), kind: "lamports" }];
   const tokenSide = async (mint: string) => {
@@ -249,9 +315,23 @@ async function simulateSwap(
       commitment: "processed",
       accounts: { encoding: "base64", addresses },
     },
-  ])) as { value?: { err?: unknown; accounts?: unknown[] } };
-  if (!sim?.value || sim.value.err) throw new SocialError(400, "This trade would fail right now. Try again.");
+  ])) as { value?: { err?: unknown; accounts?: unknown[]; logs?: string[] } };
+  if (!sim?.value) throw new SocialError(502, "Could not check this trade. Try again.");
   const pre = watched.map((w, i) => readAccount(before?.value?.[i] ?? null, w.kind));
+  if (sim.value.err) {
+    // What the trade takes in SOL before any of it comes back: the fees, the
+    // SOL being spent, and rent for each token account it opens. Wrapped SOL
+    // is opened and closed in the same transaction, but its rent still has to
+    // be there to open it.
+    const outMissing = !!outAta && !before?.value?.[watched.length - 1];
+    const need =
+      BASE_FEE +
+      p.priority +
+      (p.input === SOL_MINT ? p.amount : 0n) +
+      (p.input === SOL_MINT || p.output === SOL_MINT ? TOKEN_ACCOUNT_RENT : 0n) +
+      (outMissing ? TOKEN_ACCOUNT_RENT : 0n);
+    throw simulationError(sim.value.err, sim.value.logs ?? [], { have: pre[0], need, spendsSol: p.input === SOL_MINT });
+  }
   const post = watched.map((w, i) => readAccount(sim.value!.accounts?.[i] ?? null, w.kind));
 
   const sol = post[0] - pre[0];
@@ -282,7 +362,7 @@ export async function swapFor(
   owner: string,
   phrase: string,
   p: { input: string; output: string; amount: string; slippageBps: number; quotedOut: bigint },
-): Promise<{ signature: string; outAmount: string }> {
+): Promise<{ signature: string; outAmount: string; confirmed: boolean }> {
   const fee = feeAccount(p.input, p.output);
   const q = new URLSearchParams({
     inputMint: p.input,
@@ -311,7 +391,9 @@ export async function swapFor(
       wrapAndUnwrapSol: true,
       dynamicComputeUnitLimit: true,
       // Under MAX_PRIORITY_LAMPORTS, which the check below enforces anyway.
-      prioritizationFeeLamports: { priorityLevelWithMaxLamports: { priorityLevel: "high", maxLamports: 2_000_000 } },
+      prioritizationFeeLamports: {
+        priorityLevelWithMaxLamports: { priorityLevel: "medium", maxLamports: PRIORITY_MAX_LAMPORTS },
+      },
       ...(fee ? { feeAccount: fee } : {}),
     }),
   });
@@ -321,20 +403,25 @@ export async function swapFor(
   const raw = Buffer.from(built.swapTransaction, "base64");
   const seed = solanaSeed(phrase);
   let signed: Buffer;
+  let priority: bigint;
   try {
     const [, len] = shortvecAt(raw, 0);
-    checkSwapInstructions(parseMessage(raw.subarray(len + 64)), ownerKey);
+    priority = checkSwapInstructions(parseMessage(raw.subarray(len + 64)), ownerKey);
     signed = signTransaction(raw, ownerKey, seed);
   } catch {
     throw new SocialError(502, "Jupiter returned a transaction we will not sign.");
   } finally {
     seed.fill(0);
   }
-  await simulateSwap(signed, ownerKey, { input: p.input, output: p.output, amount: BigInt(p.amount), floor });
+  await simulateSwap(signed, ownerKey, { input: p.input, output: p.output, amount: BigInt(p.amount), floor, priority });
   const signature = await rpc("sendTransaction", [
     signed.toString("base64"),
     { encoding: "base64", preflightCommitment: "confirmed", maxRetries: 3 },
   ]);
   if (typeof signature !== "string") throw new SocialError(502, "The transaction was not sent.");
-  return { signature, outAmount: out.toString() };
+  // Answer once it has landed, so "done" on the screen means done on chain.
+  // Past the wait it is still in flight rather than failed; the client says so.
+  const landed = await waitForSignature(signature);
+  if (landed.status === "failed") throw new SocialError(400, landed.error, { signature });
+  return { signature, outAmount: out.toString(), confirmed: landed.status === "confirmed" };
 }
