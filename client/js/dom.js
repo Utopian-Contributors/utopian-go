@@ -110,6 +110,7 @@ export function showSkeleton(kind = "web") {
       const cell = el("div", { class: "ig-sk-cell" });
       cell.style.width = `${IMAGE_SKEL_W}px`;
       cell.style.height = `${h}px`;
+      cell.style.setProperty("--r", String(h / IMAGE_SKEL_W));
       grid.append(cell);
     }
     sk.replaceChildren(grid);

@@ -525,6 +525,9 @@ export function createRenderer(state) {
       const [boxW, boxH] = tileBox(item);
       btn.style.width = `${boxW}px`;
       btn.style.height = `${boxH}px`;
+      // Phones drop the fixed box for a full-width column; the ratio keeps the
+      // height known up front there too.
+      btn.style.setProperty("--r", String(boxH / boxW));
 
       const img = el("img", {
         src,

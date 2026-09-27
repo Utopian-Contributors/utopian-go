@@ -1908,3 +1908,38 @@ body.lb-on {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Image search on phones: two columns, each a vertical list of full-width
+   tiles. Tiles keep their aspect ratio via --r (height / width, set in JS), so
+   every box is still sized before its image arrives. Padding rather than
+   aspect-ratio, which Safari 14 — still a build target — doesn't have. */
+@media (max-width: 620px) {
+  .ig {
+    display: block;
+    columns: 2;
+    column-gap: 10px;
+  }
+
+  .ig-item,
+  .ig-sk-cell {
+    display: block;
+    width: 100% !important;
+    height: auto !important;
+    max-width: none;
+    max-height: none;
+    margin: 0 0 10px;
+    break-inside: avoid;
+  }
+
+  .ig-item::before,
+  .ig-sk-cell::before {
+    content: "";
+    display: block;
+    padding-top: calc(var(--r, 0.75) * 100%);
+  }
+
+  .ig-item img {
+    position: absolute;
+    inset: 0;
+  }
+}
