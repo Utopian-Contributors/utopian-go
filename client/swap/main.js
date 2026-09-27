@@ -23,7 +23,11 @@ import { restore, settled, signAndSend } from "../js/wallet.js";
 import { build, quote, toBase58 } from "./jup.js";
 import { injectFormStyles } from "./ui.js";
 
-const SLIPPAGE_BPS = 100;
+/**
+ * Half a percent. Slippage is also how much a bot that sees the trade coming
+ * can take from it, so at 1% every trade offered up to 1% on top of the fee.
+ */
+const SLIPPAGE_BPS = 50;
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 
 /**
@@ -40,6 +44,27 @@ const HIGH_IMPACT_PCT = 1;
 
 /** Lamports held back from MAX so the wallet can still pay network fees. */
 const SOL_RESERVE = 10_000_000n;
+
+/**
+ * SOL a wallet needs to trade when it is spending something else: the network
+ * fee, plus rent for a token account the trade may open. Below this the chain
+ * refuses the trade, and says so in words nobody reads as "add SOL".
+ */
+const FEE_SOL = 3_000_000n;
+const FEE_SOL_TEXT = "0.003";
+
+/** Quick sizes, as percentages of what the wallet can spend. */
+const PCTS = [5, 25, 50, 100];
+
+/** How long to wait for a sent trade to land before calling it in flight. */
+const LAND_MS = 60_000;
+
+/** Tick for the completion disc. */
+const CHECK_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+/** A wallet or RPC error that really means the wallet is out of SOL. */
+const NO_SOL = /prior credit|insufficient lamports|InsufficientFundsForFee|insufficient funds for fee|AccountNotFound/i;
 
 /**
  * How long to keep listening for a wallet before accepting that there is none.
@@ -206,8 +231,37 @@ async function serverSwap(q) {
     }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || typeof data.signature !== "string") throw new Error(data.error || "Swap failed.");
-  return data.signature;
+  if (!res.ok || typeof data.signature !== "string") {
+    // A signature on an error means it was sent and failed on chain.
+    throw Object.assign(new Error(data.error || "Swap failed."), { signature: data.signature });
+  }
+  return { signature: data.signature, confirmed: data.confirmed === true };
+}
+
+/**
+ * Wait for a trade a browser wallet broadcast to land, asking our server,
+ * which holds the RPC key. Resolves "pending" rather than throwing when the
+ * lookup itself fails: the trade may well be fine.
+ *
+ * @returns {Promise<{status: "confirmed"} | {status: "failed", error: string} | {status: "pending"}>}
+ */
+async function landed(signature) {
+  const end = Date.now() + LAND_MS;
+  while (Date.now() < end) {
+    try {
+      const res = await fetch("/api/tx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ signature }),
+      });
+      const data = await res.json();
+      if (data?.status === "confirmed" || data?.status === "failed") return data;
+    } catch {
+      // Keep asking; one dropped poll says nothing about the trade.
+    }
+    await new Promise((r) => setTimeout(r, 1_200));
+  }
+  return { status: "pending" };
 }
 
 /**
@@ -224,9 +278,8 @@ function open(t) {
    * Whether this dialog ever put a transaction on the wire.
    *
    * Handed to the caller on close so a page showing balances knows whether it
-   * has anything to re-read. Deliberately not "did the trade succeed": all we
-   * can honestly report is that the wallet broadcast something, which is the
-   * same claim the success message makes.
+   * has anything to re-read. Deliberately not "did the trade succeed": a trade
+   * that reverted on chain still spent its fee, and that is worth re-reading too.
    */
   let sent = false;
   const { body, close, setTitle } = dialog(`Trade ${t.symbol}`, () => {
@@ -420,6 +473,8 @@ function open(t) {
      * below is not running.
      */
     let balanceUnknown = false;
+    /** Why the amount cannot be traded, for the button to say instead of "Review". */
+    let blocked = "";
 
     const balance = el("button", { class: "swx-bal", type: "button", text: "Balance —" });
     const amount = el("input", {
@@ -453,6 +508,16 @@ function open(t) {
       onclick: handoff,
     });
     const note = el("div", { class: "swx-note" });
+
+    // Sizing from the balance, inside the pane the amount is typed into.
+    const chips = PCTS.map((pct) =>
+      el("button", {
+        type: "button",
+        text: `${pct}%`,
+        "aria-label": `${pct}% of your ${pay.symbol}`,
+        onclick: () => sizeTo(pct),
+      }),
+    );
 
     /** Segmented SOL/USDC control; lives on whichever side the quote token is. */
     function quoteControl() {
@@ -508,6 +573,7 @@ function open(t) {
         { class: "swx-pane" },
         el("div", { class: "swx-lbl" }, el("span", { text: "You pay" }), balance),
         el("div", { class: "swx-body" }, buying ? quoteControl() : lock(), amount),
+        el("div", { class: "swx-pct", role: "group", "aria-label": "Size from balance" }, ...chips),
       ),
       el("div", { class: "swx-arrow" }, flip),
       el(
@@ -606,7 +672,46 @@ function open(t) {
       return held != null && held > 0n ? toDecimal(held.toString(), pay.decimals) : "";
     }
 
+    /** Base units for `pct` of what can be spent, or null before a balance is known. */
+    function sizeAt(pct) {
+      const max = spendable();
+      if (max == null || max === 0n) return null;
+      return pct === 100 ? max : (max * BigInt(pct)) / 100n;
+    }
+
+    function sizeTo(pct) {
+      const units = sizeAt(pct);
+      if (units == null || units === 0n) return;
+      amount.value = toDecimal(units.toString(), pay.decimals);
+      typed = amount.value;
+      touched = true;
+      refresh();
+    }
+
+    /** Enable the sizes once there is a balance to size from, and mark the one typed. */
+    function markChips() {
+      const units = toUnits(amount.value, pay.decimals);
+      PCTS.forEach((pct, i) => {
+        const size = sizeAt(pct);
+        const b = chips[i];
+        b.disabled = size == null || size === 0n;
+        b.title = !session ? "Connect a wallet to size from your balance" : "";
+        b.classList.toggle("on", size != null && size.toString() === units);
+      });
+    }
+
+    /**
+     * Spending USDC or a token still costs SOL: the network fee is only ever
+     * paid in SOL. Null when there is enough, or when we cannot tell.
+     */
+    function solShortfall() {
+      if (pay.mint === SOL_MINT || balances.sol == null) return null;
+      const have = BigInt(balances.sol);
+      return have < FEE_SOL ? have : null;
+    }
+
     function showBalance() {
+      markChips();
       // Nothing to show before a wallet is connected, and an empty "Balance —"
       // reads like a zero rather than an unknown.
       balance.hidden = !session;
@@ -735,7 +840,7 @@ function open(t) {
         // the trade is actually agreed to, and it carries the verb.
         action.textContent = current
           ? `Review ${buying ? "buy" : "sell"}`
-          : "Enter an amount";
+          : blocked || "Enter an amount";
         action.disabled = !current;
       }
       action.classList.remove("busy");
@@ -750,6 +855,8 @@ function open(t) {
       if (!receive.isConnected) return;
       inflight?.abort();
       current = null;
+      blocked = "";
+      markChips();
       const units = toUnits(amount.value, pay.decimals);
 
       if (!units || units === "0") {
@@ -765,6 +872,20 @@ function open(t) {
         receive.textContent = "0.0";
         receive.className = "swx-recv dim";
         setNote(`Not enough ${pay.symbol}.`, "err");
+        blocked = `Not enough ${pay.symbol}`;
+        label();
+        return;
+      }
+
+      const short = solShortfall();
+      if (short != null) {
+        receive.textContent = "0.0";
+        receive.className = "swx-recv dim";
+        setNote(
+          `Not enough SOL for network fees. Keep about ${FEE_SOL_TEXT} SOL in this wallet to trade — it has ${pretty(short, 9)} SOL.`,
+          "err",
+        );
+        blocked = "Add SOL for fees";
         label();
         return;
       }
@@ -824,6 +945,7 @@ function open(t) {
     amount.addEventListener("input", () => {
       typed = amount.value;
       touched = true;
+      markChips();
       clearTimeout(debounce);
       debounce = setTimeout(refresh, 250);
     });
@@ -1094,11 +1216,64 @@ function open(t) {
         form();
       });
 
+      /**
+       * The trade landed: the whole dialog becomes one green disc and what
+       * happened, so there is no reading a note under a button to find out.
+       */
+      function complete(sig, q) {
+        cleanup = null;
+        setTitle(buying ? "Bought" : "Sold");
+        const disc = el("div", { class: "swx-check", role: "img", "aria-label": "Trade complete" });
+        disc.innerHTML = CHECK_SVG;
+        const gotQty = units(recv, q.outAmount);
+        const paidQty = units(pay, q.inAmount);
+        const finish = el("button", { class: "swx-go", type: "button", text: "Done", onclick: close });
+        body.replaceChildren(
+          el(
+            "div",
+            { class: "swx-done" },
+            disc,
+            el("div", { class: "swx-done-t", text: buying ? `You bought ${t.symbol}` : `You sold ${t.symbol}` }),
+            // Quoted, not read back off the chain — it can only be at or above
+            // the guaranteed minimum, hence "about".
+            gotQty && paidQty
+              ? el("div", { class: "swx-done-s", text: `About ${gotQty} for ${paidQty}` })
+              : null,
+            el(
+              "div",
+              { class: "swx-done-s" },
+              el("a", {
+                href: `https://solscan.io/tx/${sig}`,
+                target: "_blank",
+                rel: "noopener",
+                text: "View transaction",
+              }),
+            ),
+          ),
+          finish,
+        );
+        finish.focus();
+      }
+
+      /** An error, in the terms someone can act on. */
+      function explain(err) {
+        const message = err?.message ?? "";
+        if (NO_SOL.test(message)) {
+          return `Not enough SOL for network fees. Keep about ${FEE_SOL_TEXT} SOL in this wallet to trade.`;
+        }
+        if (/0x1771|slippage/i.test(message)) return "The price moved. Review the trade and try again.";
+        if (!session?.custodial && /reject|denied|cancel|user/i.test(message)) return "Cancelled.";
+        return message || "Swap failed.";
+      }
+
       go.addEventListener("click", async () => {
         if (sending || done) return;
         sending = true;
         // Nothing may re-price under a transaction that is being signed.
         leave();
+        // The figures on screen, kept for the completion screen: `current`
+        // is cleared below, and the next re-quote would replace it anyway.
+        const q = current;
         go.disabled = true;
         go.classList.add("busy");
         go.textContent = session.custodial ? "Sending…" : "Confirm in wallet…";
@@ -1106,26 +1281,39 @@ function open(t) {
         setRNote("");
 
         try {
-          const sig = session.custodial
-            ? await serverSwap(current)
-            : toBase58(
-                await signAndSend(
-                  session.wallet,
-                  session.account,
-                  await build({ quote: current, taker: session.account.address, feeAccount }),
-                ),
-              );
-          done = true;
+          let sig;
+          let status;
+          if (session.custodial) {
+            // The server answers once the trade has landed, or has stopped waiting.
+            const r = await serverSwap(q);
+            sig = r.signature;
+            status = r.confirmed ? { status: "confirmed" } : { status: "pending" };
+          } else {
+            sig = toBase58(
+              await signAndSend(
+                session.wallet,
+                session.account,
+                await build({ quote: q, taker: session.account.address, feeAccount }),
+              ),
+            );
+            sent = true;
+            go.textContent = "Confirming…";
+            status = await landed(sig);
+          }
           sent = true;
-          // "Sent", not "Bought". signAndSend resolves when the wallet has
-          // broadcast the transaction, which is not the same as it landing and
-          // not the same as it succeeding: a swap carries the quote's
-          // otherAmountThreshold and reverts on-chain if the route settles
-          // below it, and a transaction can also expire without landing at all.
-          // This app holds no RPC of its own to ask with — the wallet does the
-          // sending — so the honest claim is the one we can actually make, and
-          // the link is how someone checks the rest.
+          if (status.status === "failed") throw new Error(status.error);
+          done = true;
+          current = null;
+          // Re-arm sized to what's left, so trading again is one click.
+          touched = false;
+          typed = "";
+          if (status.status === "confirmed") return complete(sig, q);
+
+          // Broadcast, but not seen landing within the wait. Not a failure —
+          // a congested network can take longer — so say what is known and
+          // hand over the link that settles it.
           rnote.replaceChildren(
+            "Sent — still confirming. ",
             el("a", {
               href: `https://solscan.io/tx/${sig}`,
               target: "_blank",
@@ -1133,19 +1321,14 @@ function open(t) {
               text: "Check the transaction",
             }),
           );
-          rnote.className = "swx-note ok";
+          rnote.className = "swx-note";
           go.textContent = `${buying ? "Buy" : "Sell"} sent`;
-          current = null;
-          // Re-arm sized to what's left, so trading again is one click.
-          touched = false;
-          typed = "";
           back.disabled = false;
           back.textContent = "Done";
         } catch (err) {
-          const msg = !session?.custodial && /reject|denied|cancel|user/i.test(err?.message ?? "")
-            ? "Cancelled."
-            : err?.message || "Swap failed.";
-          setRNote(msg, "err");
+          // Sent and reverted still moved the fee, so the opener should re-read.
+          if (err?.signature) sent = true;
+          setRNote(explain(err), "err");
           go.textContent = `${buying ? "Buy" : "Sell"} ${t.symbol}`;
           go.disabled = false;
           back.disabled = false;

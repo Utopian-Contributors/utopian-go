@@ -167,6 +167,38 @@ const CSS = `
 .swx-lnk:hover{background:var(--hover)}
 .swx-qr{width:220px;max-width:100%;margin:14px auto 0}
 .swx-qr svg{display:block;width:100%;height:auto;border-radius:6px}
+/*
+ * Quick sizes, inside the pane the amount is typed into — so they read as part
+ * of the field rather than a second control beside it. The chosen one takes
+ * the seg control's inverted fill, the one "selected" this dialog already uses.
+ */
+.swx-pct{display:flex;justify-content:flex-end;gap:6px;margin-top:8px}
+.swx-pct button{border:1px solid var(--b);background:none;border-radius:999px;
+ padding:3px 10px;font:600 12px/1.3 var(--ff);color:var(--m);cursor:pointer;
+ font-variant-numeric:tabular-nums;transition:background .15s,color .15s,border-color .15s}
+.swx-pct button:hover:not(:disabled):not(.on){background:var(--hover);color:var(--t)}
+.swx-pct button.on{background:var(--t);border-color:var(--t);color:var(--bg)}
+.swx-pct button:disabled{opacity:.45;cursor:default}
+/*
+ * The trade landed. A big green disc, the same green as the Buy button and its
+ * ink, so the tick stays legible after dark where the green turns pale.
+ */
+.swx-done{display:flex;flex-direction:column;align-items:center;text-align:center;
+ padding:14px 0 2px}
+.swx-check{width:88px;height:88px;border-radius:50%;background:var(--buy);
+ color:var(--buy-ink);display:grid;place-items:center;
+ animation:swx-pop .38s cubic-bezier(.2,1.4,.4,1) both}
+.swx-check svg{width:46px;height:46px;display:block}
+.swx-check path{stroke-dasharray:24;stroke-dashoffset:24;
+ animation:swx-draw .32s .22s ease-out forwards}
+@keyframes swx-pop{from{transform:scale(.4);opacity:0}}
+@keyframes swx-draw{to{stroke-dashoffset:0}}
+.swx-done-t{margin-top:16px;font:600 18px/1.3 var(--ff);color:var(--t)}
+.swx-done-s{margin-top:4px;font-size:13px;color:var(--f);
+ font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.swx-done-s a{color:var(--a);text-decoration:underline}
+@media (prefers-reduced-motion:reduce){
+ .swx-check,.swx-check path{animation:none;stroke-dashoffset:0}}
 `;
 
 /** Called once the trade dialog is about to render its form. */

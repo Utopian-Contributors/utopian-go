@@ -96,6 +96,12 @@ export async function build(p) {
         // not strand the user's funds in a token account they never asked for.
         wrapAndUnwrapSol: true,
         dynamicComputeUnitLimit: true,
+        // Left unset, Jupiter tipped next to nothing and a busy network dropped
+        // the trade; "high" cost 2% of a small one. Medium, capped at 0.0003
+        // SOL, matches what the server path asks for.
+        prioritizationFeeLamports: {
+          priorityLevelWithMaxLamports: { priorityLevel: "medium", maxLamports: 300_000 },
+        },
         ...(p.feeAccount ? { feeAccount: p.feeAccount } : {}),
       }),
     }),
