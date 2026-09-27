@@ -500,23 +500,16 @@ a:hover {
   cursor: progress;
 }
 
-/* A plus in a green disc rather than a mask: the plus takes --go-ink, so it stays legible in either theme. */
-[data-act="receive"]::before {
-  border-radius: 50%;
-  background:
-    linear-gradient(var(--go-ink), var(--go-ink)) center / 14px 3px no-repeat,
-    linear-gradient(var(--go-ink), var(--go-ink)) center / 3px 14px no-repeat,
-    var(--go);
-  -webkit-mask: none;
-  mask: none;
+[data-act="receive"] {
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v12m0 0-5-5m5 5 5-5M5 20h14'/%3E%3C/svg%3E");
 }
 
 [data-act="send"] {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M21 3 3 10.5l7 2.5 2.5 7z'/%3E%3Cpath d='m10 13 5-5' stroke-linecap='round'/%3E%3C/svg%3E");
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20V8m0 0-5 5m5-5 5 5M5 4h14'/%3E%3C/svg%3E");
 }
 
 [data-act="swap"] {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8h15l-4-4M20 16H5l4 4'/%3E%3C/svg%3E");
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 4v12m0 0-4-4m4 4 4-4M17 20V8m0 0-4 4m4-4 4 4'/%3E%3C/svg%3E");
 }
 
 /* —— Most traded —— */
