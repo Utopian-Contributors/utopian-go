@@ -6,6 +6,7 @@ import { BraveApiError, braveImageSearch, braveSearch } from "../lib/brave";
 import { DEFAULT_LANG, isLanguage } from "../lib/lang";
 import { asString } from "../lib/query";
 import { rateLimit } from "../lib/rateLimit";
+import { isSignature, signatureStatus } from "../lib/txStatus";
 import { tokenDetail } from "../lib/tokens/detail";
 import { lookupTokens, searchTokens, topTokens } from "../lib/tokens/store";
 import {
@@ -67,6 +68,12 @@ const imagesLimit = rateLimit({ perMinute: 120, burst: 40 });
  * at all.
  */
 const balancesLimit = rateLimit({ perMinute: 180, burst: 60 });
+
+/**
+ * The trade dialog polls this about once a second while a transaction lands,
+ * and gives up after a minute — so 120 a minute covers two trades at once.
+ */
+const txLimit = rateLimit({ perMinute: 120, burst: 40 });
 
 /**
  * Holdings is the opposite shape: one request per visit to the wallet page,
@@ -244,6 +251,31 @@ apiRouter.post(
           : { detail: err instanceof Error ? err.message : String(err) }),
       };
       res.status(502).json(body);
+    }
+  }),
+);
+
+/**
+ * Whether a sent transaction has landed, for a wallet that broadcast it itself.
+ *
+ * POST for the same reason as the two routes around it: a signature names a
+ * wallet as surely as its address does.
+ */
+apiRouter.post(
+  "/api/tx",
+  txLimit,
+  readJson,
+  wrap(async (req: Request, res: Response) => {
+    const signature = asString(req.body?.signature).trim();
+    if (!isSignature(signature)) {
+      res.status(400).json({ error: "Invalid signature." });
+      return;
+    }
+    try {
+      res.json(await signatureStatus(signature));
+    } catch (err) {
+      console.warn("[tx] status lookup failed:", err);
+      res.status(502).json({ error: "Could not read the transaction." });
     }
   }),
 );
