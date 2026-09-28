@@ -27,13 +27,12 @@
   --ch: #f1f3f4;
   --hover: #f1f3f4;
   /*
-   * A place to type is white with the daylight ink, and stays so after dark.
-   * Fields used to take --bg, which put them in the page's own colour in both
-   * themes: off-white on off-white by day, near-black on near-black by night,
-   * and neither stood off the page. Not --pn either, which goes #303134 at
-   * night and would be the same disappearance. The placeholder is named with
-   * them because --f goes pale at night, and pale on white is unreadable;
-   * this one is the daylight --f, 4.6:1 on the field.
+   * A place to type: white by day, #202124 after dark, a step off the page
+   * either way. Fields used to take --bg, the page's own colour, and so never
+   * stood off it. After dark the field goes darker than the page rather than
+   * lighter, so it reads as a well cut into the surface. Not --pn, which is
+   * lighter at night and is the panel colour dialogs already use. The
+   * placeholder is named with them so it can follow the surface, not the text.
    */
   --in: #fff;
   --in-ink: #202124;
@@ -101,6 +100,9 @@
     --pn: #303134;
     --ch: #3c4043;
     --hover: #2c2c2e;
+    --in: #202124;
+    --in-ink: #e8eaed;
+    --in-ph: #9aa0a6;
   }
 }
 

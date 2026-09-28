@@ -58,11 +58,10 @@ dialog textarea {
   padding: 8px 10px;
   border: 1px solid var(--b);
   border-radius: 8px;
-  /* White with the daylight ink in both themes; see --in in app.css. */
+  /* The field surface every input shares; see --in in app.css. */
   background: var(--in);
   font: inherit;
   color: var(--in-ink);
-  color-scheme: light;
   outline: 0;
 }
 
@@ -157,7 +156,7 @@ dialog textarea { resize: none; }
   min-height: 48px;
   margin: 0;
   /* Room inside now that the box is painted: text flush with the edge of a
-     white block reads as a mistake, where flush with nothing read as a line. */
+     filled block reads as a mistake, where flush with nothing read as a line. */
   padding: 8px 12px;
   border: 0;
   border-radius: 12px;
@@ -166,7 +165,6 @@ dialog textarea { resize: none; }
   background: var(--in);
   font: 20px/1.35 var(--ff);
   color: var(--in-ink);
-  color-scheme: light;
 }
 
 .compose-links {

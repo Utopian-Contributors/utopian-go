@@ -204,7 +204,7 @@ body.res .sf {
   padding: 0 6px 0 16px;
   border: 1px solid var(--b);
   border-radius: 24px;
-  /* White in both themes, like every field on the site (--in, app.css). */
+  /* The field surface every input shares (--in, app.css). */
   background: var(--in);
 }
 
@@ -220,7 +220,6 @@ body.res .sf {
   background: transparent;
   font: 16px var(--ff);
   color: var(--in-ink);
-  color-scheme: light;
   padding: 10px 0;
   /* Use our clear control instead of the native search cancel */
   -webkit-appearance: none;
