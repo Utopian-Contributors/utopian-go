@@ -20,7 +20,8 @@ const CSS = `
 .lgd h2{margin:0;font-size:18px}
 .lgd label{display:block;margin-top:14px;font-size:13px;color:var(--m)}
 .lgd input,.lgd textarea{box-sizing:border-box;width:100%;margin-top:4px;padding:8px 10px;
- border:1px solid var(--b);border-radius:8px;background:var(--bg);font:inherit;color:inherit;outline:0}
+ border:1px solid var(--b);border-radius:8px;background:var(--in);font:inherit;color:var(--in-ink);
+ color-scheme:light;outline:0}
 .lgd input:focus,.lgd textarea:focus{box-shadow:0 1px 6px rgba(0,0,0,.18)}
 .lgd textarea{resize:none}
 .lgd-h{margin:4px 0 0;font-size:12px;line-height:1.4;color:var(--f)}
