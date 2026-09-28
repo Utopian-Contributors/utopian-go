@@ -17,15 +17,14 @@ const CSS = `
 .swx-bal:hover{color:var(--a)}
 .swx-body{display:flex;align-items:center;gap:10px}
 /*
- * The amount is the one field in the pane, and it is white with the daylight
- * ink like every field on the site (--in, app.css), so it stands off the pane
- * after dark instead of vanishing into it. The pane keeps the page colour: its
- * balance line, the receive figure and the size chips are all inked for the
- * theme, and only the field is inked for white.
+ * The amount is the one field in the pane, and it takes the field surface
+ * every input shares (--in, app.css), so it stands off the pane instead of
+ * vanishing into it. The pane keeps the page colour around it: the balance
+ * line, the receive figure and the size chips stay as they were.
  */
 .swx-amt{flex:1;min-width:0;padding:4px 10px;border:0;border-radius:8px;
  background:var(--in);outline:none;text-align:right;font:500 22px/1.2 var(--ff);
- color:var(--in-ink);color-scheme:light;font-variant-numeric:tabular-nums}
+ color:var(--in-ink);font-variant-numeric:tabular-nums}
 .swx-amt::placeholder{color:var(--in-ph)}
 /*
  * The figure opposite the amount field, on the form and on both confirmation
