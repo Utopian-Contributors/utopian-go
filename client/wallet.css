@@ -28,6 +28,10 @@
   --dn: #d93025;
   --pn: #fff;
   --hover: #f1f3f4;
+  /* Fields: white with the daylight ink in both themes; see the note in app.css. */
+  --in: #fff;
+  --in-ink: #202124;
+  --in-ph: #70757a;
   /* Behind token logos: the page's extreme, so a transparent logo reads as drawn. */
   --ic: #fff;
   --ff: system-ui, Helvetica, Arial, sans-serif;
@@ -534,9 +538,14 @@ a:hover {
   padding: 9px 14px;
   border: 1px solid var(--b);
   border-radius: 999px;
-  background: var(--bg);
-  color: var(--t);
+  background: var(--in);
+  color: var(--in-ink);
+  color-scheme: light;
   font: inherit;
+}
+
+.wl-q::placeholder {
+  color: var(--in-ph);
 }
 
 /* —— The chosen token —— */
@@ -817,9 +826,16 @@ a:hover {
   padding: 9px 10px;
   border: 1px solid var(--b);
   border-radius: 8px;
-  background: var(--bg);
-  color: var(--t);
+  background: var(--in);
+  color: var(--in-ink);
+  /* A light surface whatever the theme, so the parts the browser draws itself,
+     the select's arrow and any autofill, are drawn for one. */
+  color-scheme: light;
   font: inherit;
+}
+
+.ks-f input::placeholder {
+  color: var(--in-ph);
 }
 
 .ks-f .wl-cta {

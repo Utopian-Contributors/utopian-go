@@ -26,6 +26,18 @@
   --pn: #fff;
   --ch: #f1f3f4;
   --hover: #f1f3f4;
+  /*
+   * A place to type is white with the daylight ink, and stays so after dark.
+   * Fields used to take --bg, which put them in the page's own colour in both
+   * themes: off-white on off-white by day, near-black on near-black by night,
+   * and neither stood off the page. Not --pn either, which goes #303134 at
+   * night and would be the same disappearance. The placeholder is named with
+   * them because --f goes pale at night, and pale on white is unreadable;
+   * this one is the daylight --f, 4.6:1 on the field.
+   */
+  --in: #fff;
+  --in-ink: #202124;
+  --in-ph: #70757a;
   --ff: system-ui, Helvetica, Arial, sans-serif;
   --shell: 1520px;
   /*

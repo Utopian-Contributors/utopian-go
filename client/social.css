@@ -58,9 +58,11 @@ dialog textarea {
   padding: 8px 10px;
   border: 1px solid var(--b);
   border-radius: 8px;
-  background: var(--bg);
+  /* White with the daylight ink in both themes; see --in in app.css. */
+  background: var(--in);
   font: inherit;
-  color: inherit;
+  color: var(--in-ink);
+  color-scheme: light;
   outline: 0;
 }
 
@@ -72,6 +74,15 @@ dialog textarea {
 dialog input:focus,
 dialog textarea:focus {
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+}
+
+.tools textarea::placeholder,
+.tools input::placeholder,
+.cmt input::placeholder,
+.find input::placeholder,
+dialog input::placeholder,
+dialog textarea::placeholder {
+  color: var(--in-ph);
 }
 
 dialog textarea { resize: none; }
@@ -145,14 +156,17 @@ dialog textarea { resize: none; }
   width: 100%;
   min-height: 48px;
   margin: 0;
-  padding: 4px 0 0;
+  /* Room inside now that the box is painted: text flush with the edge of a
+     white block reads as a mistake, where flush with nothing read as a line. */
+  padding: 8px 12px;
   border: 0;
-  border-radius: 0;
+  border-radius: 12px;
   resize: none;
   overflow: hidden;
-  background: transparent;
+  background: var(--in);
   font: 20px/1.35 var(--ff);
-  color: inherit;
+  color: var(--in-ink);
+  color-scheme: light;
 }
 
 .compose-links {
@@ -165,7 +179,7 @@ dialog textarea { resize: none; }
 
 .compose-links a { overflow-wrap: anywhere; }
 
-.composer textarea::placeholder { color: var(--f); }
+.composer textarea::placeholder { color: var(--in-ph); }
 .composer textarea:focus { outline: none; }
 
 .compose-bar {
@@ -1001,7 +1015,7 @@ a.crow.on {
   max-height: 160px;
   padding: 8px 12px;
   border-radius: 18px;
-  background: var(--ch);
+  background: var(--in);
   font-size: 16px;
   line-height: 1.35;
   overflow-y: auto;

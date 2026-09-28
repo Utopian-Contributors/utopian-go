@@ -204,7 +204,8 @@ body.res .sf {
   padding: 0 6px 0 16px;
   border: 1px solid var(--b);
   border-radius: 24px;
-  background: var(--bg);
+  /* White in both themes, like every field on the site (--in, app.css). */
+  background: var(--in);
 }
 
 .sf:focus-within {
@@ -218,7 +219,8 @@ body.res .sf {
   outline: 0;
   background: transparent;
   font: 16px var(--ff);
-  color: var(--t);
+  color: var(--in-ink);
+  color-scheme: light;
   padding: 10px 0;
   /* Use our clear control instead of the native search cancel */
   -webkit-appearance: none;
@@ -232,7 +234,7 @@ body.res .sf {
 }
 
 .sf input::placeholder {
-  color: var(--f);
+  color: var(--in-ph);
 }
 .sf-actions {
   display: flex;
