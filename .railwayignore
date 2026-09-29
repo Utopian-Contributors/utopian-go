@@ -19,9 +19,10 @@ node_modules/
 dist/
 public/
 
-# Token snapshot the server rewrites at runtime — a missing one is the normal
-# fresh-box path, and a stale local copy is worse than none.
-.cache/
+# What the server writes at runtime: the token cache and this box's photos and
+# dev wallet key. On Railway that path is the data volume, and a laptop's copy
+# is at best stale and at worst a key that should never leave it.
+data/
 
 # Secrets belong in Railway's environment. Nothing loads this file anyway:
 # there's no dotenv dependency and `start` doesn't pass --env-file.

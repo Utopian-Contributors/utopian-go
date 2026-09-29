@@ -280,12 +280,12 @@ data/social/avatars/<name>.t.jpg   timeline copy, ≤ 2 KB, ≤ 80 px wide
 data/social/posts/<id>-<n>.jpg     ≤ 48 KB, ≤ 1600 px edge
 data/social/posts/<id>-<n>.m.jpg   phone copy, ≤ 14 KB, ≤ 640 px edge
 data/social/chat/<id>-<n>.bin      sealed message photo: IV + AES-GCM(JPEG ≤ 48 KB)
-.cache/icons/<mint>.webp           token logo, 64 × 64, about 1 KB; a cache, rebuilt by the sync
+data/cache/icons/<mint>.webp       token logo, 64 × 64, about 1 KB; a cache, rebuilt by the sync
 ```
 
 **Token thumbnails.** After each hourly index rebuild, the server fetches the logos of every
 indexed mint, busiest first, that are missing or more than a week old. It shrinks each one
-with `sharp` to 64 × 64 WebP and writes it to `.cache/icons`. An IPFS logo falls back to
+with `sharp` to 64 × 64 WebP and writes it to `data/cache/icons`. An IPFS logo falls back to
 Pinata's and then ipfs.io's gateway, and a logo that fails is retried on the next sync. The logo URL comes from token metadata that anyone can set, so it is
 fetched only over `https`, from a named public host (no IP literals, `localhost`, `.local` or
 `.internal`), with redirects followed by hand under the same rule, a 1 MB cap and an 8 s
@@ -629,8 +629,10 @@ ever executed or parsed as markup in the browser.
       JSDoc types in `client/`, and a multi-paragraph build report. Is it stripped when a
       file is next touched, or in one pass? Are JSDoc type annotations allowed where `tsc`
       checks the client?
-- [ ] **Photos on Railway's disk** are lost on redeploy unless a volume is attached. Should
-      that be a volume, or object storage?
+- [x] **Photos on Railway's disk** are lost on redeploy unless a volume is attached. Should
+      that be a volume, or object storage? A volume: `data-volume` at `/app/data` holds
+      both `data/social` and `data/cache`, since a service may mount only one. It pins the
+      service to one replica; more than that means object storage.
 - [ ] **Volume or organic volume.** The most-traded list sorts by raw 24h volume from
       Jupiter. Wash trading inflates it for some tokens. Should it sort by
       `buyOrganicVolume + sellOrganicVolume` instead?

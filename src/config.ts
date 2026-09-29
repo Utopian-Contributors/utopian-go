@@ -78,16 +78,22 @@ export const TOKEN_PRICE_TIMEOUT_MS = 4_000;
 /** Index fetches are larger; give them more room but still bound them. */
 export const TOKEN_INDEX_TIMEOUT_MS = 20_000;
 
+/**
+ * Everything the server keeps on disk: this cache, and the photos in
+ * data/social. On Railway it is the one volume a service may mount.
+ */
+const CACHE_DIR = path.join(process.cwd(), "data", "cache");
+
 /** Disk snapshot so a restart doesn't cold-start the index. */
-export const TOKEN_INDEX_FILE = path.join(process.cwd(), ".cache", "tokens.json");
+export const TOKEN_INDEX_FILE = path.join(CACHE_DIR, "tokens.json");
 
 // —— Wallet page ——
 
 /** Rows in the wallet page's most-traded list. */
 export const TOKEN_TOP_COUNT = 30;
 
-/** Thumbnails are a cache: lost on redeploy, rebuilt by the next sync. */
-export const TOKEN_ICON_DIR = path.join(process.cwd(), ".cache", "icons");
+/** Thumbnails are a cache: kept across deploys, rebuilt by the next sync if lost. */
+export const TOKEN_ICON_DIR = path.join(CACHE_DIR, "icons");
 
 /** Drawn at 24–32 CSS px, so 64 covers a 2x screen. */
 export const TOKEN_ICON_EDGE = 64;

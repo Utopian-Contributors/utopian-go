@@ -6,8 +6,8 @@ import path from "path";
  *
  * A profile photo and a post photo are JPEGs the browser already compressed.
  * Putting those bytes in a row would make every timeline query drag them
- * along. The directory also holds the cookie-signing secret, which is not a
- * row either.
+ * along. The keys that seal wallets and sign cookies come from the
+ * environment; only a dev box without WALLET_KEY keeps one here.
  */
 
 export function socialDir(): string {
