@@ -365,7 +365,7 @@ function renderSide(person) {
       "div",
       { class: "name" },
       el("h2", { text: person.name }),
-      person.loc ? el("span", { class: "muted", text: person.loc }) : null,
+      person.loc ? el("span", { class: "muted", text: `[${person.loc}]` }) : null,
     ),
     person.bio ? el("p", { class: "ld", text: person.bio }) : null,
     walletButton(person.address, person.name),
