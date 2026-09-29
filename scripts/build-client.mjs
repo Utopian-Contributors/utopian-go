@@ -159,8 +159,12 @@ const LEGAL_MAX = 14_336;
  * page's wordmark by day and by night, declared as a prefers-color-scheme pair
  * of background images in app.css, so a visitor fetches exactly one of them —
  * and only on the home page, where the mark is large enough to carry a scene.
+ *
+ * The favicons are the same kind of pair: a browser that takes SVG icons
+ * fetches the SVG, which follows the theme, and only the rest fetch the PNG.
  */
 const STATIC_FIRST_LOAD = [
+  "go-favicon.svg",
   "go-favicon.png",
   "banner-light.webp",
   "banner-dark.webp",
