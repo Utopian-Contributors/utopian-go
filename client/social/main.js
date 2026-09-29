@@ -9,7 +9,7 @@ import { $, el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { LOGIN } from "../js/acct.js";
 import { open as openLogin } from "../js/login.js";
-import { writeName } from "../js/me.js";
+import { readName, writeName } from "../js/me.js";
 import { dismissible } from "../js/sheet.js";
 import { b64u, needPasskey, u8, why } from "../js/passkey.js";
 import { connect, settled, signAndSend } from "../js/wallet.js";
@@ -57,7 +57,8 @@ function applyMe(next) {
   const link = $("me");
   const badge = $("badge");
   const search = document.querySelector("#ac .ac-b");
-  link.hidden = $("out").hidden = $("aw").hidden = !me;
+  // My Profile always shows, so the tab bar never reflows once the session is known.
+  $("out").hidden = $("aw").hidden = !me;
   $("in").hidden = !!me;
   // Logged out, the side panel (with Log in) is the left column, as in Messenger.
   document.body.classList.toggle("out", !me);
@@ -65,8 +66,8 @@ function applyMe(next) {
   const unread = $("mbadge");
   badge.hidden = !(me?.unseen > 0);
   unread.hidden = !(me?.unread > 0);
+  link.href = me ? `/social/u/${me.name}` : "/social";
   if (!me) return;
-  link.href = `/social/u/${me.name}`;
   badge.textContent = me.unseen;
   unread.textContent = me.unread;
 }
@@ -1351,6 +1352,14 @@ new MutationObserver(() => {
 $("bk").addEventListener("click", () => main.querySelector(".back")?.click());
 
 $("in").addEventListener("click", () => openAuth("login"));
+// Until the server answers, the remembered name points My Profile at the right page.
+if (readName()) $("me").href = `/social/u/${readName()}`;
+// Signed out, My Profile is still there; it asks you to log in.
+$("me").addEventListener("click", (e) => {
+  if (me || readName()) return;
+  e.preventDefault();
+  openAuth("login");
+});
 dismissible(/** @type {HTMLDialogElement} */ ($("qd")));
 $("out").addEventListener("click", async () => {
   try {
