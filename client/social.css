@@ -682,6 +682,8 @@ dialog label { display: block; margin-top: 14px; font-size: 13px; color: var(--m
 body.soc {
   height: 100dvh;
   overflow: hidden;
+  /* viewport-fit=cover draws under a landscape notch; keep off it. */
+  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   display: flex;
   flex-direction: column;
 }
@@ -1114,7 +1116,9 @@ a.crow.on {
     flex: none;
     max-width: none;
     margin: 0;
-    padding: 0 0 env(safe-area-inset-bottom);
+    /* Clear of the screen's edge: the home indicator's inset where there is
+       one (viewport-fit=cover in social.html reports it), 8px otherwise. */
+    padding: 0 0 max(8px, env(safe-area-inset-bottom));
     gap: 0;
     overflow: visible;
     border-top: 1px solid var(--ln);
