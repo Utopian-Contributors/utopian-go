@@ -598,7 +598,7 @@ img.pfp {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px 12px;
+  gap: 6px .45rem;
 }
 
 .name h2 { margin: 0; }
