@@ -4,10 +4,12 @@
   page rather than a download, plus section 9 for what this site in particular
   sends where. The source's tables are set as lists: four columns do not fit a
   phone, and the whole point of a disclosure is that it can be read.
+  Section 9 last revised 27 Sep 2026: accounts, public content, encrypted
+  messages, custodial wallets.
   Fragment only: src/server.ts renders it into the shell.
 -->
 <h1>Privacy Policy</h1>
-<p class="dt">Utopian Contributors LLC &middot; Effective 16 November 2025</p>
+<p class="dt">Utopian Contributors LLC &middot; Effective 16 November 2025 &middot; Section 9 updated 27 September 2026</p>
 
 <p>
   At Utopian Contributors, we are profoundly committed to protecting your
@@ -59,7 +61,8 @@
     Lawful basis: contract (necessary for service).
   </li>
   <li>
-    <b>Blockchain data</b> &mdash; non-custodial crypto wallet address.
+    <b>Blockchain data</b> &mdash; crypto wallet address, whether a wallet you
+    connect or one we hold for your account (see section 9).
     Collected to facilitate decentralized transactions and service
     contributions. Lawful basis: contract (necessary for service).
   </li>
@@ -215,23 +218,25 @@
 <h2>9. UtopianGO</h2>
 <p>
   This section is specific to UtopianGO at utopiango.com and describes exactly
-  what the site does with what you type into it.
+  what the site does with what you type into it. Where it is more specific than
+  the sections above, it governs.
 </p>
 <p>
-  <b>9.1. No account, no cookies, no trackers.</b> UtopianGO has no sign-up and
-  no password, so the identity data in section 2 is never collected here. It
-  sets no cookies and loads no analytics or advertising scripts of any kind.
-  There is nothing on the site that follows you to another one. Connecting a
-  wallet is not an account; the one thing the site stores on your device is
-  described in 9.6.
+  <b>9.1. No trackers, one cookie.</b> UtopianGO loads no analytics or
+  advertising scripts of any kind, and nothing on the site follows you to
+  another one. The only cookie it sets is the session cookie that keeps you
+  signed in to an account. It cannot be read by scripts on the page, lasts 30
+  days, and is removed when you log out. You can search without an account and
+  without any cookie.
 </p>
 <p>
   <b>9.2. Your search goes to Brave.</b> To answer a search we forward your
   query to the Brave Search API from our server, so your query reaches Brave
   but your IP address and browser do not. We do not write your queries to any
-  database or profile, and there is no search history to log in to. Queries do
-  appear in the page URL, and so may show up in the ordinary request logs our
-  hosting provider keeps for a short period, alongside your IP address.
+  database or profile, and there is no search history tied to your account.
+  Queries do appear in the page URL, and so may show up in the ordinary request
+  logs our hosting provider keeps for a short period, alongside your IP
+  address.
 </p>
 <p>
   <b>9.3. Image and thumbnail results load from their source.</b> Pictures on
@@ -246,35 +251,99 @@
   Looking at a price card sends nothing about you anywhere.
 </p>
 <p>
-  <b>9.5. If you connect a wallet.</b> Connecting is entirely your choice and
-  nothing happens until you do. Your wallet address is then sent to our server
-  to read what the address holds &mdash; the balances a trade can be funded
-  with, and, on the wallet page, the tokens held and what they are worth. We
-  read those from the Solana blockchain via Helius and do not store them. All
-  of it is public on-chain information that any block explorer will show for
-  any address. Your address is also sent, when you request a quote or a swap,
-  from your browser directly to Jupiter&rsquo;s API, which sees your address
-  and your IP. Your keys never
-  leave your wallet, we never take custody, and the transaction is signed and
-  submitted by your wallet, not by us. Anything that settles on Solana is
-  public and permanent by the nature of a blockchain, and is outside our
-  control and outside the deletion right in section 5.
+  <b>9.5. If you create an account.</b> We ask for no name and no email
+  address. We store:
+</p>
+<ul>
+  <li>your username, which is permanent;</li>
+  <li>
+    your password, only as a salted scrypt hash from which it cannot be read
+    back;
+  </li>
+  <li>
+    if you add a passkey, its public credential (never its private half, which
+    stays on your device);
+  </li>
+  <li>
+    what you choose to add: a profile photo, bio, and location, your posts and
+    their photos, comments, re-posts, the posts you save, and your friends;
+  </li>
+  <li>
+    what the service needs to run: notifications, view counts on posts, when
+    your account was created, and which version of the Terms of Service you
+    accepted and when you accepted it.
+  </li>
+</ul>
+<p>
+  <b>9.6. Public content.</b> Your profile (username, photo, bio, and location),
+  posts, post photos, re-posts, and comments are public. Anyone can see them at
+  your profile page, with or without an account, and anyone can copy them,
+  share them, or have them indexed by search engines. Saved posts and your
+  friends list are visible only to you.
 </p>
 <p>
-  <b>9.6. What is stored on your device.</b> If you connect a wallet, your
-  browser remembers its public address, and the name of the wallet extension
-  you picked, in that browser&rsquo;s local storage &mdash; so that you are not
-  asked to connect again on every visit. That is the only thing UtopianGO
-  writes to your device. It is not a cookie, it is never attached automatically
-  to any request, and no copy of it is kept on our server. Pressing
-  &ldquo;Logout&rdquo; erases it immediately, as does clearing your
-  browser&rsquo;s data for this site; either way your wallet may still list
-  this site among those it has approved, which you can revoke in the wallet
-  itself.
+  <b>9.7. Messages are stored only encrypted.</b> Direct messages and the photos
+  sent with them are encrypted on your device before they are sent, and we
+  store them only in that encrypted form. Your private messaging key is itself
+  encrypted under your passkey before it reaches us, so we cannot decrypt your
+  messages and cannot hand anyone a readable copy of them. To deliver them we
+  do keep, unencrypted: who sent each message, to whom, when, how many photos it
+  carries, and whether it has been read, as well as each person&rsquo;s public
+  messaging keys. We keep the most recent 1,000 messages in each conversation
+  and delete older ones automatically.
 </p>
 <p>
-  <b>9.7. What we keep.</b> Nothing that identifies you. The site holds no
-  user records, so a deletion request about UtopianGO will usually be answered
-  with the fact that there was nothing to delete &mdash; you are welcome to ask
-  us to confirm that at the address in section 8.
+  <b>9.8. Your account&rsquo;s wallet is custodial.</b> Each account comes with a
+  Solana wallet whose keys are held by Utopian Contributors LLC. Its recovery
+  phrase is stored encrypted twice: once under your password, so that you can
+  view it, and once under a server key kept outside our database, so that our
+  server can sign the transactions you ask for. Our API never returns a private
+  key, and returns the phrase only to you, after you enter your password or
+  use your passkey. The wallet&rsquo;s address is public. We read its
+  balances from the Solana blockchain via Helius. When you trade or send from
+  it, our server builds the transaction, with Jupiter for a swap, and submits
+  it to Solana. Jupiter and Helius then see your wallet address and our
+  server&rsquo;s IP address, not yours.
+</p>
+<p>
+  <b>9.9. If you connect an outside wallet.</b> Connecting one is entirely your
+  choice and nothing happens until you do. Its address is then sent to our
+  server so we can read what the address holds, via Helius, and we do not store
+  the result. When you request a quote or a swap with it, your address is sent
+  from your browser directly to Jupiter&rsquo;s API, which sees your address and
+  your IP. That wallet&rsquo;s keys never leave it, and it signs and submits the
+  transaction, not us.
+</p>
+<p>
+  <b>9.10. Blockchain data is permanent.</b> Anything that settles on Solana,
+  from either kind of wallet, is public and permanent by the nature of a
+  blockchain. It is outside our control and outside the deletion right in
+  section 5.
+</p>
+<p>
+  <b>9.11. What is stored on your device.</b> Your browser keeps, for this site
+  only:
+</p>
+<ul>
+  <li>the session cookie in 9.1, while you are signed in;</li>
+  <li>your username, so the header can show it before the page loads;</li>
+  <li>the address and wallet name of an outside wallet you connected;</li>
+  <li>search results you save, and the sites you left search for;</li>
+  <li>your result language, if you picked one;</li>
+  <li>your messaging key, so you are not asked for your passkey every time.</li>
+</ul>
+<p>
+  Saved results, the list of sites you visited, and your language choice are
+  never sent to our server. Logging out removes the session cookie and your
+  messaging key. Clearing your browser&rsquo;s data for this site removes all
+  of it.
+</p>
+<p>
+  <b>9.12. What we keep, and deleting it.</b> We keep your account data for as
+  long as the account exists. To limit abuse, our server counts requests per IP
+  address in memory, and does not write those counts anywhere. There is not yet
+  a button to delete an account. To delete yours, or any post or comment, email
+  the address in section 8. We will ask you to prove you control the account,
+  then delete it and everything listed in 9.5 and 9.7. We cannot recall copies of public content
+  that others have already made, or anything recorded on the blockchain.
 </p>

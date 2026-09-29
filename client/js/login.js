@@ -33,6 +33,9 @@ const CSS = `
 .lgd-t{background:none;color:var(--go);border:0;padding:8px 0;font:600 13px/1 var(--ff);cursor:pointer}
 .lgd-t:hover{color:var(--buy)}
 .lgd button:disabled{opacity:.55;cursor:default}
+.lgd-c{display:flex;gap:8px;align-items:flex-start;color:var(--t)}
+.lgd .lgd-c input{width:auto;margin:3px 0 0;flex:none}
+.lgd-c a{color:var(--go)}
 .lgd-or{margin:16px 0 0;text-align:center;font-size:13px;color:var(--f)}
 .lgd-f{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
 `;
@@ -102,7 +105,8 @@ async function signIn(button, task) {
   button.disabled = true;
   try {
     await task();
-    $.pass.value = $.phrase.value = "";
+    $.pass.value = $.again.value = $.phrase.value = "";
+    $.terms.checked = false;
     dialog?.close();
     done();
   } catch (cause) {
@@ -140,6 +144,15 @@ function build() {
     minlength: "8",
     maxlength: "128",
   });
+  $.again = el("input", {
+    id: "lgd-p2",
+    name: "password-again",
+    type: "password",
+    required: true,
+    autocomplete: "new-password",
+    maxlength: "128",
+  });
+  $.terms = el("input", { id: "lgd-a", type: "checkbox", required: true });
   $.err = el("p", { class: "lgd-e", role: "alert" });
   $.go = el(
     "button",
@@ -177,6 +190,21 @@ function build() {
     el("label", { for: "lgd-p" }, ...per("span", {}, { "login register": "Password", recover: "New password" })),
     $.pass,
     hint("register recover", "At least 8 characters."),
+    only("register", el("div", {}, el("label", { for: "lgd-p2", text: "Confirm password" }), $.again)),
+    only(
+      "register",
+      el(
+        "label",
+        { class: "lgd-c", for: "lgd-a" },
+        $.terms,
+        el(
+          "span",
+          {},
+          "I agree to the ",
+          el("a", { href: "/terms", target: "_blank", rel: "noopener", text: "Terms of Service" }),
+        ),
+      ),
+    ),
     only("login", el("button", { type: "button", class: "lgd-t", text: "Forgot password?", onclick: () => open("recover") })),
     $.err,
     $.go,
@@ -185,9 +213,11 @@ function build() {
     e.preventDefault();
     signIn($.go, async () => {
       if (mode === "recover") return send("/api/social/recover", { phrase: $.phrase.value, password: $.pass.value });
+      if (mode === "register" && $.again.value !== $.pass.value) throw new Error("The passwords don't match.");
       const data = await send(mode === "register" ? "/api/social/register" : "/api/social/login", {
         username: $.user.value,
         password: $.pass.value,
+        ...(mode === "register" && { terms: $.terms.checked }),
       });
       if (data.passkey) await passkey(data.passkey, $.user.value.trim().toLowerCase());
     });
@@ -231,6 +261,7 @@ export function open(next = "login", onDone) {
   // Disabled as well as hidden: a hidden required field would still block the form.
   $.user.disabled = mode === "recover";
   $.phrase.disabled = mode !== "recover";
+  $.again.disabled = $.terms.disabled = mode !== "register";
   $.pass.autocomplete = mode === "login" ? "current-password" : "new-password";
   $.err.textContent = "";
   if (!dialog.open) dialog.showModal();

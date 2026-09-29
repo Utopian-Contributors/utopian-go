@@ -1,6 +1,6 @@
 import express, { NextFunction, Request, Response, Router } from "express";
 import { createPublicKey, randomBytes } from "crypto";
-import { SITE_URL } from "../config";
+import { SITE_URL, TERMS_VERSION } from "../config";
 import {
   checkPassword,
   clearSession,
@@ -338,6 +338,7 @@ socialRouter.post(
     if (!name) throw new SocialError(400, "Usernames are 3–16 letters, numbers, or _.");
     const password = passwordOk(req.body?.password);
     if (!password) throw new SocialError(400, "Use at least 8 characters.");
+    if (req.body?.terms !== true) throw new SocialError(400, "Agree to the Terms of Service to create an account.");
     const phrase = generateMnemonic();
     const address = solanaAddress(phrase);
     const pass = await newPassword(password);
@@ -360,6 +361,7 @@ socialRouter.post(
       created: Date.now(),
       epoch: 0,
       keyBox: sealForServer(phrase),
+      terms: { version: TERMS_VERSION, at: Date.now() },
     };
     const inserted = await insertUser(user);
     if (!inserted) throw new SocialError(409, "That username is taken.");

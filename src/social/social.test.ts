@@ -8,6 +8,7 @@ import path from "path";
 import { Client } from "pg";
 import test, { after } from "node:test";
 import { checkPassword, newPassword, openPhrase, sealPhrase, stale } from "./auth";
+import { TERMS_VERSION } from "../config";
 import { jpegSize } from "./jpeg";
 import {
   base58,
@@ -26,7 +27,7 @@ import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMe
 import { scrub } from "./guard";
 import { postWait, username, waitText } from "./limits";
 import { sendAvatar, sendPostPhoto, socialRouter } from "./routes";
-import { TIMELINE_PAGE, closePool, databaseUrl, ensureSchema, resetSocial } from "./db";
+import { TIMELINE_PAGE, closePool, databaseUrl, ensureSchema, getUser, resetSocial } from "./db";
 import { WORDLIST } from "./wordlist";
 
 const dir = mkdtempSync(path.join(tmpdir(), "social-"));
@@ -406,12 +407,16 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const ada = await call("POST", "/api/social/register", {
       username: "Ada",
       password: "password1",
+      terms: true,
     });
     assert.equal(ada.status, 200);
     assert.equal(ada.json?.name, "ada");
     assert.equal(typeof ada.json?.address, "string");
     assert.equal(JSON.stringify(ada.json).includes("phrase"), false);
     const adaAddress = String(ada.json?.address);
+    const adaTerms = (await getUser("ada"))?.terms;
+    assert.equal(adaTerms?.version, TERMS_VERSION);
+    assert.ok(adaTerms && Date.now() - adaTerms.at < 60_000);
     jar = "";
     const secret = /passHash|pass_hash|phraseCt|phrase_ct|phraseSalt|phrase_salt|"cose"/;
     const pub = await call("GET", "/api/social/u/ada");
@@ -426,13 +431,18 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const ben = await call("POST", "/api/social/register", {
       username: "ben",
       password: "password2",
+      terms: true,
     });
     assert.equal(ben.status, 200);
     jar = "";
 
+    const unagreed = await call("POST", "/api/social/register", { username: "dee", password: "password4" });
+    assert.equal(unagreed.status, 400);
+
     const taken = await call("POST", "/api/social/register", {
       username: "ada",
       password: "password1",
+      terms: true,
     });
     assert.equal(taken.status, 409);
 
@@ -470,7 +480,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     jar = "";
 
     // A throwaway account for the guessing limits, so nobody below is held up.
-    assert.equal((await call("POST", "/api/social/register", { username: "cat", password: "password3" })).status, 200);
+    assert.equal((await call("POST", "/api/social/register", { username: "cat", password: "password3", terms: true })).status, 200);
     jar = "";
     // Three password guesses a minute from one address, whatever the account.
     pinned = true;
@@ -928,7 +938,7 @@ test("messenger keeps only ciphertext and refuses stale or foreign keys", async 
 
   async function join(name: string) {
     const call = person();
-    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1" })).status, 200);
+    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1", terms: true })).status, 200);
     return call;
   }
 

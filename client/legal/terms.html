@@ -2,10 +2,12 @@
   Terms of Service — the text published by Utopian Contributors LLC at
   utopiancontrib.com (terms-of-service.pdf, effective Nov 16 2025), rendered as
   a page rather than a download, plus section 11 for the parts specific to this
-  site. Fragment only: src/server.ts renders it into the shell.
+  site (last revised 27 Sep 2026: accounts, public content, encrypted messages,
+  custodial wallets). Fragment only: src/server.ts renders it into the shell.
+  Changing the terms? Bump TERMS_VERSION in src/config.ts to the new date.
 -->
 <h1>Terms of Service</h1>
-<p class="dt">Utopian Contributors LLC &middot; Effective 16 November 2025</p>
+<p class="dt">Utopian Contributors LLC &middot; Effective 16 November 2025 &middot; Section 11 updated 27 September 2026</p>
 
 <p>
   These Terms of Service (&ldquo;Terms&rdquo;) govern your use of the Utopian
@@ -38,7 +40,7 @@
 <p>
   <b>2.1. Account Creation:</b> You may be required to create an account to
   access certain features. You must provide accurate and complete information.
-  UtopianGO has no accounts; see section 11.
+  UtopianGO accounts are described in section 11.
 </p>
 <p>
   <b>2.2. Security:</b> You are responsible for safeguarding your password and
@@ -185,42 +187,65 @@
   specifically. Where it is more specific, it governs.
 </p>
 <p>
-  <b>11.1. No account:</b> UtopianGO has no sign-up and no password. Connecting
-  a wallet is not an account: it creates no record with us, and the site
-  remembers only the public address, in your own browser, as described in
-  section 9.6 of the Privacy Policy. Section 2 applies to UtopianGO only in
-  that you agree not to use it unlawfully or to interfere with its operation.
+  <b>11.1. Accounts:</b> A UtopianGO account has a username, which is permanent,
+  a password, and optionally a passkey. Section 2 applies in full: you are
+  responsible for keeping your password, passkey, and recovery phrase secret
+  and for everything done through your account.
 </p>
 <p>
-  <b>11.2. Search results:</b> Web, image, news, video, and discussion results
+  <b>11.2. Public content can be seen by many people:</b> Your profile (username,
+  photo, bio, and location), posts, post photos, and comments are public. Anyone
+  can see them, with or without an account, and they may be copied, shared,
+  screenshotted, or indexed by others, and we cannot recall copies others have
+  made. Do not post anything you would not want the world to see.
+</p>
+<p>
+  <b>11.3. Messages are stored only encrypted:</b> Direct messages and the photos
+  sent with them are encrypted on your device before they reach us, and we save
+  them only in that encrypted form. We do not hold the keys to read them. To
+  deliver them we do keep who sent a message, to whom, when, and how many photos
+  it carries. We keep up to the most recent 1,000 messages in each
+  conversation. Because we cannot read your messages, we cannot recover them if
+  you lose access to your keys.
+</p>
+<p>
+  <b>11.4. Custodial wallet keys:</b> Each account comes with a Solana wallet.
+  The keys to that wallet are generated, held, and owned by Utopian Contributors
+  LLC, and our servers sign transactions on your instruction. You have no
+  ownership interest in the keys themselves. You nevertheless assume full
+  responsibility for every transaction made through your account, for
+  safeguarding your password, passkey, and the recovery phrase shown in your
+  profile, and for any loss that results from someone else obtaining them.
+  Blockchain transactions are final: once a transaction is submitted we cannot
+  reverse, cancel, or recover it.
+</p>
+<p>
+  <b>11.5. Search results:</b> Web, image, news, video, and discussion results
   are supplied by the Brave Search API and are the work of their respective
   publishers. We do not author, endorse, verify, or take responsibility for
   them, and we cannot remove a third party&rsquo;s page from the web on your
   behalf.
 </p>
 <p>
-  <b>11.3. Prices are information, not advice:</b> Token prices, 24-hour
+  <b>11.6. Prices are information, not advice:</b> Token prices, 24-hour
   changes, and charts are sourced from Jupiter and Helius, may be delayed or
   wrong, and are provided for information only. Nothing on UtopianGO is
   financial, investment, tax, or legal advice, an offer to sell, or a
   solicitation to buy any asset.
 </p>
 <p>
-  <b>11.4. Swaps are non-custodial:</b> If you use the Buy panel, your own
-  wallet signs and submits the transaction and the swap is routed and executed
-  by Jupiter on the Solana network. We never take custody of your funds, never
-  hold your keys, and cannot reverse, cancel, or recover a transaction once it
-  is submitted. Blockchain transactions are final. You are responsible for
-  network fees, slippage, and for confirming what you are signing.
+  <b>11.7. Swaps:</b> Swaps are routed and executed by Jupiter on the Solana
+  network. You are responsible for network and priority fees, slippage, and
+  confirming the trade before you submit it.
 </p>
 <p>
-  <b>11.5. Platform fee:</b> Swaps carry an integrator fee paid to us, taken by
+  <b>11.8. Platform fee:</b> Swaps carry an integrator fee paid to us, taken by
   Jupiter as part of the trade. It is currently 0.2% (20 basis points) and is
-  capped in our software at 1%. The rate in force is shown in the Buy panel
-  before you confirm.
+  capped in our software at 1%. The rate in force is shown before you
+  confirm a trade.
 </p>
 <p>
-  <b>11.6. Digital assets carry risk:</b> Token prices are volatile and you can
+  <b>11.9. Digital assets carry risk:</b> Token prices are volatile and you can
   lose everything you put in. $UTCC is a memecoin with no claim on the Company,
   no yield, and no promise of value. Do not trade with money you cannot afford
   to lose.

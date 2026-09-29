@@ -268,3 +268,9 @@ export const TOKEN_PINNED_MINTS = new Set([
   // $UTCC — Utopian Contributor Coin, this project's own token.
   "HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA",
 ]);
+
+/**
+ * The Terms of Service a new account agrees to, recorded against it at sign-up.
+ * Bump it, to the date in client/legal/terms.html, whenever those terms change.
+ */
+export const TERMS_VERSION = "2026-09-27";

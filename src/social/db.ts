@@ -120,6 +120,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS epoch integer NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS key_iv text;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS key_tag text;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS key_ct text;
+-- Proof of acceptance: which Terms of Service the account agreed to at sign-up, and when.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_at bigint;
 ALTER TABLE users DROP COLUMN IF EXISTS prf_salt;
 ALTER TABLE users DROP COLUMN IF EXISTS prf_iv;
 ALTER TABLE users DROP COLUMN IF EXISTS prf_tag;
@@ -211,6 +214,8 @@ type UserRow = {
   key_iv: string | null;
   key_tag: string | null;
   key_ct: string | null;
+  terms_version: string | null;
+  terms_at: number | null;
 };
 
 export interface Passkey {
@@ -240,6 +245,8 @@ export interface User {
   epoch: number;
   /** The phrase sealed under WALLET_KEY. Absent on accounts made before it, until the next password. */
   keyBox: KeyBox | null;
+  /** The Terms of Service version accepted at sign-up, and when. Null only on accounts from before the checkbox. */
+  terms: { version: string; at: number } | null;
 }
 
 export interface Card {
@@ -278,7 +285,7 @@ export interface NoteRow {
 
 const USER_COLS = `name, uid, pass_salt, pass_hash, phrase_salt, phrase_iv, phrase_tag, phrase_ct,
   address, bio, loc, avatar_rev, last_post, created, passkey_id, passkey_cose, passkey_alg, passkey_count, epoch,
-  key_iv, key_tag, key_ct`;
+  key_iv, key_tag, key_ct, terms_version, terms_at`;
 
 function userFrom(row: UserRow): User {
   return {
@@ -299,6 +306,7 @@ function userFrom(row: UserRow): User {
     epoch: row.epoch,
     keyBox:
       row.key_iv && row.key_tag && row.key_ct ? { iv: row.key_iv, tag: row.key_tag, ct: row.key_ct } : null,
+    terms: row.terms_version && row.terms_at != null ? { version: row.terms_version, at: Number(row.terms_at) } : null,
     passkey:
       row.passkey_id && row.passkey_cose && row.passkey_alg != null && row.passkey_count != null
         ? { id: row.passkey_id, cose: row.passkey_cose, alg: row.passkey_alg, count: row.passkey_count }
@@ -350,14 +358,15 @@ export async function insertUser(user: User): Promise<boolean> {
   const res = await db().query(
     `INSERT INTO users (
        name, uid, pass_salt, pass_hash, phrase_salt, phrase_iv, phrase_tag, phrase_ct,
-       address, bio, loc, avatar_rev, last_post, created, key_iv, key_tag, key_ct
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       address, bio, loc, avatar_rev, last_post, created, key_iv, key_tag, key_ct,
+       terms_version, terms_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
      ON CONFLICT DO NOTHING`,
     [
       user.name, user.uid, user.passSalt, user.passHash, user.phraseSalt, user.phraseIv,
       user.phraseTag, user.phraseCt, user.address, user.bio, user.loc, user.avatarRev,
       user.lastPost, user.created, user.keyBox?.iv ?? null, user.keyBox?.tag ?? null,
-      user.keyBox?.ct ?? null,
+      user.keyBox?.ct ?? null, user.terms?.version ?? null, user.terms?.at ?? null,
     ],
   );
   return res.rowCount === 1;

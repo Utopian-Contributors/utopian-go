@@ -30,6 +30,9 @@ model User {
   passkeyCount Int?      @map("passkey_count")
   /// Session counter. A cookie signed under another value is refused.
   epoch        Int       @default(0)
+  /// Proof of acceptance: the Terms of Service version agreed to at sign-up, and when.
+  termsVersion String?   @map("terms_version")
+  termsAt      BigInt?   @map("terms_at")
   posts        Post[]
   comments     Comment[]
   saves        Save[]
