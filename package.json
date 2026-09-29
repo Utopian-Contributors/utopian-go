@@ -9,6 +9,7 @@
     "dev": "node scripts/dev.mjs",
     "build:client": "node scripts/build-client.mjs",
     "build:og": "node scripts/og-image.mjs",
+    "build:icons": "node scripts/app-icons.mjs",
     "build:server": "tsc",
     "build": "npm run build:client && npm run build:server",
     "start": "NODE_ENV=production node dist/server.js",

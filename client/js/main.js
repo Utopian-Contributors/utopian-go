@@ -7,6 +7,7 @@
 import { $, clearResults, el, hideSkeleton, setLoading, setStatus, showSkeleton } from "./dom.js";
 import { mountAccount } from "./acct.js";
 import { noZoom } from "./device.js";
+import { mountPwa } from "./pwa.js";
 import { readUrlState, writeUrl } from "./url.js";
 import { langParam, mountLang, setLang } from "./lang.js";
 import { createRenderer } from "./render.js";
@@ -64,6 +65,7 @@ function syncClearButton() {
 mountAccount($("ac"));
 paintSaved();
 noZoom();
+mountPwa();
 
 const hiveBtn = el("button", { type: "button", class: "hvb", "aria-label": "Places", title: "Places" });
 $("hm-tk").append(hiveBtn);

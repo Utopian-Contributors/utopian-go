@@ -10,9 +10,19 @@
     <title>Social</title>
     <link rel="icon" href="/go-favicon.png" sizes="64x64" type="image/png" />
     <link rel="icon" href="/go-favicon.svg" type="image/svg+xml" />
+    <!-- The installed app: its name and icons are in the manifest. iOS reads the
+         touch icon and the title from here instead, and without the title
+         would name the home-screen icon after this page. The theme colour is
+         the page's own background, which tints the installed app's status
+         bar and title bar to match it. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="UtopianGO" />
+    <meta name="theme-color" content="#fffff6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#282124" media="(prefers-color-scheme: dark)" />
     <link rel="stylesheet" href="/social.css" />
   </head>
-  <body class="res soc" data-qr="/qr.js" data-ch="/chat.js">
+  <body class="res soc" data-qr="/qr.js" data-ch="/chat.js" data-pw="/install.js">
     <svg width="0" height="0" aria-hidden="true" style="position: absolute">
       <symbol id="pi" viewBox="0 0 24 24">
         <rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" />

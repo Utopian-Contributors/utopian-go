@@ -13,6 +13,7 @@ import { open as openLogin } from "../js/login.js";
 import { readName, writeName } from "../js/me.js";
 import { dismissible } from "../js/sheet.js";
 import { b64u, needPasskey, u8, why } from "../js/passkey.js";
+import { mountPwa } from "../js/pwa.js";
 import { connect, settled, signAndSend } from "../js/wallet.js";
 import { toBase58 } from "../swap/jup.js";
 
@@ -1427,3 +1428,4 @@ $("pf").addEventListener("submit", async (event) => {
 applyMe(null);
 show();
 noZoom();
+mountPwa();

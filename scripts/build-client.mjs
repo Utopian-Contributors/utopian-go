@@ -126,9 +126,10 @@ const PAGES = [
  * Fetched on interaction, never on first paint. Reported, not budgeted: the
  * buy panel only loads once someone presses Buy and the wallet picker only
  * once someone presses Login, so counting either against a first-load window
- * would be measuring bytes nobody waits for.
+ * would be measuring bytes nobody waits for. The install panel is the one
+ * that arrives unasked, but only on a phone, and only after load.
  */
-const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "chat.js", "login.js", "hive.js"];
+const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "chat.js", "login.js", "hive.js", "install.js"];
 
 /**
  * The legal documents: readable HTML under client/legal/, published as the
@@ -162,15 +163,22 @@ const LEGAL_MAX = 14_336;
  *
  * The favicons are the same kind of pair: a browser that takes SVG icons
  * fetches the SVG, which follows the theme, and only the rest fetch the PNG.
+ *
+ * The service worker is registered after load, and Chromium reads the
+ * manifest on its own schedule to decide whether to offer an install. The app
+ * icons the manifest names are not listed: only installing fetches them.
  */
 const STATIC_FIRST_LOAD = [
   "go-favicon.svg",
   "go-favicon.png",
   "banner-light.webp",
   "banner-dark.webp",
+  "sw.js",
+  "manifest.webmanifest",
 ];
 
-const STATIC_EXT = new Set([".png", ".svg", ".ico", ".webp", ".jpg", ".jpeg"]);
+/** Copied from client/ as they are: images, and the web app manifest. */
+const STATIC_EXT = new Set([".png", ".svg", ".ico", ".webp", ".jpg", ".jpeg", ".webmanifest"]);
 
 /**
  * Extensions the server looks for a precompressed sibling of. Kept in sync
@@ -261,6 +269,24 @@ const hiveOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "hive", "main.js")],
   outfile: path.join(outDir, "hive.js"),
+};
+
+/** The install panel, fetched on phones only; see client/js/pwa.js. */
+const installOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "install", "main.js")],
+  outfile: path.join(outDir, "install.js"),
+};
+
+/**
+ * The service worker. At a fixed URL with no ?v=, unlike every other bundle:
+ * the browser finds a new version by fetching this same address and comparing
+ * bytes, and a worker's URL also sets how much of the site it controls.
+ */
+const swOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "sw", "main.js")],
+  outfile: path.join(outDir, "sw.js"),
 };
 
 /** The wallet page's own bundle. Shares helpers with app.js, not bytes. */
@@ -477,7 +503,7 @@ async function buildSocialCss() {
   );
 }
 
-async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, hiveHash) {
+async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, hiveHash, installHash) {
   let raw = readFileSync(path.join(clientDir, "index.html"), "utf8");
   verifyLoadingChrome(raw);
 
@@ -535,6 +561,12 @@ async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, 
     `data-hv="/hive.js?v=${hiveHash}"`,
     "hive.js attribute",
   );
+  raw = replaceOnce(
+    raw,
+    /data-pw="\/install\.js"/,
+    `data-pw="/install.js?v=${installHash}"`,
+    "install.js attribute",
+  );
 
   writeFileSync(path.join(outDir, "index.html"), await minifyDoc(raw));
 }
@@ -570,7 +602,7 @@ function minifyDoc(raw) {
  * server-side state, because the server does not know whose wallet it is. That
  * is what lets it be a plain precompressed file rather than a template.
  */
-async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, keysHash, loginHash) {
+async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, keysHash, loginHash, installHash) {
   let raw = readFileSync(path.join(clientDir, "wallet.html"), "utf8");
 
   raw = replaceOnce(
@@ -623,6 +655,12 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
     `data-lg="/login.js?v=${loginHash}"`,
     "wallet login.js attribute",
   );
+  raw = replaceOnce(
+    raw,
+    /data-pw="\/install\.js"/,
+    `data-pw="/install.js?v=${installHash}"`,
+    "wallet install.js attribute",
+  );
 
   writeFileSync(path.join(outDir, "wallet.html"), await minifyDoc(raw));
 }
@@ -632,7 +670,7 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
  * wordmark inlined for the same reason it is on the other two documents: the
  * header should not wait on a second request.
  */
-async function buildSocialHtml(css, socialHash, qrHash, chatHash) {
+async function buildSocialHtml(css, socialHash, qrHash, chatHash, installHash) {
   let raw = readFileSync(path.join(clientDir, "social.html"), "utf8");
   raw = replaceOnce(
     raw,
@@ -663,6 +701,12 @@ async function buildSocialHtml(css, socialHash, qrHash, chatHash) {
     /data-ch="\/chat\.js"/,
     `data-ch="/chat.js?v=${chatHash}"`,
     "social chat.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-pw="\/install\.js"/,
+    `data-pw="/install.js?v=${installHash}"`,
+    "social install.js attribute",
   );
   writeFileSync(path.join(outDir, "social.html"), await minifyDoc(raw));
 }
@@ -863,7 +907,9 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , , , , socialCss, css, walletCss] = await Promise.all([
+  const [, , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
+    esbuild.build(installOpts),
+    esbuild.build(swOpts),
     esbuild.build(jsOpts),
     esbuild.build(keysOpts),
     esbuild.build(loginOpts),
@@ -882,11 +928,12 @@ async function buildAssets() {
   const swapHash = hash("swap.js");
   const qrHash = hash("qr.js");
   const loginHash = hash("login.js");
+  const installHash = hash("install.js");
 
   await Promise.all([
-    buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, hash("hive.js")),
-    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash),
-    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("chat.js")),
+    buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, hash("hive.js"), installHash),
+    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
+    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("chat.js"), installHash),
   ]);
   buildLegal();
   precompress();

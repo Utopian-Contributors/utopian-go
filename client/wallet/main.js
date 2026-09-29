@@ -11,6 +11,7 @@ import { LOGIN, mountAccount, openLogin } from "../js/acct.js";
 import { noZoom } from "../js/device.js";
 import { load } from "../js/lazy.js";
 import { account as whoami } from "../js/me.js";
+import { mountPwa } from "../js/pwa.js";
 import { dollars, fiat, percent, tokenPrice } from "../js/num.js";
 import { onSession, readSession } from "../js/session.js";
 import { openSwap, swapUrl } from "../js/swap.js";
@@ -445,6 +446,7 @@ async function settle() {
 
 mountAccount($("ac"), { self: true, onLogin: signedIn });
 noZoom();
+mountPwa();
 onSession(refresh);
 refresh();
 paintTop();

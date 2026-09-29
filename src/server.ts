@@ -534,6 +534,12 @@ app.use(
       if (name === "index.html" || name === "wallet.html" || name === "social.html") {
         res.setHeader("Cache-Control", "no-cache");
       }
+      // The service worker and the manifest keep one URL across deploys, so
+      // they cannot be fingerprinted — a week in cache is a week of browsers
+      // running last week's worker and installing last week's app.
+      if (name === "sw.js" || name === "manifest.webmanifest") {
+        res.setHeader("Cache-Control", "no-cache");
+      }
     },
   }),
 );
