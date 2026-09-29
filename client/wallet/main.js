@@ -8,6 +8,7 @@
  */
 import { $, el } from "../js/dom.js";
 import { LOGIN, mountAccount, openLogin } from "../js/acct.js";
+import { noZoom } from "../js/device.js";
 import { load } from "../js/lazy.js";
 import { account as whoami } from "../js/me.js";
 import { dollars, fiat, percent, tokenPrice } from "../js/num.js";
@@ -443,6 +444,7 @@ async function settle() {
 }
 
 mountAccount($("ac"), { self: true, onLogin: signedIn });
+noZoom();
 onSession(refresh);
 refresh();
 paintTop();

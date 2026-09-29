@@ -6,6 +6,7 @@
  */
 import { $, clearResults, el, hideSkeleton, setLoading, setStatus, showSkeleton } from "./dom.js";
 import { mountAccount } from "./acct.js";
+import { noZoom } from "./device.js";
 import { readUrlState, writeUrl } from "./url.js";
 import { langParam, mountLang, setLang } from "./lang.js";
 import { createRenderer } from "./render.js";
@@ -62,6 +63,7 @@ function syncClearButton() {
 // runs. Nothing here fetches, and nothing here waits on a search.
 mountAccount($("ac"));
 paintSaved();
+noZoom();
 
 const hiveBtn = el("button", { type: "button", class: "hvb", "aria-label": "Places", title: "Places" });
 $("hm-tk").append(hiveBtn);

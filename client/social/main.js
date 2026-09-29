@@ -8,6 +8,7 @@
 import { $, el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { LOGIN } from "../js/acct.js";
+import { noZoom } from "../js/device.js";
 import { open as openLogin } from "../js/login.js";
 import { readName, writeName } from "../js/me.js";
 import { dismissible } from "../js/sheet.js";
@@ -1425,3 +1426,4 @@ $("pf").addEventListener("submit", async (event) => {
 
 applyMe(null);
 show();
+noZoom();
