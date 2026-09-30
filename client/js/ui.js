@@ -55,6 +55,7 @@ const CSS = `
 .swx-w img{width:22px;height:22px;border-radius:6px}
 @media (max-width:620px){.swx{align-items:flex-end;padding:0}
  .swx-d{max-width:none;border-radius:16px 16px 0 0;border-bottom:0}}
+@media (max-width:620px) and (display-mode:standalone){.swx-d{border-bottom:24px solid transparent}}
 `;
 
 /** The close button's X. Static markup, so it goes in as HTML: el() builds in the HTML namespace. */

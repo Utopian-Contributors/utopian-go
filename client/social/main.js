@@ -1356,12 +1356,21 @@ $("bk").addEventListener("click", () => main.querySelector(".back")?.click());
 $("in").addEventListener("click", () => openAuth("login"));
 // Until the server answers, the remembered name points My Profile at the right page.
 if (readName()) $("me").href = `/social/u/${readName()}`;
-// Signed out, My Profile is still there; it asks you to log in.
+// Signed out, My Profile is still there; it asks you to log in. So do Friends
+// and Messenger, which have nothing to show anyone signed out, and go on to
+// their page once you have.
 $("me").addEventListener("click", (e) => {
   if (me || readName()) return;
   e.preventDefault();
   openAuth("login");
 });
+for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data-nav="chat"]')) {
+  tab.addEventListener("click", (e) => {
+    if (me || readName()) return;
+    e.preventDefault();
+    openLogin("login", () => location.assign(/** @type {HTMLAnchorElement} */ (tab).href));
+  });
+}
 dismissible(/** @type {HTMLDialogElement} */ ($("qd")));
 $("out").addEventListener("click", async () => {
   try {

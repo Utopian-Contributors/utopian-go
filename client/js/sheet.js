@@ -2,6 +2,10 @@
  * What every native <dialog> on the site shares with the trade dialog in
  * ui.js: a round X in the top right corner, a tap outside that dismisses it,
  * and on a phone a sheet docked to the bottom edge of the screen.
+ *
+ * The home-screen app runs to that edge, the home indicator over it, so there
+ * the sheet ends in 24px of its own colour, the same the social tab bar keeps.
+ * A transparent border rather than padding, which each dialog sets its own of.
  */
 import { el } from "./dom.js";
 import { X_ICON, injectStyles } from "./ui.js";
@@ -15,6 +19,7 @@ dialog.dlg{position:fixed}
 dialog.dlg h2{margin-right:36px}
 @media (max-width:620px){dialog.dlg{width:100%;max-width:none;max-height:calc(100% - 24px);
  margin:auto 0 0;border-bottom:0;border-radius:16px 16px 0 0}}
+@media (max-width:620px) and (display-mode:standalone){dialog.dlg{border-bottom:24px solid transparent}}
 `;
 
 /**
