@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import path from "path";
 import { AUDIO_TYPES, type AudioKind } from "./audio";
 
@@ -41,6 +41,21 @@ export function writeAvatar(name: string, full: Buffer, tiny?: Buffer): void {
   const small = avatarPath(name, true);
   if (tiny) writeFileSync(small, tiny, { mode: 0o600 });
   else if (existsSync(small)) unlinkSync(small);
+}
+
+/**
+ * What a new account starts with, in the two sizes an upload makes. It sits
+ * with the client source, which every deploy ships.
+ */
+const DEFAULT_AVATAR = path.join(__dirname, "..", "..", "client", "default-pb");
+
+/** Null if the files are missing: sign-up then goes on without a picture. */
+export function defaultAvatar(): { full: Buffer; tiny: Buffer } | null {
+  try {
+    return { full: readFileSync(`${DEFAULT_AVATAR}.jpg`), tiny: readFileSync(`${DEFAULT_AVATAR}.t.jpg`) };
+  } catch {
+    return null;
+  }
 }
 
 function postDir(): string {

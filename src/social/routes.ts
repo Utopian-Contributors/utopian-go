@@ -87,7 +87,7 @@ import { parseSol, prepareTransfer, solanaPubkey } from "./pay";
 import { sendFor } from "./send";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
 import { currentUser, guardJson, loadAccount, requireAuth, requireUser } from "./guard";
-import { avatarFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
+import { avatarFile, chatPhotoFile, defaultAvatar, postAudioFile, postPhotoFile, writeAvatar } from "./store";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
 
 /**
@@ -348,6 +348,7 @@ socialRouter.post(
     const address = solanaAddress(phrase);
     const pass = await newPassword(password);
     const box = await sealPhrase(phrase, password);
+    const pic = defaultAvatar();
     const user: User = {
       name,
       uid: randomBytes(16).toString("base64url"),
@@ -360,7 +361,7 @@ socialRouter.post(
       address,
       bio: "",
       loc: "",
-      avatarRev: 0,
+      avatarRev: pic ? 1 : 0,
       lastPost: 0,
       passkey: null,
       created: Date.now(),
@@ -370,6 +371,8 @@ socialRouter.post(
     };
     const inserted = await insertUser(user);
     if (!inserted) throw new SocialError(409, "That username is taken.");
+    // Only once the name is ours: before, it could overwrite a taken name's photo.
+    if (pic) writeAvatar(name, pic.full, pic.tiny);
     setSession(res, name, 0, req.secure);
     // The phrase stays out of this response. Profile shows it, behind the password.
     res.json({ name, address });

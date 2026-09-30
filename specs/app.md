@@ -301,6 +301,11 @@ data/social/chat/<id>-<n>.bin      sealed message photo: IV + AES-GCM(JPEG ≤ 4
 data/cache/icons/<mint>.webp       token logo, 64 × 64, about 1 KB; a cache, rebuilt by the sync
 ```
 
+Sign-up copies `client/default-pb.jpg` and `client/default-pb.t.jpg` (480 px and 80 px squares
+within the limits above) into the new account's two avatar files and starts it at
+`avatarRev` 1. An upload replaces them like any other photo. Accounts from before the default
+keep `avatarRev` 0 and no picture.
+
 **Token thumbnails.** After each hourly index rebuild, the server fetches the logos of every
 indexed mint, busiest first, that are missing or more than a week old. It shrinks each one
 with `sharp` to 64 × 64 WebP and writes it to `data/cache/icons`. An IPFS logo falls back to

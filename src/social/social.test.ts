@@ -29,6 +29,7 @@ import { scrub } from "./guard";
 import { AUDIO_BYTES, MAX_AUDIO_MS, postWait, username, waitText } from "./limits";
 import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
 import { TIMELINE_PAGE, closePool, databaseUrl, ensureSchema, getUser, resetSocial } from "./db";
+import { defaultAvatar } from "./store";
 import { WORDLIST } from "./wordlist";
 
 const dir = mkdtempSync(path.join(tmpdir(), "social-"));
@@ -362,6 +363,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
   app.set("trust proxy", true);
   app.use("/api/social", socialRouter);
   app.get("/social/a/:name", sendAvatar);
+  app.get("/social/t/:name", sendAvatar);
   app.get("/social/i/:id/:n", sendPostPhoto);
   const server: Server = await new Promise((resolve) => {
     const listening = createServer(app);
@@ -442,6 +444,14 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const pub = await call("GET", "/api/social/u/ada");
     assert.equal(pub.status, 200);
     assert.equal(secret.test(pub.text), false);
+    // A new account starts with the default picture, in both sizes.
+    const start = defaultAvatar();
+    assert.ok(start);
+    assert.equal((pub.json?.user as { avatarRev: number }).avatarRev, 1);
+    assert.ok(Buffer.from(await (await fetch(`${base}/social/a/ada?v=1`)).arrayBuffer()).equals(start.full));
+    assert.ok(Buffer.from(await (await fetch(`${base}/social/t/ada?v=1`)).arrayBuffer()).equals(start.tiny));
+    assert.deepEqual(jpegSize(start.full), { w: 480, h: 480 });
+    assert.deepEqual(jpegSize(start.tiny), { w: 80, h: 80 });
     assert.equal((await call("GET", "/api/social/saved")).status, 401);
     assert.equal((await call("GET", "/api/social/friends")).status, 401);
     assert.equal((await call("GET", "/api/social/users?q=ada")).status, 401);
