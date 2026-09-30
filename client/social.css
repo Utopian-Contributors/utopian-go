@@ -680,7 +680,11 @@ dialog label { display: block; margin-top: 14px; font-size: 13px; color: var(--m
  * and stops on the footer's top edge. The document itself does not scroll.
  */
 body.soc {
-  height: 100dvh;
+  /* Pinned to the viewport's edges rather than sized in dvh: a home-screen
+     app on iOS can report a 100dvh taller than its window, which pushes the
+     bottom navigation off the screen. */
+  position: fixed;
+  inset: 0;
   overflow: hidden;
   /* viewport-fit=cover draws under a landscape notch; keep off it. */
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
@@ -1060,7 +1064,7 @@ a.crow.on {
  * The section tabs. Across the top on wider screens, text only; on phones a
  * bottom navigation with an icon over each label.
  *
- * The page is already a 100dvh column that does not scroll, so the bar is not
+ * The page is already a full-viewport column that does not scroll, so the bar is not
  * fixed: .chrome drops its box and the tabs take the last row of that column,
  * under #mn. #hd stays the account control's containing block.
  */
@@ -1124,6 +1128,12 @@ a.crow.on {
     border-top: 1px solid var(--ln);
     border-bottom: 0;
     background: var(--bg);
+  }
+
+  /* The home-screen app runs edge to edge, the home indicator over its
+     bottom; keep the tabs clear of it even where iOS reports no inset. */
+  @media (display-mode: standalone) {
+    body.soc #tb { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
   }
 
   body.soc #tb .tab {
