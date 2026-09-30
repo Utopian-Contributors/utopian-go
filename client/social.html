@@ -4,8 +4,11 @@
     <meta charset="utf-8" />
     <!-- No zoom on phones, by any means: not onto a focused field, not by
          pinch or double-tap. iOS ignores this for gestures; noZoom() in
-         client/js/device.js refuses those. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+         client/js/device.js refuses those.
+         No viewport-fit=cover: in the home-screen app on iOS, under the default
+         status bar, it makes the page a status bar taller than the screen and
+         pushes the bottom navigation off it. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <meta name="color-scheme" content="light dark" />
     <title>Social</title>
     <link rel="icon" href="/go-favicon.png" sizes="64x64" type="image/png" />

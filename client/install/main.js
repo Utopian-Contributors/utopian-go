@@ -57,7 +57,7 @@ body.chat dialog.pw{display:none}
 @media (prefers-reduced-motion:reduce){dialog.pw{animation:none}.pw-ch{transition:none}}
 @media (max-width:620px){dialog.pw{width:100%;margin:0;border-width:1px 0 0;
  border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom)}}
-@media (max-width:900px){body.soc dialog.pw{bottom:calc(57px + max(8px, env(safe-area-inset-bottom)));padding-bottom:0}}
+@media (max-width:900px){body.soc dialog.pw{bottom:65px;padding-bottom:0}}
 `;
 
 /** A 16px glyph on the 24-unit grid the site's other icons use. */

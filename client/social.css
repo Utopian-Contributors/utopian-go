@@ -680,14 +680,8 @@ dialog label { display: block; margin-top: 14px; font-size: 13px; color: var(--m
  * and stops on the footer's top edge. The document itself does not scroll.
  */
 body.soc {
-  /* Pinned to the viewport's edges rather than sized in dvh: a home-screen
-     app on iOS can report a 100dvh taller than its window, which pushes the
-     bottom navigation off the screen. */
-  position: fixed;
-  inset: 0;
+  height: 100dvh;
   overflow: hidden;
-  /* viewport-fit=cover draws under a landscape notch; keep off it. */
-  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   display: flex;
   flex-direction: column;
 }
@@ -1064,7 +1058,7 @@ a.crow.on {
  * The section tabs. Across the top on wider screens, text only; on phones a
  * bottom navigation with an icon over each label.
  *
- * The page is already a full-viewport column that does not scroll, so the bar is not
+ * The page is already a 100dvh column that does not scroll, so the bar is not
  * fixed: .chrome drops its box and the tabs take the last row of that column,
  * under #mn. #hd stays the account control's containing block.
  */
@@ -1120,9 +1114,9 @@ a.crow.on {
     flex: none;
     max-width: none;
     margin: 0;
-    /* Clear of the screen's edge: the home indicator's inset where there is
-       one (viewport-fit=cover in social.html reports it), 8px otherwise. */
-    padding: 0 0 max(8px, env(safe-area-inset-bottom));
+    /* Clear of the screen's edge. No safe-area inset to go by: social.html
+       leaves viewport-fit alone, so env(safe-area-inset-bottom) reads 0. */
+    padding: 0 0 8px;
     gap: 0;
     overflow: visible;
     border-top: 1px solid var(--ln);
@@ -1130,10 +1124,10 @@ a.crow.on {
     background: var(--bg);
   }
 
-  /* The home-screen app runs edge to edge, the home indicator over its
-     bottom; keep the tabs clear of it even where iOS reports no inset. */
+  /* The home-screen app runs to the bottom edge, the home indicator over it;
+     keep the tabs clear of that. */
   @media (display-mode: standalone) {
-    body.soc #tb { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+    body.soc #tb { padding-bottom: 24px; }
   }
 
   body.soc #tb .tab {
