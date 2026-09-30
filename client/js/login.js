@@ -28,9 +28,9 @@ const CSS = `
 .lgd-e{margin:8px 0 0;color:var(--dn)}
 .lgd-e:empty{display:none}
 .lgd-go{display:block;width:100%;margin-top:12px;border:0;border-radius:999px;background:var(--buy);
- color:var(--buy-ink);font:600 13px/1 var(--ff);padding:7px 12px;cursor:pointer}
+ color:var(--buy-ink);font:600 13px/1 var(--ff);padding:13px 12px;cursor:pointer}
 .lgd-go:hover:not(:disabled){filter:brightness(1.08)}
-.lgd-t{background:none;color:var(--go);border:0;padding:8px 0;font:600 13px/1 var(--ff);cursor:pointer}
+.lgd-t{background:none;color:var(--go);border:0;padding:12px 0;font:600 13px/1 var(--ff);cursor:pointer}
 .lgd-t:hover{color:var(--buy)}
 .lgd button:disabled{opacity:.55;cursor:default}
 .lgd-c{display:flex;gap:8px;align-items:flex-start;color:var(--t)}

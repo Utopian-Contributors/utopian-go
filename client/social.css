@@ -620,7 +620,8 @@ img.pfp {
 #qd { text-align: center; }
 #qd .addr { margin: 0 auto; max-width: 24ch; }
 #pf { margin-top: 12px; text-align: left; }
-#pf button { margin-top: 0; }
+/* As tall as the amount field beside it, and easy to hit. */
+#pf button { margin-top: 0; padding: 13px 16px; }
 
 .pay-line {
   display: flex;
