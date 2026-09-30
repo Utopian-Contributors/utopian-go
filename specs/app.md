@@ -113,6 +113,7 @@ GET /social/c/<handle>        Messenger with that conversation open
 GET /social/a/<name>          profile photo, full
 GET /social/t/<name>          profile photo, timeline copy
 GET /social/i/<id>/<n>[?m=1]  post photo n; m=1 is the phone copy
+GET /social/v/<id>            post voice memo, audio/webm or audio/mp4, Range requests answered
 GET /terms.pdf, /privacy.pdf
 GET /healthz
 ```
@@ -151,7 +152,8 @@ type Me = { name: string; address: string; bio: string; loc: string;
             avatarRev: number; passkey: boolean; wait: number; unseen: number; unread: number };
 type Card = { id: string; by: string; text: string; at: number; views: number;
               comments: number; saved: boolean; reposted: boolean; repost: string | null;
-              repostBy: string | null; originalRev: number; avatarRev: number; photos: number };
+              repostBy: string | null; originalRev: number; avatarRev: number; photos: number;
+              audio: number; wave: string };   // audio: memo length in ms, 0 without one
 
 POST /api/social/register      {username, password}          → {name, address}
 POST /api/social/login         {username, password}          → {name} | {passkey: {challenge, id}}
@@ -165,7 +167,7 @@ GET  /api/social/timeline?before&id → {me, posts: Card[], notes, next: {at, id
 GET  /api/social/saved              → {me, posts: Card[]}
 GET  /api/social/u/<name>           → {me, user: {name, address, bio, loc, avatarRev, posts: Card[]}}
 POST /api/social/open    {post}     → {me, post: Card, comments}
-POST /api/social/post    {text} | application/octet-stream (text + up to 4 photos) → {post: Card}
+POST /api/social/post    {text} | application/octet-stream (text + up to 4 photos + a voice memo) → {post: Card}
 POST /api/social/comment {post, text} → {comment}
 POST /api/social/plus    {post}     → {saved}
 POST /api/social/repost  {post}     → {ok}
@@ -192,6 +194,21 @@ POST /api/social/passkey/options {password} → {challenge, uid}
 POST /api/social/passkey {id, challenge, clientData, attestation} → {ok}
 POST /api/social/pay     {to, from, sol} → {transaction}   (unsigned; the payer's wallet signs)
 ```
+
+A packed post is a u16 text length and the UTF-8, a u8 photo count, then each photo as u32
+phone length, u32 desktop length and the two JPEGs. A voice memo is an optional tail: u32
+byte length, u32 length in ms, 40 base64url characters of shape (one bar each, 0–63), then
+the recording. The server keeps a memo only if its header says WebM or MP4; the length and
+shape are the browser's and only drawn. A re-post carries the original's memo, as it
+carries its photos.
+
+**Voice memos.** The composer's wave button fetches `rec.js`, a dialog with one round
+button. The browser records (WebM/Opus at 24 kbps where it can, MP4/AAC on an older
+Safari) until it is stopped, reaches 3:00, or nears 640 KB, and an analyser samples
+the level meanwhile to make the shape. A post draws the shape and its length without
+fetching the file; the audio loads only when play is pressed. Only `/social` pages are
+allowed the microphone (`Permissions-Policy`), and `media-src blob:` lets the composer
+play a memo back before it is posted.
 
 #### Messenger
 
@@ -262,7 +279,7 @@ The Postgres tables are defined once, in `SCHEMA` in `src/social/db.ts`, and now
 users    name PK, uid, pass_salt, pass_hash, phrase_salt/iv/tag/ct, address UNIQUE, bio, loc,
          avatar_rev, last_post, created, passkey_id UNIQUE, passkey_cose, passkey_alg,
          passkey_count, epoch, key_iv/tag/ct
-posts    id PK, by_name, text, at, views, photos, repost → posts.id  (UNIQUE repost, by_name)
+posts    id PK, by_name, text, at, views, photos, audio, wave, repost → posts.id  (UNIQUE repost, by_name)
 comments id PK, post, by_name, text, at
 notes    id PK, to_name, from_name, post, at, seen, kind            (newest 100 per person)
 saves    post, by_name, at                                          (PK post, by_name)
@@ -272,13 +289,14 @@ messages id PK, pair, from_name, to_name, at, kf, kt, iv, ct, photos   (newest 1
 chats    owner, peer, at, last → messages.id, unread               (PK owner, peer)
 ```
 
-Pictures are files, not rows:
+Pictures and voice memos are files, not rows:
 
 ```text
 data/social/avatars/<name>.jpg     profile, ≤ 14 KB, width ≤ height, no crop
 data/social/avatars/<name>.t.jpg   timeline copy, ≤ 2 KB, ≤ 80 px wide
 data/social/posts/<id>-<n>.jpg     ≤ 48 KB, ≤ 1600 px edge
 data/social/posts/<id>-<n>.m.jpg   phone copy, ≤ 14 KB, ≤ 640 px edge
+data/social/posts/<id>.webm|.m4a   voice memo, ≤ 640 KB, ≤ 3 min
 data/social/chat/<id>-<n>.bin      sealed message photo: IV + AES-GCM(JPEG ≤ 48 KB)
 data/cache/icons/<mint>.webp       token logo, 64 × 64, about 1 KB; a cache, rebuilt by the sync
 ```
@@ -299,6 +317,7 @@ The limits live in `src/social/limits.ts`:
 | Comment, bio | 160 characters, one line |
 | Location | 40 characters |
 | Photos per post | 4 |
+| Voice memo | 1 per post, 3 minutes, 640 KB |
 | Comments per post | 100 |
 | Friends | 200 |
 | Time between posts | 10 minutes |

@@ -20,6 +20,10 @@ import { toBase58 } from "../swap/jup.js";
 const main = $("m");
 /** Matches MAX_POST in src/social/limits.ts. */
 const MAX_POST = 256;
+/** A voice memo's shape is spelled in base64url, one character (0–63) per bar. */
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+/** Insecure pages (a phone on the LAN over http) have no microphone, so no button either. */
+const CAN_RECORD = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 
 /** @type {null | {name: string, address: string, bio: string, loc: string, avatarRev: number, passkey: boolean, wait: number, unseen: number}} */
 let me = null;
@@ -203,14 +207,26 @@ function bin(parts) {
   return new Blob(parts, { type: "application/octet-stream" });
 }
 
-/** u16 text length, the text, a photo count, then each phone and desktop JPEG. */
-function packPost(text, shots) {
+/**
+ * u16 text length, the text, a photo count, then each phone and desktop JPEG.
+ * A memo goes last: u32 bytes, u32 milliseconds, its shape, the recording.
+ */
+function packPost(text, shots, memo) {
   const encoded = new TextEncoder().encode(text);
   const head = new Uint8Array(3 + encoded.length);
   new DataView(head.buffer).setUint16(0, encoded.length);
   head.set(encoded, 2);
   head[2 + encoded.length] = shots.length;
-  return bin([head, ...shots.flatMap((s) => [lens(s.small, s.full), s.small, s.full])]);
+  const parts = [head, ...shots.flatMap((s) => [lens(s.small, s.full), s.small, s.full])];
+  if (memo) {
+    const tail = new Uint8Array(8 + memo.wave.length);
+    const view = new DataView(tail.buffer);
+    view.setUint32(0, memo.blob.size);
+    view.setUint32(4, memo.ms);
+    tail.set(new TextEncoder().encode(memo.wave), 8);
+    parts.push(tail, memo.blob);
+  }
+  return bin(parts);
 }
 
 /** A web address, or an @name. The address is tried first, so a name inside one stays part of it. */
@@ -505,6 +521,109 @@ function gallery(post) {
   return row;
 }
 
+/** m:ss */
+function clock(ms) {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** A sprite symbol from social.html, as a button's whole face. */
+function icon(id, size) {
+  return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${id}"/></svg>`;
+}
+
+/** The memo playing now. Starting another pauses it, and so does leaving the page. */
+let playing = null;
+
+/**
+ * A voice memo: play, the recording's shape, and how long it is.
+ *
+ * Nothing is fetched until play is pressed, so a timeline of memos costs
+ * only their bars. The length drawn is the one posted, not the file's: a
+ * browser's own recording often does not say how long it is, and Chrome
+ * reports Infinity for one until it has played to the end.
+ */
+function memoPlayer(src, ms, wave) {
+  const go = el("button", { type: "button", class: "memo-go", "aria-label": "Play voice memo" });
+  go.innerHTML = icon("mp", 18);
+  const bars = el("div", { class: "wave" });
+  for (const ch of wave) {
+    const bar = el("i");
+    bar.style.height = `${12 + Math.round((Math.max(0, B64.indexOf(ch)) / 63) * 88)}%`;
+    bars.append(bar);
+  }
+  const time = el("span", { class: "memo-t", text: clock(ms) });
+  const total = ms / 1000;
+  let audio = null;
+  let frame = 0;
+  let lit = -1;
+
+  function paint() {
+    const at = audio ? audio.currentTime : 0;
+    const n = Math.min(wave.length, Math.round((at / total) * wave.length));
+    if (n !== lit) {
+      lit = n;
+      [...bars.children].forEach((bar, i) => bar.classList.toggle("on", i < n));
+    }
+    // The length until it starts; after that, how far in it is.
+    time.textContent = clock(at > 0 ? at * 1000 : ms);
+  }
+
+  function loop() {
+    paint();
+    frame = requestAnimationFrame(loop);
+  }
+
+  function player() {
+    if (audio) return audio;
+    audio = new Audio(src);
+    audio.addEventListener("play", () => {
+      if (playing && playing !== audio) playing.pause();
+      playing = audio;
+      go.innerHTML = icon("mz", 18);
+      go.setAttribute("aria-label", "Pause voice memo");
+      cancelAnimationFrame(frame);
+      loop();
+    });
+    audio.addEventListener("pause", () => {
+      cancelAnimationFrame(frame);
+      go.innerHTML = icon("mp", 18);
+      go.setAttribute("aria-label", "Play voice memo");
+      paint();
+    });
+    audio.addEventListener("ended", () => {
+      audio.currentTime = 0;
+      paint();
+    });
+    audio.addEventListener("error", () => {
+      go.disabled = true;
+      time.textContent = "Can’t play";
+    });
+    return audio;
+  }
+
+  go.addEventListener("click", () => {
+    const a = player();
+    if (a.paused) a.play().catch(() => {});
+    else a.pause();
+  });
+  // A tap on the bars jumps there, and plays from there.
+  bars.addEventListener("click", (event) => {
+    const box = bars.getBoundingClientRect();
+    const a = player();
+    a.currentTime = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width)) * total;
+    if (a.paused) a.play().catch(() => {});
+    paint();
+  });
+  return el("div", { class: "memo", role: "group", "aria-label": "Voice memo" }, go, bars, time);
+}
+
+/** A post's memo. A re-post plays the original's file. */
+function memo(post) {
+  if (!post.audio) return null;
+  return memoPlayer(`/social/v/${post.repost || post.id}`, post.audio, post.wave);
+}
+
 function renderPost(post, inDetail) {
   const body = el("p", {}, linkedText(post.text));
   if (!post.text) body.hidden = true;
@@ -540,6 +659,7 @@ function renderPost(post, inDetail) {
         ),
         body,
         gallery(post),
+        memo(post),
         postActions(post, inDetail, comments),
       ),
     ),
@@ -548,7 +668,7 @@ function renderPost(post, inDetail) {
     // The rest of the card opens the post too. Handing the click to the link,
     // modifier keys and all, keeps Cmd-click opening a new tab.
     block.addEventListener("click", (event) => {
-      if (!event.target.closest("a, button, form, input, .gallery")) comments.dispatchEvent(new MouseEvent("click", event));
+      if (!event.target.closest("a, button, form, input, .gallery, .memo")) comments.dispatchEvent(new MouseEvent("click", event));
     });
   }
   return block;
@@ -602,7 +722,12 @@ function composer() {
   const file = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true });
   const add = el("button", { type: "button", class: "tool", "aria-label": "Add photos" });
   // The drawing is a <symbol> in social.html, so the bundle carries only a reference.
-  add.innerHTML = '<svg width="22" height="22" aria-hidden="true"><use href="#pi"/></svg>';
+  add.innerHTML = icon("pi", 22);
+  const mic = el("button", { type: "button", class: "tool", "aria-label": "Record a voice memo", hidden: !CAN_RECORD });
+  mic.innerHTML = icon("au", 22);
+  /** The recorded memo, until it is posted or removed: {blob, ms, wave, url}. */
+  let voice = null;
+  const voiceRow = el("div", { class: "voice", hidden: true });
   const button = el("button", { type: "submit", class: "post-go", text: "Post", disabled: true });
   const note = el("span", { class: "wait", hidden: me.wait <= 0, text: waitLabel(me.wait) });
   const count = el("span", { class: "count", "aria-live": "polite" });
@@ -615,7 +740,7 @@ function composer() {
   tally();
 
   function ready() {
-    return !busy && Date.now() >= until && (area.value.trim().length > 0 || shots.length > 0);
+    return !busy && Date.now() >= until && (area.value.trim().length > 0 || shots.length > 0 || !!voice);
   }
 
   function sync() {
@@ -663,6 +788,40 @@ function composer() {
     );
     strip.hidden = shots.length === 0;
   }
+
+  /** One memo a post: while there is one, the microphone waits and × takes it off. */
+  function paintVoice() {
+    mic.disabled = !!voice;
+    voiceRow.hidden = !voice;
+    if (!voice) return voiceRow.replaceChildren();
+    const remove = el("button", { type: "button", class: "memo-x", "aria-label": "Remove voice memo", text: "×" });
+    remove.addEventListener("click", () => {
+      URL.revokeObjectURL(voice.url);
+      voice = null;
+      paintVoice();
+      sync();
+    });
+    voiceRow.replaceChildren(memoPlayer(voice.url, voice.ms, voice.wave), remove);
+  }
+
+  mic.addEventListener("click", async () => {
+    note.hidden = true;
+    mic.disabled = true;
+    try {
+      const rec = await load("rc", "__rec");
+      const got = await rec.record({ clock, B64 });
+      if (got) {
+        const url = URL.createObjectURL(got.blob);
+        drafts.push(url);
+        voice = { ...got, url };
+      }
+    } catch {
+      note.hidden = false;
+      note.textContent = "Could not open the recorder.";
+    }
+    paintVoice();
+    sync();
+  });
 
   add.addEventListener("click", () => file.click());
   file.addEventListener("change", async () => {
@@ -716,7 +875,8 @@ function composer() {
     el("div", { class: "compose-top" }, thumb(me.name, me.avatarRev), area),
     links,
     strip,
-    el("div", { class: "compose-bar" }, add, file, count, button),
+    voiceRow,
+    el("div", { class: "compose-bar" }, add, file, mic, count, button),
     note,
   );
   form.addEventListener("submit", async (e) => {
@@ -724,10 +884,10 @@ function composer() {
     if (!ready()) return;
     note.hidden = true;
     button.disabled = true;
-    add.disabled = true;
+    add.disabled = mic.disabled = true;
     try {
       const text = area.value.trim();
-      const body = shots.length ? packPost(text, shots) : JSON.stringify({ text });
+      const body = shots.length || voice ? packPost(text, shots, voice) : JSON.stringify({ text });
       await pull("/api/social/post", { method: "POST", body });
       show();
     } catch (cause) {
@@ -735,6 +895,7 @@ function composer() {
       note.textContent = cause.message;
       sync();
       add.disabled = false;
+      mic.disabled = !!voice;
     }
   });
   return form;
@@ -1314,6 +1475,8 @@ async function show() {
   if (leaveChat) leaveChat();
   leaveChat = null;
   stopMore();
+  playing?.pause();
+  playing = null;
   for (const url of drafts.splice(0)) URL.revokeObjectURL(url);
   if (here.page !== "post") detail = null;
   document.body.classList.toggle("profile", here.page === "profile");

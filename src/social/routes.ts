@@ -12,11 +12,14 @@ import {
   setSession,
   stale,
 } from "./auth";
+import { audioKind } from "./audio";
 import { jpegSize } from "./jpeg";
 import { generateMnemonic, normalizeMnemonic, solanaAddress } from "./keys";
 import {
+  AUDIO_BYTES,
   CHAT_CT_BYTES,
   CHAT_PHOTO_BYTES,
+  MAX_AUDIO_MS,
   MAX_BIO,
   MAX_LOC,
   MAX_PHOTOS,
@@ -28,6 +31,7 @@ import {
   SOCIAL_BYTES,
   TINY_BYTES,
   TINY_W,
+  WAVE_BARS,
   SocialError,
   postText,
   postWait,
@@ -39,6 +43,7 @@ import { rateLimit } from "../lib/rateLimit";
 import { lookupMints } from "../lib/tokens/store";
 import {
   type Card,
+  type Memo,
   type CommentRow,
   type User,
   addComment,
@@ -82,7 +87,7 @@ import { parseSol, prepareTransfer, solanaPubkey } from "./pay";
 import { sendFor } from "./send";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
 import { currentUser, guardJson, loadAccount, requireAuth, requireUser } from "./guard";
-import { avatarFile, chatPhotoFile, postPhotoFile, writeAvatar } from "./store";
+import { avatarFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
 
 /**
@@ -546,18 +551,25 @@ socialRouter.get(
 
 const postRaw = express.raw({
   type: "application/octet-stream",
-  limit: MAX_PHOTOS * (PHOTO_BYTES + PHOTO_SMALL_BYTES) + 2048,
+  limit: MAX_PHOTOS * (PHOTO_BYTES + PHOTO_SMALL_BYTES) + AUDIO_BYTES + 2048,
 });
 
+/** A memo as it arrives, before its bytes and numbers are judged. */
+type MemoIn = { bytes: Buffer; ms: number; wave: string };
+
 /**
- * Text, then pictures.
+ * Text, then pictures, then a voice memo.
  *
  * Two bytes of text length, the UTF-8, one byte of count, then each picture
  * as the phone JPEG and the desktop JPEG. Each of those is a four-byte length
- * and its bytes, phone first, the same order a profile photo uses. A post
- * with no pictures stays JSON.
+ * and its bytes, phone first, the same order a profile photo uses.
+ *
+ * The memo is optional, and the body simply ends without one, which is how
+ * a page from before memos existed still posts: a four-byte length, the
+ * length in milliseconds as another four, WAVE_BARS characters of shape, then
+ * the recording. A post with no pictures and no memo stays JSON.
  */
-function readPackedPost(buf: Buffer): { text: string; photos: { full: Buffer; small: Buffer }[] } {
+function readPackedPost(buf: Buffer): { text: string; photos: { full: Buffer; small: Buffer }[]; memo: MemoIn | null } {
   if (buf.length < 3) throw new SocialError(400, "Malformed request.");
   const textLen = buf.readUInt16BE(0);
   if (textLen > 1024 || 2 + textLen >= buf.length) throw new SocialError(400, "Malformed request.");
@@ -581,8 +593,36 @@ function readPackedPost(buf: Buffer): { text: string; photos: { full: Buffer; sm
     });
     at += smallLen + fullLen;
   }
+  let memo: MemoIn | null = null;
+  if (at < buf.length) {
+    if (at + 8 + WAVE_BARS > buf.length) throw new SocialError(400, "Malformed request.");
+    const len = buf.readUInt32BE(at);
+    const ms = buf.readUInt32BE(at + 4);
+    const wave = buf.toString("latin1", at + 8, at + 8 + WAVE_BARS);
+    at += 8 + WAVE_BARS;
+    if (len < 1 || len > AUDIO_BYTES) throw new SocialError(400, "Voice memo is too large.");
+    if (at + len > buf.length) throw new SocialError(400, "Malformed request.");
+    memo = { bytes: buf.subarray(at, at + len), ms, wave };
+    at += len;
+  }
   if (at !== buf.length) throw new SocialError(400, "Malformed request.");
-  return { text, photos };
+  return { text, photos, memo };
+}
+
+/**
+ * The length and shape are the browser's word, and only drawn: a timer and
+ * a row of bars. The bytes are what is checked, and the ceiling on them is
+ * what bounds a memo whatever its length claims.
+ */
+function checkMemo(memo: MemoIn): Memo {
+  const kind = audioKind(memo.bytes);
+  if (!kind) throw new SocialError(400, "Voice memo must be WebM or MP4 audio.");
+  if (!Number.isInteger(memo.ms) || memo.ms < 500 || memo.ms > MAX_AUDIO_MS + 1000) {
+    throw new SocialError(400, `Keep a voice memo to ${MAX_AUDIO_MS / 60_000} minutes.`);
+  }
+  if (!new RegExp(`^[A-Za-z0-9_-]{${WAVE_BARS}}$`).test(memo.wave)) throw new SocialError(400, "Malformed request.");
+  // Up to a second over, for a stop that lands just after the limit; the card says the limit.
+  return { bytes: memo.bytes, kind, ms: Math.min(memo.ms, MAX_AUDIO_MS), wave: memo.wave };
 }
 
 function checkPostPhoto(bytes: Buffer, max: number, edge: number): void {
@@ -596,7 +636,7 @@ function readPost(req: Request, res: Response, next: NextFunction) {
   if (type.includes("application/octet-stream")) {
     postRaw(req, res, (err?: unknown) => {
       if (err) {
-        res.status(413).json({ error: "Each photo must be 48KB or smaller." });
+        res.status(413).json({ error: "Photos or voice memo too large." });
         return;
       }
       next();
@@ -616,19 +656,21 @@ socialRouter.post(
     const me = requireUser(res);
     let textIn: unknown = req.body?.text;
     let photos: { full: Buffer; small: Buffer }[] = [];
+    let memo: Memo | null = null;
     if (Buffer.isBuffer(req.body)) {
       const packed = readPackedPost(req.body);
       textIn = packed.text;
       photos = packed.photos;
+      memo = packed.memo && checkMemo(packed.memo);
     }
     const text = postText(textIn);
     if (!text.ok) throw new SocialError(400, text.error);
-    if (!text.text && photos.length === 0) throw new SocialError(400, "Write something.");
+    if (!text.text && photos.length === 0 && !memo) throw new SocialError(400, "Write something.");
     for (const photo of photos) {
       checkPostPhoto(photo.small, PHOTO_SMALL_BYTES, PHOTO_SMALL_EDGE);
       checkPostPhoto(photo.full, PHOTO_BYTES, PHOTO_EDGE);
     }
-    const created = await createPost(me.name, text.text, Date.now(), photos);
+    const created = await createPost(me.name, text.text, Date.now(), photos, memo);
     if ("wait" in created) throw new SocialError(429, waitText(created.wait), { wait: created.wait });
     res.json({ post: created });
   }),
@@ -1464,6 +1506,20 @@ export function sendPostPhoto(req: Request, res: Response): void {
   }
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.type("jpeg").sendFile(file);
+}
+
+/**
+ * A post's voice memo. Never rewritten, so it is cached like a photo; sendFile
+ * answers Range requests, which Safari will not play a file without.
+ */
+export function sendPostAudio(req: Request, res: Response): void {
+  const found = postAudioFile(req.params.id);
+  if (!found) {
+    res.status(404).type("text").send("Not found.");
+    return;
+  }
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.type(found.type).sendFile(found.file);
 }
 
 export function sendAvatar(req: Request, res: Response): void {

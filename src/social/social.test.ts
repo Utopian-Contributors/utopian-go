@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, webcrypto } from "crypto";
 import express from "express";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, readdirSync, rmSync } from "fs";
 import { createServer, type Server } from "http";
 import { tmpdir } from "os";
 import path from "path";
@@ -9,6 +9,7 @@ import { Client } from "pg";
 import test, { after } from "node:test";
 import { checkPassword, newPassword, openPhrase, sealPhrase, stale } from "./auth";
 import { TERMS_VERSION } from "../config";
+import { audioKind } from "./audio";
 import { jpegSize } from "./jpeg";
 import {
   base58,
@@ -25,8 +26,8 @@ import { parseSol, transferMessage, unsignedTransfer } from "./pay";
 import { checkSwapInstructions, parseMessage, reviewedFloor, signTransaction, simulationError, slippageFor } from "./swap";
 import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMessage, onCurve } from "./send";
 import { scrub } from "./guard";
-import { postWait, username, waitText } from "./limits";
-import { sendAvatar, sendPostPhoto, socialRouter } from "./routes";
+import { AUDIO_BYTES, MAX_AUDIO_MS, postWait, username, waitText } from "./limits";
+import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
 import { TIMELINE_PAGE, closePool, databaseUrl, ensureSchema, getUser, resetSocial } from "./db";
 import { WORDLIST } from "./wordlist";
 
@@ -290,7 +291,7 @@ test("posting waits ten minutes", () => {
   assert.equal(username("no"), null);
 });
 
-function packPost(text: string, photos: [Buffer, Buffer][]): Buffer {
+function packPost(text: string, photos: [Buffer, Buffer][], memo?: { bytes: Buffer; ms: number; wave: string }): Buffer {
   const encoded = Buffer.from(text);
   const head = Buffer.alloc(2);
   head.writeUInt16BE(encoded.length);
@@ -301,7 +302,26 @@ function packPost(text: string, photos: [Buffer, Buffer][]): Buffer {
     len.writeUInt32BE(full.length, 4);
     parts.push(len, small, full);
   }
+  if (memo) {
+    const len = Buffer.alloc(8);
+    len.writeUInt32BE(memo.bytes.length, 0);
+    len.writeUInt32BE(memo.ms, 4);
+    parts.push(len, Buffer.from(memo.wave, "latin1"), memo.bytes);
+  }
   return Buffer.concat(parts);
+}
+
+/** The EBML header Chrome's MediaRecorder writes, then `n` bytes standing in for the recording. */
+function webm(n: number): Buffer {
+  return Buffer.concat([
+    Buffer.from("1a45dfa39f4286810142f7810142f2810442f381084282847765626d4287810442858102", "hex"),
+    Buffer.alloc(n, 7),
+  ]);
+}
+
+/** An ftyp box, as Safari's MediaRecorder opens an MP4 with. */
+function mp4(n: number): Buffer {
+  return Buffer.concat([Buffer.from("0000001c667479706d7034320000000069736f6d6d703432", "hex"), Buffer.alloc(n, 7)]);
 }
 
 function jpeg(w: number, h: number): Buffer {
@@ -1135,6 +1155,123 @@ test("messenger keeps only ciphertext and refuses stale or foreign keys", async 
     assert.equal(poll.json?.messages.length, 0);
     const moved = await bob("GET", `/api/social/c?after=${page.json?.messages[29].at}`);
     assert.equal(moved.json?.chats[0].with, "ada");
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test("a voice memo is WebM or MP4, known by its header", () => {
+  assert.equal(audioKind(webm(8)), "webm");
+  assert.equal(audioKind(mp4(8)), "m4a");
+  const matroska = Buffer.from(webm(8).toString("latin1").replace("webm", "mkvx"), "latin1");
+  assert.equal(audioKind(matroska), null, "EBML that is not WebM");
+  assert.equal(audioKind(Buffer.concat([Buffer.from("OggS"), Buffer.alloc(20)])), null);
+  assert.equal(audioKind(jpeg(8, 8)), null);
+  assert.equal(audioKind(webm(0).subarray(0, 8)), null, "too short to say");
+});
+
+test("a voice memo posts, plays from its own address, and rides a re-post", async () => {
+  await useTestDatabase();
+  await ensureSchema();
+  await resetSocial();
+  const app = express();
+  app.set("trust proxy", true);
+  app.use("/api/social", socialRouter);
+  app.get("/social/v/:id", sendPostAudio);
+  const server: Server = await new Promise((resolve) => {
+    const listening = createServer(app);
+    listening.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const base = `http://127.0.0.1:${address.port}`;
+  let ip = 0;
+
+  async function join(name: string) {
+    let jar = "";
+    const call = async (method: string, urlPath: string, body?: Buffer | Record<string, unknown>) => {
+      const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": `10.2.0.${++ip % 250}` };
+      if (jar) headers.Cookie = jar;
+      if (body) headers["Content-Type"] = Buffer.isBuffer(body) ? "application/octet-stream" : "application/json";
+      const res = await fetch(base + urlPath, { method, headers, body: Buffer.isBuffer(body) ? body : body && JSON.stringify(body) });
+      for (const cookie of res.headers.getSetCookie?.() ?? []) jar = cookie.split(";")[0];
+      const text = await res.text();
+      let json: Record<string, any> | null = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = null;
+      }
+      return { status: res.status, json, text };
+    };
+    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1", terms: true })).status, 200);
+    return call;
+  }
+  const files = (ext: string) => readdirSync(path.join(dir, "posts")).filter((f) => f.endsWith(ext));
+
+  try {
+    const amy = await join("amy");
+    const wave = "A".repeat(20) + "_".repeat(20);
+    const refused = async (memo: { bytes: Buffer; ms: number; wave: string }, why: RegExp) => {
+      const res = await amy("POST", "/api/social/post", packPost("", [], memo));
+      assert.equal(res.status, 400, res.text);
+      assert.match(String(res.json?.error), why);
+    };
+    await refused({ bytes: jpeg(8, 8), ms: 2000, wave }, /WebM or MP4/);
+    assert.equal(MAX_AUDIO_MS, 180_000, "three minutes");
+    await refused({ bytes: webm(64), ms: MAX_AUDIO_MS + 1001, wave }, /3 minutes/);
+    await refused({ bytes: webm(64), ms: 100, wave }, /3 minutes/);
+    await refused({ bytes: webm(64), ms: 2000, wave: wave.slice(1) }, /Malformed/);
+    await refused({ bytes: webm(64), ms: 2000, wave: "!" + wave.slice(1) }, /Malformed/);
+    await refused({ bytes: webm(AUDIO_BYTES), ms: 2000, wave }, /too large/);
+    const cut = packPost("", [], { bytes: webm(64), ms: 2000, wave });
+    assert.equal((await amy("POST", "/api/social/post", cut.subarray(0, cut.length - 1))).status, 400, "shorter than it says");
+
+    // A memo alone is a post. A stop just past the limit is drawn as the limit.
+    const recording = webm(900);
+    const posted = await amy("POST", "/api/social/post", packPost("", [], { bytes: recording, ms: MAX_AUDIO_MS + 400, wave }));
+    assert.equal(posted.status, 200, posted.text);
+    const card = posted.json?.post;
+    assert.equal(card.text, "");
+    assert.equal(card.audio, MAX_AUDIO_MS);
+    assert.equal(card.wave, wave);
+    assert.equal(card.photos, 0);
+
+    const played = await fetch(`${base}/social/v/${card.id}`);
+    assert.equal(played.status, 200);
+    assert.equal(played.headers.get("content-type"), "audio/webm");
+    assert.equal(played.headers.get("cache-control"), "public, max-age=86400");
+    assert.deepEqual(Buffer.from(await played.arrayBuffer()), recording);
+    // Safari asks for a range before it will play anything.
+    const part = await fetch(`${base}/social/v/${card.id}`, { headers: { Range: "bytes=0-9" } });
+    assert.equal(part.status, 206);
+    assert.equal(part.headers.get("content-range"), `bytes 0-9/${recording.length}`);
+    assert.equal((await part.arrayBuffer()).byteLength, 10);
+    assert.equal((await fetch(`${base}/social/v/nope`)).status, 404);
+    assert.equal((await fetch(`${base}/social/v/a.b`)).status, 404);
+
+    // Too soon for a second post: the memo that came with it is not kept.
+    const again = await amy("POST", "/api/social/post", packPost("", [], { bytes: webm(64), ms: 2000, wave }));
+    assert.equal(again.status, 429);
+    assert.equal(files(".webm").length, 1);
+
+    // Words, a photo, and a memo from Safari, together.
+    const bob = await join("bob");
+    const both = await bob("POST", "/api/social/post", packPost("listen", [[jpeg(8, 8), jpeg(16, 16)]], { bytes: mp4(300), ms: 4200, wave }));
+    assert.equal(both.status, 200, both.text);
+    assert.equal(both.json?.post.photos, 1);
+    assert.equal(both.json?.post.audio, 4200);
+    assert.equal((await fetch(`${base}/social/v/${both.json?.post.id}`)).headers.get("content-type"), "audio/mp4");
+    assert.equal(files(".m4a").length, 1);
+
+    // A re-post carries the original's memo, as it carries its photos.
+    assert.equal((await bob("POST", "/api/social/repost", { post: card.id })).status, 200);
+    const feed = await bob("GET", "/api/social/timeline");
+    const shared = (feed.json?.posts as { repost: string | null; audio: number; wave: string }[]).find((p) => p.repost === card.id);
+    assert.equal(shared?.audio, MAX_AUDIO_MS);
+    assert.equal(shared?.wave, wave);
+    const plain = (feed.json?.posts as { text: string; audio: number; wave: string }[]).filter((p) => p.text === "listen");
+    assert.equal(plain.length, 1);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }

@@ -18,7 +18,7 @@ import { startTokenIndex } from "./lib/tokens/store";
 import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
 import { apiRouter } from "./routes/api";
 import { ensureSchema } from "./social/db";
-import { sendAvatar, sendPostPhoto, socialRouter } from "./social/routes";
+import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./social/routes";
 
 const app = express();
 const publicDir = path.join(__dirname, "..", "public");
@@ -341,6 +341,8 @@ try {
  *    be enumerated; `data:` covers wallet icons, which arrive as data URIs.
  *    `blob:` is only the post composer's preview of a picture this page just
  *    compressed. That address is created here; markup cannot name one.
+ *  - `media-src blob:` — the same, for a voice memo just recorded: the
+ *    composer plays it back from memory before it is posted.
  *  - `connect-src` — /api/* on this origin, plus Jupiter's keyless swap API,
  *    which the browser calls directly for quotes and to build a transaction.
  *  - `base-uri 'none'` — without it, one injected `<base>` tag repoints every
@@ -353,6 +355,7 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data: https:",
+  "media-src 'self' blob:",
   "connect-src 'self' https://lite-api.jup.ag",
   "font-src 'self'",
   "form-action 'self'",
@@ -379,7 +382,10 @@ app.use((req, res, next) => {
   // same-origin destinations is fine — but no result site, and no image host a
   // result pulls from, has any business learning what was searched for.
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=()");
+  // Social records voice memos, so its pages may ask for the microphone. No
+  // other page may, and no frame anywhere: `self` is this origin's own pages.
+  const mic = req.path === "/social" || req.path.startsWith("/social/") ? "(self)" : "()";
+  res.setHeader("Permissions-Policy", `geolocation=(), camera=(), microphone=${mic}, payment=()`);
   if (req.secure) {
     res.setHeader(
       "Strict-Transport-Security",
@@ -444,12 +450,13 @@ app.get("/icon/:mint", (req, res) => {
 app.get("/social/a/:name", sendAvatar);
 app.get("/social/t/:name", sendAvatar);
 app.get("/social/i/:id/:n", sendPostPhoto);
+app.get("/social/v/:id", sendPostAudio);
 
 app.use((req, _res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD") return next();
   const p = req.path;
   if (p !== "/social" && !p.startsWith("/social/")) return next();
-  if (p.startsWith("/social/a/") || p.startsWith("/social/t/") || p.startsWith("/social/i/")) return next();
+  if (/^\/social\/[ativ]\//.test(p)) return next();
   req.url = "/social.html" + req.originalUrl.slice(p.length);
   next();
 });

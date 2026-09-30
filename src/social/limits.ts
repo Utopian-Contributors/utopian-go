@@ -36,6 +36,20 @@ export const PHOTO_SMALL_BYTES = SOCIAL_BYTES;
 export const PHOTO_SMALL_EDGE = 640;
 
 /**
+ * A post carries at most one voice memo, recorded in the browser, of up to
+ * three minutes. Opus at 24 kbps is about 3KB a second, so three minutes fit
+ * with room for its variable rate; a browser that encodes heavier (an older
+ * Safari's AAC) is stopped by the byte ceiling first. The recorder stops at
+ * whichever limit it reaches.
+ *
+ * The wave is the recording's shape, one base64url character (0–63) per bar,
+ * so a timeline draws it without fetching a byte of audio.
+ */
+export const MAX_AUDIO_MS = 3 * 60_000;
+export const AUDIO_BYTES = 640 * 1024;
+export const WAVE_BARS = 40;
+
+/**
  * Messenger. The server sees ciphertext only, so these bound bytes, not
  * characters: a message is AES-GCM over at most MAX_CHAT UTF-8 characters,
  * and a photo is a 12-byte IV, the sealed JPEG, and a 16-byte tag.

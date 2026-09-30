@@ -196,8 +196,9 @@ dialog textarea { resize: none; }
   cursor: pointer;
 }
 
-.tool:hover { color: var(--go); }
+.tool:hover:not(:disabled) { color: var(--go); }
 .tool:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+.tool:disabled { opacity: 0.4; cursor: default; }
 
 .composer .count {
   margin-left: auto;
@@ -295,6 +296,91 @@ dialog textarea { resize: none; }
   font: 600 15px/1 var(--ff);
   cursor: pointer;
 }
+
+/* A voice memo: play, the shape of the recording, and its length. */
+.memo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: min(100%, 320px);
+  margin: 8px 0 0;
+  padding: 6px 14px 6px 6px;
+  border-radius: 999px;
+  background: var(--ch);
+}
+
+.memo-go {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--buy);
+  color: var(--buy-ink);
+  cursor: pointer;
+}
+
+.memo-go svg { display: block; }
+.memo-go:hover:not(:disabled) { filter: brightness(1.08); }
+.memo-go:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+.memo-go:disabled { background: var(--ln); color: var(--f); cursor: default; }
+
+.wave {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  min-width: 0;
+  height: 28px;
+  cursor: pointer;
+}
+
+.wave i {
+  flex: 0 1 3px;
+  min-width: 1px;
+  border-radius: 2px;
+  background: var(--f);
+  opacity: 0.5;
+}
+
+.wave i.on { background: var(--go); opacity: 1; }
+
+.memo-t {
+  flex: none;
+  color: var(--f);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The composer's memo, before it is posted, with a way to take it off. */
+.voice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.voice .memo { margin: 0; }
+
+.memo-x {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0 0 3px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ch);
+  color: var(--m);
+  font: 600 18px/1 var(--ff);
+  cursor: pointer;
+}
+
+.memo-x:hover { color: var(--dn); }
 
 .composer .wait {
   color: var(--ff);

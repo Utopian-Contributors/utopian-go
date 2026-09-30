@@ -129,7 +129,7 @@ const PAGES = [
  * would be measuring bytes nobody waits for. The install panel is the one
  * that arrives unasked, but only on a phone, and only after load.
  */
-const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "chat.js", "login.js", "hive.js", "install.js"];
+const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "chat.js", "rec.js", "login.js", "hive.js", "install.js"];
 
 /**
  * The legal documents: readable HTML under client/legal/, published as the
@@ -301,6 +301,17 @@ const chatOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "chat", "main.js")],
   outfile: path.join(outDir, "chat.js"),
+};
+
+/**
+ * The voice memo recorder, fetched by social.js the first time someone
+ * presses the composer's microphone. It brings its own few rules, so neither
+ * the document nor social.js carries a dialog most visitors never open.
+ */
+const recOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "rec", "main.js")],
+  outfile: path.join(outDir, "rec.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -670,7 +681,7 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
  * wordmark inlined for the same reason it is on the other two documents: the
  * header should not wait on a second request.
  */
-async function buildSocialHtml(css, socialHash, qrHash, chatHash, installHash) {
+async function buildSocialHtml(css, socialHash, qrHash, chatHash, recHash, installHash) {
   let raw = readFileSync(path.join(clientDir, "social.html"), "utf8");
   raw = replaceOnce(
     raw,
@@ -701,6 +712,12 @@ async function buildSocialHtml(css, socialHash, qrHash, chatHash, installHash) {
     /data-ch="\/chat\.js"/,
     `data-ch="/chat.js?v=${chatHash}"`,
     "social chat.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-rc="\/rec\.js"/,
+    `data-rc="/rec.js?v=${recHash}"`,
+    "social rec.js attribute",
   );
   raw = replaceOnce(
     raw,
@@ -907,7 +924,7 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
+  const [, , , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
     esbuild.build(installOpts),
     esbuild.build(swOpts),
     esbuild.build(jsOpts),
@@ -918,6 +935,7 @@ async function buildAssets() {
     esbuild.build(qrOpts),
     esbuild.build(hiveOpts),
     esbuild.build(walletOpts),
+    esbuild.build(recOpts),
     Promise.all([esbuild.build(socialOpts), esbuild.build(chatOpts)]).then(buildSocialCss),
     buildCss("app.css"),
     buildCss("wallet.css"),
@@ -933,7 +951,7 @@ async function buildAssets() {
   await Promise.all([
     buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, hash("hive.js"), installHash),
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
-    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("chat.js"), installHash),
+    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("chat.js"), hash("rec.js"), installHash),
   ]);
   buildLegal();
   precompress();

@@ -61,6 +61,10 @@ model Post {
   at       BigInt
   views    Int       @default(0)
   photos   Int       @default(0)
+  /// A voice memo's length in milliseconds; 0 when the post has none.
+  audio    Int       @default(0)
+  /// The memo's shape, one base64url character per bar.
+  wave     String    @default("")
   repost   String?
   author   User      @relation(fields: [byName], references: [name], onDelete: NoAction, onUpdate: NoAction)
   original Post?     @relation("repost", fields: [repost], references: [id], onDelete: NoAction, onUpdate: NoAction)

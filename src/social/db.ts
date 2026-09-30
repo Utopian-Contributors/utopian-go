@@ -4,7 +4,15 @@ import { readFileSync } from "fs";
 import path from "path";
 import { Pool, type PoolClient, types } from "pg";
 import { CHAT_PAGE, MAX_CHAT_KEEP, MAX_COMMENTS, SocialError, postWait } from "./limits";
-import { removeChatPhotos, removePostPhotos, writeChatPhotos, writePostPhotos } from "./store";
+import type { AudioKind } from "./audio";
+import {
+  removeChatPhotos,
+  removePostAudio,
+  removePostPhotos,
+  writeChatPhotos,
+  writePostAudio,
+  writePostPhotos,
+} from "./store";
 
 // int8 comes back as a string. Post times fit in a JS number.
 types.setTypeParser(20, (value) => Number(value));
@@ -79,6 +87,8 @@ CREATE TABLE IF NOT EXISTS posts (
   at bigint NOT NULL,
   views integer NOT NULL DEFAULT 0,
   photos integer NOT NULL DEFAULT 0,
+  audio integer NOT NULL DEFAULT 0,
+  wave text NOT NULL DEFAULT '',
   repost text REFERENCES posts(id)
 );
 DROP INDEX IF EXISTS posts_at;
@@ -115,6 +125,9 @@ CREATE TABLE IF NOT EXISTS saves (
 CREATE INDEX IF NOT EXISTS saves_by_at ON saves (by_name, at DESC);
 -- Tables from before these columns existed keep their rows and gain them.
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS photos integer NOT NULL DEFAULT 0;
+-- A voice memo's length in milliseconds (0 when there is none), and its shape.
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS audio integer NOT NULL DEFAULT 0;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS wave text NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS epoch integer NOT NULL DEFAULT 0;
 -- The phrase sealed a second time, under WALLET_KEY from the environment, so the server can sign.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS key_iv text;
@@ -265,6 +278,10 @@ export interface Card {
   avatarRev: number;
   /** Pictures on this post, or on the original when this card is a re-post. */
   photos: number;
+  /** Milliseconds of voice memo, or 0. Like photos, a re-post carries the original's. */
+  audio: number;
+  /** The memo's shape, one base64url character per bar; empty without a memo. */
+  wave: string;
 }
 
 export interface CommentRow {
@@ -396,6 +413,8 @@ type CardRow = {
   saved: boolean;
   reposted: boolean;
   photos: number;
+  audio: number;
+  wave: string;
 };
 
 function cardFrom(row: CardRow): Card {
@@ -413,6 +432,8 @@ function cardFrom(row: CardRow): Card {
     originalRev: row.original_rev ?? 0,
     avatarRev: row.avatar_rev,
     photos: row.photos,
+    audio: row.audio,
+    wave: row.wave,
   };
 }
 
@@ -420,6 +441,8 @@ function cardFrom(row: CardRow): Card {
 const CARD = `
   SELECT p.id, p.by_name, p.text, p.at, p.views, p.repost,
          CASE WHEN p.repost IS NULL THEN p.photos ELSE COALESCE(op.photos, 0) END AS photos,
+         CASE WHEN p.repost IS NULL THEN p.audio ELSE COALESCE(op.audio, 0) END AS audio,
+         CASE WHEN p.repost IS NULL THEN p.wave ELSE COALESCE(op.wave, '') END AS wave,
          u.avatar_rev,
          op.by_name AS original_by,
          ou.avatar_rev AS original_rev,
@@ -507,29 +530,45 @@ export function newId(): string {
   return randomBytes(6).toString("base64url");
 }
 
+/** A voice memo, checked by the route: its bytes, container, length, and shape. */
+export type Memo = { bytes: Buffer; kind: AudioKind; ms: number; wave: string };
+
 export async function createPost(
   by: string,
   text: string,
   at: number,
   photos: { full: Buffer; small: Buffer }[],
+  memo: Memo | null = null,
 ): Promise<{ wait: number } | Card> {
-  // Files first, row second: a row never points at pictures that are not on
-  // disk, and the row lock is not held across disk writes. A post that does
-  // not happen takes its files with it.
+  // Files first, row second: a row never points at pictures or a memo that
+  // are not on disk, and the row lock is not held across disk writes. A post
+  // that does not happen takes its files with it.
   const id = newId();
+  const unwrite = () => {
+    removePostPhotos(id, photos.length);
+    if (memo) removePostAudio(id);
+  };
   writePostPhotos(id, photos);
   let created: { wait: number } | Card;
   try {
-    created = await insertPost(id, by, text, at, photos.length);
+    if (memo) writePostAudio(id, memo);
+    created = await insertPost(id, by, text, at, photos.length, memo);
   } catch (err) {
-    removePostPhotos(id, photos.length);
+    unwrite();
     throw err;
   }
-  if ("wait" in created) removePostPhotos(id, photos.length);
+  if ("wait" in created) unwrite();
   return created;
 }
 
-function insertPost(id: string, by: string, text: string, at: number, photos: number): Promise<{ wait: number } | Card> {
+function insertPost(
+  id: string,
+  by: string,
+  text: string,
+  at: number,
+  photos: number,
+  memo: Memo | null,
+): Promise<{ wait: number } | Card> {
   return tx(async (client) => {
     const row = await one<{ last_post: number; avatar_rev: number }>(
       "SELECT last_post, avatar_rev FROM users WHERE name = $1 FOR UPDATE",
@@ -540,14 +579,14 @@ function insertPost(id: string, by: string, text: string, at: number, photos: nu
     const wait = postWait(Number(row.last_post), at);
     if (wait > 0) return { wait };
     await client.query(
-      "INSERT INTO posts (id, by_name, text, at, views, photos) VALUES ($1,$2,$3,$4,0,$5)",
-      [id, by, text, at, photos],
+      "INSERT INTO posts (id, by_name, text, at, views, photos, audio, wave) VALUES ($1,$2,$3,$4,0,$5,$6,$7)",
+      [id, by, text, at, photos, memo?.ms ?? 0, memo?.wave ?? ""],
     );
     await client.query("UPDATE users SET last_post = $2 WHERE name = $1", [by, at]);
     return {
       id, by, text, at, views: 0, comments: 0, saved: false, reposted: false,
       repost: null, repostBy: null, originalRev: 0, avatarRev: row.avatar_rev,
-      photos,
+      photos, audio: memo?.ms ?? 0, wave: memo?.wave ?? "",
     };
   });
 }

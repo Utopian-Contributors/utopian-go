@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "fs";
 import path from "path";
+import { AUDIO_TYPES, type AudioKind } from "./audio";
 
 /**
  * Pictures stay files. The rows — users, posts, saves — are in Postgres.
  *
- * A profile photo and a post photo are JPEGs the browser already compressed.
- * Putting those bytes in a row would make every timeline query drag them
- * along. The keys that seal wallets and sign cookies come from the
+ * A profile photo and a post photo are JPEGs the browser already compressed,
+ * and a voice memo is the browser's own recording. Putting those bytes in a
+ * row would make every timeline query drag them along. The keys that seal wallets and sign cookies come from the
  * environment; only a dev box without WALLET_KEY keeps one here.
  */
 
@@ -106,6 +107,38 @@ export function removePostPhotos(id: string, count: number): void {
       if (existsSync(file)) unlinkSync(file);
     }
   }
+}
+
+function postAudioPath(id: string, kind: AudioKind): string {
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(id) || !(kind in AUDIO_TYPES)) throw new Error("post audio path");
+  const file = path.join(postDir(), `${id}.${kind}`);
+  if (!file.startsWith(postDir() + path.sep)) throw new Error("post audio path");
+  return file;
+}
+
+/** A post's voice memo, and the type it is served as. The extension says which container it is. */
+export function postAudioFile(id: string): { file: string; type: string } | null {
+  for (const kind of Object.keys(AUDIO_TYPES) as AudioKind[]) {
+    let file: string;
+    try {
+      file = postAudioPath(id, kind);
+    } catch {
+      return null;
+    }
+    if (existsSync(file)) return { file, type: AUDIO_TYPES[kind] };
+  }
+  return null;
+}
+
+export function writePostAudio(id: string, audio: { bytes: Buffer; kind: AudioKind }): void {
+  mkdirSync(postDir(), { recursive: true });
+  writeFileSync(postAudioPath(id, audio.kind), audio.bytes, { mode: 0o600 });
+}
+
+/** Undo `writePostAudio` for a post that was not created. */
+export function removePostAudio(id: string): void {
+  const found = postAudioFile(id);
+  if (found) unlinkSync(found.file);
 }
 
 function chatDir(): string {
