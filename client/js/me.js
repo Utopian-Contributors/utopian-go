@@ -23,7 +23,7 @@ export function writeName(name) {
     if (next) localStorage.setItem(KEY, next);
     else localStorage.removeItem(KEY);
   } catch {
-    // Storage refused: the header shows Get Social, which is still correct enough.
+    // Storage refused: the header shows Log in, which is still correct enough.
   }
   window.dispatchEvent(new Event(EVENT));
 }

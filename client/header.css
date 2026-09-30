@@ -27,19 +27,17 @@ body.res .chrome {
 }
 
 /*
- * The account control, out of flow on every page.
+ * The account control, out of flow in every header row.
  *
- * That is the whole design. This stylesheet has two entirely different header
- * layouts — a centred column on the home page, a row on results, each stacking
- * differently on a phone — and adding a fifth item to either would have meant
- * re-deriving the spacer maths that lands the search field on the results
- * column's edge. Out of flow it reserves no space, so it changes no geometry on
- * any page at any width, and the layout shift it can contribute is exactly zero.
+ * That is the whole design. Adding another item to the results row would have
+ * meant re-deriving the spacer maths that lands the search field on the results
+ * column's edge. Out of flow it reserves no space, so it changes no geometry at
+ * any width, and the layout shift it can contribute is exactly zero.
  *
- * Pinned to the window here, which is the home page's answer to where it goes:
- * the header there is a column centred in the middle of the viewport, so there
- * is no row for the control to sit on and it is simply a bar along the top.
- * Results have a row, and pin it to that instead — see body.res #ac.
+ * Pinned to the window here, as a bar along the top, for a page with no row.
+ * Results have a row, and pin it to that instead — see body.res #ac. The home
+ * page is a column with room in it, and takes the control into the flow under
+ * the price strip — see body.home #ac in app.css.
  */
 #ac {
   position: fixed;

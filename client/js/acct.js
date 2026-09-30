@@ -1,8 +1,8 @@
 /**
- * The account control in the top right. Signed in: Wallet, then the Social
- * name linking to that profile. Signed out: Log in, which opens the one login
- * dialog, then Get Social. Connecting a wallet is not a header action; the
- * trade dialog asks for one when it needs to sign.
+ * The account control in the top right. Signed in: Wallet. Signed out: Log in,
+ * which opens the one login dialog. Either way, then Get Social, to the
+ * timeline. Connecting a wallet is not a header action; the trade dialog asks
+ * for one when it needs to sign.
  */
 import { el } from "./dom.js";
 import { load } from "./lazy.js";
@@ -50,13 +50,11 @@ export function mountAccount(node, opts = {}) {
             text: LOGIN,
             onclick: () => openLogin(opts.onLogin),
           }),
-      name
-        ? el("a", { class: "ac-me", href: `/social/u/${name}`, text: name, title: "My Profile" })
-        : el(
-            "a",
-            { class: "ac-soc", href: "/social", "aria-label": "Get Social" },
-            el("span", { class: "ac-soc-t", text: "Get Social" }),
-          ),
+      el(
+        "a",
+        { class: "ac-soc", href: "/social", "aria-label": "Get Social" },
+        el("span", { class: "ac-soc-t", text: "Get Social" }),
+      ),
     );
   }
 

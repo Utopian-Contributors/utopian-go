@@ -289,13 +289,42 @@ body.home #st {
 }
 
 /*
- * Home has no header row to centre the control in, so the top pad is the
- * distance the results page already gives it: 16px of header pad, then the
- * centering of a 16px mark inside the 44px field. (44 − 16) / 2 + 16 = 30.
- * The link's own 6px pad and −6px margin cancel, so this is the glyph's top.
+ * Home has no header row, so the control comes back into the column, under the
+ * price strip, and at a size worth pressing. It ships empty and app.js fills
+ * it, so the row is held open at the buttons' height from first paint:
+ * filling it moves nothing, and the column is centred with it already there.
  */
 body.home #ac {
-  padding-top: 30px;
+  position: static;
+  justify-content: center;
+  gap: 12px;
+  width: auto;
+  height: 42px;
+  margin: 0;
+  padding: 0;
+}
+
+/* Both the same pill, so the pair reads as one row of buttons. */
+body.home #ac .ac-w,
+body.home #ac .ac-soc {
+  gap: 7px;
+  height: 42px;
+  margin: 0;
+  padding: 0 18px 0 15px;
+  border: 1px solid var(--b);
+  border-radius: 999px;
+  font-size: 15px;
+}
+
+body.home #ac .ac-w::before,
+body.home #ac .ac-soc::before {
+  width: 18px;
+  height: 18px;
+}
+
+body.home #ac .ac-soc:hover {
+  background: var(--hover);
+  text-decoration: none;
 }
 
 /* Home-only price strip. Hidden by default so it never becomes a flex item in
@@ -667,18 +696,23 @@ body.home #ft .ft-lang {
   margin-left: 0;
 }
 
-/* Places: opens hive.js. Absolute, so appearing after boot moves nothing. */
-body.home #hm-tk {
-  position: relative;
-}
-
+/*
+ * Places: opens hive.js. Top right, in the corner the account control takes on
+ * results, and fixed, so appearing after boot moves nothing. It lives in
+ * #hm-tk, which only the home page shows, so it goes wherever the strip goes.
+ *
+ * The corner is the results control's: the glyph's right edge on the shell's
+ * content edge (the button's 5px pad back out), and its centre on the line
+ * 16px of header pad and a 44px field put that control on. 16 + 44 / 2 = 38,
+ * less half the button, is 20.
+ */
 .hvb {
-  position: absolute;
-  top: calc(100% + 20px);
-  left: 50%;
+  position: fixed;
+  top: 20px;
+  right: calc(max(0px, (100% - var(--shell)) / 2) + var(--pad) - 5px);
+  z-index: 50;
   width: 36px;
   height: 36px;
-  margin-left: -18px;
   border: 0;
   border-radius: 8px;
   padding: 5px;
@@ -1758,9 +1792,10 @@ body.lb-on {
     min-height: 0;
   }
 
-  /* Results stacks here: the control is centred on the 36px mark under 12px. */
-  body.home #ac {
-    padding-top: 22px;
+  /* Results stacks here: its control is centred on the 36px mark under 12px,
+     so Places is too. 12 + 36 / 2, less half the button. */
+  .hvb {
+    top: 12px;
   }
 
   body.home .lg-mark {
