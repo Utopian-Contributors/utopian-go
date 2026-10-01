@@ -1,3 +1,4 @@
+import { execFile } from "child_process";
 import { mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from "fs";
 import { lookup, type LookupAddress } from "dns";
 import { request } from "https";
@@ -5,9 +6,12 @@ import { isIP, type LookupFunction } from "net";
 import path from "path";
 import sharp from "sharp";
 import {
+  SITE_URL,
   TOKEN_ICON_DIR,
   TOKEN_ICON_EDGE,
   TOKEN_ICON_MAX_BYTES,
+  TOKEN_ICON_MAX_PIXELS,
+  TOKEN_ICON_MAX_SVG_BYTES,
   TOKEN_ICON_RETRY_MS,
   TOKEN_ICON_TIMEOUT_MS,
   TOKEN_ICON_TTL_MS,
@@ -16,8 +20,15 @@ import { TokenRecord } from "../../types";
 
 const MINT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const WORKERS = 4;
-/** Tried after the logo's own URL. ipfs.io and dweb.link answer 429 to a sync's burst. */
-const IPFS_GATEWAYS = ["https://gateway.pinata.cloud/ipfs/", "https://ipfs.io/ipfs/"];
+/**
+ * Tried before the logo's own URL: the content is the same on any gateway.
+ * ipfs.io is left out, and with it dweb.link, w3s.link and nftstorage.link,
+ * which share its rate limit and answer a sync's burst with nothing but 429s.
+ */
+const IPFS_GATEWAYS = ["https://4everland.io/ipfs/", "https://ipfs.filebase.io/ipfs/", "https://gateway.pinata.cloud/ipfs/"];
+
+/** Arweave and some CDNs answer 403 to a request that names no client. */
+const USER_AGENT = `UtopianGo/1.0 (+${SITE_URL})`;
 
 sharp.cache(false);
 
@@ -45,6 +56,8 @@ export function restoreIcons(): void {
   } catch {
     // No directory yet.
   }
+  // After a deploy this says whether the volume came along.
+  console.log(`[icons] ${have.size} thumbnails on disk`);
 }
 
 function fresh(mint: string, now: number): boolean {
@@ -117,7 +130,10 @@ function get(url: URL): Promise<Fetched> {
       url,
       {
         lookup: publicLookup,
-        headers: { Accept: "image/png,image/jpeg,image/webp,image/gif,image/avif" },
+        headers: {
+          Accept: "image/png,image/jpeg,image/webp,image/gif,image/avif,image/svg+xml",
+          "User-Agent": USER_AGENT,
+        },
         timeout: TOKEN_ICON_TIMEOUT_MS,
       },
       (res) => {
@@ -170,12 +186,7 @@ async function download(start: string): Promise<Buffer> {
   throw new Error("too many redirects");
 }
 
-/**
- * Raster formats only, by their first bytes.
- *
- * SVG is refused: librsvg would render it, and a small file can describe a
- * drawing that takes minutes, on the threads file serving and DNS also use.
- */
+/** Raster formats, by their first bytes. */
 function raster(buf: Buffer): boolean {
   if (buf.length < 12) return false;
   const png = buf[0] === 0x89 && buf.toString("latin1", 1, 4) === "PNG";
@@ -184,6 +195,45 @@ function raster(buf: Buffer): boolean {
   const webp = buf.toString("latin1", 0, 4) === "RIFF" && buf.toString("latin1", 8, 12) === "WEBP";
   const avif = buf.toString("latin1", 4, 8) === "ftyp" && /^(avif|avis|heic|mif1)$/.test(buf.toString("latin1", 8, 12));
   return png || jpeg || gif || webp || avif;
+}
+
+/** An SVG document, which may open with an XML declaration, a doctype or a comment. */
+function vector(buf: Buffer): boolean {
+  const head = buf.toString("utf8", 0, 1024).replace(/^\uFEFF/, "").trimStart().toLowerCase();
+  return /^(<\?xml|<svg[\s>]|<!--|<!doctype svg)/.test(head) && /<svg[\s>]/.test(head);
+}
+
+/**
+ * Draws the SVG at the thumbnail's edge, in a child process.
+ *
+ * Not in this one: a small file can describe a drawing that takes minutes,
+ * and librsvg would spend them on the threads file serving and DNS also use,
+ * past sharp's timeout, which only looks in between tiles. The child is
+ * killed when the time is up, and gets no environment, so none of the keys.
+ */
+const DRAW_SVG = `
+const sharp = require(${JSON.stringify(require.resolve("sharp"))});
+sharp.concurrency(1);
+const chunks = [];
+process.stdin.on("data", (c) => chunks.push(c));
+process.stdin.on("end", async () => {
+  const svg = Buffer.concat(chunks);
+  const { width, height } = await sharp(svg).metadata();
+  const density = Math.min(2400, Math.max(1, (72 * ${TOKEN_ICON_EDGE}) / Math.max(width, height)));
+  process.stdout.end(await sharp(svg, { density, limitInputPixels: ${TOKEN_ICON_MAX_PIXELS} }).png().toBuffer());
+});`;
+
+function drawSvg(svg: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      process.execPath,
+      ["-e", DRAW_SVG],
+      { env: {}, encoding: "buffer", maxBuffer: TOKEN_ICON_MAX_BYTES, timeout: 5_000, killSignal: "SIGKILL" },
+      (err, stdout) => (err ? reject(err) : resolve(stdout)),
+    );
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(svg);
+  });
 }
 
 /** The content path of an IPFS URL, in either the /ipfs/<cid> or the <cid>.ipfs.<host> form. */
@@ -195,7 +245,7 @@ function ipfsPath(url: URL): string | null {
 
 function sources(icon: string): string[] {
   const path = ipfsPath(new URL(icon));
-  const all = path ? [icon, ...IPFS_GATEWAYS.map((g) => g + path)] : [icon];
+  const all = path ? [...IPFS_GATEWAYS.map((g) => g + path), icon] : [icon];
   return [...new Set(all)];
 }
 
@@ -211,9 +261,13 @@ async function fetchIcon(icon: string): Promise<Buffer> {
   throw last;
 }
 
-function thumb(input: Buffer): Promise<Buffer> {
-  if (!raster(input)) return Promise.reject(new Error("not a raster image"));
-  return sharp(input, { limitInputPixels: 2048 * 2048, animated: false })
+async function thumb(input: Buffer): Promise<Buffer> {
+  if (!raster(input)) {
+    if (!vector(input)) throw new Error("not an image");
+    if (input.length > TOKEN_ICON_MAX_SVG_BYTES) throw new Error("svg too large");
+    input = await drawSvg(input);
+  }
+  return sharp(input, { limitInputPixels: TOKEN_ICON_MAX_PIXELS, animated: false })
     .timeout({ seconds: 5 })
     .resize(TOKEN_ICON_EDGE, TOKEN_ICON_EDGE, {
       fit: "contain",

@@ -98,7 +98,21 @@ export const TOKEN_ICON_DIR = path.join(CACHE_DIR, "icons");
 /** Drawn at 24–32 CSS px, so 64 covers a 2x screen. */
 export const TOKEN_ICON_EDGE = 64;
 
-export const TOKEN_ICON_MAX_BYTES = 1_048_576;
+/**
+ * Meme-coin logos are often full-size PNGs or GIFs of 2–5 MB. At 1 MB about a
+ * hundred of the index's logos never made a thumbnail.
+ */
+export const TOKEN_ICON_MAX_BYTES = 8 * 1_048_576;
+
+/** An SVG is markup, so a big one is a lot of drawing rather than a lot of pixels. */
+export const TOKEN_ICON_MAX_SVG_BYTES = 1_048_576;
+
+/**
+ * Logos come as big as 5742×5746. Decoding streams through the resize, so
+ * that one costs ~130 ms and ~30 MB; a JPEG shrinks on load and costs less.
+ */
+export const TOKEN_ICON_MAX_PIXELS = 6144 * 6144;
+
 export const TOKEN_ICON_TIMEOUT_MS = 8_000;
 
 /** A logo rarely changes. */
