@@ -304,6 +304,31 @@ export function topTokens(limit: number): TopToken[] {
 }
 
 /**
+ * A stablecoin, or a deposit receipt for one. Jupiter's tags say so as of the
+ * last rebuild (`stable`). Until one lands (a fresh box, a snapshot from
+ * before the tag was kept, Jupiter not answering), and for any it misses, the
+ * record gives itself away: it is named for the dollar, its symbol names
+ * another currency, or it sits at a dollar, or a little over one where it
+ * pays yield (CASH, USX, JUICED, PRIME), and did not move today. A stock can
+ * sit still for a weekend, so it is never judged on stillness.
+ */
+export function isStable(rec: TokenRecord): boolean {
+  if (rec.stable) return true;
+  if (/usd/i.test(`${rec.symbol} ${rec.name}`) || /eur|chf|gbp/i.test(rec.symbol)) return true;
+  return !rec.equity && rec.price > 0.98 && rec.price < 1.25 && Math.abs(rec.change24h ?? Infinity) < 0.5;
+}
+
+/** The same ranking without stablecoins, which top it by volume and move nowhere: Social's Trending assets. */
+export function trendingTokens(limit: number): TopToken[] {
+  const out: TopToken[] = [];
+  for (const rec of ranked) {
+    if (out.length === limit) break;
+    if (!isStable(rec)) out.push(toTop(rec));
+  }
+  return out;
+}
+
+/**
  * The wallet page's filter: every indexed token whose mint, symbol or name
  * matches, closest first, then verified, then by volume.
  */

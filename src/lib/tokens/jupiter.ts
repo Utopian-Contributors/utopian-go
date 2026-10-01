@@ -48,6 +48,9 @@ async function fetchList(url: string): Promise<JupToken[]> {
 /** Jupiter tags that mark a mint as a tokenized equity / RWA. */
 const EQUITY_TAGS = new Set(["stocks", "xstocks", "equities"]);
 
+/** Jupiter tags a stablecoin `stable`, and a yield-bearing deposit receipt `yb`. */
+const STABLE_TAGS = new Set(["stable", "yb"]);
+
 /**
  * Issuer wrappers appended to the underlying company's name. Each tokenizer
  * brands its mints differently, and none of those brands is what a person
@@ -101,6 +104,7 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
   if (!mint || !symbol || !Number.isFinite(price) || price <= 0) return null;
 
   const isEquity = (t.tags ?? []).some((tag) => EQUITY_TAGS.has(tag));
+  const stable = (t.tags ?? []).some((tag) => STABLE_TAGS.has(tag));
   const liquidity = Number(t.liquidity) || 0;
   // Tokenized RWAs are issuer-priced and admitted at any depth, and a pinned
   // mint was named by hand; everything else has to show a real market before
@@ -129,6 +133,7 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
     liquidity,
     verified,
     ...(isEquity ? { equity: true } : {}),
+    ...(stable ? { stable: true as const } : {}),
     ...(aliases.length ? { aliases } : {}),
     ...(volume24h > 0 ? { volume24h } : {}),
     ...(icon ? { icon } : {}),

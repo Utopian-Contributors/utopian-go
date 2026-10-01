@@ -128,6 +128,12 @@ export interface TokenRecord {
   /** Tokenized equity / ETF (xStocks and friends). Outranks memecoins. */
   equity?: boolean;
   /**
+   * A stablecoin, or a yield-bearing receipt (Jupiter Lend's jlUSDC and the
+   * like): money parked, not an asset people are trading into. Kept out of
+   * Social's Trending assets.
+   */
+  stable?: true;
+  /**
    * Extra lookup keys. Tokenized equities trade as "AAPLx" / "Apple xStock",
    * but people search "AAPL" and "apple" — without aliases they are indexed
    * and unreachable.
