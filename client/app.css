@@ -296,6 +296,10 @@ body.home #st {
  */
 body.home #ac {
   position: static;
+  /* header.css's 50 is for the fixed bar. Static isn't enough to drop it: #ac
+     is a flex item of #hd here, and a flex item honours z-index anyway, which
+     put these buttons over the install panel (25) on a short screen. */
+  z-index: auto;
   justify-content: center;
   gap: 12px;
   width: auto;
