@@ -225,8 +225,8 @@ dialog textarea { resize: none; }
 
 /*
  * The timeline's filters. On is green like every other pressable thing here;
- * off is an outline in the muted grey. Sized so all four fit one row on a
- * 360px phone.
+ * off is an outline in the muted grey. On phones one row that scrolls
+ * sideways (see the phone gutters below), so they never stack.
  */
 .flt {
   display: flex;
@@ -877,6 +877,56 @@ body.soc .pn {
     gap: 0;
   }
 
+  /*
+   * Phone gutters. Neither #mn nor #m pads its sides here, so the rules
+   * between posts, friends, sections and the composer run edge to edge.
+   * Each block keeps off the edge on its own: a margin on whatever is a plain
+   * block or card, a padding on whatever draws a rule, and the lists that
+   * hold those (.feed, .friends, .abc) pass the gutter on to their children.
+   */
+  body.soc #mn { padding-inline: 0; }
+  body.soc #m { --gut: 16px; padding-inline: 0; }
+
+  body.soc #m > *,
+  body.soc .feed > *,
+  body.soc .friends > *,
+  body.soc .sec > * { margin-inline: var(--gut); }
+
+  body.soc #m > .composer,
+  body.soc #m > .flt,
+  body.soc #m > .feed,
+  body.soc #m > .friends,
+  body.soc #m > .sec,
+  body.soc #m > .post,
+  body.soc .friends > .abc,
+  body.soc .post { margin-inline: 0; }
+
+  body.soc .composer,
+  body.soc .post,
+  body.soc .abc-h,
+  body.soc .friend { padding-inline: var(--gut); }
+
+  /*
+   * The filters: one row that scrolls sideways, edge to edge, the first chip
+   * lined up with the gutter. The block padding keeps a focus ring clear of
+   * the scroll box's clip; the margins give it back.
+   */
+  body.soc .flt {
+    flex-wrap: nowrap;
+    margin: 7px 0 -1px;
+    padding: 3px var(--gut);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-padding-inline: var(--gut);
+    scrollbar-width: none;
+  }
+
+  body.soc .flt::-webkit-scrollbar { display: none; }
+  body.soc .flt button { flex: none; }
+
+  /* The card above the posts, for anyone signed out. */
+  body.soc:not(.profile, .chat) #sd { padding-inline: 16px; box-sizing: border-box; }
+
   body.soc #m {
     order: 0;
     flex: 1 1 auto;
@@ -1201,7 +1251,11 @@ a.crow.on {
 
   body.chat .pn { max-height: none; height: 100%; padding: 0; border: 0; }
   body.chat .find { width: calc(100% - 32px); }
+  /* A row's own 8px inset and this put its text on the 16px gutter. */
+  body.chat .chats { padding-inline: 8px; }
   body.chat #m { display: none; padding: 0; }
+  /* The head's and the composer's rules run edge to edge, as the timeline's do. */
+  body.chat #m > * { margin-inline: 0; padding-inline: var(--gut); }
   body.chat.open #sd { display: none; }
   body.chat.open #m { display: flex; }
   .msg { max-width: 85%; }
