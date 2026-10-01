@@ -170,8 +170,8 @@ const LEGAL_MAX = 14_336;
  * icons the manifest names are not listed: only installing fetches them.
  */
 const STATIC_FIRST_LOAD = [
-  "favicon.svg",
-  "favicon.png",
+  "go-favicon.svg",
+  "go-favicon.png",
   "banner-light.webp",
   "banner-dark.webp",
   "sw.js",
