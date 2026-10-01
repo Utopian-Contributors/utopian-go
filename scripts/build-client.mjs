@@ -127,9 +127,10 @@ const PAGES = [
  * buy panel only loads once someone presses Buy and the wallet picker only
  * once someone presses Login, so counting either against a first-load window
  * would be measuring bytes nobody waits for. The install panel is the one
- * that arrives unasked, but only on a phone, and only after load.
+ * that arrives unasked, but only on a phone, and only after load; the rail
+ * is its opposite, only on a wide screen, and only after the timeline is drawn.
  */
-const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "chat.js", "rec.js", "login.js", "hive.js", "install.js"];
+const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "chat.js", "rec.js", "rail.js", "avatar.js", "login.js", "hive.js", "install.js"];
 
 /**
  * The legal documents: readable HTML under client/legal/, published as the
@@ -312,6 +313,28 @@ const recOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "rec", "main.js")],
   outfile: path.join(outDir, "rec.js"),
+};
+
+/**
+ * The desktop timeline's right column, fetched by social.js only on a screen
+ * wide enough to show it. It brings its own rules, as the recorder does, so
+ * a phone pays nothing for a column it never draws.
+ */
+const railOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "rail", "main.js")],
+  outfile: path.join(outDir, "rail.js"),
+};
+
+/**
+ * The background under a profile photo, fetched by social.js when someone
+ * picks one. Its gradient is src/social/backdrop.ts, the same file the server
+ * draws a new account's picture with, bundled across rather than copied.
+ */
+const avatarOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "avatar", "main.js")],
+  outfile: path.join(outDir, "avatar.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -681,7 +704,7 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
  * wordmark inlined for the same reason it is on the other two documents: the
  * header should not wait on a second request.
  */
-async function buildSocialHtml(css, socialHash, qrHash, chatHash, recHash, installHash) {
+async function buildSocialHtml(css, socialHash, qrHash, chatHash, recHash, railHash, avatarHash, installHash) {
   let raw = readFileSync(path.join(clientDir, "social.html"), "utf8");
   raw = replaceOnce(
     raw,
@@ -718,6 +741,18 @@ async function buildSocialHtml(css, socialHash, qrHash, chatHash, recHash, insta
     /data-rc="\/rec\.js"/,
     `data-rc="/rec.js?v=${recHash}"`,
     "social rec.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-rl="\/rail\.js"/,
+    `data-rl="/rail.js?v=${railHash}"`,
+    "social rail.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-av="\/avatar\.js"/,
+    `data-av="/avatar.js?v=${avatarHash}"`,
+    "social avatar.js attribute",
   );
   raw = replaceOnce(
     raw,
@@ -924,7 +959,7 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
+  const [, , , , , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
     esbuild.build(installOpts),
     esbuild.build(swOpts),
     esbuild.build(jsOpts),
@@ -936,6 +971,8 @@ async function buildAssets() {
     esbuild.build(hiveOpts),
     esbuild.build(walletOpts),
     esbuild.build(recOpts),
+    esbuild.build(railOpts),
+    esbuild.build(avatarOpts),
     Promise.all([esbuild.build(socialOpts), esbuild.build(chatOpts)]).then(buildSocialCss),
     buildCss("app.css"),
     buildCss("wallet.css"),
@@ -951,7 +988,7 @@ async function buildAssets() {
   await Promise.all([
     buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, hash("hive.js"), installHash),
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
-    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("chat.js"), hash("rec.js"), installHash),
+    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("chat.js"), hash("rec.js"), hash("rail.js"), hash("avatar.js"), installHash),
   ]);
   buildLegal();
   precompress();
@@ -986,6 +1023,11 @@ if (watch) {
     // Ignore editor swap/temp files
     if (filename.endsWith("~") || filename.endsWith(".swp")) return;
     console.log(`[watch] ${filename}`);
+    schedule();
+  });
+  // The one source file a bundle takes from the server's side (see avatarOpts).
+  fsWatch(path.join(root, "src", "social", "backdrop.ts"), () => {
+    console.log("[watch] src/social/backdrop.ts");
     schedule();
   });
 

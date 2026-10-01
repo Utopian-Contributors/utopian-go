@@ -73,7 +73,7 @@ Anything that is only needed after a click is a lazy bundle.
 |---|---|---|---|---|
 | Search | `/`, `/?q=` | `index.html` | `app.js` | `swap.js`, `connect.js`, `qr.js`, `login.js`, `hive.js` |
 | Wallet | `/wallet` | `wallet.html` | `wallet.js` | `connect.js`, `swap.js`, `qr.js`, `keys.js`, `login.js` |
-| Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js` |
+| Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js` |
 
 Every page wears the same header as search: the wordmark, the search field, and the
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet
@@ -90,6 +90,23 @@ click. Every Log in button, in a header or on a page, opens it and never navigat
 Messenger is part of Social: one more tab and one more route in the same document, with
 its own lazy bundle (`chat.js`), served by the same API and stored in the same database.
 
+On a screen wider than 900px, Social's tabs (Timeline, Friends, Messenger, My Profile) are a
+column at the left, icons alone up to 1100px. The timeline, and a post opened from it (so the
+post stays in the column it was read in), then have a column at the right:
+**Friends to add** (whoever posted most in the last 30 days, less the viewer and the people
+they already added) and **Trending assets** (the most-traded verified tokens of the day,
+stablecoins and yield-bearing receipts left out). That column is its own bundle, `rail.js`,
+and neither it nor its data is fetched on a phone, where the tabs are a bottom bar and there
+are no side columns.
+
+Under the composer, the timeline's filters: **All / Friends** (the people you added, and
+you), **Saved**, **Images** and **Audio**. Images and Audio start on; turning one off leaves
+out every post that carries it, a re-post judged by its original. The choice is kept per
+device (`ug.feed`). The server does the filtering, so every page infinite scroll fetches is
+already filtered, and each combination is a range on its own index: `posts_at_id` and its
+partial copies without photos, without audio, or without both; `posts_by_at_id` per friend;
+`saves_by_post` for Saved.
+
 ### API / Interface
 
 #### Pages
@@ -100,10 +117,11 @@ GET /?q=<query>&lang=<code>   results; tabs: Web, Images
 GET /?q=<sym>&buy=<mint>      results with the buy dialog open (wallet in-app browsers, QR hand-off)
 GET /search?q=                302 → /?q=
 GET /wallet                   left: holdings, 24h line, Receive/Send/Swap, Trending + search
+GET /wallet?t=<mint>          the wallet page opened on that token's chart (Social's Trending assets link here)
                               right: the chosen token's line and market data
 GET /icon/<mint>              token thumbnail, image/webp, 64 px
 GET /social                   timeline
-GET /social/saved             saved posts
+GET /social/saved             the timeline with Saved on (Saved was a page before it was a filter)
 GET /social/friends           friends, and search for people
 GET /social/u/<name>          profile: card left, posts right (stacked on phones)
 GET /social/edit              edit profile: photo, bio, location, passkey, recovery phrase
@@ -163,8 +181,10 @@ POST /api/social/recover       {phrase, password}            → {name}
 POST /api/social/logout        {}                            → {ok}   ends every session of the account
 GET  /api/social/me                                          → {me: Me | null}
 
-GET  /api/social/timeline?before&id → {me, posts: Card[], notes, next: {at, id} | null}
-GET  /api/social/saved              → {me, posts: Card[]}
+GET  /api/social/timeline?before&id&friends=1&saved=1&images=0&audio=0
+                                    → {me, posts: Card[], notes, next: {at, id} | null}
+                                      friends and saved are ignored signed out
+GET  /api/social/rail               → {people: {name, bio, avatarRev, posts}[], assets: TopToken[]}
 GET  /api/social/u/<name>           → {me, user: {name, address, bio, loc, avatarRev, posts: Card[]}}
 POST /api/social/open    {post}     → {me, post: Card, comments}
 POST /api/social/post    {text} | application/octet-stream (text + up to 4 photos + a voice memo) → {post: Card}
@@ -301,10 +321,15 @@ data/social/chat/<id>-<n>.bin      sealed message photo: IV + AES-GCM(JPEG ≤ 4
 data/cache/icons/<mint>.webp       token logo, 64 × 64, about 1 KB; a cache, rebuilt by the sync
 ```
 
-Sign-up copies `client/default-pb.jpg` and `client/default-pb.t.jpg` (480 px and 80 px squares
-within the limits above) into the new account's two avatar files and starts it at
-`avatarRev` 1. An upload replaces them like any other photo. Accounts from before the default
-keep `avatarRev` 0 and no picture.
+Sign-up draws the new account's picture once (`src/social/avatar.ts`): a head and shoulders
+over a dithered gradient in the account's own colours, as a 480 px and an 80 px square within
+the limits above, written to its two avatar files, starting it at `avatarRev` 1. Nothing draws
+it again; it is only served. The colours come from a hash of the username
+(`src/social/backdrop.ts`, FNV-1a), with lightness kept between 42% and 85% and saturation at
+half or more, so none is black, white or grey. An upload replaces the picture like any other
+photo. Where the upload is transparent, the browser paints the owner's same gradient behind it
+before compressing (`avatar.js`, bundled from that same file), so a cut-out keeps its colours.
+Accounts from before keep the picture they started with, or `avatarRev` 0 and none.
 
 **Token thumbnails.** After each hourly index rebuild, the server fetches the logos of every
 indexed mint, busiest first, that are missing or more than a week old. It shrinks each one

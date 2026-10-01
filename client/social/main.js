@@ -92,20 +92,17 @@ function markNav() {
   for (const a of document.querySelectorAll("#tb [data-nav]")) {
     const on = a.dataset.nav === key;
     a.classList.toggle("on", on);
-    // Phones have no Saved tab: it is a switch inside Timeline, which stays lit.
-    a.classList.toggle("up", key === "saved" && a.dataset.nav === "timeline");
     if (on) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   }
   const titles = {
     timeline: "Timeline",
-    saved: "Saved",
     edit: "Edit profile",
     friends: "Friends",
     post: "Post",
     chat: "Messenger",
   };
-  document.title = `${titles[page] || name || "Social"} — Social`;
+  document.title = `${titles[page] || name || "Social"} | Social`;
 }
 
 /**
@@ -144,13 +141,16 @@ function openAuth(next) {
 /**
  * One picture, several JPEGs of it, one per `[edge, byWidth, maxBytes, quality]`.
  *
- * `portrait` is the profile photo's rule: wider than tall is refused before
- * any draw, so every copy keeps the shape the profile shows. Each copy starts
- * at its edge and steps quality down, then size, until it fits.
+ * `under` makes it a profile photo. It paints the owner's background
+ * (client/avatar) where the picture is transparent, which is white otherwise;
+ * and wider than tall is refused before any draw, so every copy keeps the
+ * shape the profile shows. Each copy starts at its edge and steps quality
+ * down, then size, until it fits.
  * @param {File} file
+ * @param {(ctx: CanvasRenderingContext2D, w: number, h: number) => void} [under]
  * @returns {Promise<Blob[]>}
  */
-async function shrink(file, sizes, portrait) {
+async function shrink(file, sizes, under) {
   let bmp;
   try {
     bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
@@ -158,7 +158,7 @@ async function shrink(file, sizes, portrait) {
     bmp = await createImageBitmap(file);
   }
   try {
-    if (portrait && bmp.width > bmp.height) throw new Error("Use a square or portrait photo.");
+    if (under && bmp.width > bmp.height) throw new Error("Use a square or portrait photo.");
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("Could not read that photo.");
@@ -173,6 +173,7 @@ async function shrink(file, sizes, portrait) {
         canvas.height = h;
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, w, h);
+        under?.(ctx, w, h);
         ctx.drawImage(bmp, 0, 0, w, h);
         const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
         if (blob && blob.size <= maxBytes) {
@@ -463,8 +464,8 @@ function react(kind, post, inDetail, label, props) {
       if (kind === "plus") post.saved = data.saved;
       else post.reposted = true;
       const card = button.closest("article");
-      // Un-saving on the Saved page takes the post off that list.
-      if (!post.saved && kind === "plus" && route().page === "saved") card.remove();
+      // Un-saving on a timeline of saved posts only takes the post off it.
+      if (!post.saved && kind === "plus" && route().page === "timeline" && shown.saved) card.remove();
       else card.replaceWith(renderPost(post, inDetail));
     } catch (cause) {
       button.textContent = cause.message;
@@ -700,7 +701,7 @@ function paintDetail() {
 
 async function renderPostPage(id) {
   detail = await send("/api/social/open", { post: id });
-  sideOff();
+  railSide();
   paintDetail();
 }
 
@@ -901,6 +902,30 @@ function composer() {
   return form;
 }
 
+/**
+ * The timeline's filters, in order: [key, label, icon], then the label and
+ * icon while on, where those change. The first two are the signed-in
+ * person's own, so signed out they show as off and ask to log in.
+ */
+const FILTERS = [
+  ["friends", "All", "n-tl", "Friends", "n-fr"],
+  ["saved", "Saved", "n-sv"],
+  ["images", "Images", "pi"],
+  ["audio", "Audio", "au"],
+];
+/** Remembered on this device. The server filters, so every page scrolled to is already filtered. */
+const shown = { friends: false, saved: false, images: true, audio: true };
+try {
+  Object.assign(shown, JSON.parse(localStorage.getItem("ug.feed")));
+} catch {
+  // Nothing kept, or no storage: the whole timeline.
+}
+
+/** Signed out, the server ignores friends and saved, so the stored choice can go as it is. */
+function feedQuery() {
+  return FILTERS.map(([key]) => `${key}=${+shown[key]}`).join("&");
+}
+
 let feedGen = 0;
 let feedNext = null;
 let feedBusy = false;
@@ -935,7 +960,7 @@ async function loadMore(gen) {
   const sentinel = main.querySelector(".more");
   try {
     const data = await pull(
-      `/api/social/timeline?before=${feedNext.at}&id=${encodeURIComponent(feedNext.id)}`,
+      `/api/social/timeline?before=${feedNext.at}&id=${encodeURIComponent(feedNext.id)}&${feedQuery()}`,
     );
     if (gen !== feedGen) return;
     sentinel.replaceChildren();
@@ -951,27 +976,27 @@ async function loadMore(gen) {
   }
 }
 
-/** Timeline or Saved, for phones, where the bottom bar has room for only one of them. */
-function feedSwitch(on) {
-  const tab = (href, text, key) =>
-    el(
-      "a",
-      key === on
-        ? { href, text, class: "on", "aria-current": "page" }
-        : { href, text },
-    );
-  return el(
-    "nav",
-    { class: "feeds", "aria-label": "Timeline" },
-    tab("/social", "Timeline", "timeline"),
-    tab("/social/saved", "Saved", "saved"),
-  );
+/** Wide screens only. A phone has no side columns, so it loads neither the rail nor its data. */
+const WIDE = matchMedia("(min-width: 901px)");
+
+/**
+ * The right column of the timeline, and of a post opened from it, so the post
+ * stays in the column it was read in: Log in when signed out, then the rail, a
+ * bundle of its own that asks for its own data (client/rail).
+ */
+function railSide() {
+  sideOff();
+  if (!WIDE.matches) return;
+  useSide(true);
+  if (me) $("side").replaceChildren();
+  load("rl", "__rail").then((rail) => rail.mount({ side: $("side"), pull, send, face, openAuth, me: () => me }), () => {});
 }
+WIDE.addEventListener("change", () => document.body.classList.contains("tl") && railSide());
 
 function renderTimeline(data) {
   const gen = feedGen;
-  sideOff();
-  const kids = [feedSwitch("timeline")];
+  railSide();
+  const kids = [];
   if (data.notes?.length) {
     const list = el("ul", { class: "notes" });
     for (const note of data.notes) {
@@ -997,24 +1022,65 @@ function renderTimeline(data) {
       })
       .catch(() => {});
   }
-  kids.push(composer());
-  if (!data.posts.length) kids.push(el("p", { class: "muted", text: "No posts yet." }));
-  for (const post of data.posts) kids.push(renderPost(post));
-  feedNext = data.next || null;
-  if (feedNext) kids.push(el("div", { class: "more" }));
+  const feed = el("div", { class: "feed" });
+  kids.push(composer(), filterBar(feed), feed);
   main.replaceChildren(...kids.filter(Boolean));
+  paintFeed(feed, data, gen);
+}
+
+/**
+ * The posts, then the marker that fetches the next page; or why there are
+ * none. A newer filter's answer wins.
+ */
+function paintFeed(feed, data, gen, error) {
+  if (gen !== feedGen) return;
+  feedNext = data.next || null;
+  feed.removeAttribute("aria-busy");
+  feed.replaceChildren(
+    ...data.posts.map((post) => renderPost(post)),
+    ...[
+      !data.posts.length && el("p", error ? { class: "err", text: error } : { class: "muted", text: "No posts here." }),
+      feedNext && el("div", { class: "more" }),
+    ].filter(Boolean),
+  );
   armMore(gen);
 }
 
-function renderSaved(data) {
-  sideOff();
-  main.replaceChildren(
-    ...[
-      feedSwitch("saved"),
-      composer(),
-      data.posts.length ? null : el("p", { class: "muted", text: "Nothing saved." }),
-      ...data.posts.map((post) => renderPost(post)),
-    ].filter(Boolean),
+/** Toggles under the composer. A press asks again and redraws only the posts, so a draft above keeps. */
+function filterBar(feed) {
+  return el(
+    "div",
+    { class: "flt", role: "group", "aria-label": "Show" },
+    ...FILTERS.map(([key, text, id, onText, onId], i) => {
+      const button = el("button", { type: "button" });
+      const paint = () => {
+        const on = shown[key] && (!!me || i > 1);
+        button.setAttribute("aria-pressed", on);
+        button.innerHTML = icon((on && onId) || id, 16);
+        button.append((on && onText) || text);
+      };
+      paint();
+      button.addEventListener("click", async () => {
+        if (i < 2 && !me) return openAuth("login");
+        shown[key] = !shown[key];
+        paint();
+        try {
+          localStorage.setItem("ug.feed", JSON.stringify(shown));
+        } catch {
+          // No storage: the choice lasts as long as the page.
+        }
+        stopMore();
+        playing?.pause();
+        const gen = feedGen;
+        feed.setAttribute("aria-busy", "true");
+        try {
+          paintFeed(feed, await pull(`/api/social/timeline?${feedQuery()}`), gen);
+        } catch (cause) {
+          if (gen === feedGen) paintFeed(feed, { posts: [] }, gen, cause.message);
+        }
+      });
+      return button;
+    }),
   );
 }
 
@@ -1352,7 +1418,7 @@ async function renderEdit() {
           [480, 0, 14 * 1024, 0.86],
           [80, 1, 2 * 1024, 0.7],
         ],
-        1,
+        (await load("av", "__avatar")).under(me.name),
       );
       const result = await pull("/api/social/avatar", {
         method: "POST",
@@ -1480,12 +1546,11 @@ async function show() {
   for (const url of drafts.splice(0)) URL.revokeObjectURL(url);
   if (here.page !== "post") detail = null;
   document.body.classList.toggle("profile", here.page === "profile");
+  document.body.classList.toggle("tl", here.page === "timeline" || here.page === "post");
   main.replaceChildren(el("p", { class: "muted", text: "…" }));
   try {
     if (here.page === "timeline")
-      renderTimeline(await pull("/api/social/timeline"));
-    else if (here.page === "saved")
-      renderSaved(await pull("/api/social/saved"));
+      renderTimeline(await pull(`/api/social/timeline?${feedQuery()}`));
     else if (here.page === "friends")
       renderFriends(await pull("/api/social/friends"));
     else if (here.page === "edit") await renderEdit();
@@ -1597,6 +1662,11 @@ $("pf").addEventListener("submit", async (event) => {
   }
 });
 
+// Saved was a page before it was a filter. An old link lands on the timeline with Saved on.
+if (route().page === "saved") {
+  shown.saved = true;
+  history.replaceState(null, "", "/social");
+}
 applyMe(null);
 show();
 noZoom();

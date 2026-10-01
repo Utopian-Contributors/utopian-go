@@ -223,6 +223,49 @@ dialog textarea { resize: none; }
   cursor: default;
 }
 
+/*
+ * The timeline's filters. On is green like every other pressable thing here;
+ * off is an outline in the muted grey. Sized so all four fit one row on a
+ * 360px phone.
+ */
+.flt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 2px;
+}
+
+.flt button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--b);
+  border-radius: 999px;
+  background: none;
+  color: var(--f);
+  font: 500 13px/1 var(--ff);
+  cursor: pointer;
+}
+
+/* All and Friends swap in place, so the chip holds the longer one's width. */
+.flt button:first-child { min-width: 82px; }
+.flt svg { flex: none; }
+.flt button:hover { background: var(--ch); }
+.flt button:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+
+.flt button[aria-pressed="true"] {
+  border-color: var(--go);
+  background: color-mix(in srgb, var(--go) 12%, transparent);
+  color: var(--go);
+  font-weight: 600;
+}
+
+/* The old posts stay put, dimmed, until the filtered ones replace them. */
+.feed[aria-busy="true"] > * { opacity: 0.45; pointer-events: none; }
+
 .shots,
 .gallery {
   display: flex;
@@ -754,12 +797,18 @@ dialog::backdrop { background: rgb(0 0 0 / 40%); }
 dialog h2 { margin: 0; font-size: 18px; }
 dialog label { display: block; margin-top: 14px; font-size: 13px; color: var(--m); }
 
-/* Timeline, saved, and friends: a narrow column. A profile uses the full right side. */
+/*
+ * Timeline and friends: a 60ch column down the middle of the cell.
+ *
+ * #m is the scroll box, so it takes the whole cell and its padding draws the
+ * column: a wheel anywhere across the cell moves the feed, not only one over
+ * the posts. Padding percentages are of the cell, which is #m's own width, and
+ * ch is #m's own font, so the column sits where a 60ch box with 16px sides,
+ * centred by auto margins, used to put it.
+ */
 #m {
-  width: 100%;
-  max-width: 60ch;
-  margin-inline: auto;
-  padding: 0 16px;
+  --mx: max(16px, 50% - 30ch + 16px);
+  padding: 0 var(--mx);
 }
 
 /*
@@ -782,11 +831,11 @@ body.soc #mn {
   overflow: hidden;
   align-items: stretch;
   padding-bottom: 0;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   row-gap: 0;
 }
 
-/* The wrapper has no box, so the card and the footer sit on #mn's grid. */
+/* The wrapper has no box, so the card sits on #mn's grid. */
 body.soc #sc {
   display: contents;
 }
@@ -820,12 +869,6 @@ body.soc .pn {
   overflow-y: auto;
 }
 
-body.soc #ft {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  margin-top: 0;
-  padding-left: 0;
-}
 
 @media (max-width: 900px) {
   body.soc #mn {
@@ -853,8 +896,6 @@ body.soc #ft {
   }
 
   body.soc .pn { max-height: 38vh; padding-top: 0; }
-
-  body.soc #ft { order: 1; }
 
   /*
    * A profile on phones: the card is centered above the posts and the two
@@ -887,7 +928,7 @@ body.soc #ft {
 
 /*
  * Profile, and every page while logged out: the card is the left column, the
- * posts the right one — the side Messenger keeps its list on.
+ * posts the right one — the side Messenger keeps its list on, and as wide.
  *
  * The document order stays card-second, which is what the other pages want.
  * Placement, not a second document, is what swaps them here. This sits after
@@ -896,16 +937,21 @@ body.soc #ft {
 @media (min-width: 901px) {
   body.profile #mn,
   body.out #mn {
-    grid-template-columns: minmax(340px, var(--side)) minmax(0, 1fr);
+    grid-template-columns: var(--list) minmax(0, 1fr);
   }
 
   body.profile #sd,
   body.out #sd { grid-column: 1; }
 
+  /*
+   * The posts keep to the left of their column, 60ch wide. The scroll box
+   * takes in the rest of the column, and the gap back to the card.
+   */
   body.profile #m,
   body.out #m {
     grid-column: 2;
-    margin: 0;
+    margin-left: calc(var(--col-gap) * -1);
+    padding-inline: calc(16px + var(--col-gap)) max(16px, 100% - 60ch + 16px);
   }
 
   /* The rule sits between the card and the posts, so it moves to the right edge. */
@@ -914,6 +960,27 @@ body.soc #ft {
     border-left: 0;
     border-right: 1px solid var(--b);
     padding: 20px 20px 0 4px;
+  }
+
+  /*
+   * The timeline keeps its posts in the middle and the rail (client/rail) at
+   * the right, signed in or not; signed out, Log in heads the rail. A post
+   * opened from it keeps the same columns, so it opens where it was read.
+   */
+  body.tl #mn { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); }
+  body.tl #sd { grid-column: 2; }
+
+  /* Centred in its column, the scroll box running on over the gap to the rail. */
+  body.tl #m {
+    grid-column: 1;
+    margin: 0 calc(var(--col-gap) * -1) 0 0;
+    padding-inline: var(--mx) calc(var(--mx) + var(--col-gap));
+  }
+
+  body.tl .pn {
+    border-left: 1px solid var(--b);
+    border-right: 0;
+    padding: 20px 0 4px 20px;
   }
 }
 
@@ -936,15 +1003,14 @@ body.soc #ft {
 
 /*
  * Messenger: chats on the left, the conversation on the right, and its
- * composer on the bottom edge of the page. Only the message list scrolls.
+ * composer on the footer, like every other shell's last row. Only the message
+ * list scrolls.
  */
-body.chat #ft { display: none; }
 body.chat #mn { grid-template-rows: minmax(0, 1fr); }
 
 body.chat #m {
   display: flex;
   flex-direction: column;
-  max-width: none;
   margin: 0;
   padding: 0 0 0 20px;
   overflow: hidden;
@@ -1114,7 +1180,7 @@ a.crow.on {
 .lock p { margin: 0 0 4px; }
 
 @media (min-width: 901px) {
-  body.chat #mn { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); }
+  body.chat #mn { grid-template-columns: var(--list) minmax(0, 1fr); }
   body.chat #sd { grid-column: 1; }
   body.chat #m { grid-column: 2; }
 
@@ -1142,44 +1208,128 @@ a.crow.on {
 }
 
 /*
- * The section tabs. Across the top on wider screens, text only; on phones a
- * bottom navigation with an icon over each label.
+ * The section tabs, an icon with each. On wider screens a column of their
+ * own at the left; on phones a bottom navigation, the icon over the label.
  *
- * The page is already a 100dvh column that does not scroll, so the bar is not
- * fixed: .chrome drops its box and the tabs take the last row of that column,
- * under #mn. #hd stays the account control's containing block.
+ * The page is already a 100dvh box that does not scroll, so neither is fixed:
+ * .chrome drops its box and the tabs take a place in the page's own layout,
+ * its left column there and its last row here. #hd stays the account
+ * control's containing block.
  */
-.tab .ni { display: none; }
+.tab .ni {
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
 .tab .my { font-weight: inherit; }
 
-/* The Timeline/Saved switch is for phones; wider screens have Saved as a tab. */
-.feeds { display: none; }
+@media (min-width: 901px) {
+  /*
+   * The header across the top, then the tabs beside everything else. The
+   * outer columns are the gutter, or all that is left past the shell, so the
+   * tabs start under the wordmark just as the header's own content does.
+   */
+  body.soc {
+    --nav: 212px;
+    /* Messenger's list and a profile's card: one width, so the two line up. */
+    --list: minmax(300px, 380px);
+    display: grid;
+    grid-template-columns:
+      minmax(var(--pad), 1fr)
+      var(--nav)
+      minmax(0, calc(var(--shell) - 2 * var(--pad) - var(--nav)))
+      minmax(var(--pad), 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
 
-.feeds {
-  gap: 4px;
-  margin: 0 0 12px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--ln);
+  body.soc .chrome { display: contents; }
+
+  /* The rule the tabs used to draw under the header. */
+  body.soc #hd {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    border-bottom: 1px solid var(--ln);
+  }
+
+  body.soc #tb {
+    grid-column: 2;
+    grid-row: 2;
+    flex-direction: column;
+    gap: 2px;
+    width: auto;
+    max-width: none;
+    /* Out by a tab's own inset, so the icons, not their pills, line up under the wordmark. */
+    margin: 0 0 0 -12px;
+    padding: var(--main-gap) 16px 16px 0;
+    border-bottom: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  body.soc #tb .tab {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 48px;
+    padding: 0 16px 0 12px;
+    border-bottom: 0;
+    border-radius: 999px;
+    color: var(--t);
+    font-size: 16px;
+  }
+
+  body.soc #tb .tab:hover { background: var(--ch); }
+  body.soc #tb .tab.on { color: var(--go); font-weight: 700; }
+
+  body.soc #mn {
+    grid-column: 3;
+    grid-row: 2;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding-inline: 0;
+  }
+
+  /* The last row, across the page and boxed like the header, so its links start under the wordmark. */
+  body.soc #ft {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    width: 100%;
+    max-width: var(--shell);
+    margin: 0 auto;
+    padding-inline: var(--pad);
+  }
 }
 
-.feeds a {
-  flex: 1 1 0;
-  padding: 7px 0;
-  border-radius: 8px;
-  color: var(--f);
-  font: 500 14px/1.3 var(--ff);
-  text-align: center;
-  text-decoration: none;
-}
+/* Short of room for the labels: icons alone, the labels kept for screen readers. */
+@media (min-width: 901px) and (max-width: 1100px) {
+  body.soc { --nav: 64px; }
 
-.feeds a:hover { color: var(--f); text-decoration: none; }
+  body.soc #tb .tab {
+    position: relative;
+    justify-content: center;
+    width: 48px;
+    padding: 0;
+  }
 
-.feeds a.on,
-.feeds a.on:hover {
-  background: var(--bg);
-  color: var(--go);
-  font-weight: 600;
+  body.soc #tb .tab > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  body.soc #badge,
+  body.soc #mbadge {
+    position: absolute;
+    top: 4px;
+    right: 0;
+    margin: 0;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1192,9 +1342,6 @@ a.crow.on {
   /* The header's Back stands in for these. */
   body.soc #m .back { display: none; }
   body.soc .detail-bar { justify-content: flex-end; }
-
-  .feeds { display: flex; }
-  body.soc #tb .tab.tab-sv { display: none; }
 
   body.soc #tb {
     order: 1;
@@ -1241,15 +1388,7 @@ a.crow.on {
     text-overflow: ellipsis;
   }
 
-  body.soc .tab .ni {
-    display: block;
-    width: 24px;
-    height: 24px;
-  }
-
   body.soc .tab .my { display: none; }
-
-  body.soc #tb .tab.up { color: var(--go); }
 
   body.soc #badge,
   body.soc #mbadge {

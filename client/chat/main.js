@@ -817,7 +817,7 @@ export function mount(ctx) {
     peer = who;
     older = newest = box = null;
     document.body.classList.toggle("open", !!who);
-    document.title = `${who || "Messenger"} — Social`;
+    document.title = `${who || "Messenger"} | Social`;
     paintList();
     armList();
     if (!who) return idle();

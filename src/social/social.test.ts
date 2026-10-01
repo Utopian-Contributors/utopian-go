@@ -26,10 +26,13 @@ import { parseSol, transferMessage, unsignedTransfer } from "./pay";
 import { checkSwapInstructions, parseMessage, reviewedFloor, signTransaction, simulationError, slippageFor } from "./swap";
 import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMessage, onCurve } from "./send";
 import { scrub } from "./guard";
-import { AUDIO_BYTES, MAX_AUDIO_MS, postWait, username, waitText } from "./limits";
+import { AUDIO_BYTES, MAX_AUDIO_MS, SOCIAL_BYTES, TINY_BYTES, postWait, username, waitText } from "./limits";
 import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
 import { TIMELINE_PAGE, closePool, databaseUrl, ensureSchema, getUser, resetSocial } from "./db";
-import { defaultAvatar } from "./store";
+import { drawAvatar } from "./avatar";
+import { backdrop, palette } from "./backdrop";
+import { isStable } from "../lib/tokens/store";
+import type { TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
 
 const dir = mkdtempSync(path.join(tmpdir(), "social-"));
@@ -444,15 +447,13 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const pub = await call("GET", "/api/social/u/ada");
     assert.equal(pub.status, 200);
     assert.equal(secret.test(pub.text), false);
-    // A new account starts with the default picture, in both sizes.
-    const start = defaultAvatar();
-    assert.ok(start);
+    // A new account starts with its own picture, drawn at sign-up in its name's colours.
+    const start = await drawAvatar("ada");
     assert.equal((pub.json?.user as { avatarRev: number }).avatarRev, 1);
     assert.ok(Buffer.from(await (await fetch(`${base}/social/a/ada?v=1`)).arrayBuffer()).equals(start.full));
     assert.ok(Buffer.from(await (await fetch(`${base}/social/t/ada?v=1`)).arrayBuffer()).equals(start.tiny));
     assert.deepEqual(jpegSize(start.full), { w: 480, h: 480 });
     assert.deepEqual(jpegSize(start.tiny), { w: 80, h: 80 });
-    assert.equal((await call("GET", "/api/social/saved")).status, 401);
     assert.equal((await call("GET", "/api/social/friends")).status, 401);
     assert.equal((await call("GET", "/api/social/users?q=ada")).status, 401);
     assert.equal((await call("POST", "/api/social/phrase", { password: "password1" })).status, 401);
@@ -791,14 +792,14 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const plus = await call("POST", "/api/social/plus", { post: postId });
     assert.equal(plus.status, 200, plus.text);
     assert.equal(plus.json?.saved, true);
-    const savedList = await call("GET", "/api/social/saved");
+    const savedList = await call("GET", "/api/social/timeline?saved=1");
     const savedPosts = savedList.json?.posts as { id: string; saved: boolean }[];
     assert.equal(savedPosts[0].id, postId);
     assert.equal(savedPosts[0].saved, true);
     const plusAgain = await call("POST", "/api/social/plus", { post: postId });
     assert.equal(plusAgain.status, 200, plusAgain.text);
     assert.equal(plusAgain.json?.saved, false);
-    const savedGone = await call("GET", "/api/social/saved");
+    const savedGone = await call("GET", "/api/social/timeline?saved=1");
     assert.equal((savedGone.json?.posts as unknown[]).length, 0);
     const repost = await call("POST", "/api/social/repost", { post: postId });
     assert.equal(repost.status, 200, repost.text);
@@ -1285,6 +1286,212 @@ test("a voice memo posts, plays from its own address, and rides a re-post", asyn
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
+});
+
+test("the timeline filters in the query, and pages through what is left", async () => {
+  await useTestDatabase();
+  await ensureSchema();
+  await resetSocial();
+  const app = express();
+  app.set("trust proxy", true);
+  app.use("/api/social", socialRouter);
+  const server: Server = await new Promise((resolve) => {
+    const listening = createServer(app);
+    listening.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const base = `http://127.0.0.1:${address.port}`;
+  let ip = 0;
+
+  function visitor() {
+    let jar = "";
+    return async (method: string, urlPath: string, body?: Record<string, unknown>) => {
+      const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": `10.3.0.${++ip % 250}` };
+      if (jar) headers.Cookie = jar;
+      if (body) headers["Content-Type"] = "application/json";
+      const res = await fetch(base + urlPath, { method, headers, body: body && JSON.stringify(body) });
+      for (const cookie of res.headers.getSetCookie?.() ?? []) jar = cookie.split(";")[0];
+      const text = await res.text();
+      return { status: res.status, json: JSON.parse(text) as Record<string, any>, text };
+    };
+  }
+  async function join(name: string) {
+    const call = visitor();
+    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1", terms: true })).status, 200);
+    return call;
+  }
+  /** Every id the filtered timeline gives, page after page. Only a full page may have a next. */
+  async function everything(call: ReturnType<typeof visitor>, query: string): Promise<string[]> {
+    const ids: string[] = [];
+    let cursor = "";
+    for (;;) {
+      const page = await call("GET", `/api/social/timeline?${query}${cursor}`);
+      assert.equal(page.status, 200, page.text);
+      const posts = page.json.posts as { id: string }[];
+      ids.push(...posts.map((post) => post.id));
+      const next = page.json.next as { at: number; id: string } | null;
+      if (!next) return ids;
+      assert.equal(posts.length, TIMELINE_PAGE, query);
+      cursor = `&before=${next.at}&id=${encodeURIComponent(next.id)}`;
+    }
+  }
+
+  try {
+    const ada = await join("ada");
+    const bob = await join("bob");
+    const carl = await join("carl");
+    // Sixty posts a minute apart, oldest first, by carl, bob and ada in turn.
+    // Every fourth has a photo, every fifth a memo. Straight into the table:
+    // the route would make each author wait ten minutes between them.
+    const rows = new Client({ connectionString: process.env.DATABASE_URL });
+    await rows.connect();
+    try {
+      for (let i = 0; i < 60; i++) {
+        await rows.query("INSERT INTO posts (id, by_name, text, at, photos, audio) VALUES ($1,$2,$3,$4,$5,$6)", [
+          `f${i}`,
+          ["carl", "bob", "ada"][i % 3],
+          `post ${i}`,
+          1_000_000 + i * 60_000,
+          i % 4 === 0 ? 1 : 0,
+          i % 5 === 0 ? 3000 : 0,
+        ]);
+      }
+    } finally {
+      await rows.end();
+    }
+    const newest = (keep: (i: number) => boolean) =>
+      Array.from({ length: 60 }, (_, i) => 59 - i).filter(keep).map((i) => `f${i}`);
+    const byBob = (i: number) => i % 3 === 1;
+    const byAda = (i: number) => i % 3 === 2;
+    const photo = (i: number) => i % 4 === 0;
+    const memo = (i: number) => i % 5 === 0;
+
+    assert.deepEqual(await everything(ada, ""), newest(() => true));
+    assert.deepEqual(await everything(ada, "images=1&audio=1"), newest(() => true));
+    assert.deepEqual(await everything(ada, "images=0"), newest((i) => !photo(i)));
+    assert.deepEqual(await everything(ada, "audio=0"), newest((i) => !memo(i)));
+    assert.deepEqual(await everything(ada, "images=0&audio=0"), newest((i) => !photo(i) && !memo(i)));
+
+    // Friends is the people added, and yourself.
+    assert.deepEqual(await everything(ada, "friends=1"), newest(byAda));
+    assert.equal((await ada("POST", "/api/social/friends", { username: "bob" })).status, 200);
+    assert.deepEqual(await everything(ada, "friends=1"), newest((i) => byAda(i) || byBob(i)));
+    assert.deepEqual(await everything(ada, "friends=1&images=0"), newest((i) => (byAda(i) || byBob(i)) && !photo(i)));
+    assert.deepEqual(await everything(bob, "friends=1"), newest(byBob), "adding is one way");
+
+    // Saved is in the timeline's order, not the order things were saved in,
+    // and pages like the rest: bob's twenty and one of carl's.
+    for (const i of [0, ...newest(byBob).map((id) => Number(id.slice(1)))]) {
+      const saved = await ada("POST", "/api/social/plus", { post: `f${i}` });
+      assert.equal(saved.json.saved, true, saved.text);
+    }
+    const savedByAda = (i: number) => byBob(i) || i === 0;
+    assert.deepEqual(await everything(ada, "saved=1"), newest(savedByAda));
+    assert.deepEqual(await everything(ada, "saved=1&images=0"), newest((i) => savedByAda(i) && !photo(i)));
+    assert.deepEqual(await everything(ada, "saved=1&audio=0"), newest((i) => savedByAda(i) && !memo(i)));
+    assert.deepEqual(await everything(ada, "saved=1&friends=1"), newest(byBob));
+    assert.deepEqual(await everything(bob, "saved=1"), [], "saves are each person's own");
+    // Un-saving takes it off.
+    assert.equal((await ada("POST", "/api/social/plus", { post: "f0" })).json.saved, false);
+    assert.deepEqual(await everything(ada, "saved=1"), newest(byBob));
+
+    // Signed out, friends and saved are nobody's, so the whole feed shows.
+    assert.deepEqual(await everything(visitor(), "friends=1&saved=1"), newest(() => true));
+
+    // A re-post is judged by the original's photo and memo, which it shows.
+    assert.equal((await carl("POST", "/api/social/repost", { post: "f44" })).status, 200);
+    const [shared] = (await ada("GET", "/api/social/timeline")).json.posts as { id: string; repost: string }[];
+    assert.equal(shared.repost, "f44");
+    assert.equal((await everything(ada, "audio=0"))[0], shared.id, "f44 has no memo");
+    assert.deepEqual(await everything(ada, "images=0"), newest((i) => !photo(i)), "f44 has a photo");
+
+    // The desktop rail's Friends to add is who posted this month, less yourself and
+    // whoever you added. The sixty above are dated 1970; carl's re-post is today's.
+    const rail = async (call: ReturnType<typeof visitor>) =>
+      ((await call("GET", "/api/social/rail")).json.people as { name: string; posts: number }[]).map((p) => `${p.name} ${p.posts}`);
+    assert.deepEqual(await rail(ada), ["carl 1"]);
+    assert.deepEqual(await rail(visitor()), ["carl 1"]);
+    assert.deepEqual(await rail(carl), [], "not yourself");
+    assert.equal((await bob("POST", "/api/social/friends", { username: "carl" })).status, 200);
+    assert.deepEqual(await rail(bob), [], "not someone already added");
+    assert.ok(Array.isArray((await ada("GET", "/api/social/rail")).json.assets));
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test("a name's colours are its own, never black or white, and dither from one end to the other", async () => {
+  assert.deepEqual(palette("ada"), palette("ada"));
+  assert.notDeepEqual(palette("ada").from, palette("adb").from, "a letter apart, a different colour");
+  const lightness = ([r, g, b]: number[]) => (Math.max(r, g, b) + Math.min(r, g, b)) / 510;
+  const hueOf = ([r, g, b]: number[]) => {
+    const max = Math.max(r, g, b);
+    const d = max - Math.min(r, g, b);
+    const h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return h * 60;
+  };
+  const slices = new Array(12).fill(0);
+  for (let i = 0; i < 2000; i++) {
+    const name = `user_${i.toString(36)}`;
+    const colours = palette(name);
+    for (const colour of [colours.from, colours.to, colours.figure]) {
+      const l = lightness(colour);
+      assert.ok(l > 0.38 && l < 0.9, `${name}: ${colour} is too close to black or white`);
+      assert.ok(Math.max(...colour) - Math.min(...colour) > 20, `${name}: ${colour} is a grey`);
+    }
+    slices[Math.floor(hueOf(colours.from) / 30) % 12] += 1;
+  }
+  // Every twelfth of the wheel gets its share, give or take half: no colour for everyone.
+  for (const n of slices) assert.ok(n > 2000 / 12 / 2 && n < (2000 / 12) * 2, `hues spread over the wheel: ${slices}`);
+
+  // Opaque, the lighter end at the top left and the darker at the bottom right, whatever the shape.
+  const { from, to } = palette("ada");
+  for (const [w, h] of [[480, 480], [80, 80], [360, 480], [37, 91]]) {
+    const out = new Uint8ClampedArray(w * h * 4);
+    backdrop("ada", w, h, out);
+    assert.deepEqual([...out.subarray(0, 4)], [...from, 255], `${w}×${h} top left`);
+    assert.deepEqual([...out.subarray(out.length - 4)], [...to, 255], `${w}×${h} bottom right`);
+    for (let i = 3; i < out.length; i += 4) assert.equal(out[i], 255);
+  }
+
+  // Both files fit what an upload may be, and the same name draws the same bytes.
+  for (const name of ["ada", "tobi_k", "zzzzzzzzzzzzzzzz", "a_1"]) {
+    const pic = await drawAvatar(name);
+    assert.ok(pic.full.length <= SOCIAL_BYTES && pic.tiny.length <= TINY_BYTES, name);
+    assert.deepEqual(jpegSize(pic.full), { w: 480, h: 480 });
+    assert.deepEqual(jpegSize(pic.tiny), { w: 80, h: 80 });
+    assert.ok((await drawAvatar(name)).full.equals(pic.full));
+  }
+});
+
+test("Trending assets leave out stablecoins, tagged by Jupiter or not", () => {
+  const token = (symbol: string, name: string, price: number, change24h: number, extra: Partial<TokenRecord> = {}) =>
+    ({ mint: symbol, symbol, name, price, change24h, liquidity: 1e7, verified: true, priceAt: 0, checkedAt: 0, ...extra }) as TokenRecord;
+  // Prices and moves from a real day's index, before the tags came in.
+  const stable = [
+    token("USDC", "USD Coin", 0.9998, -0.01),
+    token("USDT", "USDT", 0.9994, -0.02),
+    token("PYUSD", "PayPal USD", 1, -0.013),
+    token("JupUSD", "Jupiter USD", 0.9997, 0.008),
+    token("jlUSDC", "Jupiter Lend USDC", 1.0621, 0.002),
+    token("EURC", "EURC", 1.1349, 0.3),
+    token("VCHF", "VNX Swiss Franc", 1.2292, 0.1),
+    token("CASH", "CASH", 0.9998, 0.012),
+    token("JUICED", "JUICED", 1.039, 0),
+    token("PRIME", "PRIME", 1.0618, -0.07),
+    token("ANY", "Anything", 42, 5, { stable: true }),
+  ];
+  const traded = [
+    token("SOL", "Wrapped SOL", 120.83, -0.22),
+    token("JLP", "Jupiter Perps", 4.89, 0.02),
+    token("JitoSOL", "Jito Staked SOL", 157.68, -0.04),
+    token("BP", "Backpack", 1.2074, -9.09),
+    token("SUI", "SUI", 1.183, 1.82),
+    token("NEWx", "New xStock", 1.05, 0, { equity: true }),
+  ];
+  for (const rec of stable) assert.equal(isStable(rec), true, rec.symbol);
+  for (const rec of traded) assert.equal(isStable(rec), false, rec.symbol);
 });
 
 test("a swap that fails for want of SOL says so, with the amounts", () => {

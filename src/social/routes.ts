@@ -40,9 +40,10 @@ import {
   waitText,
 } from "./limits";
 import { rateLimit } from "../lib/rateLimit";
-import { lookupMints } from "../lib/tokens/store";
+import { lookupMints, trendingTokens } from "../lib/tokens/store";
 import {
   type Card,
+  type FeedFilter,
   type Memo,
   type CommentRow,
   type User,
@@ -51,6 +52,7 @@ import {
   bumpAvatar,
   addChatKey,
   bumpPasskeyCount,
+  busiestPosters,
   chatKey,
   chatKeys,
   chatList,
@@ -61,6 +63,7 @@ import {
   ensureSchema,
   findPeople,
   friendList,
+  friendNames,
   getUser,
   searchUsers,
   insertUser,
@@ -71,7 +74,6 @@ import {
   removeFriend,
   repost,
   reseal,
-  savedPosts,
   sendMessage,
   setKeyBox,
   setPasskey,
@@ -87,7 +89,8 @@ import { parseSol, prepareTransfer, solanaPubkey } from "./pay";
 import { sendFor } from "./send";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
 import { currentUser, guardJson, loadAccount, requireAuth, requireUser } from "./guard";
-import { avatarFile, chatPhotoFile, defaultAvatar, postAudioFile, postPhotoFile, writeAvatar } from "./store";
+import { avatarFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
+import { drawAvatar } from "./avatar";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
 
 /**
@@ -348,7 +351,12 @@ socialRouter.post(
     const address = solanaAddress(phrase);
     const pass = await newPassword(password);
     const box = await sealPhrase(phrase, password);
-    const pic = defaultAvatar();
+    // Drawn here, written once the name is ours, and never drawn again. A
+    // failure costs the picture, not the account.
+    const pic = await drawAvatar(name).catch((err: unknown) => {
+      console.error("[social] avatar:", err);
+      return null;
+    });
     const user: User = {
       name,
       uid: randomBytes(16).toString("base64url"),
@@ -529,26 +537,24 @@ function timelineCursor(req: Request): { at: number; id: string } | null {
   return { at, id };
 }
 
+/**
+ * `friends=1`, `saved=1`, `images=0`, `audio=0`. Each one absent is the
+ * default, so a page from before the filters asks for the whole feed.
+ */
+function feedFilter(req: Request): FeedFilter {
+  const q = req.query;
+  return { friends: q.friends === "1", saved: q.saved === "1", images: q.images !== "0", audio: q.audio !== "0" };
+}
+
 socialRouter.get(
   "/timeline",
   readLimit,
   wrap(async (req, res) => {
     const me = currentUser(res);
     const cursor = timelineCursor(req);
-    const { posts, next } = await timeline(me?.name ?? null, cursor);
+    const { posts, next } = await timeline(me?.name ?? null, cursor, feedFilter(req));
     const notes = cursor || !me ? [] : await unseenNotes(me.name);
     res.json({ me: await publicMe(me), posts, notes, next });
-  }),
-);
-
-socialRouter.get(
-  "/saved",
-  requireAuth,
-  readLimit,
-  wrap(async (req, res) => {
-    const me = requireUser(res);
-    const posts = await savedPosts(me.name);
-    res.json({ me: await publicMe(me), posts, notes: [] });
   }),
 );
 
@@ -816,6 +822,48 @@ socialRouter.post(
     if (name === me.name) throw new SocialError(400, "You can't add yourself.");
     await addFriend(me.name, name);
     res.json({ friends: await friendList(me.name) });
+  }),
+);
+
+/** Friends to add looks back a month, and one ranking serves everyone for a minute. */
+const ACTIVE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const BUSIEST_TTL_MS = 60_000;
+/** Deep enough to still fill the list once a viewer's friends and self are taken out. */
+const BUSIEST_KEPT = 50;
+const TO_ADD = 5;
+const TRENDING = 5;
+
+let busiest: { at: number; list: Promise<Awaited<ReturnType<typeof busiestPosters>>> } | null = null;
+
+/** The cached ranking. Callers inside the minute share one query, and a failed one is not kept. */
+function busiestNow() {
+  const now = Date.now();
+  if (!busiest || now - busiest.at > BUSIEST_TTL_MS) {
+    const list = busiestPosters(now - ACTIVE_WINDOW_MS, BUSIEST_KEPT);
+    busiest = { at: now, list };
+    list.catch(() => {
+      if (busiest?.list === list) busiest = null;
+    });
+  }
+  return busiest.list;
+}
+
+/**
+ * The desktop timeline's right column: the most active people, less the
+ * viewer and whoever they already added, then the most traded assets that are
+ * not stablecoins. Only a wide screen asks (client/rail); phones have no column.
+ */
+socialRouter.get(
+  "/rail",
+  readLimit,
+  wrap(async (_req, res) => {
+    const me = currentUser(res);
+    const [ranked, added] = await Promise.all([busiestNow(), me ? friendNames(me.name) : []]);
+    const skip = new Set([me?.name, ...added]);
+    res.json({
+      people: ranked.filter((person) => !skip.has(person.name)).slice(0, TO_ADD),
+      assets: trendingTokens(TRENDING),
+    });
   }),
 );
 

@@ -60,8 +60,9 @@ model Post {
   text     String
   at       BigInt
   views    Int       @default(0)
+  /// Pictures on the post. A re-post carries its original's count; the files stay under the original's id.
   photos   Int       @default(0)
-  /// A voice memo's length in milliseconds; 0 when the post has none.
+  /// A voice memo's length in milliseconds; 0 when the post has none. A re-post carries its original's.
   audio    Int       @default(0)
   /// The memo's shape, one base64url character per bar.
   wave     String    @default("")
@@ -75,7 +76,12 @@ model Post {
   /// One re-post per person per post, which also answers "did I re-post this".
   @@unique([repost, byName], map: "posts_repost", where: raw("(repost IS NOT NULL)"))
   @@index([at(sort: Desc), id(sort: Desc)], map: "posts_at_id")
-  @@index([byName, at(sort: Desc)], map: "posts_by_at")
+  /// The timeline with images or audio left out, or both.
+  @@index([at(sort: Desc), id(sort: Desc)], map: "posts_at_id_no_photos", where: raw("(photos = 0)"))
+  @@index([at(sort: Desc), id(sort: Desc)], map: "posts_at_id_no_audio", where: raw("(audio = 0)"))
+  @@index([at(sort: Desc), id(sort: Desc)], map: "posts_at_id_plain", where: raw("((photos = 0) AND (audio = 0))"))
+  /// A profile, and each author's page of the Friends timeline.
+  @@index([byName, at(sort: Desc), id(sort: Desc)], map: "posts_by_at_id")
   @@map("posts")
 }
 
@@ -113,10 +119,12 @@ model Save {
   postId String @map("post")
   byName String @map("by_name")
   at     BigInt
+  /// The saved post's own time, so Saved pages through saves in the timeline's order.
+  postAt BigInt @map("post_at")
   post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   user   User   @relation(fields: [byName], references: [name], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([postId, byName])
-  @@index([byName, at(sort: Desc)], map: "saves_by_at")
+  @@index([byName, postAt(sort: Desc), postId(sort: Desc)], map: "saves_by_post")
   @@map("saves")
 }

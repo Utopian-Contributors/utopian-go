@@ -93,8 +93,10 @@ CREATE TABLE IF NOT EXISTS posts (
 );
 DROP INDEX IF EXISTS posts_at;
 DROP INDEX IF EXISTS posts_by;
+DROP INDEX IF EXISTS posts_by_at;
 CREATE INDEX IF NOT EXISTS posts_at_id ON posts (at DESC, id DESC);
-CREATE INDEX IF NOT EXISTS posts_by_at ON posts (by_name, at DESC);
+-- A profile, and each author's page of the Friends timeline.
+CREATE INDEX IF NOT EXISTS posts_by_at_id ON posts (by_name, at DESC, id DESC);
 -- One re-post per person per post, which also answers "did I re-post this".
 CREATE UNIQUE INDEX IF NOT EXISTS posts_repost ON posts (repost, by_name) WHERE repost IS NOT NULL;
 CREATE TABLE IF NOT EXISTS comments (
@@ -120,14 +122,30 @@ CREATE TABLE IF NOT EXISTS saves (
   post text NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
   by_name text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
   at bigint NOT NULL,
+  post_at bigint NOT NULL,
   PRIMARY KEY (post, by_name)
 );
-CREATE INDEX IF NOT EXISTS saves_by_at ON saves (by_name, at DESC);
+-- Saved was once its own page, in the order things were saved; the timeline's
+-- filter reads saves_by_post instead.
+DROP INDEX IF EXISTS saves_by_at;
 -- Tables from before these columns existed keep their rows and gain them.
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS photos integer NOT NULL DEFAULT 0;
 -- A voice memo's length in milliseconds (0 when there is none), and its shape.
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS audio integer NOT NULL DEFAULT 0;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS wave text NOT NULL DEFAULT '';
+-- A re-post carries its original's photo count and memo length, so a
+-- timeline filter reads one row. Re-posts from before that are given theirs.
+UPDATE posts r SET photos = o.photos, audio = o.audio FROM posts o
+  WHERE r.repost = o.id AND (r.photos <> o.photos OR r.audio <> o.audio);
+-- The timeline with images or audio left out, or both.
+CREATE INDEX IF NOT EXISTS posts_at_id_no_photos ON posts (at DESC, id DESC) WHERE photos = 0;
+CREATE INDEX IF NOT EXISTS posts_at_id_no_audio ON posts (at DESC, id DESC) WHERE audio = 0;
+CREATE INDEX IF NOT EXISTS posts_at_id_plain ON posts (at DESC, id DESC) WHERE photos = 0 AND audio = 0;
+-- The saved post's own time, so Saved pages through saves in the timeline's order.
+ALTER TABLE saves ADD COLUMN IF NOT EXISTS post_at bigint;
+UPDATE saves s SET post_at = p.at FROM posts p WHERE p.id = s.post AND s.post_at IS NULL;
+ALTER TABLE saves ALTER COLUMN post_at SET NOT NULL;
+CREATE INDEX IF NOT EXISTS saves_by_post ON saves (by_name, post_at DESC, post DESC);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS epoch integer NOT NULL DEFAULT 0;
 -- The phrase sealed a second time, under WALLET_KEY from the environment, so the server can sign.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS key_iv text;
@@ -437,8 +455,9 @@ function cardFrom(row: CardRow): Card {
   };
 }
 
-/** `$1` is the viewer, or null when nobody is logged in. */
-const CARD = `
+/** `$1` is the viewer, or null when nobody is logged in. `from` names the posts `p`. */
+function card(from: string): string {
+  return `
   SELECT p.id, p.by_name, p.text, p.at, p.views, p.repost,
          CASE WHEN p.repost IS NULL THEN p.photos ELSE COALESCE(op.photos, 0) END AS photos,
          CASE WHEN p.repost IS NULL THEN p.audio ELSE COALESCE(op.audio, 0) END AS audio,
@@ -449,28 +468,84 @@ const CARD = `
          (SELECT count(*)::int FROM comments c WHERE c.post = p.id) AS comments,
          EXISTS (SELECT 1 FROM saves s WHERE s.post = p.id AND s.by_name = $1) AS saved,
          EXISTS (SELECT 1 FROM posts r WHERE r.repost = p.id AND r.by_name = $1) AS reposted
-  FROM posts p
+  FROM ${from}
   JOIN users u ON u.name = p.by_name
   LEFT JOIN posts op ON op.id = p.repost
   LEFT JOIN users ou ON ou.name = op.by_name
 `;
+}
+
+const CARD = card("posts p");
 
 /** One screenful. The next page starts strictly before the last row of this one. */
 export const TIMELINE_PAGE = 20;
 
+/**
+ * What the timeline shows. Friends narrows it to the people the viewer added,
+ * and the viewer; saved, to the viewer's own saves. Images or audio off
+ * leaves out every post that carries them.
+ */
+export interface FeedFilter {
+  friends: boolean;
+  saved: boolean;
+  images: boolean;
+  audio: boolean;
+}
+
+export const WHOLE_FEED: FeedFilter = { friends: false, saved: false, images: true, audio: true };
+
+/**
+ * One page of the timeline, filtered in the query.
+ *
+ * The page's ids are picked first, each way of filtering walking an index in
+ * the timeline's own order, and only those rows are made into cards. So a
+ * page costs about a page of index entries however far down it is and
+ * however rare what is asked for:
+ *   - everyone: posts_at_id, or posts_at_id_no_photos / _no_audio / _plain
+ *     when images or audio are off (literal zeros below, so they match);
+ *   - friends: each author's newest page on posts_by_at_id, and the newest of
+ *     those. At most a page per author, and a friend list holds 200;
+ *   - saved: saves_by_post, the viewer's saves in the order of the posts.
+ *     Friends, images and audio are checked on the way; a person's saves are
+ *     a short list.
+ * Signed out, friends and saved mean nobody's, so they are ignored.
+ */
 export async function timeline(
   who: string | null,
   before?: { at: number; id: string } | null,
+  filter: FeedFilter = WHOLE_FEED,
 ): Promise<{ posts: Card[]; next: { at: number; id: string } | null }> {
   const params: unknown[] = [who];
-  let where = "";
-  if (before) {
-    params.push(before.at, before.id);
-    where = "WHERE (p.at, p.id) < ($2::bigint, $3::text)";
-  }
+  if (before) params.push(before.at, before.id);
   params.push(TIMELINE_PAGE + 1);
+  const limit = `$${params.length}`;
+  const after = (at: string, id: string) => (before ? [`(${at}, ${id}) < ($2::bigint, $3::text)`] : []);
+  // A re-post carries its original's counts (see repost), so a row is judged by itself.
+  const media = [...(filter.images ? [] : ["q.photos = 0"]), ...(filter.audio ? [] : ["q.audio = 0"])];
+  const where = (conds: string[]) => (conds.length ? `WHERE ${conds.join(" AND ")}` : "");
+  let pick: string;
+  if (filter.saved && who) {
+    const friendsOnly = filter.friends
+      ? ["(q.by_name = $1 OR EXISTS (SELECT 1 FROM friends f WHERE f.owner = $1 AND f.friend = q.by_name))"]
+      : [];
+    pick = `SELECT q.id FROM saves s JOIN posts q ON q.id = s.post
+      ${where(["s.by_name = $1", ...after("s.post_at", "s.post"), ...media, ...friendsOnly])}
+      ORDER BY s.post_at DESC, s.post DESC LIMIT ${limit}`;
+  } else if (filter.friends && who) {
+    pick = `SELECT n.id FROM (SELECT $1::text AS name UNION SELECT friend FROM friends WHERE owner = $1) a
+      CROSS JOIN LATERAL (
+        SELECT q.id, q.at FROM posts q
+        ${where(["q.by_name = a.name", ...after("q.at", "q.id"), ...media])}
+        ORDER BY q.at DESC, q.id DESC LIMIT ${limit}
+      ) n
+      ORDER BY n.at DESC, n.id DESC LIMIT ${limit}`;
+  } else {
+    pick = `SELECT q.id FROM posts q
+      ${where([...after("q.at", "q.id"), ...media])}
+      ORDER BY q.at DESC, q.id DESC LIMIT ${limit}`;
+  }
   const rows = await many<CardRow>(
-    `${CARD} ${where} ORDER BY p.at DESC, p.id DESC LIMIT $${params.length}`,
+    `${card(`(${pick}) pick JOIN posts p ON p.id = pick.id`)} ORDER BY p.at DESC, p.id DESC`,
     params,
   );
   const more = rows.length > TIMELINE_PAGE;
@@ -480,14 +555,6 @@ export async function timeline(
     posts: page.map(cardFrom),
     next: more && last ? { at: Number(last.at), id: last.id } : null,
   };
-}
-
-export async function savedPosts(who: string): Promise<Card[]> {
-  const rows = await many<CardRow>(
-    `${CARD} JOIN saves sv ON sv.post = p.id AND sv.by_name = $1 ORDER BY sv.at DESC LIMIT 40`,
-    [who],
-  );
-  return rows.map(cardFrom);
 }
 
 export async function postsBy(name: string, who: string | null): Promise<Card[]> {
@@ -617,14 +684,14 @@ export async function addComment(
 /** Save or unsave. Returns whether the post is saved afterwards. No notification. */
 export async function toggleSave(by: string, postId: string, at: number): Promise<boolean> {
   return tx(async (client) => {
-    const post = await one<{ id: string }>("SELECT id FROM posts WHERE id = $1", [postId], client);
+    const post = await one<{ at: number }>("SELECT at FROM posts WHERE id = $1", [postId], client);
     if (!post) throw new SocialError(404, "That post is gone.");
     const removed = await client.query("DELETE FROM saves WHERE post = $1 AND by_name = $2", [postId, by]);
     if (removed.rowCount) return false;
     // A second toggle racing this one lands here too; either way it is saved.
     await client.query(
-      "INSERT INTO saves (post, by_name, at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
-      [postId, by, at],
+      "INSERT INTO saves (post, by_name, at, post_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+      [postId, by, at, post.at],
     );
     return true;
   });
@@ -632,18 +699,20 @@ export async function toggleSave(by: string, postId: string, at: number): Promis
 
 export async function repost(by: string, postId: string, at: number): Promise<void> {
   await tx(async (client) => {
-    const post = await one<{ by_name: string; text: string; repost: string | null }>(
-      "SELECT by_name, text, repost FROM posts WHERE id = $1",
+    const post = await one<{ by_name: string; text: string; repost: string | null; photos: number; audio: number }>(
+      "SELECT by_name, text, repost, photos, audio FROM posts WHERE id = $1",
       [postId],
       client,
     );
     if (!post) throw new SocialError(404, "That post is gone.");
     if (post.repost) throw new SocialError(400, "This is already a re-post.");
     // The unique index is the check, so two clicks cannot both get through.
+    // The counts are copied so the timeline's filters, and their indexes, read
+    // one row. The files stay the original's, under its id.
     const added = await client.query(
-      `INSERT INTO posts (id, by_name, text, at, views, repost) VALUES ($1,$2,$3,$4,0,$5)
+      `INSERT INTO posts (id, by_name, text, at, views, repost, photos, audio) VALUES ($1,$2,$3,$4,0,$5,$6,$7)
        ON CONFLICT DO NOTHING`,
-      [newId(), by, post.text, at, postId],
+      [newId(), by, post.text, at, postId, post.photos, post.audio],
     );
     if (!added.rowCount) throw new SocialError(400, "You already re-posted this.");
     await note(client, post.by_name, by, postId, at, "repost");
@@ -727,6 +796,31 @@ export async function findPeople(
     [pattern, prefix],
   );
   return rows.map((row) => ({ name: row.name, bio: row.bio, loc: row.loc, avatarRev: row.avatar_rev }));
+}
+
+/**
+ * Who posted most since `since`, busiest first, then most recent. Re-posts
+ * count: they are what a follower would see. A range on posts_at_id, so it
+ * reads the window's posts and nothing older.
+ */
+export async function busiestPosters(
+  since: number,
+  limit: number,
+): Promise<{ name: string; bio: string; avatarRev: number; posts: number }[]> {
+  const rows = await many<{ name: string; bio: string; avatar_rev: number; posts: number }>(
+    `SELECT u.name, u.bio, u.avatar_rev, n.posts FROM (
+       SELECT by_name, count(*)::int AS posts, max(at) AS last FROM posts WHERE at > $1 GROUP BY by_name
+     ) n JOIN users u ON u.name = n.by_name
+     ORDER BY n.posts DESC, n.last DESC LIMIT $2`,
+    [since, limit],
+  );
+  return rows.map((row) => ({ name: row.name, bio: row.bio, avatarRev: row.avatar_rev, posts: row.posts }));
+}
+
+/** The names someone has added. The friends key leads with the owner, so this is one index range. */
+export async function friendNames(owner: string): Promise<string[]> {
+  const rows = await many<{ friend: string }>("SELECT friend FROM friends WHERE owner = $1", [owner]);
+  return rows.map((row) => row.friend);
 }
 
 export async function addFriend(owner: string, friend: string): Promise<void> {
