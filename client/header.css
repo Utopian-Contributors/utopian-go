@@ -5,9 +5,40 @@
  * page's stylesheet — search, Social, the wallet page — so the wallet page
  * gets the header without loading app.css, and no page keeps its own copy.
  * Pages put body.res on for the row layout; search's home layout overrides
- * it from app.css. Reads the palette and --shell, --pad, --side, --col-gap
- * from the page's own :root.
+ * it from app.css. Reads the palette, --side and --col-gap from the page's
+ * own :root.
  */
+
+/*
+ * The shell: how wide a page may get, and the gutter inside it. Set here
+ * rather than on each page so every page stops at the same width and keeps
+ * its header in the same place. Going from search to Social to the wallet
+ * does not move the wordmark, and on a wide monitor none of them runs out
+ * to the edges of the screen.
+ */
+:root {
+  --shell: 1520px;
+  /*
+   * The page gutter. Every box in the shell is inset by it — the header, the
+   * tab nav, the status line, #mn, the wallet's halves, and the fixed account
+   * bar — which is the whole reason their edges sit in one line.
+   *
+   * Fluid rather than the two fixed steps it used to be. Those were 16px on a
+   * phone and 28px everywhere above 900px, so the gutter stopped growing at
+   * the one point the window kept going: a 2560px monitor got a 28px inset
+   * beside a shell that had already stopped at --shell, and the results ran
+   * right up to the edge of a very wide page. The ramp picks up where the
+   * phone rules leave off (620px, 16px — the width the card rules also treat
+   * as the floor) and tops out at 64px near 1580px, which is about where the
+   * shell hits its cap and its auto margins start doing the widening instead.
+   *
+   * The slope is in vw, so it tracks a resize continuously rather than
+   * snapping at a breakpoint — which matters here because the search field's
+   * right edge is measured against the results column, and a step in the
+   * gutter would jump both at once.
+   */
+  --pad: clamp(16px, calc(5vw - 15px), 64px);
+}
 
 body.res #hd {
   width: 100%;

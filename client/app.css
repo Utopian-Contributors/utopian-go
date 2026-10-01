@@ -38,27 +38,6 @@
   --in-ink: #202124;
   --in-ph: #70757a;
   --ff: system-ui, Helvetica, Arial, sans-serif;
-  --shell: 1520px;
-  /*
-   * The page gutter. Every box in the results shell is inset by it — the
-   * header, the tab nav, the status line, #mn, and the fixed account bar —
-   * which is the whole reason their edges sit in one line.
-   *
-   * Fluid rather than the two fixed steps it used to be. Those were 16px on a
-   * phone and 28px everywhere above 900px, so the gutter stopped growing at
-   * the one point the window kept going: a 2560px monitor got a 28px inset
-   * beside a shell that had already stopped at --shell, and the results ran
-   * right up to the edge of a very wide page. The ramp picks up where the
-   * phone rules leave off (620px, 16px — the width the card rules also treat
-   * as the floor) and tops out at 64px near 1580px, which is about where the
-   * shell hits its cap and its auto margins start doing the widening instead.
-   *
-   * The slope is in vw, so it tracks a resize continuously rather than
-   * snapping at a breakpoint — which matters here because the search field's
-   * right edge is measured against the results column, and a step in the
-   * gutter would jump both at once.
-   */
-  --pad: clamp(16px, calc(5vw - 15px), 64px);
   /* Gap below the nav before results start. #sd cancels it so the knowledge
      panel's rule meets the nav's bottom border. */
   --main-gap: 16px;

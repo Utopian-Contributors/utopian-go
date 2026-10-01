@@ -35,9 +35,7 @@
   /* Behind token logos: the page's extreme, so a transparent logo reads as drawn. */
   --ic: #fff;
   --ff: system-ui, Helvetica, Arial, sans-serif;
-  /* Full width with a fixed gutter, for the header and the page alike. */
-  --shell: none;
-  --pad: 28px;
+  /* --shell and --pad are the header's (header.css): one width for every page. */
   /* The header's spacer (header.css) sizes itself off these, as on search. */
   --side: 480px;
   --col-gap: 40px;
@@ -1084,10 +1082,6 @@ a:hover {
 }
 
 @media (max-width: 620px) {
-  :root {
-    --pad: 16px;
-  }
-
   .wl-r {
     gap: 10px;
   }
