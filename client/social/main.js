@@ -7,11 +7,9 @@
  */
 import { $, el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
-import { LOGIN } from "../js/acct.js";
 import { noZoom } from "../js/device.js";
 import { open as openLogin } from "../js/login.js";
 import { readName, writeName } from "../js/me.js";
-import { dismissible } from "../js/sheet.js";
 import { b64u, needPasskey, u8, why } from "../js/passkey.js";
 import { mountPwa } from "../js/pwa.js";
 
@@ -64,8 +62,6 @@ function applyMe(next) {
   // My Profile always shows, so the tab bar never reflows once the session is known.
   $("out").hidden = $("aw").hidden = !me;
   $("in").hidden = !!me;
-  // Logged out, the side panel (with Log in) is the left column, as in Messenger.
-  document.body.classList.toggle("out", !me);
   if (search) search.hidden = !!me;
   const unread = $("mbadge");
   badge.hidden = !(me?.unseen > 0);
@@ -290,68 +286,45 @@ function photo(name, rev) {
   return el("img", { class: "pfp", src: `/social/a/${name}?v=${rev}`, alt: "", width: "200", height: "200" });
 }
 
-/** Whose address the open dialog shows. A slower draw for an earlier profile must not win. */
-let showing = "";
-
-/** Copy the address, then show it as a code. */
-function walletButton(address, name) {
-  if (!address) return null;
-  return el("button", { type: "button", class: "qr", text: "Pay via QR code", onclick: () => openWallet(address, name || "") });
-}
-
 /**
- * The bare address, not a Solana Pay request: the code says where to send and
- * nothing else, so any wallet or exchange scanner can read it and the sender
- * picks the amount in their own app.
+ * Pay this person, or on your own profile, get paid. The dialog is its own
+ * bundle (client/pay), fetched on the first press.
  */
-async function openWallet(address, name) {
-  showing = address;
-  const code = $("qc");
-  const copied = $("qk");
-  copied.hidden = true;
-  $("qt").textContent = me?.address === address ? "Your wallet" : `${name}'s wallet`;
-  code.replaceChildren(el("p", { class: "muted", text: "…" }));
-  $("qa").textContent = address;
-  $("qd").showModal();
-  try {
-    await navigator.clipboard.writeText(address);
-    copied.hidden = false;
-  } catch {
-    copied.hidden = true;
-  }
-  // The encoder is the buy dialog's, fetched only when someone asks for a code.
-  let svg;
-  try {
-    svg = (await load("qr", "__qr")).svg(address);
-  } catch {
-    svg = "";
-  }
-  if (address !== showing) return;
-  if (svg) code.innerHTML = svg;
-  else code.replaceChildren(el("p", { class: "err", text: "Could not draw the code." }));
+function payButton(person) {
+  if (!person.address) return null;
+  const button = el("button", {
+    type: "button",
+    class: "pay",
+    text: "Pay",
+    onclick: async () => {
+      button.disabled = true;
+      try {
+        (await load("py", "__pay")).open({
+          to: { name: person.name, address: person.address },
+          me,
+          login: () => openAuth("login"),
+        });
+      } catch {
+        button.textContent = "Could not open Pay";
+      } finally {
+        button.disabled = false;
+      }
+    },
+  });
+  return button;
 }
 
-/** Hide the profile card. Login stays in the sidebar when nobody is signed in. */
+/** Show or hide the profile card. */
 function useSide(show) {
   $("sd").hidden = !show;
   $("mn").classList.toggle("solo", !show);
 }
 
-/** The feed pages: no card when signed in, the Log in prompt when not. */
-function sideOff() {
-  if (me) useSide(false);
-  else renderSide(null);
-}
-
+/** The profile card; nobody to show (signed out) hides it — Log in is in the header. */
 function renderSide(person) {
+  if (!person) return useSide(false);
   useSide(true);
   const side = $("side");
-  if (!person) {
-    side.replaceChildren(
-      el("button", { type: "button", class: "ac-go", text: LOGIN, onclick: () => openAuth("login") }),
-    );
-    return;
-  }
   const bits = [
     photo(person.name, person.avatarRev),
     el(
@@ -361,7 +334,7 @@ function renderSide(person) {
       person.loc ? el("span", { class: "muted", text: `[${person.loc}]` }) : null,
     ),
     person.bio ? el("p", { class: "ld", text: person.bio }) : null,
-    walletButton(person.address, person.name),
+    payButton(person),
     !me
       ? null
       : me.name === person.name
@@ -955,14 +928,14 @@ const WIDE = matchMedia("(min-width: 901px)");
 
 /**
  * The right column of the timeline, and of a post opened from it, so the post
- * stays in the column it was read in: Log in when signed out, then the rail, a
- * bundle of its own that asks for its own data (client/rail).
+ * stays in the column it was read in: the rail, a bundle of its own that asks
+ * for its own data (client/rail).
  */
 function railSide() {
-  sideOff();
+  useSide(false);
   if (!WIDE.matches) return;
   useSide(true);
-  if (me) $("side").replaceChildren();
+  $("side").replaceChildren();
   load("rl", "__rail").then((rail) => rail.mount({ side: $("side"), pull, send, face, openAuth, me: () => me }), () => {});
 }
 WIDE.addEventListener("change", () => document.body.classList.contains("tl") && railSide());
@@ -1555,6 +1528,49 @@ new MutationObserver(() => {
 }).observe(main, { childList: true, subtree: true });
 $("bk").addEventListener("click", () => main.querySelector(".back")?.click());
 
+/*
+ * The feed is the page's one scroll box, so a wheel anywhere on the page moves
+ * it: over the header, the tabs, the rail, the footer, or the margins past
+ * them, not only over the column. The document does not scroll, so without
+ * this those wheels would go nowhere.
+ *
+ * The browser keeps a wheel over the feed itself, over anything laid on top of
+ * the page (a sheet, a dialog), and over a box that can still scroll that way
+ * on its own, such as a long rail. A gesture is decided where it starts and
+ * keeps that owner, momentum included, as the browser's own scrolling does.
+ */
+const SCROLLS = /auto|scroll/;
+/** #m, or on a phone-width profile #mn, which holds the card and the posts together. Messenger has none. */
+const pageBox = () => [main, $("mn")].find((box) => SCROLLS.test(getComputedStyle(box).overflowY));
+
+function wheelIsNative(e) {
+  const t = e.target;
+  if (!(t instanceof Element) || main.contains(t)) return true;
+  if (t !== document.body && t !== document.documentElement && !t.closest("#chrome, #mn, #ft")) return true;
+  for (let n = t; n && n !== document.body; n = n.parentElement) {
+    if (!SCROLLS.test(getComputedStyle(n).overflowY)) continue;
+    if (e.deltaY < 0 ? n.scrollTop > 0 : n.scrollTop + n.clientHeight < n.scrollHeight - 1) return true;
+  }
+  return false;
+}
+
+let wheelAt = -Infinity;
+let wheelNative = true;
+addEventListener(
+  "wheel",
+  (e) => {
+    // A pinch on a trackpad is a ctrl-wheel: that zooms, it does not scroll.
+    if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    if (e.timeStamp - wheelAt > 150) wheelNative = wheelIsNative(e);
+    wheelAt = e.timeStamp;
+    const box = pageBox();
+    if (wheelNative || e.defaultPrevented || !box || box.contains(/** @type {Node} */ (e.target))) return;
+    const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? box.clientHeight : 1;
+    box.scrollBy(0, e.deltaY * unit);
+  },
+  { passive: true },
+);
+
 $("in").addEventListener("click", () => openAuth("login"));
 // Until the server answers, the remembered name points My Profile at the right page.
 if (readName()) $("me").href = `/social/u/${readName()}`;
@@ -1573,7 +1589,6 @@ for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data
     openLogin("login", () => location.assign(/** @type {HTMLAnchorElement} */ (tab).href));
   });
 }
-dismissible(/** @type {HTMLDialogElement} */ ($("qd")));
 $("out").addEventListener("click", async () => {
   try {
     await send("/api/social/logout");

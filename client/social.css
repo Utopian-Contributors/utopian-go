@@ -94,8 +94,6 @@ dialog textarea { resize: none; }
 .cmt button[type="submit"],
 .tools button[type="submit"],
 .sec > button:not(.ghost),
-.qr,
-.dm,
 .go-pill,
 #out {
   border: 0;
@@ -111,8 +109,6 @@ dialog textarea { resize: none; }
 .cmt button[type="submit"]:hover,
 .tools button[type="submit"]:hover,
 .sec > button:not(.ghost):hover,
-.qr:hover,
-.dm:hover,
 .go-pill:hover:not(:disabled),
 #out:hover {
   filter: brightness(1.08);
@@ -730,27 +726,68 @@ img.pfp {
 
 .name h2 { margin: 0; }
 
-.qr {
-  display: inline-block;
-  width: auto;
-  margin-top: 8px;
-  padding: 7px 16px;
-}
-
-#qc svg {
-  width: min(220px, 100%);
-  height: auto;
+/*
+ * Pay: the profile's first action, so it runs the width of the column and
+ * stands taller than the pills under it.
+ *
+ * Filled with --go, the green to read, rather than --buy, the green to press,
+ * so it stands apart from the pills, and labelled in the ink --go names.
+ *
+ * The label is pressed into the fill by a line on whichever edge of the
+ * letters faces away from the light, so it flips with the ink: by day, white
+ * on green, a dark line above each letter; after dark, near-black on a pale
+ * green, a pale line below.
+ */
+.pay {
   display: block;
-  margin: 12px auto 0;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--go);
+  color: var(--go-ink);
+  font: 600 16px/1 var(--ff);
+  text-shadow: 0 -1px 0 rgb(0 0 0 / 35%);
+  cursor: pointer;
 }
 
-#qd { text-align: center; }
-#qd .addr { margin: 0 auto; max-width: 24ch; }
-
-.addr {
-  overflow-wrap: anywhere;
-  font: 13px/1.4 var(--ff);
+@media (prefers-color-scheme: dark) {
+  .pay { text-shadow: 0 1px 0 rgb(255 255 255 / 45%); }
 }
+
+/*
+ * Message under Pay, or Edit profile on your own: Pay's shape and size, drawn
+ * as the secondary. An outline on the page instead of a fill, its border --f
+ * like the trade dialog's secondary, so it reads as a button and not a panel
+ * edge. The border's pixel comes off the padding, so both stand 40px.
+ */
+.dm {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 11px 16px;
+  border: 1px solid var(--f);
+  border-radius: 999px;
+  background: none;
+  color: var(--t);
+  font: 600 16px/1 var(--ff);
+  text-align: center;
+  text-decoration: none;
+}
+
+.dm:hover {
+  background: var(--hover);
+  color: var(--t);
+  text-decoration: none;
+}
+
+.dm:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+
+.pay:hover:not(:disabled) { filter: brightness(1.06); }
+.pay:active:not(:disabled) { filter: brightness(0.96); }
+.pay:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+.pay:disabled { cursor: progress; }
 
 .tools { margin: 14px 0; }
 .tools label { display: block; margin-top: 10px; font-size: 13px; color: var(--m); }
@@ -847,9 +884,6 @@ body.soc .pn {
   overflow-y: auto;
 }
 
-/* Signed out, Log in is all the panel holds: on its top line, no gap above. */
-body.soc #side > .ac-go { margin-top: 0; }
-
 
 @media (max-width: 900px) {
   body.soc #mn {
@@ -905,7 +939,7 @@ body.soc #side > .ac-go { margin-top: 0; }
   body.soc .flt::-webkit-scrollbar { display: none; }
   body.soc .flt button { flex: none; }
 
-  /* The card above the posts, for anyone signed out. */
+  /* The card above the posts, on the pages that show one. */
   body.soc:not(.profile, .chat) #sd { padding-inline: 16px; box-sizing: border-box; }
 
   body.soc #m {
@@ -958,36 +992,32 @@ body.soc #side > .ac-go { margin-top: 0; }
 }
 
 /*
- * Profile, and every page while logged out: the card is the left column, the
- * posts the right one — the side Messenger keeps its list on, and as wide.
+ * Profile: the card is the left column, the posts the right one — the side
+ * Messenger keeps its list on, and as wide.
  *
  * The document order stays card-second, which is what the other pages want.
  * Placement, not a second document, is what swaps them here. This sits after
  * the body.soc placement above so it wins at the same specificity.
  */
 @media (min-width: 901px) {
-  body.profile #mn,
-  body.out #mn {
+  body.profile #mn {
     grid-template-columns: var(--list) minmax(0, 1fr);
   }
 
-  body.profile #sd,
-  body.out #sd { grid-column: 1; }
+  body.profile #sd { grid-column: 1; }
 
   /*
    * The posts keep to the left of their column, 60ch wide. The scroll box
    * takes in the rest of the column, and the gap back to the card.
    */
-  body.profile #m,
-  body.out #m {
+  body.profile #m {
     grid-column: 2;
     margin-left: calc(var(--col-gap) * -1);
     padding-inline: calc(16px + var(--col-gap)) max(16px, 100% - 60ch + 16px);
   }
 
   /* The rule sits between the card and the posts, so it moves to the right edge. */
-  body.profile .pn,
-  body.out .pn {
+  body.profile .pn {
     border-left: 0;
     border-right: 1px solid var(--b);
     padding: 20px 20px 0 4px;
@@ -995,8 +1025,8 @@ body.soc #side > .ac-go { margin-top: 0; }
 
   /*
    * The timeline keeps its posts in the middle and the rail (client/rail) at
-   * the right, signed in or not; signed out, Log in heads the rail. A post
-   * opened from it keeps the same columns, so it opens where it was read.
+   * the right, signed in or not. A post opened from it keeps the same
+   * columns, so it opens where it was read.
    */
   body.tl #mn { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); }
   body.tl #sd { grid-column: 2; }
@@ -1015,8 +1045,6 @@ body.soc #side > .ac-go { margin-top: 0; }
   }
 }
 
-/* A profile's Message, beside Pay via QR code. */
-.dm,
 .go-pill {
   display: inline-block;
   margin-top: 8px;
@@ -1024,9 +1052,6 @@ body.soc #side > .ac-go { margin-top: 0; }
   text-decoration: none;
 }
 
-.dm { margin-left: 8px; }
-
-.dm:hover,
 .go-pill:hover {
   color: var(--buy-ink);
   text-decoration: none;

@@ -130,7 +130,7 @@ const PAGES = [
  * that arrives unasked, but only on a phone, and only after load; the rail
  * is its opposite, only on a wide screen, and only after the timeline is drawn.
  */
-const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "chat.js", "rec.js", "rail.js", "avatar.js", "login.js", "hive.js", "install.js"];
+const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "pay.js", "chat.js", "rec.js", "rail.js", "avatar.js", "login.js", "hive.js", "install.js"];
 
 /**
  * The legal documents: readable HTML under client/legal/, published as the
@@ -203,6 +203,24 @@ const watch = process.argv.includes("--watch");
 
 mkdirSync(outDir, { recursive: true });
 
+/**
+ * A stylesheet a bundle injects itself (see injectStyles in js/ui.js),
+ * imported as a minified string.
+ *
+ * It lives in a .css file rather than a template literal because esbuild
+ * minifies code, not the text inside strings: a sheet written inline ships
+ * every comment and indent it was written with.
+ */
+const cssText = {
+  name: "css-text",
+  setup(build) {
+    build.onLoad({ filter: /\.css$/ }, async (args) => ({
+      contents: await minifyCss(readFileSync(args.path, "utf8")),
+      loader: "text",
+    }));
+  },
+};
+
 const jsOpts = {
   entryPoints: [path.join(clientDir, "js", "main.js")],
   outfile: path.join(outDir, "app.js"),
@@ -215,6 +233,7 @@ const jsOpts = {
   target: ["es2020"],
   format: "iife",
   legalComments: "none",
+  plugins: [cssText],
   logLevel: watch ? "error" : "info",
 };
 
@@ -295,6 +314,17 @@ const walletOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "wallet", "main.js")],
   outfile: path.join(outDir, "wallet.js"),
+};
+
+/**
+ * A profile's Pay dialog, fetched by social.js on the first press. It draws
+ * with the trade form's sheet (swap/form.css), bundled across, and asks qr.js
+ * for its code like the trade dialog does.
+ */
+const payOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "pay", "main.js")],
+  outfile: path.join(outDir, "pay.js"),
 };
 
 /** Messenger, fetched by social.js on /social/c only. */
@@ -704,7 +734,7 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
  * wordmark inlined for the same reason it is on the other two documents: the
  * header should not wait on a second request.
  */
-async function buildSocialHtml(css, socialHash, qrHash, chatHash, recHash, railHash, avatarHash, installHash) {
+async function buildSocialHtml(css, socialHash, qrHash, payHash, chatHash, recHash, railHash, avatarHash, installHash) {
   let raw = readFileSync(path.join(clientDir, "social.html"), "utf8");
   raw = replaceOnce(
     raw,
@@ -729,6 +759,12 @@ async function buildSocialHtml(css, socialHash, qrHash, chatHash, recHash, railH
     /data-qr="\/qr\.js"/,
     `data-qr="/qr.js?v=${qrHash}"`,
     "social qr.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-py="\/pay\.js"/,
+    `data-py="/pay.js?v=${payHash}"`,
+    "social pay.js attribute",
   );
   raw = replaceOnce(
     raw,
@@ -959,7 +995,7 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
+  const [, , , , , , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
     esbuild.build(installOpts),
     esbuild.build(swOpts),
     esbuild.build(jsOpts),
@@ -973,6 +1009,7 @@ async function buildAssets() {
     esbuild.build(recOpts),
     esbuild.build(railOpts),
     esbuild.build(avatarOpts),
+    esbuild.build(payOpts),
     Promise.all([esbuild.build(socialOpts), esbuild.build(chatOpts)]).then(buildSocialCss),
     buildCss("app.css"),
     buildCss("wallet.css"),
@@ -988,7 +1025,7 @@ async function buildAssets() {
   await Promise.all([
     buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, hash("hive.js"), installHash),
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
-    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("chat.js"), hash("rec.js"), hash("rail.js"), hash("avatar.js"), installHash),
+    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("pay.js"), hash("chat.js"), hash("rec.js"), hash("rail.js"), hash("avatar.js"), installHash),
   ]);
   buildLegal();
   precompress();
