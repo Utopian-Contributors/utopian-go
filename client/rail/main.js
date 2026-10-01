@@ -24,8 +24,8 @@ const CSS = `
 .rl-id{min-width:0}
 .rl b{display:block;overflow:hidden;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
 .rl small{display:block;color:var(--f);font-size:12px;line-height:1.4}
-.rl-ic{flex:none;width:28px;height:28px;border-radius:50%}
-.rl-coin{display:inline-flex;align-items:center;justify-content:center;padding-bottom:1px;background:var(--b);
+.rl-ic{flex:none;width:28px;height:28px}
+.rl-coin{display:inline-flex;align-items:center;justify-content:center;padding-bottom:1px;border-radius:50%;background:var(--b);
  color:var(--m);font-size:13px;font-weight:600;line-height:1;user-select:none}
 .rl-q{margin-left:auto;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rl .up{color:var(--go)}

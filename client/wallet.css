@@ -32,8 +32,6 @@
   --in: #fff;
   --in-ink: #202124;
   --in-ph: #70757a;
-  /* Behind token logos: the page's extreme, so a transparent logo reads as drawn. */
-  --ic: #fff;
   --ff: system-ui, Helvetica, Arial, sans-serif;
   /* --shell and --pad are the header's (header.css): one width for every page. */
   /* The header's spacer (header.css) sizes itself off these, as on search. */
@@ -59,7 +57,6 @@
     --dn: #f28b82;
     --pn: #303134;
     --hover: #2c2c2e;
-    --ic: #000;
     --in: #202124;
     --in-ink: #e8eaed;
     --in-ph: #9aa0a6;
@@ -433,14 +430,12 @@ a:hover {
   min-width: 84px;
 }
 
-/* Token logos may be round; only a person's picture keeps its own shape. */
+/* Token logos are drawn as they come: their own shape, transparency and all. */
 .wl-ic {
   flex: none;
   align-self: center;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
-  background: var(--ic);
 }
 
 /* No logo, or one that would not load. The glyph sits on the baseline, so
@@ -450,6 +445,7 @@ a:hover {
   align-items: center;
   justify-content: center;
   padding-bottom: 1px;
+  border-radius: 50%;
   background: var(--b);
   color: var(--m);
   font-size: 12px;
