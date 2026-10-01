@@ -12,12 +12,16 @@
     <link rel="icon" href="/go-favicon.svg" type="image/svg+xml" />
     <!-- The installed app: its name and icons are in the manifest. iOS reads the
          touch icon and the title from here instead, and without the title
-         would name the home-screen icon after this page. The theme colour is
+         would name the home-screen icon after this page. application-name is
+         that same fallback for Chromium: a home-screen shortcut, or an install
+         that gave up waiting for the manifest, is named from it rather than
+         from a <title> the social pages rewrite per view. The theme colour is
          the page's own background, which tints the installed app's status
          bar and title bar to match it. -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-title" content="UtopianGO" />
+    <meta name="application-name" content="UtopianGO" />
     <meta name="theme-color" content="#fffff6" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#282124" media="(prefers-color-scheme: dark)" />
     <meta property="og:type" content="website" />
