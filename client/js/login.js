@@ -33,7 +33,7 @@ const CSS = `
 .lgd-t{background:none;color:var(--go);border:0;padding:12px 0;font:600 13px/1 var(--ff);cursor:pointer}
 .lgd-t:hover{color:var(--buy)}
 .lgd button:disabled{opacity:.55;cursor:default}
-.lgd-c{display:flex;gap:8px;align-items:flex-start;color:var(--t)}
+.lgd .lgd-c{display:flex;gap:8px;align-items:flex-start;color:var(--t)}
 .lgd .lgd-c input{width:auto;margin:3px 0 0;flex:none}
 .lgd-c a{color:var(--go)}
 .lgd-or{margin:16px 0 0;text-align:center;font-size:13px;color:var(--f)}

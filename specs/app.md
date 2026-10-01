@@ -212,7 +212,6 @@ POST /api/social/send {to, mint, amount, password? | challenge, clientData, auth
 POST /api/social/send/passkey/options {} → {challenge, id}
 POST /api/social/passkey/options {password} → {challenge, uid}
 POST /api/social/passkey {id, challenge, clientData, attestation} → {ok}
-POST /api/social/pay     {to, from, sol} → {transaction}   (unsigned; the payer's wallet signs)
 ```
 
 A packed post is a u16 text length and the UTF-8, a u8 photo count, then each photo as u32
@@ -429,12 +428,9 @@ hosts and 60 pages a host.
 Receive (address as a QR code, plus Copy), and Send (token, recipient with Paste, amount
 with Max).
 
-**Paying someone.**
-
-1. On a profile, **Pay via QR code** opens a dialog with the owner's address as a QR code.
-2. On a phone, the camera hands the address to a wallet app.
-3. On a computer, the user enters an amount. `POST /pay` returns an unsigned transfer, and
-   the browser's wallet signs and sends it. The server never holds the payer's key.
+**Paying someone.** On a profile, **Pay via QR code** copies the owner's address and shows
+it as a QR code. The code is the bare address, not a Solana Pay request, so any wallet or
+exchange scanner reads it; the payer picks the amount and sends from their own app.
 
 **Messaging.**
 

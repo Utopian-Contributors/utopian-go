@@ -22,7 +22,6 @@ import {
   solanaAddress,
   solanaSeed,
 } from "./keys";
-import { parseSol, transferMessage, unsignedTransfer } from "./pay";
 import { checkSwapInstructions, parseMessage, reviewedFloor, signTransaction, simulationError, slippageFor } from "./swap";
 import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMessage, onCurve } from "./send";
 import { scrub } from "./guard";
@@ -133,25 +132,15 @@ test("a portrait jpeg is measured and a wide one is wide", () => {
   assert.equal(jpegSize(Buffer.from("nope")), null);
 });
 
-test("a solana address round-trips and a transfer is signed by that key", () => {
+test("a solana address round-trips and its key signs for it", () => {
   const address = solanaAddress(ABANDON);
   const pub = base58Decode(address);
   assert.ok(pub);
   assert.equal(pub.length, 32);
   assert.equal(base58(pub), address);
-  assert.equal(parseSol("1.5"), 1_500_000_000n);
-  assert.equal(parseSol("0"), null);
-  assert.equal(parseSol("0.0000000001"), null);
-  const to = Buffer.alloc(32, 2);
-  const hash = Buffer.alloc(32, 3);
-  const message = transferMessage(pub, to, 5n, hash);
-  assert.equal(message[0], 1);
-  assert.ok(message.includes(pub));
+  const message = Buffer.from("a message for the wallet to sign");
   const seed = slip10ed25519(mnemonicToSeed(ABANDON), [44, 501, 0, 0].map((i) => i + 0x80000000));
-  const blank = unsignedTransfer(pub, to, 5n, hash);
-  assert.equal(blank[0], 1);
-  assert.ok(blank.subarray(1, 65).every((byte) => byte === 0));
-  // The wallet's signature over this message verifies against the address.
+  // The wallet's signature over a message verifies against the address.
   const pkcs8 = Buffer.from("302e020100300506032b657004220420", "hex");
   const priv = createPrivateKey({ key: Buffer.concat([pkcs8, seed]), format: "der", type: "pkcs8" });
   const sig = sign(null, message, priv);
@@ -457,7 +446,6 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal((await call("GET", "/api/social/friends")).status, 401);
     assert.equal((await call("GET", "/api/social/users?q=ada")).status, 401);
     assert.equal((await call("POST", "/api/social/phrase", { password: "password1" })).status, 401);
-    assert.equal((await call("POST", "/api/social/pay", { to: adaAddress, sol: "0.1" })).status, 400);
 
     const ben = await call("POST", "/api/social/register", {
       username: "ben",
@@ -852,10 +840,6 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(typeof openedComments[0].avatarRev, "number");
     const openedAgain = await call("POST", "/api/social/open", { post: postId });
     assert.equal((openedAgain.json?.post as { views: number }).views, 2);
-    const selfPay = await call("POST", "/api/social/pay", { to: adaAddress, sol: "0.1", from: adaAddress, password: "password1" });
-    assert.equal(selfPay.status, 400);
-    assert.equal(JSON.stringify(selfPay.json).includes("phrase"), false);
-    assert.equal((await call("POST", "/api/social/pay", { to: adaAddress, sol: "0", from: adaAddress })).status, 400);
 
     const filler = new Client({ connectionString: process.env.DATABASE_URL });
     await filler.connect();

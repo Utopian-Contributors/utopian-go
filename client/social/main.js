@@ -14,8 +14,6 @@ import { readName, writeName } from "../js/me.js";
 import { dismissible } from "../js/sheet.js";
 import { b64u, needPasskey, u8, why } from "../js/passkey.js";
 import { mountPwa } from "../js/pwa.js";
-import { connect, settled, signAndSend } from "../js/wallet.js";
-import { toBase58 } from "../swap/jup.js";
 
 const main = $("m");
 /** Matches MAX_POST in src/social/limits.ts. */
@@ -292,59 +290,27 @@ function photo(name, rev) {
   return el("img", { class: "pfp", src: `/social/a/${name}?v=${rev}`, alt: "", width: "200", height: "200" });
 }
 
-/** Who the open pay dialog is for. */
-let paying = { address: "", name: "" };
-/** The code last asked for. A slower draw of an older amount must not win. */
-let want = "";
+/** Whose address the open dialog shows. A slower draw for an earlier profile must not win. */
+let showing = "";
 
-/** A Solana Pay request. A wallet that scans it can send the amount. */
-function payUri(address, name, amount) {
-  const params = new URLSearchParams();
-  if (amount) params.set("amount", amount);
-  if (name) params.set("label", name);
-  const query = params.toString();
-  return query ? `solana:${address}?${query}` : `solana:${address}`;
-}
-
-function solAmount(text) {
-  const value = text.trim();
-  if (!/^\d{1,7}(\.\d{1,9})?$/.test(value) || Number(value) <= 0) return "";
-  return value;
-}
-
-/** Copy the address, then show a code a wallet can pay. */
+/** Copy the address, then show it as a code. */
 function walletButton(address, name) {
   if (!address) return null;
   return el("button", { type: "button", class: "qr", text: "Pay via QR code", onclick: () => openWallet(address, name || "") });
 }
 
-/** The encoder is the buy dialog's, fetched only when someone asks for a code. */
-async function drawPayCode() {
-  const code = $("qc");
-  const payload = (want = payUri(paying.address, paying.name, solAmount($("pamt").value)));
-  let svg;
-  try {
-    svg = (await load("qr", "__qr")).svg(payload);
-  } catch {
-    svg = "";
-  }
-  if (payload !== want) return;
-  if (svg) code.innerHTML = svg;
-  else code.replaceChildren(el("p", { class: "err", text: "Could not draw the code." }));
-}
-
+/**
+ * The bare address, not a Solana Pay request: the code says where to send and
+ * nothing else, so any wallet or exchange scanner can read it and the sender
+ * picks the amount in their own app.
+ */
 async function openWallet(address, name) {
-  paying = { address, name };
+  showing = address;
+  const code = $("qc");
   const copied = $("qk");
-  const own = me?.address === address;
-  const pay = $("py");
-  copied.hidden = $("pok").hidden = true;
-  $("pe").textContent = $("pamt").value = "";
-  pay.hidden = own;
-  pay.disabled = false;
-  $("phint").textContent = own ? "Show this code to get paid." : "Your wallet signs this payment.";
-  $("qt").textContent = own ? "Your wallet" : `Pay ${name}`;
-  $("qc").replaceChildren(el("p", { class: "muted", text: "…" }));
+  copied.hidden = true;
+  $("qt").textContent = me?.address === address ? "Your wallet" : `${name}'s wallet`;
+  code.replaceChildren(el("p", { class: "muted", text: "…" }));
   $("qa").textContent = address;
   $("qd").showModal();
   try {
@@ -353,7 +319,16 @@ async function openWallet(address, name) {
   } catch {
     copied.hidden = true;
   }
-  await drawPayCode();
+  // The encoder is the buy dialog's, fetched only when someone asks for a code.
+  let svg;
+  try {
+    svg = (await load("qr", "__qr")).svg(address);
+  } catch {
+    svg = "";
+  }
+  if (address !== showing) return;
+  if (svg) code.innerHTML = svg;
+  else code.replaceChildren(el("p", { class: "err", text: "Could not draw the code." }));
 }
 
 /** Hide the profile card. Login stays in the sidebar when nobody is signed in. */
@@ -373,7 +348,6 @@ function renderSide(person) {
   const side = $("side");
   if (!person) {
     side.replaceChildren(
-      el("p", { class: "ld", text: "Log in to post, add friends, and keep a profile." }),
       el("button", { type: "button", class: "ac-go", text: LOGIN, onclick: () => openAuth("login") }),
     );
     return;
@@ -1614,51 +1588,6 @@ $("out").addEventListener("click", async () => {
     show();
   } catch (cause) {
     main.replaceChildren(el("p", { class: "err", text: cause.message }));
-  }
-});
-$("pamt").addEventListener("input", () => {
-  if (!paying.address || !$("qd").open) return;
-  $("py").disabled = false;
-  drawPayCode();
-});
-$("pf").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const err = $("pe");
-  const ok = $("pok");
-  const amount = $("pamt");
-  const button = $("py");
-  err.textContent = "";
-  ok.hidden = true;
-  const sol = solAmount(amount.value);
-  if (!sol) {
-    err.textContent = "Enter an amount of SOL.";
-    return;
-  }
-  // The amount is locked while the wallet decides, so what it signs is what is on screen.
-  button.disabled = amount.disabled = true;
-  try {
-    // A wallet's in-app browser may register a moment after load; settled waits for it.
-    const [wallet] = await settled(1000);
-    if (!wallet) throw new Error("No wallet found. Scan the code with a wallet app.");
-    const account = await connect(wallet);
-    const prepared = await send("/api/social/pay", { to: paying.address, from: account.address, sol });
-    const signature = await signAndSend(wallet, account, u8(prepared.transaction));
-    ok.hidden = false;
-    ok.textContent = "Sent";
-    ok.append(el("a", {
-      href: `https://solscan.io/tx/${toBase58(signature)}`,
-      text: "View",
-      target: "_blank",
-      rel: "noopener",
-    }));
-    // Pay stays off until a new amount is typed: pressing it again would send twice.
-    amount.value = "";
-    drawPayCode();
-  } catch (cause) {
-    err.textContent = cause.message || "The payment was not sent.";
-    button.disabled = false;
-  } finally {
-    amount.disabled = false;
   }
 });
 

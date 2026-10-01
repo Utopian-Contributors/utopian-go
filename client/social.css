@@ -97,8 +97,7 @@ dialog textarea { resize: none; }
 .qr,
 .dm,
 .go-pill,
-#out,
-#py {
+#out {
   border: 0;
   border-radius: 999px;
   background: var(--buy);
@@ -115,8 +114,7 @@ dialog textarea { resize: none; }
 .qr:hover,
 .dm:hover,
 .go-pill:hover:not(:disabled),
-#out:hover,
-#py:hover {
+#out:hover {
   filter: brightness(1.08);
 }
 
@@ -748,26 +746,6 @@ img.pfp {
 
 #qd { text-align: center; }
 #qd .addr { margin: 0 auto; max-width: 24ch; }
-#pf { margin-top: 12px; text-align: left; }
-/* As tall as the amount field beside it, and easy to hit. */
-#pf button { margin-top: 0; padding: 13px 16px; }
-
-.pay-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.pay-line input {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: auto;
-  margin-top: 0;
-}
-
-.pay-line button { flex: none; }
-#pok a { margin-left: 8px; }
 
 .addr {
   overflow-wrap: anywhere;
@@ -868,6 +846,9 @@ body.soc .pn {
   overflow-x: hidden;
   overflow-y: auto;
 }
+
+/* Signed out, Log in is all the panel holds: on its top line, no gap above. */
+body.soc #side > .ac-go { margin-top: 0; }
 
 
 @media (max-width: 900px) {

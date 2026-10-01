@@ -158,7 +158,7 @@ ALTER TABLE users DROP COLUMN IF EXISTS prf_salt;
 ALTER TABLE users DROP COLUMN IF EXISTS prf_iv;
 ALTER TABLE users DROP COLUMN IF EXISTS prf_tag;
 ALTER TABLE users DROP COLUMN IF EXISTS prf_ct;
--- /pay and recovery find an account by address, passkey login by credential.
+-- Recovery finds an account by address, passkey login by credential.
 CREATE UNIQUE INDEX IF NOT EXISTS users_address ON users (address);
 CREATE UNIQUE INDEX IF NOT EXISTS users_passkey ON users (passkey_id);
 -- Messenger. Every column the server holds is public key, ciphertext, or who and when.
@@ -376,11 +376,6 @@ async function tx<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
 
 export async function getUser(name: string): Promise<User | null> {
   const row = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE name = $1`, [name]);
-  return row ? userFrom(row) : null;
-}
-
-export async function userByAddress(address: string): Promise<User | null> {
-  const row = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE address = $1`, [address]);
   return row ? userFrom(row) : null;
 }
 

@@ -82,10 +82,9 @@ import {
   toggleSave,
   unseenNotes,
   updateProfile,
-  userByAddress,
   userByPasskey,
 } from "./db";
-import { parseSol, prepareTransfer, solanaPubkey } from "./pay";
+import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
 import { currentUser, guardJson, loadAccount, requireAuth, requireUser } from "./guard";
@@ -726,27 +725,6 @@ socialRouter.post(
     const postId = typeof req.body?.post === "string" ? req.body.post : "";
     await repost(me.name, postId, Date.now());
     res.json({ ok: true });
-  }),
-);
-
-socialRouter.post(
-  "/pay",
-  payLimit,
-  readJson,
-  wrap(async (req, res) => {
-    assertSameOrigin(req);
-    const lamports = parseSol(req.body?.sol);
-    if (lamports == null) throw new SocialError(400, "Enter an amount of SOL.");
-    const toText = typeof req.body?.to === "string" ? req.body.to.trim() : "";
-    const fromText = typeof req.body?.from === "string" ? req.body.from.trim() : "";
-    const to = solanaPubkey(toText);
-    const from = solanaPubkey(fromText);
-    if (!to || !from) throw new SocialError(400, "That is not a Solana address.");
-    if (fromText === toText) throw new SocialError(400, "You can't pay yourself.");
-    const recipient = await userByAddress(toText);
-    if (!recipient) throw new SocialError(404, "No such wallet.");
-    const tx = await prepareTransfer(from, to, lamports);
-    res.json({ transaction: tx.toString("base64") });
   }),
 );
 
