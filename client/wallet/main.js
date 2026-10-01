@@ -149,7 +149,11 @@ function trade(h, mode, label) {
 /** Every token a row has shown, so Swap can open on the one in the panel. */
 const known = new Map();
 
-const select = mountPanel(side, (t) => trade(t, "buy", true));
+const select = mountPanel(side, (t) => {
+  // A linked token may be on neither list, and Swap opens on what the panel shows.
+  if (!known.has(t.mint)) known.set(t.mint, t);
+  return trade(t, "buy", true);
+});
 let chosen = "";
 
 function choose(mint, scroll) {
@@ -194,6 +198,22 @@ $("bk").addEventListener("click", () => {
 /** The first thing listed is shown until someone picks something. */
 function chooseFirst(mint) {
   if (!chosen && mint) choose(mint, false);
+}
+
+/**
+ * `/wallet?t=<mint>` opens on that token as though its row had been picked;
+ * Social's Trending assets link here. A mint the index cannot answer for
+ * leaves the usual first choice, with no error for a link nobody typed.
+ */
+async function openLinked() {
+  const mint = new URLSearchParams(location.search).get("t");
+  if (!mint) return;
+  chosen = mint; // holds off chooseFirst while it loads
+  const ok = await select(mint, true);
+  if (chosen !== mint) return; // a row was picked meanwhile
+  if (ok) return choose(mint, true);
+  chosen = "";
+  chooseFirst(/** @type {HTMLElement | null} */ (document.querySelector(".wl-r"))?.dataset.mint);
 }
 
 function ident(t) {
@@ -448,6 +468,7 @@ mountAccount($("ac"), { self: true, onLogin: signedIn });
 noZoom();
 mountPwa();
 onSession(refresh);
+void openLinked();
 refresh();
 paintTop();
 paintKeys();

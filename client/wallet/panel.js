@@ -2,6 +2,7 @@
  * The right half of the wallet page: one token's line and market data.
  * Everything comes from /api/tokens/<mint>, which only answers for indexed mints.
  */
+import { coinIcon } from "../js/coin.js";
 import { el } from "../js/dom.js";
 import { fiat, percent, tokenPrice } from "../js/num.js";
 import { hoursAgo, lineChart, valueAt } from "./chart.js";
@@ -14,25 +15,9 @@ const LINKS = [
   ["discord", "Discord"],
 ];
 
-/** A plain gray coin, for a token with no logo or one that fails to load. */
-function coin() {
-  return el("span", { class: "wl-ic wl-coin", text: "$", "aria-hidden": "true" });
-}
-
 /** The synced thumbnail, or a coin the same size so the tickers stay in line. */
 export function icon(t, size = 20) {
-  if (!t.icon) return coin();
-  const img = el("img", {
-    class: "wl-ic",
-    src: `/icon/${t.mint}`,
-    alt: "",
-    width: String(size),
-    height: String(size),
-    loading: "lazy",
-    decoding: "async",
-  });
-  img.addEventListener("error", () => img.replaceWith(coin()), { once: true });
-  return img;
+  return coinIcon(t, size, "wl-ic", "wl-coin");
 }
 
 function dirOf(v) {
@@ -177,8 +162,11 @@ export function mountPanel(box, buy) {
     body.replaceChildren(...stats(d.windows?.["24h"]));
   }
 
-  /** Show one token. A newer choice wins over a slower answer. */
-  return async function select(mint) {
+  /**
+   * Show one token. A newer choice wins over a slower answer. Resolves true
+   * once it has painted; `quiet` leaves the panel as it was when it cannot.
+   */
+  return async function select(mint, quiet = false) {
     if (mint === current) return;
     current = mint;
     const id = ++run;
@@ -189,10 +177,11 @@ export function mountPanel(box, buy) {
       if (id !== run) return;
       if (!res.ok) throw new Error(data.error || "Could not load this token.");
       render(data);
+      return true;
     } catch (err) {
       if (id !== run) return;
       current = "";
-      box.replaceChildren(el("p", { class: "wl-n err", text: err.message || "Could not load this token." }));
+      if (!quiet) box.replaceChildren(el("p", { class: "wl-n err", text: err.message || "Could not load this token." }));
     } finally {
       if (id === run) box.removeAttribute("aria-busy");
     }
