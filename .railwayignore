@@ -10,6 +10,10 @@ video/
 specs/
 brand.md
 
+# The seed's voice memos. `npm run seed` is for a dev database and refuses
+# production, so the box has no use for them.
+assets/seed/
+
 # The builder runs its own install. Shipping ours would upload 64 MB of
 # darwin-arm64 binaries (esbuild, lightningcss) the Linux box can't run.
 node_modules/

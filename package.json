@@ -14,7 +14,8 @@
     "build": "npm run build:client && npm run build:server",
     "start": "NODE_ENV=production node dist/server.js",
     "size": "node scripts/build-client.mjs",
-    "test": "npm run build:server && node --test dist/social/social.test.js"
+    "test": "npm run build:server && node --test dist/social/social.test.js",
+    "seed": "npm run build:server && node --env-file=.env dist/social/seed.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
