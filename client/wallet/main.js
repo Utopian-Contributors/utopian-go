@@ -244,7 +244,15 @@ function topRow(t) {
   const move = t.change24h;
   return el(
     "div",
-    { class: `wl-r wl-tr${t.mint === chosen ? " on" : ""}`, "data-mint": t.mint },
+    {
+      class: `wl-r wl-tr${t.mint === chosen ? " on" : ""}`,
+      "data-mint": t.mint,
+      // The whole row picks the token, not just its name; the name stays the
+      // button a keyboard reaches, and Buy keeps its own click.
+      onclick: (event) => {
+        if (!event.target.closest(".wl-id, .wl-act")) choose(t.mint, true);
+      },
+    },
     ident(t),
     el(
       "span",

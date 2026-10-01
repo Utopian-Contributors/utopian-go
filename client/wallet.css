@@ -741,6 +741,16 @@ a:hover {
 
 .wl-tr {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
+  cursor: pointer;
+}
+
+/* The whole row picks the token (main.js), so the whole row lights the name. */
+.wl-tr:hover .wl-id {
+  color: var(--a);
+}
+
+.wl-tr .wl-act {
+  cursor: auto;
 }
 
 .wl-px {
