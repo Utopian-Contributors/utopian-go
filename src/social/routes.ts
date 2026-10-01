@@ -1,6 +1,9 @@
-import express, { NextFunction, Request, Response, Router } from "express";
 import { createPublicKey, randomBytes } from "crypto";
+import express, { NextFunction, Request, Response, Router } from "express";
 import { SITE_URL, TERMS_VERSION } from "../config";
+import { rateLimit } from "../lib/rateLimit";
+import { lookupMints, trendingTokens } from "../lib/tokens/store";
+import { audioKind } from "./audio";
 import {
   checkPassword,
   clearSession,
@@ -12,7 +15,49 @@ import {
   setSession,
   stale,
 } from "./auth";
-import { audioKind } from "./audio";
+import { drawAvatar } from "./avatar";
+import {
+  type FeedFilter,
+  type Memo,
+  type User,
+  addChatKey,
+  addComment,
+  addFriend,
+  bumpAvatar,
+  bumpPasskeyCount,
+  busiestPosters,
+  chatKey,
+  chatKeys,
+  chatList,
+  chatPhotoCount,
+  countUnseen,
+  createPost,
+  endSessions,
+  ensureSchema,
+  findPeople,
+  friendList,
+  friendNames,
+  getUser,
+  insertUser,
+  markSeen,
+  openPost,
+  postsBy,
+  recoverAccount,
+  removeFriend,
+  repost,
+  reseal,
+  searchUsers,
+  sendMessage,
+  setKeyBox,
+  setPasskey,
+  thread,
+  timeline,
+  toggleSave,
+  unseenNotes,
+  updateProfile,
+  userByPasskey
+} from "./db";
+import { currentUser, guardJson, loadAccount, requireAuth, requireUser } from "./guard";
 import { jpegSize } from "./jpeg";
 import { generateMnemonic, normalizeMnemonic, solanaAddress } from "./keys";
 import {
@@ -29,67 +74,20 @@ import {
   PHOTO_SMALL_BYTES,
   PHOTO_SMALL_EDGE,
   SOCIAL_BYTES,
+  SocialError,
   TINY_BYTES,
   TINY_W,
   WAVE_BARS,
-  SocialError,
   postText,
   postWait,
   shortText,
   username,
   waitText,
 } from "./limits";
-import { rateLimit } from "../lib/rateLimit";
-import { lookupMints, trendingTokens } from "../lib/tokens/store";
-import {
-  type Card,
-  type FeedFilter,
-  type Memo,
-  type CommentRow,
-  type User,
-  addComment,
-  addFriend,
-  bumpAvatar,
-  addChatKey,
-  bumpPasskeyCount,
-  busiestPosters,
-  chatKey,
-  chatKeys,
-  chatList,
-  chatPhotoCount,
-  countUnseen,
-  endSessions,
-  createPost,
-  ensureSchema,
-  findPeople,
-  friendList,
-  friendNames,
-  getUser,
-  searchUsers,
-  insertUser,
-  markSeen,
-  openPost,
-  postsBy,
-  recoverAccount,
-  removeFriend,
-  repost,
-  reseal,
-  sendMessage,
-  setKeyBox,
-  setPasskey,
-  thread,
-  timeline,
-  toggleSave,
-  unseenNotes,
-  updateProfile,
-  userByPasskey,
-} from "./db";
 import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
-import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
-import { currentUser, guardJson, loadAccount, requireAuth, requireUser } from "./guard";
 import { avatarFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
-import { drawAvatar } from "./avatar";
+import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
 
 /**
@@ -1318,7 +1316,7 @@ socialRouter.post(
     const me = requireUser(res);
     const pub = chatPub(req.body?.pub);
     const iv = sealed(req.body?.iv, 12, 12);
-    const ct = sealed(req.body?.ct, 32, 512);
+    const ct = sealed(req.body?.ct, 32, 512); 
     if (!pub || !iv || !ct) throw new SocialError(400, "Malformed key.");
     await assertPasskey(req, me, "chat");
     const v = await addChatKey(me.name, { pub, cred: me.passkey!.id, iv, ct }, Date.now());
