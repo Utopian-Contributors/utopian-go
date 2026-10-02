@@ -98,6 +98,27 @@
   text-decoration: underline;
 }
 
+/* Log out, last in the control: on Social, and on the wallet page while signed
+   in. A filled pill in the down colour, so it does not read as a link. No
+   display of its own, so the hidden attribute still hides it. */
+.ac-out {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: var(--dn);
+  color: var(--bg);
+  font: 600 13px/1 var(--ff);
+  cursor: pointer;
+}
+
+.ac-out:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.ac-out:disabled {
+  cursor: progress;
+}
+
 /* In a header row, a phone gets the icon alone. The words stay available to
    screen readers. The home page's control has a row of its own, so it keeps
    them. */

@@ -94,8 +94,7 @@ dialog textarea { resize: none; }
 .cmt button[type="submit"],
 .tools button[type="submit"],
 .sec > button:not(.ghost),
-.go-pill,
-#out {
+.go-pill {
   border: 0;
   border-radius: 999px;
   background: var(--buy);
@@ -109,14 +108,8 @@ dialog textarea { resize: none; }
 .cmt button[type="submit"]:hover,
 .tools button[type="submit"]:hover,
 .sec > button:not(.ghost):hover,
-.go-pill:hover:not(:disabled),
-#out:hover {
+.go-pill:hover:not(:disabled) {
   filter: brightness(1.08);
-}
-
-#out {
-  background: var(--dn);
-  color: var(--bg);
 }
 
 /* The passkey is the second way in, so it is drawn as an outline. */

@@ -7,7 +7,7 @@
  * any public address, so neither needs a wallet prompt to paint.
  */
 import { $, el } from "../js/dom.js";
-import { LOGIN, mountAccount, openLogin } from "../js/acct.js";
+import { LOGIN, logOutButton, mountAccount, openLogin } from "../js/acct.js";
 import { noZoom } from "../js/device.js";
 import { load } from "../js/lazy.js";
 import { account as whoami } from "../js/me.js";
@@ -297,15 +297,22 @@ filter.addEventListener("input", () => {
   typing = setTimeout(paintTop, 180);
 });
 
-/** Receive, send and swap: the signed-in account's own wallet only. */
+/**
+ * Receive, send and swap: the signed-in account's own wallet only. The account
+ * is read on each click, not once: Log out and Log in can change it under a
+ * page that wired these for someone else.
+ */
 let wired = false;
 async function paintActions() {
   const me = await account;
+  actions.hidden = !me;
   if (!me || wired) return;
   wired = true;
   const dialogs = () => load("ks", "__keys");
   for (const button of actions.querySelectorAll("button")) {
     button.addEventListener("click", async () => {
+      const me = await account;
+      if (!me) return;
       button.disabled = true;
       try {
         const act = button.dataset.act;
@@ -319,7 +326,6 @@ async function paintActions() {
       }
     });
   }
-  actions.hidden = false;
 }
 
 const SOL = "So11111111111111111111111111111111111111112";
@@ -327,7 +333,11 @@ const SOL = "So11111111111111111111111111111111111111112";
 /** Only a Social account has a phrase here; a connected wallet keeps its own. */
 async function paintKeys() {
   const me = await account;
-  if (!me) return;
+  if (!me) {
+    keys.hidden = true;
+    keys.replaceChildren();
+    return;
+  }
   const button = el("button", {
     class: "wl-b",
     type: "button",
@@ -384,11 +394,14 @@ function offer() {
   paintTotal({ total: NaN });
   total.textContent = "—";
   setNote("Log in to see your wallet.");
-  extra.append(el("button", { class: "ac-go", type: "button", text: LOGIN, onclick: () => openLogin(signedIn) }));
+  extra.append(el("button", { class: "ac-go", type: "button", text: LOGIN, onclick: () => openLogin(switched) }));
 }
 
-/** The dialog has signed someone in: ask the server who, and paint their wallet. */
-function signedIn() {
+/**
+ * The dialog has signed someone in, or Log out has signed them out: ask the
+ * server who, and paint their wallet or the offer to log in.
+ */
+function switched() {
   window.__ugme = null;
   account = whoami();
   refresh();
@@ -472,7 +485,10 @@ async function settle() {
   setNote("Trade sent, but your balance has not changed yet. It can take a moment — reload to check again.");
 }
 
-mountAccount($("ac"), { self: true, onLogin: signedIn });
+mountAccount($("ac"), {
+  self: () => logOutButton((err) => (err ? setNote(err.message, "err") : switched())),
+  onLogin: switched,
+});
 noZoom();
 mountPwa();
 onSession(refresh);

@@ -5,6 +5,7 @@
  * Pictures are scaled here, before they are uploaded: the server only checks
  * the result, and the aspect ratio is kept by scaling both sides together.
  */
+import { logOut } from "../js/acct.js";
 import { $, el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { noZoom } from "../js/device.js";
@@ -1591,15 +1592,8 @@ for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data
 }
 $("out").addEventListener("click", async () => {
   try {
-    await send("/api/social/logout");
-    // Messenger's opened key (client/chat) is this device's, not the next person's.
-    try {
-      indexedDB.deleteDatabase("ug-chat");
-    } catch {
-      // Storage is off, so nothing was kept.
-    }
+    await logOut();
     applyMe(null);
-    writeName("");
     show();
   } catch (cause) {
     main.replaceChildren(el("p", { class: "err", text: cause.message }));
