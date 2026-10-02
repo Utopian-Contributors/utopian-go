@@ -687,9 +687,9 @@ function editor({ main, ad, payable, back, pull, adPost, me }) {
 
   const site = el("span");
   const title = el("h3");
-  const body = el("span", { class: "ad-d" });
-  const cta = el("span", { class: "ad-c" });
-  const card = el("div", { class: "ad" }, el("span", { class: "ad-s" }, el("b", { text: "Sponsored" }), site), title, body, cta);
+  const body = el("span", { class: "sp-tx" });
+  const cta = el("span", { class: "sp-go" });
+  const card = el("div", { class: "ad" }, el("span", { class: "sp-by" }, el("b", { text: "Sponsored" }), site), title, body, cta);
   const postBox = el("div", { class: "av-post" });
   /** The banner and host the drawn post was built with; a change rebuilds it, words are patched in. */
   let built = "";

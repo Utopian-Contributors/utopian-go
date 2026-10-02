@@ -167,9 +167,9 @@ function hostOf(url: string): string {
 export function adMarkup(ad: Pick<Ad, "cta" | "title" | "body" | "url">): string {
   return (
     `<aside id="ad" aria-label="Sponsored"><a class="ad" href="${esc(ad.url)}" target="_blank" rel="noopener sponsored">` +
-    `<span class="ad-s"><b>Sponsored</b> · ${esc(hostOf(ad.url))}</span>` +
-    `<h3>${esc(ad.title)}</h3><span class="ad-d">${esc(ad.body)}</span>` +
-    `<span class="ad-c">${esc(ad.cta)}</span></a></aside>`
+    `<span class="sp-by"><b>Sponsored</b> · ${esc(hostOf(ad.url))}</span>` +
+    `<h3>${esc(ad.title)}</h3><span class="sp-tx">${esc(ad.body)}</span>` +
+    `<span class="sp-go">${esc(ad.cta)}</span></a></aside>`
   );
 }
 

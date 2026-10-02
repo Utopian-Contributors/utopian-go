@@ -3,6 +3,10 @@
  * never read as one of them. Words only; a banner is for timelines. The whole
  * card is the link. Search inlines this sheet; client/ads injects it for its
  * preview, so the two cannot drift. The markup is adMarkup in src/social/ads.ts.
+ *
+ * The parts are .sp-*, not .ad-*: EasyList, which most ad blockers load, hides
+ * any .ad-s and .ad-d on any page. That took the description and the
+ * Sponsored line off the card and left the rest, an ad with no label.
  */
 .ad {
   display: block;
@@ -20,13 +24,13 @@
   text-decoration: none;
 }
 
-.ad-s {
+.sp-by {
   display: block;
   color: var(--f);
   font-size: 12px;
 }
 
-.ad-s b {
+.sp-by b {
   color: var(--t);
   font-weight: 700;
 }
@@ -42,7 +46,7 @@
   text-decoration: underline;
 }
 
-.ad-d {
+.sp-tx {
   display: block;
   margin-top: 4px;
   color: var(--m);
@@ -50,7 +54,7 @@
   overflow-wrap: anywhere;
 }
 
-.ad-c {
+.sp-go {
   display: inline-block;
   margin-top: 10px;
   padding: 8px 16px;
@@ -60,7 +64,7 @@
   font: 600 14px/1 var(--ff);
 }
 
-.ad:hover .ad-c {
+.ad:hover .sp-go {
   background: var(--go);
   color: var(--go-ink);
 }
