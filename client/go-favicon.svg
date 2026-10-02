@@ -1,23 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="35.17 -3.14 21.7 21.7">
-  <!-- The GO from go-wordmark.svg, unchanged and in its own coordinates, on a
-       disc centred on it. The glyph's widest reach is its half-width, at the
-       G's back and the O's side, so the disc is sized off that: the letters
-       span 78% of it.
-       The disc is a search field in miniature, without its border: the field
-       surface every input on the site has (the field tokens in app.css), with
-       the wordmark's green by day and its lit green by night. Where a tab strip
-       is the disc's own colour (white on Chrome's active tab by day, near-black
-       on its strip at night) the letters stand on their own.
-       Browsers apply the media query to SVG favicons by the browser's theme.
-       go-favicon.png is the daylight disc for those that take no SVG. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="37.557 -0.753 16.926 16.926">
+  <!-- The GO from go-wordmark.svg, unchanged and in its own coordinates, and
+       nothing behind it: the letters stand on whatever the browser draws the
+       tab on. The view is the square on the letters' width, centred on them,
+       so the G's back and the O's side reach the icon's edges.
+       The wordmark's green by day and its lit green by night. Browsers apply
+       the media query to SVG favicons by the browser's theme.
+       go-favicon.png is the daylight letters for those that take no SVG. -->
   <style>
-    circle { fill: #fff; }
     path { fill: #3cc316; }
     @media (prefers-color-scheme: dark) {
-      circle { fill: #202124; }
       path { fill: #75ffbe; }
     }
   </style>
-  <circle cx="46.02" cy="7.71" r="10.85" />
   <path d="M45.2895 12H44.7015L44.5935 10.44H44.5695C44.4255 10.744 44.2455 11.008 44.0295 11.232C43.8215 11.448 43.5895 11.628 43.3335 11.772C43.0775 11.908 42.8015 12.008 42.5055 12.072C42.2175 12.136 41.9175 12.168 41.6055 12.168C40.9335 12.168 40.3415 12.048 39.8295 11.808C39.3255 11.56 38.9055 11.232 38.5695 10.824C38.2335 10.416 37.9815 9.944 37.8135 9.408C37.6455 8.872 37.5615 8.308 37.5615 7.716C37.5615 7.124 37.6455 6.56 37.8135 6.024C37.9815 5.488 38.2335 5.016 38.5695 4.608C38.9055 4.192 39.3255 3.864 39.8295 3.624C40.3415 3.376 40.9335 3.252 41.6055 3.252C42.0535 3.252 42.4775 3.312 42.8775 3.432C43.2775 3.552 43.6335 3.732 43.9455 3.972C44.2575 4.212 44.5215 4.508 44.7375 4.86C44.9535 5.212 45.1015 5.624 45.1815 6.096H44.3655C44.3415 5.848 44.2575 5.6 44.1135 5.352C43.9775 5.096 43.7895 4.864 43.5495 4.656C43.3175 4.448 43.0375 4.28 42.7095 4.152C42.3815 4.016 42.0135 3.948 41.6055 3.948C41.0375 3.948 40.5495 4.056 40.1415 4.272C39.7335 4.488 39.3975 4.776 39.1335 5.136C38.8775 5.488 38.6855 5.888 38.5575 6.336C38.4375 6.784 38.3775 7.244 38.3775 7.716C38.3775 8.18 38.4375 8.64 38.5575 9.096C38.6855 9.544 38.8775 9.948 39.1335 10.308C39.3975 10.66 39.7335 10.944 40.1415 11.16C40.5495 11.376 41.0375 11.484 41.6055 11.484C42.0775 11.484 42.4975 11.408 42.8655 11.256C43.2415 11.096 43.5575 10.876 43.8135 10.596C44.0695 10.316 44.2615 9.984 44.3895 9.6C44.5175 9.216 44.5775 8.796 44.5695 8.34H41.6535V7.644H45.2895V12ZM47.224 7.716C47.224 8.18 47.284 8.64 47.404 9.096C47.532 9.544 47.724 9.948 47.98 10.308C48.244 10.66 48.58 10.944 48.988 11.16C49.396 11.376 49.884 11.484 50.452 11.484C51.02 11.484 51.504 11.376 51.904 11.16C52.312 10.944 52.644 10.66 52.9 10.308C53.164 9.948 53.356 9.544 53.476 9.096C53.604 8.64 53.668 8.18 53.668 7.716C53.668 7.244 53.604 6.784 53.476 6.336C53.356 5.888 53.164 5.488 52.9 5.136C52.644 4.776 52.312 4.488 51.904 4.272C51.504 4.056 51.02 3.948 50.452 3.948C49.884 3.948 49.396 4.056 48.988 4.272C48.58 4.488 48.244 4.776 47.98 5.136C47.724 5.488 47.532 5.888 47.404 6.336C47.284 6.784 47.224 7.244 47.224 7.716ZM46.408 7.716C46.408 7.124 46.492 6.56 46.66 6.024C46.828 5.488 47.08 5.016 47.416 4.608C47.752 4.192 48.172 3.864 48.676 3.624C49.188 3.376 49.78 3.252 50.452 3.252C51.124 3.252 51.712 3.376 52.216 3.624C52.72 3.864 53.14 4.192 53.476 4.608C53.812 5.016 54.064 5.488 54.232 6.024C54.4 6.56 54.484 7.124 54.484 7.716C54.484 8.308 54.4 8.872 54.232 9.408C54.064 9.944 53.812 10.416 53.476 10.824C53.14 11.232 52.72 11.56 52.216 11.808C51.712 12.048 51.124 12.168 50.452 12.168C49.78 12.168 49.188 12.048 48.676 11.808C48.172 11.56 47.752 11.232 47.416 10.824C47.08 10.416 46.828 9.944 46.66 9.408C46.492 8.872 46.408 8.308 46.408 7.716Z" />
 </svg>

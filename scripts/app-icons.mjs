@@ -7,16 +7,16 @@
  * arrangement as og-image.mjs. The output is checked in; `copyStatic` in
  * build-client.mjs ships it to public/.
  *
- * Everything is drawn from the favicon's own disc and glyph, read out of the
- * SVG rather than repeated here, so the home-screen icon and the tab icon are
- * the same mark by construction. The daylight colours only: a manifest icon
- * has no colour scheme to follow, and the daylight disc is what stands in
- * wherever the SVG cannot.
+ * The letters are read out of the favicon's SVG rather than repeated here, so
+ * the home-screen icon and the tab icon are the same mark by construction. The
+ * daylight colours only: a manifest icon has no colour scheme to follow, and
+ * the daylight letters are what stand in wherever the SVG cannot.
  *
- *   go-favicon.png              the favicon as it is, for browsers that take
- *                               no SVG icon. 64 is what index.html declares.
- *   icon-192.png, icon-512.png  the favicon as it is — the disc on a
- *                               transparent square. Chrome requires both
+ *   go-favicon.png              the favicon as it is, the bare letters, for
+ *                               browsers that take no SVG icon. 64 is what
+ *                               index.html declares.
+ *   icon-192.png, icon-512.png  the letters on a white disc, on a transparent
+ *                               square. Chrome requires both
  *                               sizes before it will offer to install; desktop
  *                               windows and launchers draw these.
  *   icon-maskable.png           full bleed, for launchers that cut their own
@@ -39,9 +39,19 @@ const src = readFileSync(path.join(clientDir, "go-favicon.svg"), "utf8");
 /**
  * The maskable safe zone: a centred circle 80% of the icon's width, which the
  * manifest spec guarantees survives any launcher's mask. The disc is drawn at
- * exactly that size, so the glyph keeps the proportion it has in the favicon.
+ * exactly that size, so the letters keep the proportion they have on it.
  */
 const SAFE = 0.8;
+
+/**
+ * The disc the app icons set the letters on. The favicon has none — a tab
+ * shows the bare letters — but a launcher or a home screen wants a tile, and
+ * iOS fills any transparency with black. It is the field surface every input
+ * on the site has (the field tokens in app.css), and the letters span 78% of
+ * it, as they did when the favicon had it too.
+ */
+const DISC = "#fff";
+const SPAN = 0.78;
 
 /** @param {RegExp} re @param {string} what */
 function grab(re, what) {
@@ -50,21 +60,31 @@ function grab(re, what) {
   return m;
 }
 
-// The first rule for each is the daylight one; the dark overrides follow it
-// inside the media query.
-const [, disc] = grab(/circle\s*\{\s*fill:\s*(#[0-9a-f]{3,8})/i, "disc colour");
+// The first rule is the daylight one; the dark override follows it inside the
+// media query.
 const [, ink] = grab(/path\s*\{\s*fill:\s*(#[0-9a-f]{3,8})/i, "glyph colour");
 const [, viewBox] = grab(/viewBox="([^"]+)"/, "viewBox");
-const [cx, cy, r] = grab(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/, "disc")
-  .slice(1)
-  .map(Number);
 const [, glyph] = grab(/<path d="([^"]+)"/, "glyph path");
 
+// The favicon's view is the square on the letters' width, centred on them.
+const [vx, vy, side] = viewBox.split(/\s+/).map(Number);
+const cx = vx + side / 2;
+const cy = vy + side / 2;
+const r = side / 2 / SPAN;
+
 /** The favicon, daylight only. */
-function plain(size) {
+function bare(size) {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${viewBox}">` +
-    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${disc}"/>` +
+    `<path d="${glyph}" fill="${ink}"/></svg>`
+  );
+}
+
+/** The letters on the disc, on a transparent square. */
+function onDisc(size) {
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${cx - r} ${cy - r} ${2 * r} ${2 * r}">` +
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${DISC}"/>` +
     `<path d="${glyph}" fill="${ink}"/></svg>`
   );
 }
@@ -76,15 +96,15 @@ function fullBleed(size) {
   const y = cy - half;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${x} ${y} ${2 * half} ${2 * half}">` +
-    `<rect x="${x}" y="${y}" width="${2 * half}" height="${2 * half}" fill="${disc}"/>` +
+    `<rect x="${x}" y="${y}" width="${2 * half}" height="${2 * half}" fill="${DISC}"/>` +
     `<path d="${glyph}" fill="${ink}"/></svg>`
   );
 }
 
 const ICONS = [
-  ["go-favicon.png", plain(64)],
-  ["icon-192.png", plain(192)],
-  ["icon-512.png", plain(512)],
+  ["go-favicon.png", bare(64)],
+  ["icon-192.png", onDisc(192)],
+  ["icon-512.png", onDisc(512)],
   ["icon-maskable.png", fullBleed(512)],
   ["apple-touch-icon.png", fullBleed(180)],
 ];
