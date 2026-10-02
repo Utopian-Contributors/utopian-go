@@ -71,6 +71,13 @@ const HEADER_RESERVE = 350;
 const TICKER_RESERVE = 300;
 
 /**
+ * AD_RESERVE — a results page can carry one ad, rendered in per request by
+ * src/social/ads.ts: about 300 B of markup around up to 224 characters of copy
+ * and a 200-character link. Under 600 B once compressed, at the limits.
+ */
+const AD_RESERVE = 600;
+
+/**
  * What any one first-flight response may weigh.
  *
  * Derived rather than picked. A document goes out on a cold connection and gets
@@ -102,8 +109,8 @@ const PAGES = [
     name: "Search",
     doc: {
       file: "index.html",
-      // Less the strip the server injects per request; see TICKER_RESERVE.
-      gzip: FLIGHT - TICKER_RESERVE,
+      // Less what the server injects per request; see TICKER_RESERVE and AD_RESERVE.
+      gzip: FLIGHT - TICKER_RESERVE - AD_RESERVE,
       raw: 49_152, // soft: inlined CSS is cheap to parse, but not free
     },
     parallel: [{ file: "app.js", gzip: FLIGHT, raw: 24_576 }],
@@ -130,7 +137,7 @@ const PAGES = [
  * that arrives unasked, but only on a phone, and only after load; the rail
  * is its opposite, only on a wide screen, and only after the timeline is drawn.
  */
-const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "pay.js", "chat.js", "rec.js", "rail.js", "avatar.js", "login.js", "hive.js", "install.js"];
+const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "pay.js", "chat.js", "rec.js", "rail.js", "ads.js", "avatar.js", "login.js", "hive.js", "install.js"];
 
 /**
  * The legal documents: readable HTML under client/legal/, published as the
@@ -357,6 +364,17 @@ const railOpts = {
 };
 
 /**
+ * Advertise: the campaign list, the editor and its preview, and checkout.
+ * Fetched by social.js on /social/ads, on a wide screen only. It injects the
+ * search sheet's ad rules (client/ad.css) for the preview, and its own.
+ */
+const adsOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "ads", "main.js")],
+  outfile: path.join(outDir, "ads.js"),
+};
+
+/**
  * The background under a profile photo, fetched by social.js when someone
  * picks one. Its gradient is src/social/backdrop.ts, the same file the server
  * draws a new account's picture with, bundled across rather than copied.
@@ -519,7 +537,8 @@ function inlineWordmark() {
 }
 
 /**
- * A page's stylesheet, plus the header's and the account control's.
+ * A page's stylesheet, plus the header's and the account control's, then any
+ * sheet only that page needs (search: the ad a results page can carry).
  *
  * header.css and acct.css are appended to every page's sheet rather than
  * living in any one of them, because every page wears the same header and a
@@ -530,12 +549,11 @@ function inlineWordmark() {
  * hundred bytes, and both stylesheets are inlined into their document anyway.
  *
  * @param {string} name page stylesheet under client/
+ * @param {string[]} extra
  */
-async function buildCss(name) {
+async function buildCss(name, ...extra) {
   return minifyCss(
-    readFileSync(path.join(clientDir, name), "utf8") +
-      readFileSync(path.join(clientDir, "header.css"), "utf8") +
-      readFileSync(path.join(clientDir, "acct.css"), "utf8"),
+    [name, "header.css", "acct.css", ...extra].map((file) => readFileSync(path.join(clientDir, file), "utf8")).join(""),
   );
 }
 
@@ -734,7 +752,7 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
  * wordmark inlined for the same reason it is on the other two documents: the
  * header should not wait on a second request.
  */
-async function buildSocialHtml(css, socialHash, qrHash, payHash, chatHash, recHash, railHash, avatarHash, installHash) {
+async function buildSocialHtml(css, socialHash, qrHash, payHash, chatHash, recHash, railHash, adsHash, avatarHash, installHash) {
   let raw = readFileSync(path.join(clientDir, "social.html"), "utf8");
   raw = replaceOnce(
     raw,
@@ -783,6 +801,12 @@ async function buildSocialHtml(css, socialHash, qrHash, payHash, chatHash, recHa
     /data-rl="\/rail\.js"/,
     `data-rl="/rail.js?v=${railHash}"`,
     "social rail.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-ad="\/ads\.js"/,
+    `data-ad="/ads.js?v=${adsHash}"`,
+    "social ads.js attribute",
   );
   raw = replaceOnce(
     raw,
@@ -995,7 +1019,7 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
+  const [, , , , , , , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
     esbuild.build(installOpts),
     esbuild.build(swOpts),
     esbuild.build(jsOpts),
@@ -1008,10 +1032,11 @@ async function buildAssets() {
     esbuild.build(walletOpts),
     esbuild.build(recOpts),
     esbuild.build(railOpts),
+    esbuild.build(adsOpts),
     esbuild.build(avatarOpts),
     esbuild.build(payOpts),
     Promise.all([esbuild.build(socialOpts), esbuild.build(chatOpts)]).then(buildSocialCss),
-    buildCss("app.css"),
+    buildCss("app.css", "ad.css"),
     buildCss("wallet.css"),
   ]);
 
@@ -1025,7 +1050,7 @@ async function buildAssets() {
   await Promise.all([
     buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, hash("hive.js"), installHash),
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
-    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("pay.js"), hash("chat.js"), hash("rec.js"), hash("rail.js"), hash("avatar.js"), installHash),
+    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("pay.js"), hash("chat.js"), hash("rec.js"), hash("rail.js"), hash("ads.js"), hash("avatar.js"), installHash),
   ]);
   buildLegal();
   precompress();

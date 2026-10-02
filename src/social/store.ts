@@ -181,3 +181,37 @@ export function removeChatPhotos(id: string, count: number): void {
     if (existsSync(file)) unlinkSync(file);
   }
 }
+
+function adDir(): string {
+  return path.join(socialDir(), "ads");
+}
+
+function bannerPath(id: string, mobile: boolean): string {
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(id)) throw new Error("banner path");
+  const file = path.join(adDir(), mobile ? `${id}.m.jpg` : `${id}.jpg`);
+  if (!file.startsWith(adDir() + path.sep)) throw new Error("banner path");
+  return file;
+}
+
+/** An ad's banner; `mobile` is the phone copy. */
+export function bannerFile(id: string, mobile: boolean): string | null {
+  try {
+    const file = bannerPath(id, mobile);
+    return existsSync(file) ? file : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeBanner(id: string, banner: { full: Buffer; small: Buffer }): void {
+  mkdirSync(adDir(), { recursive: true });
+  writeFileSync(bannerPath(id, false), banner.full, { mode: 0o600 });
+  writeFileSync(bannerPath(id, true), banner.small, { mode: 0o600 });
+}
+
+export function removeBanner(id: string): void {
+  for (const mobile of [false, true]) {
+    const file = bannerPath(id, mobile);
+    if (existsSync(file)) unlinkSync(file);
+  }
+}

@@ -1,0 +1,209 @@
+/*
+ * Advertise: the list of your ads, and the editor, a third for the form and
+ * two thirds for the preview, with the price along the bottom. #m is the
+ * page's scroll box, so the preview and the price stick to its edges.
+ */
+body.ads #m { padding: 0; }
+
+.av {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 2fr;
+  grid-template-rows: 1fr auto;
+  column-gap: 32px;
+  min-height: 100%;
+}
+
+/* —— the form —— */
+.av-f { grid-column: 1; padding: 16px 0 24px; }
+.av-f h2, .av-lh h2 { margin: 0; font: 600 20px/1.3 var(--ff); }
+.av-back { display: inline-block; margin-bottom: 6px; font-size: 13px; }
+.av-fd { margin-top: 18px; }
+.av-lb { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--t); }
+.av-in {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--b);
+  border-radius: 10px;
+  background: var(--in);
+  color: var(--in-ink);
+  font: 15px/1.3 var(--ff);
+}
+.av-in::placeholder { color: var(--in-ph); }
+.av-in:focus { outline: 2px solid var(--a); outline-offset: -1px; }
+textarea.av-in { resize: none; }
+.av-hint { margin: 5px 0 0; font-size: 12px; line-height: 1.45; color: var(--f); }
+
+.av-kws { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.av-kw { display: grid; grid-template-columns: minmax(0, 1fr) 96px 28px; gap: 6px; align-items: center; }
+.av-kw small { grid-column: 1 / -1; margin-top: -3px; font-size: 12px; color: var(--f); }
+.av-kw b { padding: 0 2px; font-weight: 600; overflow-wrap: anywhere; }
+.av-usd { position: relative; }
+.av-usd input { padding-left: 34px; font-variant-numeric: tabular-nums; }
+.av-usd::before {
+  content: attr(data-p);
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  transform: translateY(-50%);
+  color: var(--f);
+  font-size: 14px;
+  pointer-events: none;
+}
+.av-x {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--f);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.av-x:hover { background: var(--hover); color: var(--t); }
+.av-add { display: flex; gap: 6px; margin-top: 8px; }
+.av-2nd {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--b);
+  border-radius: 999px;
+  background: none;
+  color: var(--t);
+  font: 600 13px/1 var(--ff);
+  cursor: pointer;
+}
+.av-2nd:hover { background: var(--hover); }
+.av-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.av-bid { width: 84px; }
+.av-file input { display: none; }
+.swx-seg.av-seg { display: inline-flex; }
+
+/* —— the preview —— */
+.av-p { grid-column: 2; position: sticky; top: 0; align-self: start; padding: 16px 0 24px; }
+.av-pt { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.av-pt h2 { margin: 0; font: 600 15px/1.3 var(--ff); color: var(--f); }
+/* The ad alone, centred on a plain stage; a phone's column wide on Mobile. */
+.av-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 360px;
+  padding: 40px 32px;
+  border-radius: 16px;
+  background: var(--ch);
+}
+.av-stage > * { width: 100%; transition: opacity 0.15s; }
+.av-stage .ad { max-width: 70ch; margin: 0; }
+.av-post { max-width: 60ch; padding: 0 16px; border: 1px solid var(--b); border-radius: 16px; background: var(--bg); }
+.av-stage.av-m > * { max-width: 358px; }
+.av-m .ad h3 { font-size: 18px; }
+.av-stage.off > * { opacity: 0.4; }
+.av-off { margin: 12px 0 0; font-size: 13px; text-align: center; color: var(--f); }
+.av-empty { opacity: 0.5; }
+
+/* How it is doing: what it has been shown and spent, or what a new one buys. */
+.av-sts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.av-st { flex: 1 1 120px; padding: 12px 14px; border: 1px solid var(--b); border-radius: 12px; }
+.av-st b { display: block; font: 700 20px/1.2 var(--ff); font-variant-numeric: tabular-nums; }
+.av-st span { font-size: 12px; color: var(--f); }
+
+/* —— the price —— */
+.av-bar {
+  grid-column: 1 / -1;
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--ln);
+  background: var(--bg);
+}
+.av-sum b { display: block; font: 700 22px/1.2 var(--ff); font-variant-numeric: tabular-nums; }
+.av-sum span { font-size: 13px; color: var(--f); }
+.av-msg { flex: 1; margin: 0; font-size: 13px; text-align: right; color: var(--f); }
+.av-msg.err { color: var(--dn); }
+.av-go {
+  flex: none;
+  height: 44px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--buy);
+  color: var(--buy-ink);
+  font: 600 15px/1 var(--ff);
+  cursor: pointer;
+}
+.av-go:hover:not(:disabled) { filter: brightness(1.08); }
+.av-go:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* —— checkout —— */
+.av-funds { width: max-content; margin: 0 auto 4px; }
+.av-memo {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--f);
+}
+.av-memo code { font: 600 15px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--t); letter-spacing: 0.04em; }
+.av-fine { margin: 10px 0 0; font-size: 12px; line-height: 1.45; text-align: center; color: var(--f); }
+
+/* —— the list —— */
+.av-l { padding: 16px 0 24px; }
+.av-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: var(--ch); }
+.av-tabs a { padding: 7px 16px; border-radius: 999px; color: var(--m); font: 600 14px/1 var(--ff); }
+.av-tabs a:hover { color: var(--t); text-decoration: none; }
+.av-tabs a.on { background: var(--t); color: var(--bg); }
+.av-none { margin: 24px 0; color: var(--f); }
+.av-wait { color: var(--a); font-weight: 600; }
+.av-sub { display: block; color: var(--f); font-size: 12px; }
+.av-when { color: var(--m); white-space: nowrap; }
+.av-acts { display: inline-flex; align-items: center; gap: 12px; }
+.av-link { padding: 0; border: 0; background: none; color: var(--go); font: inherit; font-weight: 600; cursor: pointer; }
+.av-link:hover { text-decoration: underline; }
+.av-hint .av-link { font-size: inherit; }
+.av-t tr.av-more td { padding-top: 0; text-align: left; }
+.av-cos { display: flex; flex-direction: column; gap: 8px; }
+.av-co { padding: 12px 14px; border-radius: 10px; background: var(--ch); font-size: 12px; }
+.av-coh { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+.av-more dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 0; }
+.av-more dt { color: var(--f); }
+.av-more dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.av-lh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.av-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 18px 0 14px;
+  border-radius: 999px;
+  background: var(--buy);
+  color: var(--buy-ink);
+  font: 600 14px/1 var(--ff);
+}
+.av-new:hover { color: var(--buy-ink); text-decoration: none; filter: brightness(1.08); }
+.av-new svg { width: 18px; height: 18px; }
+.av-t { width: 100%; border-collapse: collapse; font-size: 14px; }
+.av-t th { padding: 10px 12px; border-bottom: 1px solid var(--b); color: var(--f); font-size: 12px; font-weight: 600; text-align: left; }
+.av-t td { padding: 12px; border-bottom: 1px solid var(--ln); vertical-align: middle; }
+.av-t th:first-child, .av-t td:first-child { padding-left: 0; }
+.av-t th:last-child, .av-t td:last-child { padding-right: 0; text-align: right; }
+.av-t .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.av-ad { display: flex; align-items: center; gap: 12px; min-width: 0; color: var(--t); }
+.av-ad:hover { color: var(--t); text-decoration: none; }
+.av-ad:hover b { text-decoration: underline; }
+.av-th { flex: none; width: 96px; height: 32px; border-radius: 6px; background: var(--ch); object-fit: cover; }
+.av-ad span { min-width: 0; }
+.av-ad b { display: block; font-weight: 600; }
+.av-ad small { display: block; max-width: 44ch; overflow: hidden; color: var(--f); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.av-on { color: var(--go); font-weight: 600; }
+.av-done { color: var(--f); }

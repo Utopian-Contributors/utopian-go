@@ -60,6 +60,28 @@ export const CHAT_PHOTO_BYTES = PHOTO_BYTES + 28;
 export const MAX_CHAT_KEEP = 1000;
 export const CHAT_PAGE = 30;
 
+/**
+ * An ad on search. Money is whole cents. Each keyword is bought on its own,
+ * in whole dollars from $1, and an impression costs the ad's bid, from 1¢.
+ */
+export const AD_CTA = 24;
+export const AD_TITLE = 60;
+export const AD_BODY = 140;
+export const AD_URL = 200;
+export const AD_KEYWORDS = 20;
+export const AD_KEYWORD = 40;
+export const AD_MIN_BUDGET = 100;
+export const AD_MAX_BUDGET = 1_000_000;
+export const AD_MIN_BID = 1;
+export const AD_MAX_BID = 100;
+export const AD_DEVICES = ["all", "mobile", "desktop"] as const;
+export type AdDevices = (typeof AD_DEVICES)[number];
+
+/** A banner is three times as wide as tall: a desktop copy, and a phone copy under a post photo's ceilings. */
+export const BANNER_W = 1200;
+export const BANNER_H = 400;
+export const BANNER_SMALL_W = 640;
+
 /** Usernames are permanent, so the alphabet is closed at creation. */
 export const NAME = /^[a-z0-9_]{3,16}$/;
 
@@ -112,6 +134,36 @@ export function postText(input: unknown): { ok: true; text: string } | { ok: fal
     .trim();
   if (text.length > MAX_POST) return { ok: false, error: `Keep it to ${MAX_POST} characters.` };
   return { ok: true, text };
+}
+
+/** One line of an ad. Everyone who searches sees it, so bidirectional overrides go too. */
+export function adText(input: unknown, max: number): { ok: true; text: string } | { ok: false; error: string } {
+  return shortText(typeof input === "string" ? input.replace(/[‪-‮⁦-⁩]/g, "") : input, max);
+}
+
+/** Lower case, letters and digits, one space between: a keyword as it is kept, and a query as it is matched. */
+export function words(input: string): string[] {
+  return input.normalize("NFKC").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+export function adKeyword(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const keyword = words(input).join(" ");
+  return keyword && keyword.length <= AD_KEYWORD ? keyword : null;
+}
+
+/** Where an ad goes: https, a named host, no credentials. It becomes an href, so nothing else gets through. */
+export function adUrl(input: unknown): string | null {
+  if (typeof input !== "string" || input.length > AD_URL) return null;
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
+  if (!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(url.hostname)) return null;
+  return url.href.length <= AD_URL ? url.href : null;
 }
 
 /** Milliseconds until this account may post again. Zero means now. */

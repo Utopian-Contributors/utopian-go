@@ -1,8 +1,10 @@
 import { createPublicKey, randomBytes } from "crypto";
 import express, { NextFunction, Request, Response, Router } from "express";
-import { SITE_URL, TERMS_VERSION } from "../config";
+import { ADS_PAY_TO, SITE_URL, TERMS_VERSION } from "../config";
 import { rateLimit } from "../lib/rateLimit";
 import { lookupMints, trendingTokens } from "../lib/tokens/store";
+import { FRESH_MS, ORDER_OPEN_MS, adsPayable, orderAmounts, orderCodes, payUrl } from "./adPay";
+import { matchesAd, reloadAds, socialAdFor } from "./ads";
 import { audioKind } from "./audio";
 import {
   checkPassword,
@@ -17,12 +19,17 @@ import {
 } from "./auth";
 import { drawAvatar } from "./avatar";
 import {
+  type AdCreative,
+  type AdOrder,
+  type AdPlan,
   type FeedFilter,
   type Memo,
   type User,
   addChatKey,
   addComment,
   addFriend,
+  adTopic,
+  adsBy,
   bumpAvatar,
   bumpPasskeyCount,
   busiestPosters,
@@ -37,16 +44,23 @@ import {
   findPeople,
   friendList,
   friendNames,
+  getAd,
   getUser,
   insertUser,
+  openOrders,
   markSeen,
   openPost,
+  orderOf,
   postsBy,
+  receiptCount,
+  receiptsOf,
   recoverAccount,
   removeFriend,
   repost,
   reseal,
+  saveAd,
   searchUsers,
+  setAdTopic,
   sendMessage,
   setKeyBox,
   setPasskey,
@@ -61,7 +75,19 @@ import { currentUser, guardJson, loadAccount, requireAuth, requireUser } from ".
 import { jpegSize } from "./jpeg";
 import { generateMnemonic, normalizeMnemonic, solanaAddress } from "./keys";
 import {
+  AD_CTA,
+  AD_DEVICES,
+  AD_KEYWORD,
+  AD_KEYWORDS,
+  AD_MAX_BID,
+  AD_MAX_BUDGET,
+  AD_MIN_BID,
+  AD_MIN_BUDGET,
+  AD_TITLE,
+  AD_BODY,
   AUDIO_BYTES,
+  BANNER_SMALL_W,
+  BANNER_W,
   CHAT_CT_BYTES,
   CHAT_PHOTO_BYTES,
   MAX_AUDIO_MS,
@@ -78,6 +104,9 @@ import {
   TINY_BYTES,
   TINY_W,
   WAVE_BARS,
+  adKeyword,
+  adText,
+  adUrl,
   postText,
   postWait,
   shortText,
@@ -86,7 +115,7 @@ import {
 } from "./limits";
 import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
-import { avatarFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
+import { avatarFile, bannerFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
 
@@ -543,15 +572,25 @@ function feedFilter(req: Request): FeedFilter {
   return { friends: q.friends === "1", saved: q.saved === "1", images: q.images !== "0", audio: q.audio !== "0" };
 }
 
+/**
+ * The first page of a timeline carries an ad picked from what its reader last
+ * posted about (src/social/ads.ts), charged as it is put in. Saved has none.
+ */
 socialRouter.get(
   "/timeline",
   readLimit,
   wrap(async (req, res) => {
     const me = currentUser(res);
     const cursor = timelineCursor(req);
-    const { posts, next } = await timeline(me?.name ?? null, cursor, feedFilter(req));
-    const notes = cursor || !me ? [] : await unseenNotes(me.name);
-    res.json({ me: await publicMe(me), posts, notes, next });
+    const filter = feedFilter(req);
+    const first = !cursor && !!me;
+    const [{ posts, next }, notes, topic] = await Promise.all([
+      timeline(me?.name ?? null, cursor, filter),
+      first ? unseenNotes(me.name) : [],
+      first && !filter.saved ? adTopic(me.name) : "",
+    ]);
+    const ad = me && topic ? socialAdFor(req, topic, me.name) : null;
+    res.json({ me: await publicMe(me), posts, notes, next, ad });
   }),
 );
 
@@ -678,6 +717,8 @@ socialRouter.post(
     }
     const created = await createPost(me.name, text.text, Date.now(), photos, memo);
     if ("wait" in created) throw new SocialError(429, waitText(created.wait), { wait: created.wait });
+    // A post an ad matches is what this person's timeline ads are picked from next.
+    if (matchesAd(text.text)) await setAdTopic(me.name, text.text, created.at);
     res.json({ post: created });
   }),
 );
@@ -1552,6 +1593,238 @@ export function sendPostAudio(req: Request, res: Response): void {
 export function sendAvatar(req: Request, res: Response): void {
   const name = username(req.params.name);
   const file = name ? avatarFile(name, req.path.startsWith("/social/t/")) : null;
+  if (!file) {
+    res.status(404).type("text").send("Not found.");
+    return;
+  }
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.type("jpeg").sendFile(file);
+}
+
+const adRaw = express.raw({ type: "application/octet-stream", limit: 2 + 8192 + 8 + PHOTO_BYTES + PHOTO_SMALL_BYTES });
+
+/**
+ * An ad: two bytes of length and the ad as JSON, then optionally a new
+ * banner as a post photo is sent, a four-byte length for the phone copy and
+ * for the desktop copy, then the two JPEGs.
+ */
+function readPackedAd(buf: Buffer): { json: Record<string, unknown>; banner: { full: Buffer; small: Buffer } | null } {
+  if (buf.length < 2) throw new SocialError(400, "Malformed request.");
+  const len = buf.readUInt16BE(0);
+  if (len > 8192 || 2 + len > buf.length) throw new SocialError(400, "Malformed request.");
+  let json: unknown;
+  try {
+    json = JSON.parse(buf.toString("utf8", 2, 2 + len));
+  } catch {
+    throw new SocialError(400, "Malformed request.");
+  }
+  if (!json || typeof json !== "object" || Array.isArray(json)) throw new SocialError(400, "Malformed request.");
+  let at = 2 + len;
+  if (at === buf.length) return { json: json as Record<string, unknown>, banner: null };
+  if (at + 8 > buf.length) throw new SocialError(400, "Malformed request.");
+  const smallLen = buf.readUInt32BE(at);
+  const fullLen = buf.readUInt32BE(at + 4);
+  at += 8;
+  if (!smallLen || !fullLen || at + smallLen + fullLen !== buf.length) throw new SocialError(400, "Malformed request.");
+  return {
+    json: json as Record<string, unknown>,
+    banner: { small: buf.subarray(at, at + smallLen), full: buf.subarray(at + smallLen) },
+  };
+}
+
+function checkBanner(bytes: Buffer, max: number, width: number): void {
+  const size = jpegSize(bytes);
+  if (!size) throw new SocialError(400, "The banner must be a JPEG.");
+  if (bytes.length > max || size.w > width || Math.abs(size.w / size.h - 3) > 0.05) {
+    throw new SocialError(400, "The banner must be 3:1 and 48KB or smaller.");
+  }
+}
+
+/** Every field of an ad through its validator; anything else is refused. */
+function readAd(json: Record<string, unknown>): {
+  creative: AdCreative;
+  keywords: string[];
+  plan: AdPlan;
+  banner: boolean;
+} {
+  const line = (name: string, label: string, max: number) => {
+    const text = adText(json[name], max);
+    if (!text.ok) throw new SocialError(400, `${label}: ${text.error}`);
+    return text.text;
+  };
+  const cta = line("cta", "Call to action", AD_CTA);
+  const title = line("title", "Title", AD_TITLE);
+  const body = line("body", "Description", AD_BODY);
+  const url = adUrl(json.url);
+  if (!url) throw new SocialError(400, "Link: use a full https:// address.");
+  const devices = AD_DEVICES.find((d) => d === json.devices);
+  if (!devices) throw new SocialError(400, "Pick where the ad runs.");
+  const bid = json.bid;
+  if (typeof bid !== "number" || !Number.isInteger(bid) || bid < AD_MIN_BID || bid > AD_MAX_BID) {
+    throw new SocialError(400, `Bid ${AD_MIN_BID}¢ to ${AD_MAX_BID}¢ an impression.`);
+  }
+  const list = Array.isArray(json.keywords) ? json.keywords : [];
+  if (!list.length) throw new SocialError(400, "Add a keyword.");
+  if (list.length > AD_KEYWORDS) throw new SocialError(400, `Up to ${AD_KEYWORDS} keywords.`);
+  const keywords: string[] = [];
+  const plan: AdPlan = [];
+  for (const item of list) {
+    const keyword = adKeyword(item?.keyword);
+    if (!keyword) throw new SocialError(400, `Keywords are letters and numbers, up to ${AD_KEYWORD} characters.`);
+    if (keywords.includes(keyword)) throw new SocialError(400, `“${keyword}” is in the list twice.`);
+    keywords.push(keyword);
+    const add = item?.add;
+    if (typeof add !== "number" || !Number.isInteger(add) || add < 0 || add % 100 || add > AD_MAX_BUDGET) {
+      throw new SocialError(400, "Budgets are whole dollars.");
+    }
+    if (add) plan.push({ keyword, cents: add });
+  }
+  return { creative: { cta, title, body, url, devices, bid }, keywords, plan, banner: json.banner === true };
+}
+
+/**
+ * An order as checkout and its receipt show it: what it asks for, the Solana
+ * Pay requests that ask for it while it is open, and the transfer that paid it.
+ */
+function orderView(order: AdOrder) {
+  const open = order.paidAt == null && Date.now() - order.at < ORDER_OPEN_MS;
+  return {
+    id: order.id,
+    ad: order.ad,
+    title: order.title,
+    memo: order.memo,
+    reference: order.reference,
+    to: order.payTo,
+    cents: order.cents,
+    usdc: order.usdc,
+    lamports: order.lamports,
+    at: order.at,
+    status: order.paidAt != null ? "paid" : open ? "open" : "expired",
+    urls: open ? { usdc: payUrl(order, "usdc"), sol: order.lamports ? payUrl(order, "sol") : null } : null,
+    paidAt: order.paidAt,
+    signature: order.signature,
+    fund: order.fund,
+    received: order.received,
+    payer: order.payer,
+    matched: order.matched,
+  };
+}
+
+/** Your paid ads, newest first, how many checkouts you have made, and whether checkout can take money. */
+socialRouter.get(
+  "/ads",
+  requireAuth,
+  readLimit,
+  wrap(async (_req, res) => {
+    const me = requireUser(res);
+    const [ads, receipts] = await Promise.all([adsBy(me.name), receiptCount(me.name)]);
+    res.json({ me: await publicMe(me), ads, receipts, payable: adsPayable() });
+  }),
+);
+
+/** Every checkout of your ads, paid or not, newest first. */
+socialRouter.get(
+  "/ads/receipts",
+  requireAuth,
+  readLimit,
+  wrap(async (_req, res) => {
+    const me = requireUser(res);
+    res.json({ me: await publicMe(me), receipts: (await receiptsOf(me.name)).map(orderView) });
+  }),
+);
+
+/** The checkout dialog asks until the background check has seen the transfer. */
+socialRouter.get(
+  "/ads/order/:id",
+  requireAuth,
+  readLimit,
+  wrap(async (req, res) => {
+    const me = requireUser(res);
+    const order = PAGE_ID.test(req.params.id) ? await orderOf(req.params.id, me.name) : null;
+    if (!order) throw new SocialError(404, "No such order.");
+    res.json({ ad: order.ad, paid: order.paidAt != null, open: order.paidAt == null && Date.now() - order.at < ORDER_OPEN_MS });
+  }),
+);
+
+socialRouter.get(
+  "/ads/:id",
+  requireAuth,
+  readLimit,
+  wrap(async (req, res) => {
+    const me = requireUser(res);
+    const ad = PAGE_ID.test(req.params.id) ? await getAd(req.params.id) : null;
+    if (!ad || ad.owner !== me.name || ad.status !== "active") throw new SocialError(404, "No such ad.");
+    res.json({ me: await publicMe(me), ad, payable: adsPayable() });
+  }),
+);
+
+function readAdBody(req: Request, res: Response, next: NextFunction) {
+  adRaw(req, res, (err?: unknown) => {
+    if (err) {
+      res.status(413).json({ error: "The banner must be 48KB or smaller." });
+      return;
+    }
+    next();
+  });
+}
+
+/**
+ * Save an ad, new (`id` null) or one of yours. What it adds to keywords'
+ * budgets comes back as an order to pay; words, banner, bid and devices take
+ * effect at once on a running ad.
+ */
+async function saveFrom(req: Request, res: Response, id: string | null): Promise<void> {
+  assertSameOrigin(req);
+  const me = requireUser(res);
+  if (!Buffer.isBuffer(req.body)) throw new SocialError(400, "Malformed request.");
+  const packed = readPackedAd(req.body);
+  const input = readAd(packed.json);
+  if (packed.banner) {
+    checkBanner(packed.banner.small, PHOTO_SMALL_BYTES, BANNER_SMALL_W);
+    checkBanner(packed.banner.full, PHOTO_BYTES, BANNER_W);
+  }
+  if (input.plan.length && !adsPayable()) throw new SocialError(503, "Ads can’t be paid for right now.");
+  const cents = input.plan.reduce((sum, item) => sum + item.cents, 0);
+  const pay = cents ? { to: ADS_PAY_TO, ...orderAmounts(cents, await openOrders(Date.now() - ORDER_OPEN_MS)) } : null;
+  const { ad, order } = await saveAd({
+    id,
+    owner: me.name,
+    creative: input.creative,
+    keywords: input.keywords,
+    plan: input.plan,
+    minimum: AD_MIN_BUDGET,
+    banner: packed.banner ?? (input.banner && id ? "keep" : null),
+    codes: orderCodes(),
+    pay,
+    reuse: Date.now() - FRESH_MS,
+    at: Date.now(),
+  });
+  if (ad.status === "active") await reloadAds();
+  res.json({ ad, order: order && orderView(order) });
+}
+
+socialRouter.post(
+  "/ads",
+  requireAuth,
+  writeLimit,
+  readAdBody,
+  wrap((req, res) => saveFrom(req, res, null)),
+);
+
+socialRouter.post(
+  "/ads/:id",
+  requireAuth,
+  writeLimit,
+  readAdBody,
+  wrap(async (req, res) => {
+    if (!PAGE_ID.test(req.params.id)) throw new SocialError(404, "No such ad.");
+    await saveFrom(req, res, req.params.id);
+  }),
+);
+
+/** An ad's banner; ?m=1 is the phone copy. Replaced under a new ?v=, so it caches like a photo. */
+export function sendBanner(req: Request, res: Response): void {
+  const file = bannerFile(req.params.id, req.query.m === "1");
   if (!file) {
     res.status(404).type("text").send("Not found.");
     return;

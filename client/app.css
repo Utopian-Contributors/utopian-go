@@ -679,6 +679,34 @@ body.home #ft .ft-lang {
   margin-left: 0;
 }
 
+/* Advertise, above the home footer, drawn like the account pills. Wide screens
+   only: the page it opens is one. */
+.adv {
+  display: none;
+}
+
+@media (min-width: 901px) {
+  body.home .adv {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: max-content;
+    height: 36px;
+    margin: 0 auto;
+    padding: 0 16px 0 13px;
+    border: 1px solid var(--b);
+    border-radius: 999px;
+    color: var(--t);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  body.home .adv:hover {
+    background: var(--hover);
+    text-decoration: none;
+  }
+}
+
 /*
  * Places: opens hive.js. Top right, in the corner the account control takes on
  * results, and fixed, so appearing after boot moves nothing. It lives in

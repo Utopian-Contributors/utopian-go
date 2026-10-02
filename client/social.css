@@ -603,6 +603,17 @@ button:disabled { opacity: 0.55; cursor: default; }
 .hit:hover:not(:disabled) { background: var(--ch); }
 .post + .post { border-top: 1px solid var(--b); }
 
+/* A sponsored post: drawn as a post, and the whole card is its link. */
+a.sad,
+a.sad:hover { display: block; color: var(--t); text-decoration: none; }
+.sad .via { margin-left: 6px; font-size: 13px; }
+.sad-b img { display: block; width: 100%; height: auto; margin-top: 8px; border-radius: 16px; background: var(--ch); }
+.sad-l { display: flex; align-items: baseline; gap: 6px; margin-top: 10px; color: var(--f); font-size: 14px; }
+.sad-l svg { align-self: center; }
+.sad-l svg { flex: none; color: var(--go); }
+.sad-l b { color: var(--go); font-weight: 600; }
+a.sad:hover .sad-l b { text-decoration: underline; }
+
 /* The spacing between actions is their own padding. */
 .acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 8px 0 0 -12px; }
 
@@ -1433,7 +1444,8 @@ a.crow.on {
     text-align: center;
   }
 
-  body.soc #tb .tab[hidden] { display: none; }
+  body.soc #tb .tab[hidden],
+  body.soc #tb .tab-ad { display: none; }
 
   body.soc #tb .tab > span {
     max-width: 100%;

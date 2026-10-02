@@ -43,6 +43,8 @@ function waitLabel(ms) {
 }
 
 function route() {
+  const ad = location.pathname.match(/^\/social\/ads(?:\/(new|[A-Za-z0-9_-]{1,32}))?\/?$/);
+  if (ad) return { page: "ads", id: ad[1] || "" };
   const m = location.pathname
     .replace(/\/+$/, "")
     .match(
@@ -96,6 +98,7 @@ function markNav() {
     friends: "Friends",
     post: "Post",
     chat: "Messenger",
+    ads: "Advertise",
   };
   document.title = `${titles[page] || name || "Social"} | Social`;
 }
@@ -347,6 +350,41 @@ function renderSide(person) {
           }),
   ];
   side.replaceChildren(...bits.filter(Boolean));
+}
+
+/**
+ * A sponsored post, as the server picked it for this timeline: the title as
+ * its caption, the banner, and a link row with the call to action. The whole
+ * card is the ad's link, which the server only stores as https.
+ */
+function adPost(ad) {
+  const link = el("span", { class: "sad-l" });
+  link.innerHTML = icon("n-ln", 16);
+  link.append(el("span", {}, el("b", { text: ad.cta }), ` · ${ad.host}`));
+  return el(
+    "a",
+    { class: "post sad", href: /^https:\/\//.test(ad.url) ? ad.url : "#", target: "_blank", rel: "noopener sponsored" },
+    el(
+      "div",
+      { class: "post-row" },
+      face(ad.owner, ad.ownerRev),
+      el(
+        "div",
+        { class: "post-main" },
+        el("div", { class: "who-row" }, el("span", { class: "who", text: ad.owner }), el("span", { class: "via", text: "Sponsored" })),
+        el("p", { text: ad.title }),
+        ad.img
+          ? el(
+              "picture",
+              { class: "sad-b" },
+              el("source", { media: "(max-width: 900px)", srcset: ad.imgM }),
+              el("img", { src: ad.img, alt: "", width: "1200", height: "400", decoding: "async" }),
+            )
+          : null,
+        link,
+      ),
+    ),
+  );
 }
 
 /** The post open on /social/p/:id. Null on every other page. */
@@ -984,8 +1022,11 @@ function paintFeed(feed, data, gen, error) {
   if (gen !== feedGen) return;
   feedNext = data.next || null;
   feed.removeAttribute("aria-busy");
+  const cards = data.posts.map((post) => renderPost(post));
+  // The first page's ad, after the second post.
+  if (data.ad) cards.splice(2, 0, adPost(data.ad));
   feed.replaceChildren(
-    ...data.posts.map((post) => renderPost(post)),
+    ...cards,
     ...[
       !data.posts.length && el("p", error ? { class: "err", text: error } : { class: "muted", text: "No posts here." }),
       feedNext && el("div", { class: "more" }),
@@ -1461,6 +1502,24 @@ async function renderEdit() {
   );
 }
 
+/**
+ * Advertise is its own bundle, for a wide screen: a phone has no tab for it
+ * and loads none of it.
+ */
+async function renderAds(id) {
+  useSide(false);
+  if (!me) await pull("/api/social/me");
+  if (!me) {
+    main.replaceChildren(
+      el("p", { class: "muted", text: "Log in to advertise." }),
+      el("button", { type: "button", class: "go-pill", text: "Log in", onclick: () => openAuth("login") }),
+    );
+    return;
+  }
+  if (!WIDE.matches) return main.replaceChildren(el("p", { class: "muted", text: "Advertise from a computer." }));
+  (await load("ad", "__ads")).mount({ main, id, pull, adPost, me: () => me });
+}
+
 /** Stops the open Messenger, which polls while it is on screen. */
 let leaveChat = null;
 
@@ -1495,6 +1554,7 @@ async function show() {
   if (here.page !== "post") detail = null;
   document.body.classList.toggle("profile", here.page === "profile");
   document.body.classList.toggle("tl", here.page === "timeline" || here.page === "post");
+  document.body.classList.toggle("ads", here.page === "ads");
   main.replaceChildren(el("p", { class: "muted", text: "…" }));
   try {
     if (here.page === "timeline")
@@ -1506,6 +1566,7 @@ async function show() {
       renderProfile(await pull(`/api/social/u/${here.name}`));
     else if (here.page === "post") await renderPostPage(here.id);
     else if (here.page === "chat") await renderChat();
+    else if (here.page === "ads") await renderAds(here.id);
     else {
       renderSide(me);
       main.replaceChildren(el("p", { text: "Not found." }));
@@ -1575,15 +1636,15 @@ addEventListener(
 $("in").addEventListener("click", () => openAuth("login"));
 // Until the server answers, the remembered name points My Profile at the right page.
 if (readName()) $("me").href = `/social/u/${readName()}`;
-// Signed out, My Profile is still there; it asks you to log in. So do Friends
-// and Messenger, which have nothing to show anyone signed out, and go on to
-// their page once you have.
+// Signed out, My Profile is still there; it asks you to log in. So do Friends,
+// Messenger and Advertise, which have nothing to show anyone signed out, and
+// go on to their page once you have.
 $("me").addEventListener("click", (e) => {
   if (me || readName()) return;
   e.preventDefault();
   openAuth("login");
 });
-for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data-nav="chat"]')) {
+for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data-nav="chat"], #tb [data-nav="ads"]')) {
   tab.addEventListener("click", (e) => {
     if (me || readName()) return;
     e.preventDefault();

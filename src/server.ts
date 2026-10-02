@@ -17,8 +17,10 @@ import { iconFile } from "./lib/tokens/icons";
 import { startTokenIndex } from "./lib/tokens/store";
 import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
 import { apiRouter } from "./routes/api";
+import { startAdPayments } from "./social/adPay";
+import { adFor, flushAds, startAds } from "./social/ads";
 import { ensureSchema } from "./social/db";
-import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./social/routes";
+import { sendAvatar, sendBanner, sendPostAudio, sendPostPhoto, socialRouter } from "./social/routes";
 
 const app = express();
 const publicDir = path.join(__dirname, "..", "public");
@@ -46,6 +48,9 @@ app.disable("x-powered-by");
 
 /** Slot in the built shell that the price strip is injected into. */
 const TICKER_SLOT = '<div id="hm-tk"></div>';
+
+/** Slot a results page's ad is rendered into (src/social/ads.ts). */
+const AD_SLOT = '<div id="ad"></div>';
 
 /**
  * The body class the shell ships with, and what a query swaps it for.
@@ -451,12 +456,13 @@ app.get("/social/a/:name", sendAvatar);
 app.get("/social/t/:name", sendAvatar);
 app.get("/social/i/:id/:n", sendPostPhoto);
 app.get("/social/v/:id", sendPostAudio);
+app.get("/social/b/:id", sendBanner);
 
 app.use((req, _res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD") return next();
   const p = req.path;
   if (p !== "/social" && !p.startsWith("/social/")) return next();
-  if (/^\/social\/[ativ]\//.test(p)) return next();
+  if (/^\/social\/[abtiv]\//.test(p)) return next();
   req.url = "/social.html" + req.originalUrl.slice(p.length);
   next();
 });
@@ -592,6 +598,9 @@ function sendIndex(
   );
   if (variant === "res") {
     html = replaceSlot(html, INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);
+    // From memory, never Postgres; the impression is charged as it is rendered.
+    const ad = adFor(req, q);
+    if (ad) html = replaceSlot(html, AD_SLOT, ad);
   }
 
   const enc = negotiate(req);
@@ -679,8 +688,14 @@ const server = app.listen(PORT, () => {
 });
 
 // Social's tables, made ready ahead of the first request. Search never waits
-// on this; if the database is down, only /api/social answers 503.
-ensureSchema().catch((err) => console.error("[social] database:", err));
+// on this; if the database is down, only /api/social answers 503. Ads load
+// once the tables are there, and keep retrying if they are not.
+ensureSchema()
+  .catch((err) => console.error("[social] database:", err))
+  .finally(() => {
+    startAds();
+    startAdPayments();
+  });
 
 /**
  * Idle-connection timeouts, ordered against the proxy in front of us.
@@ -722,11 +737,13 @@ function shutdown(signal: string) {
   }, 10_000);
   force.unref();
 
-  server.close((err) => {
+  server.close(async (err) => {
     if (err) {
       console.error("[shutdown] close failed:", err);
       process.exit(1);
     }
+    // Impressions charged since the last batch.
+    await flushAds();
     console.log("[shutdown] clean");
     process.exit(0);
   });

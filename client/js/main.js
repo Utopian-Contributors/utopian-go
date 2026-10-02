@@ -150,8 +150,12 @@ window.addEventListener("popstate", () => {
 window.addEventListener("resize", ui.syncSideMax);
 window.addEventListener("scroll", ui.syncSideMax, { passive: true });
 
+/** The query the server rendered this page's ad for. Any other search takes it away. */
+let adQuery = "";
+
 {
   const { q, t, lang } = readUrlState();
+  adQuery = q;
   // Before the boot search, because it settles the language that search asks
   // for. Nothing in it waits on the network — a localStorage read and a value
   // assigned to a <select> the shell has already shipped.
@@ -232,6 +236,7 @@ async function runSearch(query, pushState, opts = {}) {
 
   if (!opts.keepTab) state.tab = "web";
   if (pushState) writeUrl(query, state.tab, "push");
+  if (query !== adQuery) document.getElementById("ad")?.remove();
 
   // Set query first so tabs can render immediately (disabled until results)
   state.lastQuery = query;

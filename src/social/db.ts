@@ -3,12 +3,14 @@ import { randomBytes } from "crypto";
 import { readFileSync } from "fs";
 import path from "path";
 import { Pool, type PoolClient, types } from "pg";
-import { CHAT_PAGE, MAX_CHAT_KEEP, MAX_COMMENTS, SocialError, postWait } from "./limits";
+import { type AdDevices, CHAT_PAGE, MAX_CHAT_KEEP, MAX_COMMENTS, SocialError, postWait } from "./limits";
 import type { AudioKind } from "./audio";
 import {
+  removeBanner,
   removeChatPhotos,
   removePostAudio,
   removePostPhotos,
+  writeBanner,
   writeChatPhotos,
   writePostAudio,
   writePostPhotos,
@@ -196,6 +198,77 @@ CREATE TABLE IF NOT EXISTS chats (
   PRIMARY KEY (owner, peer)
 );
 CREATE INDEX IF NOT EXISTS chats_owner_at ON chats (owner, at DESC, peer DESC);
+-- Advertise. An ad is 'pending' until its first payment, then 'active' for good:
+-- paid budget is never withdrawn. banner is the banner's revision, 0 without one.
+-- memo is the campaign's code, which every payment for it carries.
+CREATE TABLE IF NOT EXISTS ads (
+  id text PRIMARY KEY,
+  owner text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+  memo text NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  cta text NOT NULL,
+  title text NOT NULL,
+  body text NOT NULL,
+  url text NOT NULL,
+  devices text NOT NULL DEFAULT 'all',
+  bid integer NOT NULL DEFAULT 1,
+  banner integer NOT NULL DEFAULT 0,
+  created bigint NOT NULL,
+  at bigint NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ads_owner ON ads (owner, created DESC);
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS memo text;
+UPDATE ads SET memo = 'UG-' || upper(substr(md5(id), 1, 8)) WHERE memo IS NULL;
+ALTER TABLE ads ALTER COLUMN memo SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ads_memo ON ads (memo);
+-- Cents. budget is what was paid for the keyword, spent what its impressions used.
+-- shown counts every impression, social the ones in a timeline rather than on search.
+CREATE TABLE IF NOT EXISTS ad_keywords (
+  ad text NOT NULL REFERENCES ads(id) ON DELETE CASCADE,
+  keyword text NOT NULL,
+  budget integer NOT NULL DEFAULT 0,
+  spent integer NOT NULL DEFAULT 0,
+  shown integer NOT NULL DEFAULT 0,
+  social integer NOT NULL DEFAULT 0,
+  PRIMARY KEY (ad, keyword)
+);
+ALTER TABLE ad_keywords ADD COLUMN IF NOT EXISTS social integer NOT NULL DEFAULT 0;
+-- A person's latest post that an ad matched: what their timeline's ad is picked from.
+CREATE TABLE IF NOT EXISTS ad_topics (
+  name text PRIMARY KEY REFERENCES users(name) ON DELETE CASCADE,
+  text text NOT NULL,
+  at bigint NOT NULL
+);
+-- A checkout, kept whether or not it is paid, as its receipt: the Solana Pay request
+-- (pay_to, reference, the ad's memo, and the amounts: usdc in millionths, lamports when
+-- SOL had a price), the cents each keyword gains once it is paid (plan), and the
+-- transfer that paid it: signature, fund, received, payer, and how it was matched.
+CREATE TABLE IF NOT EXISTS ad_orders (
+  id text PRIMARY KEY,
+  ad text NOT NULL REFERENCES ads(id) ON DELETE CASCADE,
+  reference text NOT NULL UNIQUE,
+  pay_to text NOT NULL DEFAULT '',
+  cents integer NOT NULL,
+  usdc bigint,
+  lamports bigint,
+  plan jsonb NOT NULL,
+  at bigint NOT NULL,
+  paid_at bigint,
+  signature text UNIQUE,
+  fund text,
+  received bigint,
+  payer text,
+  matched text
+);
+ALTER TABLE ad_orders DROP COLUMN IF EXISTS memo;
+ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS lamports bigint;
+ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS pay_to text NOT NULL DEFAULT '';
+ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS usdc bigint;
+ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS fund text;
+ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS received bigint;
+ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS payer text;
+ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS matched text;
+CREATE INDEX IF NOT EXISTS ad_orders_open ON ad_orders (at) WHERE paid_at IS NULL;
 `;
 
 let ready: Promise<void> | null = null;
@@ -1214,4 +1287,345 @@ export async function chatPhotoCount(id: string, viewer: string): Promise<number
     [id, viewer],
   );
   return row?.photos ?? 0;
+}
+
+export interface AdKeyword {
+  keyword: string;
+  /** Cents paid for this keyword, and cents its impressions have used. */
+  budget: number;
+  spent: number;
+  /** Impressions, and how many of them were in a timeline. */
+  shown: number;
+  social: number;
+}
+
+export interface Ad {
+  id: string;
+  owner: string;
+  /** The campaign's code: every payment for it carries this memo. */
+  memo: string;
+  /** The owner's picture, for the ad as a post. */
+  ownerRev: number;
+  status: "pending" | "active";
+  cta: string;
+  title: string;
+  body: string;
+  url: string;
+  devices: AdDevices;
+  /** Cents per impression. */
+  bid: number;
+  /** The banner's revision; 0 without one. */
+  banner: number;
+  created: number;
+  at: number;
+  keywords: AdKeyword[];
+}
+
+/** What an ad says, where it goes, and where and at what bid it runs. */
+export type AdCreative = Pick<Ad, "cta" | "title" | "body" | "url" | "devices" | "bid">;
+
+/** The cents each keyword gains once an order is paid. */
+export type AdPlan = { keyword: string; cents: number }[];
+
+export interface AdOrder {
+  id: string;
+  ad: string;
+  /** The ad's title, for a receipt. */
+  title: string;
+  reference: string;
+  /** The ad's memo. */
+  memo: string;
+  payTo: string;
+  /** What the keywords gain, and what to pay for it: USDC in millionths, SOL at checkout's price or null. */
+  cents: number;
+  usdc: number;
+  lamports: number | null;
+  at: number;
+  paidAt: number | null;
+  /** The transfer that paid it, and how it was told apart from every other. */
+  signature: string | null;
+  fund: "sol" | "usdc" | null;
+  received: number | null;
+  payer: string | null;
+  matched: "memo" | "reference" | "amount" | null;
+}
+
+/** How a transfer paid an order. */
+export type Payment = Pick<AdOrder, "signature" | "fund" | "received" | "payer" | "matched">;
+
+type AdRow = Omit<Ad, "ownerRev"> & { owner_rev: number };
+
+const AD_SELECT = `
+  SELECT a.id, a.owner, a.memo, u.avatar_rev AS owner_rev, a.status, a.cta, a.title, a.body, a.url, a.devices, a.bid,
+         a.banner, a.created, a.at,
+         COALESCE((SELECT json_agg(json_build_object('keyword', k.keyword, 'budget', k.budget,
+                     'spent', k.spent, 'shown', k.shown, 'social', k.social) ORDER BY k.keyword)
+                   FROM ad_keywords k WHERE k.ad = a.id), '[]') AS keywords
+  FROM ads a JOIN users u ON u.name = a.owner`;
+
+function adFrom({ owner_rev, ...row }: AdRow): Ad {
+  return { ...row, ownerRev: owner_rev, created: Number(row.created), at: Number(row.at) };
+}
+
+type OrderRow = {
+  id: string;
+  ad: string;
+  title: string;
+  reference: string;
+  memo: string;
+  pay_to: string;
+  cents: number;
+  usdc: number | null;
+  lamports: number | null;
+  at: number;
+  paid_at: number | null;
+  signature: string | null;
+  fund: "sol" | "usdc" | null;
+  received: number | null;
+  payer: string | null;
+  matched: "memo" | "reference" | "amount" | null;
+};
+
+const ORDER_SELECT = `
+  SELECT o.id, o.ad, a.title, o.reference, a.memo, o.pay_to, o.cents, o.usdc, o.lamports, o.at, o.paid_at,
+         o.signature, o.fund, o.received, o.payer, o.matched
+  FROM ad_orders o JOIN ads a ON a.id = o.ad`;
+
+const big = (value: number | null) => (value == null ? null : Number(value));
+
+function orderFrom(row: OrderRow): AdOrder {
+  return {
+    id: row.id,
+    ad: row.ad,
+    title: row.title,
+    reference: row.reference,
+    memo: row.memo,
+    payTo: row.pay_to,
+    cents: row.cents,
+    // Orders from before the exact amount was kept asked for the cents alone.
+    usdc: big(row.usdc) ?? row.cents * 10_000,
+    lamports: big(row.lamports),
+    at: Number(row.at),
+    paidAt: big(row.paid_at),
+    signature: row.signature,
+    fund: row.fund,
+    received: big(row.received),
+    payer: row.payer,
+    matched: row.matched,
+  };
+}
+
+/** Someone's ads, newest first. Pending ones are left out: nothing was paid for them. */
+export async function adsBy(owner: string): Promise<Ad[]> {
+  const rows = await many<AdRow>(`${AD_SELECT} WHERE a.owner = $1 AND a.status = 'active' ORDER BY a.created DESC`, [owner]);
+  return rows.map(adFrom);
+}
+
+export async function getAd(id: string): Promise<Ad | null> {
+  const row = await one<AdRow>(`${AD_SELECT} WHERE a.id = $1`, [id]);
+  return row ? adFrom(row) : null;
+}
+
+/** Every paid ad with budget left on a keyword: what search serves from memory. */
+export async function liveAds(): Promise<Ad[]> {
+  const rows = await many<AdRow>(
+    `${AD_SELECT} WHERE a.status = 'active'
+       AND EXISTS (SELECT 1 FROM ad_keywords k WHERE k.ad = a.id AND k.spent < k.budget)`,
+  );
+  return rows.map(adFrom);
+}
+
+/**
+ * A new ad, or new words, keywords and banner on one of yours, and the order
+ * that pays for what `plan` adds. A keyword with budget left stays, since
+ * paid budget is never withdrawn, and a keyword with none needs at least
+ * `minimum` in the plan. `banner` is a new one, null for none, or "keep".
+ */
+export async function saveAd(input: {
+  id: string | null;
+  owner: string;
+  creative: AdCreative;
+  keywords: string[];
+  plan: AdPlan;
+  minimum: number;
+  banner: { full: Buffer; small: Buffer } | null | "keep";
+  codes: { reference: string; memo: string };
+  /** What the order asks for, when the plan adds anything. */
+  pay: { to: string; usdc: number; lamports: number | null } | null;
+  /** An open order for the same plan made since then is shown again, rather than a second one made. */
+  reuse: number;
+  at: number;
+}): Promise<{ ad: Ad; order: AdOrder | null }> {
+  const id = input.id ?? newId();
+  const { creative: c, at } = input;
+  const cents = input.plan.reduce((sum, item) => sum + item.cents, 0);
+  const saved = await tx(async (client) => {
+    let rev = 0;
+    let had = new Map<string, { budget: number; spent: number }>();
+    if (input.id) {
+      const row = await one<{ owner: string; banner: number }>(
+        "SELECT owner, banner FROM ads WHERE id = $1 FOR UPDATE",
+        [id],
+        client,
+      );
+      if (!row || row.owner !== input.owner) throw new SocialError(404, "No such ad.");
+      rev = row.banner;
+      const kept = await client.query("SELECT keyword, budget, spent FROM ad_keywords WHERE ad = $1", [id]);
+      had = new Map(kept.rows.map((k) => [k.keyword, { budget: k.budget, spent: k.spent }]));
+    }
+    const adding = new Map(input.plan.map((item) => [item.keyword, item.cents]));
+    for (const [keyword, money] of had) {
+      if (!input.keywords.includes(keyword) && money.budget > money.spent) {
+        throw new SocialError(400, `“${keyword}” has budget left, so it stays.`);
+      }
+    }
+    for (const keyword of input.keywords) {
+      if (!had.get(keyword)?.budget && (adding.get(keyword) ?? 0) < input.minimum) {
+        throw new SocialError(400, `Give “${keyword}” a budget of at least $${input.minimum / 100}.`);
+      }
+    }
+    const banner = input.banner === "keep" ? rev : input.banner ? rev + 1 : 0;
+    if (input.id) {
+      await client.query(
+        `UPDATE ads SET cta = $2, title = $3, body = $4, url = $5, devices = $6, bid = $7, banner = $8, at = $9
+         WHERE id = $1`,
+        [id, c.cta, c.title, c.body, c.url, c.devices, c.bid, banner, at],
+      );
+      await client.query("DELETE FROM ad_keywords WHERE ad = $1 AND NOT (keyword = ANY($2::text[]))", [id, input.keywords]);
+    } else {
+      await client.query(
+        `INSERT INTO ads (id, owner, memo, cta, title, body, url, devices, bid, banner, created, at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)`,
+        [id, input.owner, input.codes.memo, c.cta, c.title, c.body, c.url, c.devices, c.bid, banner, at],
+      );
+    }
+    await client.query(
+      `INSERT INTO ad_keywords (ad, keyword) SELECT $1, unnest($2::text[]) ON CONFLICT DO NOTHING`,
+      [id, input.keywords],
+    );
+    if (!cents || !input.pay) return null;
+    const plan = JSON.stringify(input.plan);
+    const same = await one<{ id: string }>(
+      `SELECT id FROM ad_orders WHERE ad = $1 AND paid_at IS NULL AND at >= $2 AND pay_to = $3 AND plan = $4::jsonb
+       ORDER BY at DESC LIMIT 1`,
+      [id, input.reuse, input.pay.to, plan],
+      client,
+    );
+    const orderId = same?.id ?? newId();
+    if (!same) {
+      await client.query(
+        `INSERT INTO ad_orders (id, ad, reference, pay_to, cents, usdc, lamports, plan, at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [orderId, id, input.codes.reference, input.pay.to, cents, input.pay.usdc, input.pay.lamports, plan, at],
+      );
+    }
+    const order = await one<OrderRow>(`${ORDER_SELECT} WHERE o.id = $1`, [orderId], client);
+    return order && orderFrom(order);
+  });
+  if (input.banner && input.banner !== "keep") writeBanner(id, input.banner);
+  else if (!input.banner) removeBanner(id);
+  const ad = await getAd(id);
+  if (!ad) throw new SocialError(404, "No such ad.");
+  return { ad, order: saved };
+}
+
+/**
+ * Credit a paid order, once: its keywords gain their cents, the ad runs, and
+ * the receipt keeps the transfer. False if the order or the transfer was
+ * already used.
+ */
+export async function payOrder(id: string, paid: Payment, at: number): Promise<boolean> {
+  return tx(async (client) => {
+    const order = await one<{ ad: string; plan: AdPlan }>(
+      `SELECT ad, plan FROM ad_orders WHERE id = $1 AND paid_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM ad_orders u WHERE u.signature = $2)
+       FOR UPDATE`,
+      [id, paid.signature],
+      client,
+    );
+    if (!order) return false;
+    await client.query(
+      `UPDATE ad_orders SET paid_at = $2, signature = $3, fund = $4, received = $5, payer = $6, matched = $7
+       WHERE id = $1`,
+      [id, at, paid.signature, paid.fund, paid.received, paid.payer, paid.matched],
+    );
+    await client.query(
+      `INSERT INTO ad_keywords (ad, keyword, budget)
+       SELECT $1, p.keyword, p.cents FROM jsonb_to_recordset($2::jsonb) AS p(keyword text, cents integer)
+       ON CONFLICT (ad, keyword) DO UPDATE SET budget = ad_keywords.budget + EXCLUDED.budget`,
+      [order.ad, JSON.stringify(order.plan)],
+    );
+    await client.query("UPDATE ads SET status = 'active' WHERE id = $1", [order.ad]);
+    return true;
+  });
+}
+
+/** Orders made since `since` and not yet paid: the ones worth looking for on chain. */
+export async function openOrders(since: number): Promise<AdOrder[]> {
+  const rows = await many<OrderRow>(`${ORDER_SELECT} WHERE o.paid_at IS NULL AND o.at >= $1 ORDER BY o.at DESC`, [since]);
+  return rows.map(orderFrom);
+}
+
+/** Every checkout of `owner`'s ads, paid or not, newest first: their receipts. */
+export async function receiptsOf(owner: string): Promise<AdOrder[]> {
+  const rows = await many<OrderRow>(`${ORDER_SELECT} WHERE a.owner = $1 ORDER BY o.at DESC LIMIT 200`, [owner]);
+  return rows.map(orderFrom);
+}
+
+export async function receiptCount(owner: string): Promise<number> {
+  const row = await one<{ n: number }>(
+    "SELECT count(*)::int AS n FROM ad_orders o JOIN ads a ON a.id = o.ad WHERE a.owner = $1",
+    [owner],
+  );
+  return row?.n ?? 0;
+}
+
+/** One of `owner`'s orders, for the dialog waiting on it. */
+export async function orderOf(id: string, owner: string): Promise<AdOrder | null> {
+  const row = await one<OrderRow>(`${ORDER_SELECT} WHERE o.id = $1 AND a.owner = $2`, [id, owner]);
+  return row ? orderFrom(row) : null;
+}
+
+/** Impressions served, a batch at a time. Spending stops at the budget whatever arrives. */
+export async function addImpressions(
+  rows: { ad: string; keyword: string; cents: number; shown: number; social: number }[],
+): Promise<void> {
+  if (!rows.length) return;
+  await db().query(
+    `UPDATE ad_keywords k
+     SET spent = LEAST(k.budget, k.spent + v.cents), shown = k.shown + v.shown, social = k.social + v.social
+     FROM unnest($1::text[], $2::text[], $3::int[], $4::int[], $5::int[]) AS v(ad, keyword, cents, shown, social)
+     WHERE k.ad = v.ad AND k.keyword = v.keyword`,
+    [
+      rows.map((r) => r.ad),
+      rows.map((r) => r.keyword),
+      rows.map((r) => r.cents),
+      rows.map((r) => r.shown),
+      rows.map((r) => r.social),
+    ],
+  );
+}
+
+/** The post a person's timeline ad is now picked from. */
+export async function setAdTopic(name: string, text: string, at: number): Promise<void> {
+  await db().query(
+    `INSERT INTO ad_topics (name, text, at) VALUES ($1, $2, $3)
+     ON CONFLICT (name) DO UPDATE SET text = EXCLUDED.text, at = EXCLUDED.at`,
+    [name, text, at],
+  );
+}
+
+export async function adTopic(name: string): Promise<string> {
+  return (await one<{ text: string }>("SELECT text FROM ad_topics WHERE name = $1", [name]))?.text ?? "";
+}
+
+/** Ads never paid for, with no order since `before`, and their banners. */
+export async function sweepAds(before: number): Promise<void> {
+  const rows = await many<{ id: string; banner: number }>(
+    `DELETE FROM ads a WHERE a.status = 'pending' AND a.at < $1
+       AND NOT EXISTS (SELECT 1 FROM ad_orders o WHERE o.ad = a.id AND o.at >= $1)
+     RETURNING a.id, a.banner`,
+    [before],
+  );
+  for (const row of rows) if (row.banner) removeBanner(row.id);
 }

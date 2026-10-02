@@ -29,7 +29,7 @@
     <meta name="theme-color" content="#282124" media="(prefers-color-scheme: dark)" />
     <link rel="stylesheet" href="/social.css" />
   </head>
-  <body class="res soc" data-qr="/qr.js" data-py="/pay.js" data-ch="/chat.js" data-rc="/rec.js" data-rl="/rail.js" data-av="/avatar.js" data-pw="/install.js">
+  <body class="res soc" data-qr="/qr.js" data-py="/pay.js" data-ch="/chat.js" data-rc="/rec.js" data-rl="/rail.js" data-ad="/ads.js" data-av="/avatar.js" data-pw="/install.js">
     <svg width="0" height="0" aria-hidden="true" style="position: absolute">
       <symbol id="pi" viewBox="0 0 24 24">
         <rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" />
@@ -67,6 +67,16 @@
       <symbol id="n-me" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
         <circle cx="12" cy="8" r="4" />
         <path d="M4 20.5c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
+      </symbol>
+      <!-- A sponsored post's link row. -->
+      <symbol id="n-ln" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
+      </symbol>
+      <!-- Advertise: a wand and its sparkles. index.html draws the same one inline. -->
+      <symbol id="n-ad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.6 19.6L14.6 7.6l1.8 1.8-12 12zM12.5 9.7l1.8 1.8" />
+        <path d="M19 2.2l.8 1.8 1.8.8-1.8.8-.8 1.8-.8-1.8-1.8-.8 1.8-.8z" stroke-width="1.4" />
+        <path d="M8 3.5v3M6.5 5h3M19.5 13.5v3M18 15h3" stroke-width="1.6" />
       </symbol>
     </svg>
     <div class="chrome" id="chrome">
@@ -116,6 +126,8 @@
         <a class="tab" href="/social/friends" data-nav="friends"><svg class="ni" aria-hidden="true"><use href="#n-fr" /></svg><span>Friends</span></a>
         <a class="tab" href="/social/c" data-nav="chat"><svg class="ni" aria-hidden="true"><use href="#n-ch" /></svg><span>Messenger</span><i id="mbadge" hidden></i></a>
         <a class="tab" href="/social" id="me" data-nav="profile"><svg class="ni" aria-hidden="true"><use href="#n-me" /></svg><span><b class="my">My </b>Profile</span></a>
+        <!-- Wide screens only; social.css hides it on a phone. -->
+        <a class="tab tab-ad" href="/social/ads" data-nav="ads"><svg class="ni" aria-hidden="true"><use href="#n-ad" /></svg><span>Advertise</span></a>
       </nav>
     </div>
 

@@ -111,6 +111,8 @@
 
     <div id="mn">
       <div>
+        <!-- A results URL's ad, rendered in by the server (src/social/ads.ts). -->
+        <div id="ad"></div>
         <!-- Three blocks, each mirroring a real .r card line for line. dom.js
              reads its skeleton template back out of here rather than keeping a
              second copy, so this markup is the only definition of it. -->
@@ -127,6 +129,15 @@
            #sd from scratch on every paint and would take the footer with it. -->
       <div id="sc">
         <aside id="sd" hidden></aside>
+        <!-- Home only, and wide screens only, like the Advertise page it opens. -->
+        <a class="adv" href="/social/ads">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2.6 19.6L14.6 7.6l1.8 1.8-12 12zM12.5 9.7l1.8 1.8" />
+            <path d="M19 2.2l.8 1.8 1.8.8-1.8.8-.8 1.8-.8-1.8-1.8-.8 1.8-.8z" stroke-width="1.4" />
+            <path d="M8 3.5v3M6.5 5h3M19.5 13.5v3M18 15h3" stroke-width="1.6" />
+          </svg>
+          Advertise
+        </a>
         <footer id="ft">
           <!-- Documents, not pages: scripts/legal-pdf.mjs typesets these from
                client/legal/ into public/ at build time. -->

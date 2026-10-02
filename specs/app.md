@@ -3,7 +3,7 @@
 **Status:** Draft
 **Author:** Ludwig Schubert
 **Created:** 2026-09-25
-**Updated:** 2026-09-25
+**Updated:** 2026-10-02
 
 ## Summary
 
@@ -66,14 +66,14 @@ graph LR
 
 There are three documents, and each is a static file. Nothing that depends on who is
 asking is rendered into HTML, except the price strip that the server injects into
-`index.html`. Each document inlines its own stylesheet and loads exactly one bundle.
+`index.html`, and on a results page, the ad for its query. Each document inlines its own stylesheet and loads exactly one bundle.
 Anything that is only needed after a click is a lazy bundle.
 
 | Surface | Path | Document | Bundle | Lazy |
 |---|---|---|---|---|
 | Search | `/`, `/?q=` | `index.html` | `app.js` | `swap.js`, `connect.js`, `qr.js`, `login.js`, `hive.js` |
 | Wallet | `/wallet` | `wallet.html` | `wallet.js` | `connect.js`, `swap.js`, `qr.js`, `keys.js`, `login.js` |
-| Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js` |
+| Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js`, `ads.js` |
 
 Every page wears the same header as search: the wordmark, the search field, and the
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet
@@ -90,8 +90,10 @@ click. Every Log in button, in a header or on a page, opens it and never navigat
 Messenger is part of Social: one more tab and one more route in the same document, with
 its own lazy bundle (`chat.js`), served by the same API and stored in the same database.
 
-On a screen wider than 900px, Social's tabs (Timeline, Friends, Messenger, My Profile) are a
-column at the left, icons alone up to 1100px. The timeline, and a post opened from it (so the
+On a screen wider than 900px, Social's tabs (Timeline, Friends, Messenger, My Profile,
+Advertise) are a column at the left, icons alone up to 1100px. Advertise, a magic wand, is
+there only: a phone has no tab for it, and the search home has an Advertise pill above its
+footer on wide screens only. The timeline, and a post opened from it (so the
 post stays in the column it was read in), then have a column at the right:
 **Friends to add** (whoever posted most in the last 30 days, less the viewer and the people
 they already added) and **Trending assets** (the most-traded verified tokens of the day,
@@ -128,6 +130,10 @@ GET /social/edit              edit profile: photo, bio, location, passkey, recov
 GET /social/p/<id>            one post with its comments
 GET /social/c                 Messenger: chats left, "pick a chat" right
 GET /social/c/<handle>        Messenger with that conversation open
+GET /social/ads               your ads, or the editor when you have none
+GET /social/ads/new           the editor, for a new ad
+GET /social/ads/<id>          the editor, for one of your paid ads
+GET /social/b/<id>[?m=1]      an ad's banner; m=1 is the phone copy
 GET /social/a/<name>          profile photo, full
 GET /social/t/<name>          profile photo, timeline copy
 GET /social/i/<id>/<n>[?m=1]  post photo n; m=1 is the phone copy
@@ -290,6 +296,100 @@ GET  /api/social/cp/<id>/<n>                → sealed photo bytes, to the two p
 - Every profile other than your own shows a **Message** button that opens
   `/social/c/<name>`.
 
+#### Advertise
+
+An ad is a call to action (the button's words and an https link), a title, a description,
+an optional 3:1 banner, keywords, a bid, and where it runs: desktop and mobile, mobile only,
+or desktop only. It runs in two places, from one budget:
+
+- **Search:** one per results page, above the results, words only: Sponsored and the host,
+  the title, the description, the call to action as a button.
+- **Social:** one per timeline, after its second post, drawn as a post by the advertiser's
+  account and marked Sponsored: the title as the caption, the banner, then a link icon,
+  the call to action and the host. The whole post is the link. Every post someone writes
+  that an ad's keyword matches becomes what their timeline's ad is picked from
+  (`ad_topics`); a post nothing matches leaves it as it was. The first page of the
+  timeline carries it, not Saved, and never the reader's own ad.
+
+The editor shows the ad on the right as either one, on a computer or a phone, and under it
+how it is doing: impressions on search and on social, spent, and left.
+
+- **Money.** Each keyword is bought on its own, in whole dollars from $1. An impression
+  costs the ad's bid, from 1¢. Of the ads with a keyword the query contains (every word of
+  it, in any order), the one with the highest bid and the budget left for an impression is
+  shown; equal bids take turns. A 2¢ ad is shown before a 1¢ one until its budget is spent.
+- **Paying.** Checkout saves the ad as `pending` and returns an order: a Solana Pay transfer
+  request to `ADS_PAY_TO` for the total, in SOL or in USDC, with a random `reference` key
+  and the campaign's memo (`UG-` and eight characters, made with the ad and the same on
+  every payment for it). The SOL amount is fixed at checkout from the token index's price;
+  SOL is offered first, because a wallet asked for a token it does not hold refuses the
+  request. A wallet may also send neither the reference nor the memo (Phantom's scanner
+  sends a plain transfer of the amount), so each order's amount is its own too: up to
+  9,999 base units on top of the price, under a cent, that no open order already asks for.
+- **Seeing a payment.** While an order is open (24 hours), a loop on the server reads every
+  transaction into `ADS_PAY_TO` and its USDC account, newest since the last read, every 5 s
+  while an order is under 15 minutes old and every minute otherwise. Each SOL or USDC
+  transfer in is matched to an open order: by the reference it carries, else by the memo
+  (the order asking exactly that, or the oldest it covers), else by the exact amount of an
+  order made before it. The order's keywords then gain their budget, once, the ad becomes
+  `active`, and the receipt keeps the transfer: signature, SOL or USDC, the amount, the
+  payer, and what matched it. One transfer pays one order. A transfer that names no order
+  is logged. The editor's dialog only asks whether it has. Pending ads never paid are
+  deleted after 48 hours.
+- **Receipts.** Every checkout is kept, paid or not. Checking out again for the same budget
+  within 15 minutes shows the same order and code rather than making another. The list
+  page has two tabs, Campaigns and Receipts (`/social/ads/receipts`). Receipts has one row
+  per campaign, by its memo: what has been paid for it and in how many payments, whether a
+  checkout is waiting (whose code it can show again), and the latest transaction. Its
+  details list every checkout the campaign has had, paid or not: order, reference, payee,
+  what it asked, what arrived from whom, and how it was matched, since a campaign can be
+  paid more than once and each payment is its own transaction. The list page shows once
+  there is a campaign or a receipt.
+- **Drafts.** The editor keeps what has not been saved in `localStorage` (`ug.ad.new`, or
+  `ug.ad.<id>`): the words, keywords and what each adds, the bid, devices, a picked banner
+  as data URLs, and a pending ad's id, so checking out again after a reload keeps its memo.
+  A reload brings it back, with a way to discard it; saving or paying clears it.
+- **Editing.** A paid ad is never withdrawn: there is no delete, and a keyword with budget
+  left cannot be removed. Its words, link, banner, bid and devices can change at any time,
+  and take effect at once. Budget added to its keywords, or a new keyword, is a new order.
+- **Serving.** `src/social/ads.ts` holds every active ad with budget left in memory,
+  re-read every minute and after every save or payment, so a page never waits on Postgres
+  for one. The server picks the ad from the query, or the reader's topic, and the device
+  (`Sec-CH-UA-Mobile`, else the user agent), as it renders the search shell or answers the
+  timeline. Every ad it puts on a page is an impression, charged there; crawlers get none.
+  Charges are written in batches every 5 s, and on shutdown. A search made in the page (not
+  a page load) has no ad.
+
+```typescript
+type AdKeyword = { keyword: string; budget: number; spent: number; shown: number; social: number };
+type Ad = { id: string; memo: string; status: "pending" | "active"; cta: string; title: string;
+            body: string; url: string; devices: "all" | "mobile" | "desktop"; bid: number;
+            banner: number; created: number; at: number; keywords: AdKeyword[] };
+type Order = { id: string; ad: string; title: string; memo: string; reference: string; to: string;
+               cents: number; usdc: number; lamports: number | null; at: number;
+               status: "open" | "paid" | "expired";
+               urls: { usdc: string; sol: string | null } | null;   // solana:… while open
+               paidAt: number | null; signature: string | null; fund: "sol" | "usdc" | null;
+               received: number | null; payer: string | null;
+               matched: "reference" | "memo" | "amount" | null };
+type SocialAd = { id: string; owner: string; ownerRev: number; title: string; cta: string;
+                  url: string; host: string; img: string; imgM: string };
+
+GET  /api/social/ads              → {me, ads: Ad[], receipts: number, payable}   paid ads, newest first
+GET  /api/social/ads/receipts     → {me, receipts: Order[]}     every checkout, newest first
+GET  /api/social/ads/<id>         → {me, ad: Ad, payable}
+POST /api/social/ads              application/octet-stream → {ad, order}
+POST /api/social/ads/<id>         application/octet-stream → {ad, order: Order | null}
+GET  /api/social/ads/order/<id>   → {ad, paid, open}
+```
+
+The timeline's answer gains `ad: SocialAd | null`, on its first page.
+
+A saved ad is a u16 length and the JSON `{cta, url, title, body, devices, bid, banner:
+boolean, keywords: {keyword, add}[]}`, where `add` is the cents a keyword gains, then
+optionally a new banner as a post photo is sent: u32 phone length, u32 desktop length, the
+two JPEGs. `banner: true` without one keeps the current banner.
+
 ### Data Model
 
 The Postgres tables are defined once, in `SCHEMA` in `src/social/db.ts`, and nowhere else:
@@ -306,6 +406,12 @@ friends  owner, friend                                              (PK owner, f
 chat_keys name, v, pub, cred, iv, ct, at                          (PK name, v)
 messages id PK, pair, from_name, to_name, at, kf, kt, iv, ct, photos   (newest 1,000 per pair)
 chats    owner, peer, at, last → messages.id, unread               (PK owner, peer)
+ads      id PK, owner → users, memo UNIQUE, status, cta, title, body, url, devices, bid,
+         banner, created, at
+ad_keywords ad → ads, keyword, budget, spent, shown, social         (PK ad, keyword), cents
+ad_orders id PK, ad → ads, reference UNIQUE, pay_to, cents, usdc, lamports, plan, at,
+         paid_at, signature UNIQUE, fund, received, payer, matched     every checkout: its receipt
+ad_topics name PK → users, text, at                                 a person's latest matched post
 ```
 
 Pictures and voice memos are files, not rows:
@@ -317,6 +423,8 @@ data/social/posts/<id>-<n>.jpg     ≤ 48 KB, ≤ 1600 px edge
 data/social/posts/<id>-<n>.m.jpg   phone copy, ≤ 14 KB, ≤ 640 px edge
 data/social/posts/<id>.webm|.m4a   voice memo, ≤ 640 KB, ≤ 3 min
 data/social/chat/<id>-<n>.bin      sealed message photo: IV + AES-GCM(JPEG ≤ 48 KB)
+data/social/ads/<id>.jpg           ad banner, 3:1, ≤ 48 KB, ≤ 1200 px wide
+data/social/ads/<id>.m.jpg         phone copy, 3:1, ≤ 14 KB, ≤ 640 px wide
 data/cache/icons/<mint>.webp       token logo, 64 × 64, about 1 KB; a cache, rebuilt by the sync
 ```
 
@@ -352,6 +460,9 @@ The limits live in `src/social/limits.ts`:
 | Time between posts | 10 minutes |
 | Message | 500 characters, 4 photos |
 | Messages kept per conversation | 1,000, oldest dropped with their photos |
+| Ad | call to action 24, title 60, description 140, link 200 characters |
+| Ad keywords | 20, each 40 characters, from $1 in whole dollars |
+| Ad bid | 1¢ to 100¢ an impression |
 
 **Profile picture shape.** The picture is drawn at its own aspect ratio, anywhere from
 square to portrait. The browser scales it before upload, and nothing crops it. It is shown
@@ -450,7 +561,8 @@ exchange scanner reads it; the payer picks the amount and sends from their own a
 **Bytes**
 
 - Every first-flight response is at most **14,250 B gzip**: one TCP initial window, less the
-  headers. `index.html` gets 13,950 B, because the server injects the price strip into it.
+  headers. `index.html` gets 13,350 B, because the server injects the price strip and an ad
+  into it.
   The build fails when any response is over budget.
 - Each bundle has a raw parse budget: `app.js` and `social.js` 24,576 B, `wallet.js`
   16,384 B. Going over prints a warning, not a failure.
@@ -571,7 +683,10 @@ ever executed or parsed as markup in the browser.
   chart paths or a QR code. It carries a one-line comment saying so.
 - **No link, style or handler taken from input.** Links point only at paths the client
   builds from a validated name or id (`/social/u/<name>`, `/social/p/<id>`). A URL from a
-  person is shown as text and never becomes an `href`. A URL from a search result
+  person is shown as text and never becomes an `href`, with one exception: an ad's link,
+  which must be `https:` to a named host with no credentials or port (`adUrl`), and is
+  rendered escaped by the server with `rel="noopener sponsored"`. The editor's preview
+  draws the ad without a link. A URL from a search result
   becomes an `href` only when its scheme is `http:` or `https:`. No input becomes a `style`,
   a class name, or an `on*` attribute.
 - **The browser enforces the same rules.** Every document is served with the CSP in
@@ -657,7 +772,37 @@ ever executed or parsed as markup in the browser.
   - *Alternatives rejected:* A shared `shell.css`, which would need a manual split of a
     2,000-line sheet in cascade order.
 
+- **Decision:** Ads chosen and charged in memory, as the shell or the timeline is answered
+  - *Why:* Search must not depend on Postgres, and an ad in the document paints with it,
+    shifts nothing, and needs no second request or client code. The server is one process,
+    so memory is the one place every charge is counted.
+  - *Alternatives rejected:* An ad fetched by app.js, which costs a request, bytes in the
+    bundle and a layout shift. A database read per results page. Counting in the browser,
+    which anyone can fake.
+  - *Cost:* Charges in the last 5 s before a crash are lost, in the advertiser's favour. The
+    device is read from headers, so a narrow desktop window gets a desktop ad. Every page
+    load is an impression, so reloading one spends its ad's budget.
+
+- **Decision:** Solana Pay in SOL or USDC, matched by reference, memo, or an amount of its own
+  - *Why:* Any wallet pays it from a QR code, and nothing is signed for the advertiser. The
+    memo names the campaign, so its payments can be found by its code. Wallets differ in
+    what they keep of the request, and the amount is the one thing every one sends, so an
+    order's amount names it too, and the server reads what arrives at the payee rather
+    than looking up a reference a wallet may have dropped.
+  - *Alternatives rejected:* A Solana Pay transaction request, where the server builds the
+    transaction: it controls every instruction, but the wallet has to reach the server over
+    https, which a phone cannot do to a development machine.
+  - *Alternatives rejected also:* Paying from the account's own wallet, which would put an
+    advertiser's money through a session.
+
 ## Open Questions
+
+- [ ] **Ad review.** Anything that passes the validators runs at once. Do ads need review,
+      or a way for someone to report one?
+- [ ] **Privacy policy.** Timeline ads are picked from what a person posts, and the latest
+      matched post is kept for it (`ad_topics`). The canonical policy PDF should say so.
+- [ ] **Reloads.** Every page load is an impression. Should one address be charged for one
+      ad at most once in a while, so nobody can spend a rival's budget by reloading?
 
 - [ ] **Key verification.** The server hands out public keys, so it could hand out its own.
       Should a conversation show a safety number both people can compare?

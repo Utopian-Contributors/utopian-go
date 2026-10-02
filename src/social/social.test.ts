@@ -25,9 +25,11 @@ import {
 import { checkSwapInstructions, parseMessage, reviewedFloor, signTransaction, simulationError, slippageFor } from "./swap";
 import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMessage, onCurve } from "./send";
 import { scrub } from "./guard";
-import { AUDIO_BYTES, MAX_AUDIO_MS, SOCIAL_BYTES, TINY_BYTES, postWait, username, waitText } from "./limits";
+import { AUDIO_BYTES, MAX_AUDIO_MS, SOCIAL_BYTES, TINY_BYTES, adKeyword, adText, adUrl, postWait, username, waitText } from "./limits";
 import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
-import { TIMELINE_PAGE, closePool, databaseUrl, ensureSchema, getUser, resetSocial } from "./db";
+import { type AdCreative, type AdOrder, TIMELINE_PAGE, closePool, databaseUrl, ensureSchema, getAd, getUser, payOrder, resetSocial, saveAd } from "./db";
+import { adFor, adMarkup, flushAds, reloadAds } from "./ads";
+import { USDC_MINT, decimal, dollars, matchTransfer, orderAmounts, orderCodes, payUrl, transfersIn, type ParsedTx } from "./adPay";
 import { drawAvatar } from "./avatar";
 import { backdrop, palette } from "./backdrop";
 import { isStable } from "../lib/tokens/store";
@@ -1503,4 +1505,292 @@ test("a swap that fails for want of SOL says so, with the amounts", () => {
 
   const other = simulationError({ InstructionError: [3, { Custom: 42 }] }, [], { have: 5_000_000_000n, need: 10_000n, spendsSol: false });
   assert.match(other.message, /would fail right now/);
+});
+
+test("an ad's link is https to a named host, and its words are one plain line", () => {
+  assert.equal(adUrl("https://example.com/a?b=1"), "https://example.com/a?b=1");
+  assert.equal(adUrl(" https://Shop.Example.co.uk "), "https://shop.example.co.uk/");
+  for (const bad of [
+    "http://example.com",
+    "javascript:alert(1)",
+    "data:text/html,<script>",
+    "https://user:pw@example.com",
+    "https://127.0.0.1/",
+    "https://localhost/",
+    "https://example.com:8443/",
+    "example.com",
+    `https://example.com/${"a".repeat(200)}`,
+  ]) {
+    assert.equal(adUrl(bad), null, bad);
+  }
+  assert.equal(adKeyword("  Solana   RPC! "), "solana rpc");
+  assert.equal(adKeyword("Café, Zürich"), "café zürich");
+  assert.equal(adKeyword("!!!"), null);
+  assert.equal(adKeyword("a".repeat(41)), null);
+  const text = adText("Fast‮ RPC\n<b>now</b>", 60);
+  assert.deepEqual(text, { ok: true, text: "Fast RPC <b>now</b>" });
+  assert.equal(adText("x".repeat(61), 60).ok, false);
+});
+
+test("a transfer names its order by reference, by memo, or by its exact amount", () => {
+  const payTo = "PayeeWa11et1111111111111111111111111111111";
+  const order = (id: string, at: number, lamports: number | null, usdc: number, memo = "UG-ABCDEFGH"): AdOrder => ({
+    id, ad: "a", title: "T", reference: `Ref${id}`, memo, payTo, cents: 250, usdc, lamports, at, paidAt: null,
+    signature: null, fund: null, received: null, payer: null, matched: null,
+  });
+  const usdc = (memo: string, before: string, after: string, err: unknown = null, owner = payTo): ParsedTx => ({
+    meta: {
+      err,
+      preTokenBalances: [{ mint: USDC_MINT, owner, uiTokenAmount: { amount: before } }],
+      postTokenBalances: [{ mint: USDC_MINT, owner, uiTokenAmount: { amount: after } }],
+      innerInstructions: [],
+    },
+    transaction: { message: { accountKeys: [{ pubkey: "Payer" }], instructions: [{ program: "spl-token" }, { program: "spl-memo", parsed: memo }] } },
+  });
+  // What Phantom's scanner sent: a plain system transfer, no memo, no reference.
+  const sol = (gained: number, to = payTo, extra: string[] = [], memo?: string): ParsedTx => ({
+    meta: { err: null, preBalances: [9e9, 890_880, 1], postBalances: [9e9 - gained - 5000, 890_880 + gained, 1] },
+    transaction: {
+      message: {
+        accountKeys: [{ pubkey: "Payer" }, { pubkey: to }, { pubkey: "11111111111111111111111111111111" }, ...extra.map((pubkey) => ({ pubkey }))],
+        instructions: [{ program: "system" }, ...(memo ? [{ program: "spl-memo", parsed: memo }] : [])],
+      },
+    },
+  });
+  const now = Date.now();
+  const first = order("o1", now - 60_000, 32_747_123, 2_500_042);
+  const second = order("o2", now - 30_000, 32_747_456, 2_500_077);
+  const open = [second, first];
+  const one = (tx: ParsedTx, at = now) => transfersIn("sig", at, tx, payTo);
+
+  const plain = one(sol(32_747_456));
+  assert.equal(plain.length, 1);
+  assert.deepEqual({ fund: plain[0].fund, received: plain[0].received, payer: plain[0].payer }, { fund: "sol", received: 32_747_456, payer: "Payer" });
+  assert.deepEqual(matchTransfer(plain[0], open), { order: second, matched: "amount" }, "the exact amount names it");
+  assert.equal(matchTransfer(one(sol(32_747_455))[0], open), null, "a lamport off names none");
+  assert.equal(matchTransfer(one(sol(32_747_456), now - 3 * 60_000)[0], open), null, "made after the transfer");
+  assert.deepEqual(matchTransfer(one(sol(40_000_000, payTo, ["Refo2"]))[0], open), { order: second, matched: "reference" });
+  assert.deepEqual(matchTransfer(one(sol(40_000_000, payTo, [], "UG-ABCDEFGH"))[0], open), { order: first, matched: "memo" }, "the oldest it covers");
+  assert.deepEqual(matchTransfer(one(sol(32_747_456, payTo, [], "UG-ABCDEFGH"))[0], open), { order: second, matched: "memo" }, "the one asking exactly this");
+  assert.equal(matchTransfer(one(sol(1_000, payTo, [], "UG-ABCDEFGH"))[0], open), null, "the memo, but not the money");
+  assert.deepEqual(one(sol(32_747_456, "Someone")), [], "paid elsewhere");
+  assert.deepEqual(matchTransfer(one(usdc("", "1000000", "3500042"))[0], open), { order: first, matched: "amount" });
+  assert.deepEqual(one(usdc("UG-ABCDEFGH", "1000000", "3500042", { InstructionError: [0, "x"] })), [], "failed");
+  assert.deepEqual(one(usdc("UG-ABCDEFGH", "1000000", "3500042", null, "Someone")), []);
+  assert.equal(matchTransfer(one(sol(32_747_123))[0], [{ ...first, lamports: null }]), null, "no SOL price, no SOL order");
+
+  // An order's amount is its own: a mark under a cent, unlike every open order's.
+  const taken = [{ usdc: 2_500_001, lamports: null }];
+  for (let i = 0; i < 50; i++) {
+    const amounts = orderAmounts(250, taken);
+    assert.ok(amounts.usdc > 2_500_000 && amounts.usdc < 2_510_000, String(amounts.usdc));
+    assert.notEqual(amounts.usdc, 2_500_001);
+  }
+  assert.equal(decimal(2_500_042, 6), "2.500042");
+  assert.equal(decimal(52_341_000, 9), "0.052341");
+  assert.equal(dollars(100), "1");
+  assert.equal(dollars(1205), "12.05");
+  const codes = orderCodes();
+  assert.match(codes.memo, /^UG-[0-9A-HJKMNP-TV-Z]{8}$/);
+  assert.equal(base58Decode(codes.reference)?.length, 32);
+  assert.match(payUrl(first, "sol"), /^solana:PayeeWa11et1+\?amount=0\.032747123&reference=Refo1&label=UtopianGO&message=UtopianGO%20ad&memo=UG-ABCDEFGH$/);
+  assert.match(payUrl(first, "usdc"), /amount=2\.500042&spl-token=EPjF/);
+});
+
+test("an ad runs once paid: the higher bid first, on search and in timelines, every impression charged, until its budget is spent", async () => {
+  await useTestDatabase();
+  await ensureSchema();
+  await resetSocial();
+  const app = express();
+  app.set("trust proxy", true);
+  app.use("/api/social", socialRouter);
+  const server: Server = await new Promise((resolve) => {
+    const listening = createServer(app);
+    listening.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const base = `http://127.0.0.1:${address.port}`;
+  let ip = 0;
+  async function join(name: string) {
+    let jar = "";
+    const call = async (method: string, urlPath: string, body?: Buffer | Record<string, unknown>, agent = "Mozilla/5.0 (Macintosh)") => {
+      const headers: Record<string, string> = {
+        Origin: base,
+        Accept: "application/json",
+        "User-Agent": agent,
+        "X-Forwarded-For": `10.4.0.${++ip % 250}`,
+      };
+      if (jar) headers.Cookie = jar;
+      if (body) headers["Content-Type"] = Buffer.isBuffer(body) ? "application/octet-stream" : "application/json";
+      const res = await fetch(base + urlPath, { method, headers, body: Buffer.isBuffer(body) ? body : body && JSON.stringify(body) });
+      for (const cookie of res.headers.getSetCookie?.() ?? []) jar = cookie.split(";")[0];
+      const text = await res.text();
+      return { status: res.status, json: JSON.parse(text) as Record<string, any>, text };
+    };
+    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1", terms: true })).status, 200);
+    return call;
+  }
+  const packAd = (json: Record<string, unknown>, banner?: [Buffer, Buffer]) => {
+    const text = Buffer.from(JSON.stringify(json));
+    const head = Buffer.alloc(2);
+    head.writeUInt16BE(text.length);
+    if (!banner) return Buffer.concat([head, text]);
+    const lens = Buffer.alloc(8);
+    lens.writeUInt32BE(banner[0].length, 0);
+    lens.writeUInt32BE(banner[1].length, 4);
+    return Buffer.concat([head, text, lens, ...banner]);
+  };
+  const creative: AdCreative = { cta: "Try it", url: "https://rpc.example.com/", title: "Fast RPC", body: "Low latency.", devices: "all", bid: 1 };
+  const visit = (who: string, agent = "Mozilla/5.0 (Macintosh)") =>
+    ({ ip: who, get: (name: string) => ({ "user-agent": agent })[name.toLowerCase() as "user-agent"] }) as unknown as express.Request;
+  const save = (owner: string, id: string | null, over: Partial<AdCreative>, plan: { keyword: string; cents: number }[], keywords = plan.map((p) => p.keyword)) =>
+    saveAd({
+      id,
+      owner,
+      creative: { ...creative, ...over },
+      keywords,
+      plan,
+      minimum: 100,
+      banner: null,
+      codes: orderCodes(),
+      pay: plan.length ? { to: "Payee", usdc: plan.reduce((n, p) => n + p.cents, 0) * 10_000 + 7, lamports: 600_000 } : null,
+      reuse: Date.now() - 15 * 60_000,
+      at: Date.now(),
+    });
+  const paid = async (owner: string, over: Partial<AdCreative>, keywords: string[]) => {
+    const { ad, order } = await save(owner, null, over, keywords.map((keyword) => ({ keyword, cents: 100 })));
+    assert.ok(order);
+    assert.equal(ad.status, "pending");
+    assert.equal(order.memo, ad.memo, "the order carries its campaign's memo");
+    assert.equal(order.usdc, order.cents * 10_000 + 7);
+    assert.equal(order.payTo, "Payee");
+    const proof = { signature: `sig-${order.id}`, fund: "sol" as const, received: 600_000, payer: "Payer", matched: "amount" as const };
+    assert.equal(await payOrder(order.id, proof, Date.now()), true);
+    assert.equal(await payOrder(order.id, proof, Date.now()), false, "credited once");
+    return ad.id;
+  };
+
+  try {
+    const amy = await join("amy");
+    const ben = await join("ben");
+    const cat = await join("cat");
+    assert.deepEqual((await amy("GET", "/api/social/ads")).json.ads, []);
+
+    // Every field through its validator, before anything is stored.
+    const refused = async (over: Record<string, unknown>, why: RegExp) => {
+      const res = await amy("POST", "/api/social/ads", packAd({ ...creative, banner: false, keywords: [{ keyword: "rpc", add: 100 }], ...over }));
+      assert.equal(res.status, 400, res.text);
+      assert.match(res.json.error, why);
+    };
+    await refused({ url: "javascript:alert(1)" }, /https/);
+    await refused({ title: "" }, /^Title/);
+    await refused({ bid: 0 }, /Bid/);
+    await refused({ bid: 1.5 }, /Bid/);
+    await refused({ devices: "tv" }, /where/);
+    await refused({ keywords: [] }, /keyword/);
+    await refused({ keywords: [{ keyword: "rpc", add: 150 }] }, /whole dollars/);
+    await refused({ keywords: [{ keyword: "rpc", add: 100 }, { keyword: "RPC!", add: 100 }] }, /twice/);
+    const wide = await amy("POST", "/api/social/ads", packAd({ ...creative, banner: true, keywords: [{ keyword: "rpc", add: 100 }] }, [jpeg(400, 400), jpeg(1200, 400)]));
+    assert.equal(wide.status, 400);
+    assert.match(wide.json.error, /3:1/);
+    // Valid, but this server has nowhere to be paid: nothing is saved.
+    const unpaid = await amy("POST", "/api/social/ads", packAd({ ...creative, banner: false, keywords: [{ keyword: "rpc", add: 100 }] }));
+    assert.equal(unpaid.status, 503, unpaid.text);
+
+    // A pending ad is not listed and not served; checking out again keeps its memo.
+    const pending = await save("amy", null, {}, [{ keyword: "solana", cents: 100 }]);
+    const again = await save("amy", pending.ad.id, {}, [{ keyword: "solana", cents: 200 }]);
+    assert.equal(again.ad.memo, pending.ad.memo);
+    assert.equal(again.order?.memo, pending.ad.memo);
+    assert.notEqual(again.order?.id, pending.order?.id, "another budget, another order");
+    const same = await save("amy", pending.ad.id, { title: "Retitled" }, [{ keyword: "solana", cents: 200 }]);
+    assert.equal(same.order?.id, again.order?.id, "the same budget again: the same order, and the same code");
+    assert.equal(same.ad.title, "Retitled");
+    await assert.rejects(save("amy", null, {}, [], ["solana"]), /at least \$1/);
+
+    const cheap = await paid("amy", { title: "Cheap" }, ["solana rpc"]);
+    const dear = await paid("ben", { title: "Dear", bid: 2 }, ["solana"]);
+    const phones = await paid("ben", { title: "Phones", devices: "mobile", bid: 5 }, ["wallet"]);
+    await reloadAds();
+    const listed = (await amy("GET", "/api/social/ads")).json;
+    assert.equal(listed.ads.length, 1);
+    assert.equal(listed.receipts, 3, "every checkout, paid or not");
+    const receipts = (await amy("GET", "/api/social/ads/receipts")).json.receipts;
+    assert.deepEqual(receipts.map((r: { status: string }) => r.status), ["paid", "open", "open"]);
+    assert.equal(receipts[0].matched, "amount");
+    assert.equal(receipts[0].signature, `sig-${receipts[0].id}`);
+    assert.equal(receipts[0].urls, null);
+    assert.match(receipts[1].urls.usdc, /^solana:Payee\?amount=2\.000007&spl-token=/);
+    assert.equal(receipts[1].memo, pending.ad.memo);
+    const reused = { signature: `sig-${receipts[0].id}`, fund: "sol" as const, received: 600_000, payer: "Payer", matched: "amount" as const };
+    assert.equal(await payOrder(receipts[1].id, reused, Date.now()), false, "one transfer pays one order");
+    assert.match(adFor(visit("1.1.1.1"), "SOLANA!"), />Dear</, "matched as words");
+    assert.match(adFor(visit("1.1.1.1"), "best solana rpc"), />Dear</, "the higher bid first");
+    assert.equal(adFor(visit("1.1.1.3"), "rpc"), "", "every word of a keyword");
+    assert.equal(adFor(visit("1.1.1.4"), "wallet"), "", "a mobile ad, to a computer");
+    assert.match(adFor(visit("1.1.1.5", "Mozilla/5.0 (iPhone)"), "wallet"), />Phones</);
+    assert.equal(adFor(visit("1.1.1.6", "Googlebot/2.1"), "solana"), "", "no ads for crawlers");
+    assert.ok(!adFor(visit("1.1.1.7"), "solana").includes("<img"), "search is words only");
+
+    // Search put Dear on three pages, the same address twice: three impressions at 2¢.
+    await flushAds();
+    let ad = await getAd(dear);
+    assert.deepEqual(ad?.keywords, [{ keyword: "solana", budget: 100, spent: 6, shown: 3, social: 0 }]);
+
+    // Social: what someone last posted about that an ad matched picks their timeline's ad.
+    assert.equal((await cat("GET", "/api/social/timeline")).json.ad, null, "nothing posted yet");
+    assert.equal((await cat("POST", "/api/social/post", { text: "Loving Solana today" })).status, 200);
+    const feed = await cat("GET", "/api/social/timeline");
+    assert.equal(feed.json.ad.title, "Dear");
+    assert.equal(feed.json.ad.owner, "ben");
+    assert.equal(feed.json.ad.host, "rpc.example.com");
+    assert.equal(feed.json.ad.img, "");
+    assert.equal(Object.keys(feed.json.ad).includes("bid"), false, "only what the post draws");
+    assert.equal((await cat("GET", `/api/social/timeline?before=${feed.json.posts[0].at}&id=${feed.json.posts[0].id}`)).json.ad, null, "first page only");
+    assert.equal((await cat("GET", "/api/social/timeline?saved=1")).json.ad, null, "not among saved posts");
+    // A post no ad matches leaves the topic as it was.
+    const sql = new Client({ connectionString: process.env.DATABASE_URL });
+    await sql.connect();
+    await sql.query("UPDATE users SET last_post = 0 WHERE name = 'cat'");
+    await sql.end();
+    assert.equal((await cat("POST", "/api/social/post", { text: "Just coffee" })).status, 200);
+    assert.equal((await cat("GET", "/api/social/timeline")).json.ad.title, "Dear");
+    assert.match((await cat("GET", "/api/social/timeline", undefined, "Mozilla/5.0 (iPhone)")).json.ad.title, /Dear/);
+    // Your own ad shows where it runs, and your looking costs it nothing: ben's Dear outbids amy's Cheap.
+    assert.equal((await ben("POST", "/api/social/post", { text: "solana rpc tips" })).status, 200);
+    assert.equal((await ben("GET", "/api/social/timeline")).json.ad.title, "Dear");
+    await flushAds();
+    ad = await getAd(dear);
+    assert.deepEqual(ad?.keywords, [{ keyword: "solana", budget: 100, spent: 12, shown: 6, social: 3 }]);
+
+    // Spend the rest; then the 1¢ ad is the one left.
+    for (let i = 0; i < 44; i++) assert.match(adFor(visit(`2.0.0.${i}`), "solana rpc"), />Dear</);
+    assert.match(adFor(visit("2.0.1.0"), "solana rpc"), />Cheap</);
+    await flushAds();
+    ad = await getAd(dear);
+    assert.equal(ad?.keywords[0].spent, 100, "never past the budget");
+    assert.equal(ad?.keywords[0].shown, 50);
+
+    // Paid budget stays: words change at once, a keyword with budget left cannot go.
+    const edit = (json: Record<string, unknown>) => amy("POST", `/api/social/ads/${cheap}`, packAd({ ...creative, banner: false, ...json }));
+    const kept = await edit({ keywords: [{ keyword: "solana", add: 0 }] });
+    assert.equal(kept.status, 400);
+    assert.match(kept.json.error, /budget left/);
+    const xss = await edit({ title: '<img src=x onerror="alert(1)">', keywords: [{ keyword: "solana rpc", add: 0 }] });
+    assert.equal(xss.status, 200, xss.text);
+    assert.equal(xss.json.order, null);
+    assert.equal(xss.json.ad.title, '<img src=x onerror="alert(1)">', "stored as written");
+    const shown = adFor(visit("3.0.0.1"), "solana rpc");
+    assert.ok(shown.includes("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;"), shown);
+    assert.ok(!shown.includes("<img src=x"));
+    assert.equal((await amy("GET", `/api/social/ads/${dear}`)).status, 404, "someone else's");
+    assert.equal((await amy("GET", `/api/social/ads/${pending.ad.id}`)).status, 404, "not paid");
+    assert.equal((await amy("POST", `/api/social/ads/${dear}`, packAd({ ...creative, banner: false, keywords: [{ keyword: "solana", add: 0 }] }))).status, 404);
+    assert.ok(phones);
+    const markup = adMarkup({ cta: "Go", title: "T", body: "B", url: "https://a.example.com/$&" });
+    assert.ok(markup.includes('href="https://a.example.com/&#36;&amp;"'), markup);
+  } finally {
+    server.close();
+  }
 });

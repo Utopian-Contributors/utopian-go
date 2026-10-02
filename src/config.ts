@@ -288,3 +288,9 @@ export const TOKEN_PINNED_MINTS = new Set([
  * Bump it, to the date in client/legal/terms.html, whenever those terms change.
  */
 export const TERMS_VERSION = "2026-09-27";
+
+/**
+ * The wallet advertisers pay, in USDC, by Solana Pay. Unset, an ad can be
+ * drafted and previewed but not checked out.
+ */
+export const ADS_PAY_TO = process.env.ADS_PAY_TO || "";
