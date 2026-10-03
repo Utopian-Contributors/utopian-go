@@ -518,10 +518,12 @@ entry; until then swap, send and passkey reveal answer `409 {setup: true}`.
 3. A rent failure ("Every Solana account must keep about 0.001 SOL") is explained, not
    reported as a generic error.
 
-**Places.** Every link someone follows off search to another host (click or middle
-click) is kept in `localStorage` (`tr`), and nowhere else: one entry per host with the
-favicon, newest first, each holding its pages (URL, link text) newest first. At most 120
-hosts and 60 pages a host.
+**Places.** Desktop only: under 901 px wide, the same line the rail uses, there is no
+button, `hive.js` is never fetched, and nothing is recorded; narrowing the window closes
+Places. On a desktop, every link someone follows off search to another host (click or
+middle click) is kept in `localStorage` (`tr`), and nowhere else: one entry per host
+with the favicon, newest first, each holding its pages (URL, link text) newest first. At
+most 120 hosts and 60 pages a host.
 
 1. Web, news, video and discussion results carry `meta_url.favicon`, Brave's 32 px proxy
    URL, passed through only when it is on `imgs.search.brave.com`. Results never draw it.

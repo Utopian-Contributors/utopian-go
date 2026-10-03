@@ -67,6 +67,8 @@ paintSaved();
 noZoom();
 mountPwa();
 
+/** Places is desktop only: a phone never shows its button, loads hive.js, or keeps a trail. */
+const WIDE = matchMedia("(min-width: 901px)");
 const hiveBtn = el("button", { type: "button", class: "hvb", "aria-label": "Places", title: "Places" });
 $("hm-tk").append(hiveBtn);
 paintHiveBtn();
@@ -77,8 +79,12 @@ hiveBtn.addEventListener("click", () => {
 });
 
 function paintHiveBtn() {
-  hiveBtn.hidden = !readTrail().length;
+  hiveBtn.hidden = !WIDE.matches || !readTrail().length;
 }
+WIDE.addEventListener("change", () => {
+  if (!WIDE.matches) window.ugHive?.close();
+  paintHiveBtn();
+});
 
 /** @param {string} h */
 function iconFor(h) {
@@ -91,7 +97,7 @@ function iconFor(h) {
 
 /** @param {MouseEvent} e */
 function trailClick(e) {
-  if (e.type === "auxclick" && e.button !== 1) return;
+  if (!WIDE.matches || (e.type === "auxclick" && e.button !== 1)) return;
   const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
   if (!(a instanceof HTMLAnchorElement) || a.hostname === location.hostname) return;
   if (a.closest("#hv.ed")) return;

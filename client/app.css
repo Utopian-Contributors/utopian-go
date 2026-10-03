@@ -1803,12 +1803,6 @@ body.lb-on {
     min-height: 0;
   }
 
-  /* Results stacks here: its control is centred on the 36px mark under 12px,
-     so Places is too. 12 + 36 / 2, less half the button. */
-  .hvb {
-    top: 12px;
-  }
-
   body.home .lg-mark {
     height: 56px;
   }
