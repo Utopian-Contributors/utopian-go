@@ -532,10 +532,20 @@ most 120 hosts and 60 pages a host.
    injects its own sheet.
 3. `hive.js` fills the page under the search header, which switches to its results row
    and stays usable; a search or the wordmark closes Places. Each host is its 32 px
-   favicon in a grey circle, newest in the middle and the rest in hexagonal rings. The canvas is a native scroll box sized to
-   the honeycomb, so panning (touch, trackpad, or mouse drag) stops at its edges.
-4. A host zooms into its pages, which ring it the same way; the host again folds them
-   back. Edit removes a host or a page, and Clear all forgets the trail.
+   favicon in a grey circle, the one with the most pages in the middle and the rest in
+   hexagonal rings by page count, ties newest first. The canvas is a native scroll box
+   sized to its content, so panning (trackpad or mouse drag) stops at its edges.
+4. A host zooms into its pages. The host stays a circle on the left, and its pages run
+   newest first down an arc around its right side: each a one-line pill with its title
+   (or path), cut with an ellipsis at 360 px, under a heading for its day, "Today" or
+   else "10. September", with the year when it is not this one. The arc grows with the
+   pages to a radius of 300 px (less where the view is short), spanning at most a third
+   of a circle. Past that the list scrolls through the arc with the host held in the
+   middle, and pages fade as they leave either end. A list that scrolls gets a tick for
+   each day down the right edge, placed where that day starts in the list: the days in
+   sight are marked, hovering one shows its date, and a click scrolls to it. The host
+   again folds the pages back. Edit removes a host or a page, and Clear all forgets the
+   trail.
 
 **The wallet page's dialogs** live in `keys.js`: Recovery phrase (password or passkey),
 Receive (address as a QR code, plus Copy), and Send (token, recipient with Paste, amount

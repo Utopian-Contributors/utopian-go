@@ -1,38 +1,61 @@
 /**
  * Places: every host someone left search for, as a honeycomb they can pan.
- * A host opens into its pages; the host again folds them back.
+ * A host opens into its pages, by day, on an arc that scrolls; the host again
+ * folds them back.
  */
 import { el } from "../js/dom.js";
 import { injectStyles } from "../js/ui.js";
 import { readTrail, writeTrail } from "../js/trail.js";
 
 const S = 96;
-const STEP = S + 10;
+const GAP = 10;
+const STEP = S + GAP;
 const PAD = 24;
 const DIRS = [[0, -1], [-1, 0], [-1, 1], [0, 1], [1, 0], [1, -1]];
+// A page's pill: its height and widest. A day's heading: its height. The arc:
+// the longest its radius gets. The day ticks: the least room between two.
+const H = 40;
+const W = 360;
+const D = 24;
+const ARC = 300;
+const TICK = 8;
 
 const CSS = `
 .hv-on,.hv-on body{overflow:hidden}
 .hv-on #tb{display:none}
 #hv{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;background:var(--bg);color:var(--t)}
-.hv-v{flex:1;display:grid;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;cursor:grab}
+.hv-v{flex:1;display:grid;overflow:auto;overscroll-behavior:contain;overflow-anchor:none;scrollbar-width:none;cursor:grab}
 .hv-v::-webkit-scrollbar{display:none}
 .hv-l{position:relative;margin:auto}
 .hv-c{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:${S}px;height:${S}px;padding:14px;border:0;border-radius:50%;background:var(--ch);color:var(--t);font:500 11px/1.25 var(--ff);text-align:center;text-decoration:none;cursor:pointer;user-select:none;-webkit-user-drag:none;transition:transform .15s}
 .hv-c:hover{transform:scale(1.06)}
 .hv-c:focus-visible{outline:2px solid var(--a);outline-offset:2px}
 .hv-c span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden;overflow-wrap:break-word;hyphens:auto;max-width:100%}
+.hv-p,.hv-d{left:0;top:0}
+.hv-p{width:max-content;max-width:${W}px;height:${H}px;padding:0 16px;border-radius:999px;font-size:13px;transition:none}
+.hv-p span{display:block;white-space:nowrap;text-overflow:ellipsis}
+.hv-d{position:absolute;margin:0;padding:0 16px;color:var(--m);font:600 12px/${D}px var(--ff);white-space:nowrap}
+.hv-t{position:absolute;right:16px;width:28px}
+.hv-t button{position:absolute;right:0;width:28px;height:12px;margin-top:-6px;padding:0;border:0;background:none;cursor:pointer}
+.hv-t button::before{content:"";position:absolute;top:5px;right:0;width:12px;height:2px;border-radius:1px;background:var(--m);opacity:.4;transition:width .15s,opacity .15s}
+.hv-t .on::before{width:20px;opacity:1}
+.hv-t span{position:absolute;top:50%;right:32px;padding:3px 10px;border-radius:999px;background:var(--ch);color:var(--t);font:600 12px/1.4 var(--ff);white-space:nowrap;transform:translateY(-50%);opacity:0;pointer-events:none;transition:opacity .15s}
+.hv-t button:hover span,.hv-t button:focus-visible span{opacity:1}
+.hv-t button:focus-visible{outline:2px solid var(--a);outline-offset:2px}
 .hv-i{width:32px;height:32px;flex:none;border-radius:6px}
 b.hv-i{display:grid;place-items:center;border-radius:50%;background:var(--go);color:var(--go-ink);font-size:16px}
 .hv-bar{display:flex;justify-content:center;align-items:center;gap:20px;padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
 .hv-x{color:var(--dn)}
 .ed .hv-c>*{animation:hv-j .25s infinite alternate}
+.ed .hv-p>*{animation-name:hv-k}
 .ed .hv-c::after{content:"\\00d7";position:absolute;top:4px;right:12px;display:grid;place-items:center;box-sizing:border-box;width:20px;height:20px;padding-bottom:2px;border-radius:50%;background:var(--t);color:var(--bg);font:700 14px/1 var(--ff)}
+.ed .hv-p::after{top:-7px;right:10px}
 @keyframes hv-j{from{transform:rotate(-2deg)}to{transform:rotate(2deg)}}
+@keyframes hv-k{from{transform:rotate(-.6deg)}to{transform:rotate(.6deg)}}
 @media (prefers-reduced-motion:reduce){.ed .hv-c>*{animation:none}}
 `;
 
-let root, view, layer, place, editing, done, opener, drag, moved, fit;
+let root, view, layer, place, editing, done, opener, drag, moved, fit, rail, bend;
 const still = matchMedia("(prefers-reduced-motion: reduce)");
 
 /** @param {number} n */
@@ -100,6 +123,19 @@ function centre(cell) {
   return `${cell.offsetLeft + S / 2}px ${cell.offsetTop + S / 2}px`;
 }
 
+/**
+ * "Today", or the day and month ("10. September"), with the year when it is
+ * not this one.
+ * @param {number} a
+ */
+function day(a) {
+  const d = new Date(a);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return "Today";
+  const year = d.getFullYear() === now.getFullYear() ? "" : ` ${d.getFullYear()}`;
+  return `${d.getDate()}. ${d.toLocaleString("en", { month: "long" })}${year}`;
+}
+
 /** @param {{ h: string, i?: string }} p */
 function face(p) {
   const letter = el("b", { class: "hv-i", "aria-hidden": "true", text: p.h.charAt(0).toUpperCase() });
@@ -154,7 +190,10 @@ function pageCell(p, page) {
  */
 function showAll(h, from) {
   place = null;
-  const list = readTrail();
+  bend = null;
+  rail?.remove();
+  rail = null;
+  const list = readTrail().sort((a, b) => b.p.length - a.p.length);
   if (!list.length) return close();
   const nodes = list.map((p) =>
     hostCell(p, (cell) => {
@@ -169,6 +208,11 @@ function showAll(h, from) {
 }
 
 /**
+ * A host's pages, newest first under a heading for each day, on an arc around
+ * the host's right side. The arc grows with them to a radius of ARC, a third
+ * of a circle at most; past that the list scrolls through it with the host
+ * held in the middle, and a page leaving either end fades. A tick for each day
+ * down the right edge then shows where the list goes, the days in sight marked.
  * @param {string} h
  * @param {string} [from]
  */
@@ -176,7 +220,6 @@ function showPlace(h, from) {
   const p = readTrail().find((x) => x.h === h);
   if (!p) return showAll(null);
   place = h;
-  const pages = p.p.filter((page) => /^https?:\/\//i.test(page.u));
   const head = hostCell(p, (cell) => {
     if (editing) return forget(h);
     play(layer, [{ transform: "none", opacity: 1 }, { transform: "scale(.3)", opacity: 0 }], centre(cell)).then(() =>
@@ -185,7 +228,93 @@ function showPlace(h, from) {
   });
   head.classList.add("hv-f");
   head.setAttribute("aria-expanded", "true");
-  mount([head, ...pages.map((page) => pageCell(p, page))], from ? 0 : null, from);
+  /** @type {HTMLElement[]} */
+  const items = [];
+  /** @type {string[]} */
+  const days = [];
+  /** @type {number[]} the day each item is under */
+  const of = [];
+  for (const page of p.p) {
+    if (!/^https?:\/\//i.test(page.u)) continue;
+    const d = day(page.a);
+    if (d !== days[days.length - 1]) {
+      days.push(d);
+      items.push(el("h3", { class: "hv-d", text: d }));
+      of.push(days.length - 1);
+    }
+    items.push(pageCell(p, page));
+    of.push(days.length - 1);
+  }
+  const top = from ? 0 : view.scrollTop;
+  const next = el("div", { class: "hv-l" }, head, ...items);
+  layer.replaceWith(next);
+  layer = next;
+  rail?.remove();
+  rail = null;
+
+  const vw = view.clientWidth;
+  const vh = view.clientHeight;
+  const hs = items.map((n) => n.offsetHeight);
+  const ws = items.map((n) => n.offsetWidth);
+  /** @type {number[]} */
+  const ys = [];
+  let len = 0;
+  for (const x of hs) {
+    ys.push(len);
+    len += x + GAP;
+  }
+  len = Math.max(0, len - GAP);
+  const near = S / 2 + GAP;
+  const r = Math.min(ARC, (vh - 2 * PAD) / Math.sqrt(3), Math.max(near, len / Math.sqrt(3)));
+  const a = (r * Math.sqrt(3)) / 2;
+  const fits = len <= 2 * a + 1;
+  const y0 = vh / 2 - (fits ? len / 2 : a);
+  const cx = Math.max(PAD + S / 2, (vw + S / 2 - r - Math.max(0, ...ws)) / 2);
+  layer.style.width = `${vw}px`;
+  layer.style.height = `${fits ? vh : len + vh - 2 * a}px`;
+  head.style.left = `${cx - S / 2}px`;
+  // Focus scrolls a page onto the arc, not merely onto the screen.
+  for (const n of items) n.style.scrollMarginBlock = `${vh / 2 - a}px`;
+
+  if (!fits) {
+    const at = days.map((_, g) => ys[of.indexOf(g)]);
+    const pos = at.map((y) => (y / len) * 2 * a);
+    for (let g = 1; g < pos.length; g++) pos[g] = Math.max(pos[g], pos[g - 1] + TICK);
+    for (let g = pos.length - 1; g >= 0; g--)
+      pos[g] = Math.max(0, Math.min(pos[g], g + 1 < pos.length ? pos[g + 1] - TICK : 2 * a));
+    rail = el("nav", { class: "hv-t", "aria-label": "Days" },
+      ...days.map((d, g) => {
+        const tick = el("button", { type: "button" }, el("span", { text: d }));
+        tick.style.top = `${pos[g]}px`;
+        tick.addEventListener("click", () => view.scrollTo({ top: at[g], behavior: still.matches ? "auto" : "smooth" }));
+        return tick;
+      }),
+    );
+    rail.style.top = `${vh / 2 - a}px`;
+    rail.style.height = `${2 * a}px`;
+    root.append(rail);
+  }
+
+  bend = () => {
+    const st = view.scrollTop;
+    head.style.top = `${st + vh / 2 - S / 2}px`;
+    /** @type {Set<number>} */
+    const seen = new Set();
+    items.forEach((n, i) => {
+      const dy = Math.abs(y0 + ys[i] + hs[i] / 2 - st - vh / 2);
+      const c = Math.min(dy, a);
+      const out = Math.max(0, dy - a) / (H + GAP);
+      const x = Math.max(Math.sqrt(r * r - c * c), Math.sqrt(Math.max(0, near ** 2 - Math.max(0, c - hs[i] / 2) ** 2)));
+      n.style.transform = `translate(${cx + x}px,${y0 + ys[i]}px)`;
+      n.style.opacity = out ? `${Math.max(0, 1 - out)}` : "";
+      n.style.pointerEvents = out > 0.5 ? "none" : "";
+      if (!out) seen.add(of[i]);
+    });
+    rail?.querySelectorAll("button").forEach((tick, g) => tick.classList.toggle("on", seen.has(g)));
+  };
+  view.scrollTop = top;
+  bend();
+  if (from) play(layer, [{ transform: from, opacity: 0 }, { transform: "none", opacity: 1 }], `${cx}px ${vh / 2}px`);
 }
 
 /**
@@ -246,17 +375,25 @@ function onKey(e) {
   if (e.key === "Escape") close();
 }
 
+/** The arc is laid out for the view it opened in. */
+function onResize() {
+  if (place) showPlace(place);
+}
+
 /** @param {boolean} [quiet] the page is already going somewhere else */
 function close(quiet) {
   if (!root) return;
   root.remove();
   root = null;
+  rail = null;
+  bend = null;
   fit.disconnect();
   document.documentElement.classList.remove("hv-on");
   removeEventListener("pointermove", onMove);
   removeEventListener("pointerup", onUp);
   removeEventListener("click", onClick, true);
   removeEventListener("keydown", onKey);
+  removeEventListener("resize", onResize);
   done?.();
   if (quiet === true) return;
   document.body.className = "home";
@@ -290,10 +427,12 @@ function open(btn, onDone) {
   });
   back.addEventListener("click", () => close());
   view.addEventListener("pointerdown", onDown);
+  view.addEventListener("scroll", () => bend?.());
   addEventListener("pointermove", onMove);
   addEventListener("pointerup", onUp);
   addEventListener("click", onClick, true);
   addEventListener("keydown", onKey);
+  addEventListener("resize", onResize);
   document.documentElement.classList.add("hv-on");
   document.body.className = "res";
   const chrome = document.getElementById("chrome");
