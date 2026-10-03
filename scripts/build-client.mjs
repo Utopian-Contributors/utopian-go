@@ -91,18 +91,13 @@ const AD_RESERVE = 600;
  * that summed every asset into a single flight and therefore had to ration the
  * window between them. That model is gone — see the strategy note at the top —
  * but the number outlived it and had become a ceiling with no physics behind
- * it. The parse-weight guardrails below are what actually bound how much code
- * a page may carry; this bounds what it costs to deliver.
+ * it. This bounds what a page costs to deliver.
  */
 const FLIGHT = INIT_WINDOW - HEADER_RESERVE;
 
 /**
  * The pages, each with the document that must paint off the first flight and
- * the bundles that ride the second one.
- *
- * `raw` is a soft guardrail on parse and compile cost, not on transfer — a
- * budget that gzip alone cannot express, since the cheapest bytes to send are
- * often the most repetitive ones to parse.
+ * the bundles that ride the second one. Budgets are gzip bytes.
  */
 const PAGES = [
   {
@@ -111,33 +106,21 @@ const PAGES = [
       file: "index.html",
       // Less what the server injects per request; see TICKER_RESERVE and AD_RESERVE.
       gzip: FLIGHT - TICKER_RESERVE - AD_RESERVE,
-      raw: 49_152, // soft: inlined CSS is cheap to parse, but not free
     },
-    parallel: [{ file: "app.js", gzip: FLIGHT, raw: 24_576 }],
+    parallel: [{ file: "app.js", gzip: FLIGHT }],
   },
   {
     name: "Wallet",
-    doc: { file: "wallet.html", gzip: FLIGHT, raw: 32_768 },
-    parallel: [{ file: "wallet.js", gzip: FLIGHT, raw: 16_384 }],
+    doc: { file: "wallet.html", gzip: FLIGHT },
+    parallel: [{ file: "wallet.js", gzip: FLIGHT }],
   },
   {
     name: "Social",
     // Same results layout as search, so the document inlines that stylesheet.
-    // The 14KB cap is the gzip load. Raw is the parse weight, as on search.
-    doc: { file: "social.html", gzip: Math.min(FLIGHT, 14 * 1024), raw: 49_152 },
-    parallel: [{ file: "social.js", gzip: FLIGHT, raw: 24_576 }],
+    doc: { file: "social.html", gzip: Math.min(FLIGHT, 14 * 1024) },
+    parallel: [{ file: "social.js", gzip: FLIGHT }],
   },
 ];
-
-/**
- * Fetched on interaction, never on first paint. Reported, not budgeted: the
- * buy panel only loads once someone presses Buy and the wallet picker only
- * once someone presses Login, so counting either against a first-load window
- * would be measuring bytes nobody waits for. The install panel is the one
- * that arrives unasked, but only on a phone, and only after load; the rail
- * is its opposite, only on a wide screen, and only after the timeline is drawn.
- */
-const LAZY = ["swap.js", "connect.js", "qr.js", "keys.js", "pay.js", "chat.js", "rec.js", "rail.js", "ads.js", "avatar.js", "login.js", "hive.js", "install.js"];
 
 /**
  * The legal documents: readable HTML under client/legal/, published as the
@@ -158,32 +141,6 @@ const LEGAL = [
  * an order of magnitude heavier.
  */
 const LEGAL_MAX = 14_336;
-
-/**
- * Requested on first load but never render-blocking, and already compressed as
- * far as they go. Listed so the accounting is honest about total first-load
- * bytes, not budgeted, since no paint waits on them.
- *
- * The two banners are one line item between them, not two. They are the home
- * page's wordmark by day and by night, declared as a prefers-color-scheme pair
- * of background images in app.css, so a visitor fetches exactly one of them —
- * and only on the home page, where the mark is large enough to carry a scene.
- *
- * The favicons are the same kind of pair: a browser that takes SVG icons
- * fetches the SVG, which follows the theme, and only the rest fetch the PNG.
- *
- * The service worker is registered after load, and Chromium reads the
- * manifest on its own schedule to decide whether to offer an install. The app
- * icons the manifest names are not listed: only installing fetches them.
- */
-const STATIC_FIRST_LOAD = [
-  "go-favicon.svg",
-  "go-favicon.png",
-  "banner-light.webp",
-  "banner-dark.webp",
-  "sw.js",
-  "manifest.webmanifest",
-];
 
 /** Copied from client/ as they are: images, and the web app manifest. */
 const STATIC_EXT = new Set([".png", ".svg", ".ico", ".webp", ".jpg", ".jpeg", ".webmanifest"]);
@@ -892,126 +849,29 @@ function precompress() {
   }
 }
 
-function fmt(n) {
-  return String(n).padStart(6);
-}
-
-/** raw/gzip/brotli for one built file. */
-function measure(file) {
-  const buf = readFileSync(path.join(outDir, file));
-  return { raw: buf.length, gzip: gzip(buf).length, br: brotli(buf).length };
-}
-
-function row(file, m, tag) {
-  return (
-    `  ${file.padEnd(17)} ${fmt(m.raw)} B  ` +
-    `(gzip ${fmt(m.gzip)} B, br ${fmt(m.br)} B)` +
-    (tag ? `  [${tag}]` : "")
-  );
-}
-
+/** Prints one line: the guardrail holds, in green, or what is over it, in red. */
 function reportSize() {
-  /** @type {string[]} */
-  const hard = [];
-  /** @type {string[]} */
-  const soft = [];
-
-  /** Checks one entry against its budgets and returns its printable row. */
-  function check(entry) {
-    const m = measure(entry.file);
-    const gOk = m.gzip <= entry.gzip;
-    const rOk = m.raw <= entry.raw;
-    if (!gOk) hard.push(`${entry.file} (${m.gzip} B gzip > ${entry.gzip} B)`);
-    if (!rOk) soft.push(`${entry.file} (${m.raw} B raw > ${entry.raw} B)`);
-    return { m, line: row(entry.file, m, !gOk ? "OVER" : !rOk ? "OVER raw" : "OK") };
+  const over = [];
+  const check = (file, n, max) => {
+    if (n > max) over.push(`${file} (${n} B > ${max} B)`);
+  };
+  for (const { file, gzip: max } of PAGES.flatMap((page) => [page.doc, ...page.parallel])) {
+    const p = path.join(outDir, file);
+    if (existsSync(p)) check(file, gzip(readFileSync(p)).length, max);
+  }
+  // Already compressed: a PDF goes on the wire as it is.
+  for (const file of legalFiles()) {
+    check(file, readFileSync(path.join(outDir, file)).length, LEGAL_MAX);
   }
 
-  console.log(
-    `\nEvery first-flight response must fit one TCP initial window` +
-      ` (${INIT_WINDOW} B = 10 ×\n` +
-      `  1460 MSS, RFC 6928), less ${HEADER_RESERVE} B of response headers` +
-      ` → ${FLIGHT} B each. A bundle\n` +
-      `  is discovered only once its document has been parsed and therefore` +
-      ` ACKed, so it\n` +
-      `  rides a second connection's fresh window or a grown one — never the` +
-      ` document's.`,
-  );
-
-  for (const page of PAGES) {
-    if (!existsSync(path.join(outDir, page.doc.file))) continue;
-
-    const doc = check(page.doc);
-    const reserved =
-      page.doc.gzip === FLIGHT
-        ? ""
-        : `, less ${FLIGHT - page.doc.gzip} B of server-injected markup`;
-    console.log(`\n${page.name} — document (${page.doc.gzip} B${reserved}):`);
-    console.log(doc.line);
-    console.log(
-      `  ${"headroom".padEnd(14)} ${fmt(page.doc.gzip - doc.m.gzip)} B gzip,` +
-        ` ${fmt(page.doc.gzip - doc.m.br)} B brotli`,
-    );
-
-    const bundles = page.parallel.filter((e) =>
-      existsSync(path.join(outDir, e.file)),
-    );
-    if (!bundles.length) continue;
-    console.log(`  fetched in parallel, each budgeted alone:`);
-    for (const entry of bundles) console.log(check(entry).line);
-  }
-
-  const statics = STATIC_FIRST_LOAD.filter((f) =>
-    existsSync(path.join(outDir, f)),
-  );
-  if (statics.length) {
-    console.log(`\nAlso on first load, but nothing waits on it:`);
-    for (const file of statics) {
-      console.log(row(file, measure(file), "not render-blocking"));
-    }
-  }
-
-  const rows = LAZY.filter((f) => existsSync(path.join(outDir, f)));
-  if (rows.length) {
-    console.log(`\nLazy — fetched on interaction, outside any first-load budget:`);
-    for (const file of rows) console.log(row(file, measure(file)));
-  }
-
-  const docs = legalFiles();
-  if (docs.length) {
-    console.log(
-      `\nDocuments — PDFs the footer links to, fetched only when clicked, and` +
-        ` already\n  compressed. Capped at ${LEGAL_MAX} B each:`,
-    );
-    for (const file of docs) {
-      const m = measure(file);
-      const ok = m.raw <= LEGAL_MAX;
-      if (!ok) hard.push(`${file} (${m.raw} B > ${LEGAL_MAX} B)`);
-      console.log(row(file, m, ok ? "OK" : "OVER"));
-    }
-  }
-
-  if (hard.length) {
-    const docs = PAGES.map((pg) => pg.doc.file);
-    const overDoc = hard.filter((h) => docs.some((d) => h.startsWith(d)));
-    console.log(`\n  ✗ Over budget: ${hard.join(", ")}`);
-    console.log(
-      `    ${overDoc.length === hard.length
-        ? "A document no longer fits one initial window — every cold load of it\n" +
-          "    pays an extra round trip before first paint."
-        : "Trim before shipping."}\n`,
-    );
+  const color = (code, line) =>
+    process.stdout.isTTY ? `\x1b[${code}m${line}\x1b[0m` : line;
+  if (over.length) {
+    console.log(color(31, `Over the client guardrail: ${over.join(", ")}`));
     process.exitCode = 1;
     return;
   }
-
-  if (soft.length) {
-    console.log(`\n  ⚠ Raw guardrail exceeded (soft): ${soft.join(", ")}`);
-    console.log(`    Compressed sizes are fine — prefer shrinking the source.\n`);
-  }
-
-  console.log(
-    `\n  ✓ Every document paints off its first flight; no subresource blocks one.\n`,
-  );
+  console.log(color(32, "✓ Every document fits the client guardrail"));
   process.exitCode = 0;
 }
 

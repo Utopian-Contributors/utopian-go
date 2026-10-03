@@ -575,9 +575,7 @@ exchange scanner reads it; the payer picks the amount and sends from their own a
 - Every first-flight response is at most **14,250 B gzip**: one TCP initial window, less the
   headers. `index.html` gets 13,350 B, because the server injects the price strip and an ad
   into it.
-  The build fails when any response is over budget.
-- Each bundle has a raw parse budget: `app.js` and `social.js` 24,576 B, `wallet.js`
-  16,384 B. Going over prints a warning, not a failure.
+  The build fails when any response is over budget, and prints only what is over.
 - Stylesheets are inlined. The social document is pruned at build time to the selectors its
   bundle and markup can produce.
 - Assets are precompressed at build time: brotli quality 11 and gzip -9.

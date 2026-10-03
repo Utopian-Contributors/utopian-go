@@ -28,8 +28,8 @@ alone.
 > therefore had to ration the window between them — which is where the "&lt; 8 KiB per
 > file" rule came from. The rationing went away when the CSS was inlined and the budget
 > model was rewritten (`5522af1`); the 8 KiB number outlived it for a while as a ceiling
-> with no physics behind it. Parse weight is now the only per-file guardrail, because it
-> is the only per-file cost that is actually real.
+> with no physics behind it. Each response's own gzip size against the window is now the
+> only per-file guardrail.
 
 There are two documents, each with its own budget and its own bundle:
 
