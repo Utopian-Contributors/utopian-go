@@ -8,11 +8,11 @@
  * code; the server sees the transfer and starts the ad (src/social/adPay.ts),
  * and this page only asks whether it has.
  */
+import AD_CSS from "../ad.css";
 import { el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { dialog, injectStyles } from "../js/ui.js";
 import { injectFormStyles } from "../swap/ui.js";
-import AD_CSS from "../ad.css";
 import CSS from "./ads.css";
 
 /** Matches the limits in src/social/limits.ts. */
