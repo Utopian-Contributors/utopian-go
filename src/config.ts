@@ -89,8 +89,14 @@ export const TOKEN_INDEX_FILE = path.join(CACHE_DIR, "tokens.json");
 
 // —— Wallet page ——
 
-/** Rows in the wallet page's most-traded list. */
+/** Rows in one page of the wallet page's lists; scrolling to the end asks for the next. */
 export const TOKEN_TOP_COUNT = 30;
+
+/**
+ * The share of traded tokens, busiest first, that counts as Trending.
+ * Stablecoins are left out before the cut: they top the ranking and move nowhere.
+ */
+export const TOKEN_TRENDING_SHARE = 0.05;
 
 /** Thumbnails are a cache: kept across deploys, rebuilt by the next sync if lost. */
 export const TOKEN_ICON_DIR = path.join(CACHE_DIR, "icons");

@@ -5,7 +5,7 @@ import {
   TOKEN_PINNED_MINTS,
 } from "../../config";
 import { jupFetch } from "../jupiterGate";
-import { JupToken, TokenRecord } from "../../types";
+import { JupToken, TokenKind, TokenRecord } from "../../types";
 
 /**
  * Hourly index source. Jupiter is the identity + ranking layer: it answers
@@ -50,6 +50,32 @@ const EQUITY_TAGS = new Set(["stocks", "xstocks", "equities"]);
 
 /** Jupiter tags a stablecoin `stable`, and a yield-bearing deposit receipt `yb`. */
 const STABLE_TAGS = new Set(["stable", "yb"]);
+
+/** The underlying a bridged major unwraps to; see wrappedAlias. */
+const MAJOR_ALIAS = /^(btc|eth|ether|sol)$/i;
+
+/**
+ * What a token is, from its tags. First match wins, because the tags overlap:
+ * every tokenized stock is also `rwa`, and LBTC is both `major` and `yield`.
+ * Stablecoins go first so a yield-bearing dollar is never mistaken for an
+ * investment. Pre-IPO shares count as stocks, and staked and yield-bearing
+ * receipts and infrastructure tokens as DeFi: too few of each for a list of
+ * their own. Jupiter misses one major (cbBTC, Coinbase's), which its wrapper
+ * gives away. Only a verified mint may claim to be a major that way; anyone
+ * can name a token "Wrapped SOL".
+ */
+export function tokenKind(tags: readonly string[], aliases: readonly string[], verified: boolean): TokenKind {
+  const has = (...names: string[]) => names.some((name) => tags.includes(name));
+  if (tags.some((tag) => STABLE_TAGS.has(tag))) return "stables";
+  if (has("prestocks", "pre-ipo") || tags.some((tag) => EQUITY_TAGS.has(tag))) return "stocks";
+  if (has("rwa", "commodities")) return "rwas";
+  if (has("major") || (verified && aliases.some((alias) => MAJOR_ALIAS.test(alias)))) return "majors";
+  // A staked memecoin is staked before it is a meme.
+  if (has("lst", "yield")) return "defi";
+  if (has("meme")) return "memes";
+  if (has("defi", "infra")) return "defi";
+  return "other";
+}
 
 /**
  * Issuer wrappers appended to the underlying company's name. Each tokenizer
@@ -121,6 +147,7 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
   const aliases = isEquity
     ? equityAliases(symbol, name || symbol)
     : [wrappedAlias(name || symbol)].filter((a): a is string => !!a);
+  const kind = tokenKind(t.tags ?? [], aliases, verified);
 
   return {
     mint,
@@ -134,6 +161,7 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
     verified,
     ...(isEquity ? { equity: true } : {}),
     ...(stable ? { stable: true as const } : {}),
+    kind,
     ...(aliases.length ? { aliases } : {}),
     ...(volume24h > 0 ? { volume24h } : {}),
     ...(icon ? { icon } : {}),

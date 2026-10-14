@@ -32,8 +32,9 @@ import { adFor, adMarkup, flushAds, reloadAds } from "./ads";
 import { USDC_MINT, decimal, dollars, matchTransfer, orderAmounts, orderCodes, payUrl, transfersIn, type ParsedTx } from "./adPay";
 import { drawAvatar } from "./avatar";
 import { backdrop, palette } from "./backdrop";
-import { isStable } from "../lib/tokens/store";
-import type { TokenRecord } from "../types";
+import { tokenKind } from "../lib/tokens/jupiter";
+import { buildLists, isStable, pageOf } from "../lib/tokens/store";
+import type { TokenKind, TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
 
 const dir = mkdtempSync(path.join(tmpdir(), "social-"));
@@ -1401,7 +1402,8 @@ test("the timeline filters in the query, and pages through what is left", async 
     assert.deepEqual(await rail(carl), [], "not yourself");
     assert.equal((await bob("POST", "/api/social/friends", { username: "carl" })).status, 200);
     assert.deepEqual(await rail(bob), [], "not someone already added");
-    assert.ok(Array.isArray((await ada("GET", "/api/social/rail")).json.assets));
+    // The top of Trending and its length; nothing on it in an empty index.
+    assert.deepEqual((await ada("GET", "/api/social/rail")).json.assets, { count: 0, tokens: [] });
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
@@ -1478,6 +1480,76 @@ test("Trending assets leave out stablecoins, tagged by Jupiter or not", () => {
   ];
   for (const rec of stable) assert.equal(isStable(rec), true, rec.symbol);
   for (const rec of traded) assert.equal(isStable(rec), false, rec.symbol);
+});
+
+test("every token is one kind, read off Jupiter's tags", () => {
+  // Tags as Jupiter served them, verified and token-2022 left out.
+  const cases: [string, string[], string[], TokenKind][] = [
+    ["USDC", ["strict", "stable"], [], "stables"],
+    ["jlUSDC", ["community-assist", "jup-lend-earn", "yb", "yield"], [], "stables"],
+    ["ANTHROPIC", ["prestocks", "stocks", "rwa"], [], "stocks"],
+    ["XAI", ["prestocks", "rwa"], [], "stocks"],
+    ["NVDAx", ["moonshot-verified", "xstocks", "stocks", "rwa", "equities"], ["NVDA", "NVIDIA"], "stocks"],
+    ["SPCX", ["stocks", "rwa", "backpack"], ["SpaceX"], "stocks"],
+    ["XAUt0", ["rwa", "commodities"], [], "rwas"],
+    ["PAXG", ["rwa"], [], "rwas"],
+    ["SOL", ["community", "strict", "major"], ["SOL"], "majors"],
+    ["LBTC", ["community-assist", "major", "yield"], [], "majors"],
+    ["cbBTC", ["community", "moonshot-verified"], ["BTC"], "majors"],
+    ["JitoSOL", ["original-lst", "strict", "yield", "community", "lst"], [], "defi"],
+    ["xORCA", ["yield"], [], "defi"],
+    ["TRUMP", ["birdeye-trending", "community", "moonshot-verified", "meme"], [], "memes"],
+    ["JUP", ["defi", "birdeye-trending", "community", "strict"], [], "defi"],
+    ["RENDER", ["infra", "community", "strict"], [], "defi"],
+    ["ZEC", ["moonshot-verified"], [], "other"],
+  ];
+  for (const [symbol, tags, aliases, kind] of cases) assert.equal(tokenKind(tags, aliases, true), kind, symbol);
+  // Anyone can call a token Wrapped BTC; only a verified one is taken at its word.
+  assert.equal(tokenKind([], ["BTC"], false), "other");
+});
+
+test("the wallet page's lists: Trending is the busiest 5%, each kind all of itself, paged by cursor", () => {
+  const token = (symbol: string, volume24h: number, extra: Partial<TokenRecord> = {}) =>
+    ({ mint: `m-${symbol}`, symbol, name: symbol, price: 2, change24h: 3, volume24h, liquidity: 1e7, verified: true, priceAt: 0, checkedAt: 0, ...extra }) as TokenRecord;
+  const kinds: TokenKind[] = ["memes", "stocks", "majors", "defi", "other"];
+  const traded = Array.from({ length: 41 }, (_, i) => token(`T${i}`, 1000 - i * 10, { kind: kinds[i % kinds.length] }));
+  // Two at the same volume, so the order has to fall back on the mint.
+  traded.push(token("TIEb", 500, { kind: "memes" }), token("TIEa", 500, { kind: "memes" }));
+  const usdc = token("USDC", 1e9, { price: 1, kind: "stables", stable: true });
+  const order = [usdc, ...traded].sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0) || (a.mint < b.mint ? -1 : 1));
+  const lists = buildLists(order);
+
+  // 43 traded, the stablecoin left out before the cut: 5% is 3, rounded up, busiest first.
+  const trending = lists.get("trending")!;
+  assert.equal(trending.length, 3);
+  assert.deepEqual(trending.map((r) => r.symbol), order.slice(1, 4).map((r) => r.symbol));
+  assert.ok(![...lists.values()].some((list) => list.includes(usdc)), "no stablecoin on any list");
+  assert.equal(lists.get("memes")!.length, 11);
+  assert.deepEqual(lists.get("rwas"), []);
+  for (const [key, list] of lists) {
+    if (key !== "trending") assert.ok(list.every((r) => r.kind === key), key);
+  }
+
+  // Page through memes three at a time: every row once, in order, and no cursor after the last.
+  const memes = lists.get("memes")!;
+  const seen: string[] = [];
+  let after = "";
+  for (let pages = 0; pages < 10; pages += 1) {
+    const page = pageOf(memes, after, 3);
+    assert.equal(page.total, 11);
+    seen.push(...page.tokens.map((t) => t.symbol));
+    if (!page.after) break;
+    after = page.after;
+  }
+  assert.deepEqual(seen, memes.map((r) => r.symbol));
+  assert.ok(seen.indexOf("TIEa") === seen.indexOf("TIEb") - 1, "ties ordered by mint");
+
+  // A cursor names a place in the order, not an offset: after a rebuild drops
+  // a row from the first page, the next page still starts where this one ended.
+  const first = pageOf(memes, "", 3);
+  const rebuilt = memes.filter((r) => r.symbol !== first.tokens[0].symbol);
+  assert.equal(pageOf(rebuilt, first.after!, 3).tokens[0].symbol, memes[3].symbol);
+  assert.deepEqual(pageOf(memes, "garbage", 3).tokens, []);
 });
 
 test("a swap that fails for want of SOL says so, with the amounts", () => {

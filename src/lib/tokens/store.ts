@@ -4,8 +4,17 @@ import {
   TOKEN_INDEX_FILE,
   TOKEN_INDEX_INTERVAL_MS,
   TOKEN_PRICE_TTL_MS,
+  TOKEN_TRENDING_SHARE,
 } from "../../config";
-import { TokenQuote, TokenRecord, TopToken } from "../../types";
+import {
+  RailAssets,
+  TokenKind,
+  TokenList,
+  TokenPage,
+  TokenQuote,
+  TokenRecord,
+  TopToken,
+} from "../../types";
 import { fetchPrice } from "./helius";
 import { hasIcon, restoreIcons, syncIcons } from "./icons";
 import { fetchTokenRecords } from "./jupiter";
@@ -31,6 +40,8 @@ let index: TokenIndex = {
 let updatedAt = 0;
 /** Verified records by 24h volume, highest first. Volume only changes on a rebuild. */
 let ranked: TokenRecord[] = [];
+/** The wallet page's lists, each already in ranked order, so any page of one is a slice. */
+let lists = new Map<TokenList, TokenRecord[]>();
 
 /** In-flight price refreshes, keyed by mint, so N searches cause one fetch. */
 const inFlight = new Map<string, Promise<void>>();
@@ -65,10 +76,17 @@ function buildIndex(list: TokenRecord[]): TokenIndex {
 function adopt(list: TokenRecord[]): void {
   records = list;
   index = buildIndex(list);
-  ranked = list
-    .filter((r) => r.verified && (r.volume24h ?? 0) > 0)
-    .sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0));
+  ranked = list.filter((r) => r.verified && (r.volume24h ?? 0) > 0).sort(byVolume);
+  lists = buildLists(ranked);
   updatedAt = Date.now();
+}
+
+/**
+ * Busiest first, and by mint between equals, so the order is total and a page
+ * can say exactly where it ended.
+ */
+function byVolume(a: TokenRecord, b: TokenRecord): number {
+  return (b.volume24h ?? 0) - (a.volume24h ?? 0) || (a.mint < b.mint ? -1 : a.mint > b.mint ? 1 : 0);
 }
 
 // —— Disk snapshot ——
@@ -298,7 +316,7 @@ function toTop(rec: TokenRecord): TopToken {
   };
 }
 
-/** The most-traded verified tokens, for the wallet page. */
+/** The most-traded verified tokens, stablecoins and all. */
 export function topTokens(limit: number): TopToken[] {
   return ranked.slice(0, limit).map(toTop);
 }
@@ -318,14 +336,100 @@ export function isStable(rec: TokenRecord): boolean {
   return !rec.equity && rec.price > 0.98 && rec.price < 1.25 && Math.abs(rec.change24h ?? Infinity) < 0.5;
 }
 
-/** The same ranking without stablecoins, which top it by volume and move nowhere: Social's Trending assets. */
-export function trendingTokens(limit: number): TopToken[] {
-  const out: TopToken[] = [];
-  for (const rec of ranked) {
-    if (out.length === limit) break;
-    if (!isStable(rec)) out.push(toTop(rec));
+/**
+ * What a record is. A snapshot written before kinds were kept carries none
+ * until the rebuild that follows every boot lands; until then it answers from
+ * what it does carry. A stablecoin by its looks is one whatever its tags say,
+ * the same judgement that keeps it out of Trending.
+ */
+export function kindOf(rec: TokenRecord): TokenKind {
+  if (isStable(rec)) return "stables";
+  return rec.kind ?? (rec.equity ? "stocks" : "other");
+}
+
+/** Every list, in the order the wallet page and the rail offer them. */
+export const TOKEN_LISTS: readonly TokenList[] = ["trending", "stocks", "memes", "rwas", "majors", "defi"];
+
+export function isTokenList(key: string): key is TokenList {
+  return (TOKEN_LISTS as readonly string[]).includes(key);
+}
+
+/**
+ * The lists, from a ranking already in order. Built once per rebuild, so a
+ * request only ever slices. Trending is the busiest twentieth of everything
+ * that is not a stablecoin, whatever its kind; each other list is one kind, all of
+ * it, busiest first.
+ */
+export function buildLists(order: readonly TokenRecord[]): Map<TokenList, TokenRecord[]> {
+  const out = new Map<TokenList, TokenRecord[]>(TOKEN_LISTS.map((key) => [key, []]));
+  const traded = order.filter((rec) => !isStable(rec));
+  out.set("trending", traded.slice(0, Math.ceil(traded.length * TOKEN_TRENDING_SHARE)));
+  for (const rec of traded) {
+    const kind = kindOf(rec);
+    // Stablecoins are already out, and the unsorted rest has no list.
+    if (isTokenList(kind)) out.get(kind)!.push(rec);
   }
   return out;
+}
+
+/** Where a page ended: the last row's volume and mint, which byVolume orders by. */
+function cursor(rec: TokenRecord): string {
+  return `${rec.volume24h ?? 0}_${rec.mint}`;
+}
+
+/**
+ * The first row after a cursor, by binary search on the list's own order.
+ *
+ * A cursor rather than an offset because the lists are rebuilt every hour: an
+ * offset taken before a rebuild lands somewhere else after it, and the next
+ * page repeats rows or skips them. A cursor names a place in the order, which
+ * outlives the rows around it. Unreadable, it is past the end.
+ */
+function resume(list: readonly TokenRecord[], after: string): number {
+  const cut = after.lastIndexOf("_");
+  const volume = Number(after.slice(0, cut));
+  const mint = after.slice(cut + 1);
+  if (cut < 1 || !Number.isFinite(volume) || !mint) return list.length;
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const rec = list[mid];
+    const v = rec.volume24h ?? 0;
+    if (v > volume || (v === volume && rec.mint <= mint)) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** One page of a list, from its start or from a cursor. */
+export function pageOf(list: readonly TokenRecord[], after: string, limit: number): TokenPage {
+  const start = after ? resume(list, after) : 0;
+  const rows = list.slice(start, start + limit);
+  const last = rows[rows.length - 1];
+  return {
+    tokens: rows.map(toTop),
+    total: list.length,
+    ...(last && start + rows.length < list.length ? { after: cursor(last) } : {}),
+  };
+}
+
+/** A page of one of the wallet page's lists. */
+export function listTokens(key: TokenList, after: string, limit: number): TokenPage {
+  return pageOf(lists.get(key) ?? [], after, limit);
+}
+
+/** How long every list is. */
+export function listCounts(): Record<TokenList, number> {
+  const out = {} as Record<TokenList, number>;
+  for (const key of TOKEN_LISTS) out[key] = lists.get(key)?.length ?? 0;
+  return out;
+}
+
+/** The top of Trending, for Social's rail. */
+export function railAssets(limit: number): RailAssets {
+  const list = lists.get("trending") ?? [];
+  return { count: list.length, tokens: list.slice(0, limit).map(toTop) };
 }
 
 /**

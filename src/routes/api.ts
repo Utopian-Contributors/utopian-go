@@ -8,12 +8,20 @@ import { asString } from "../lib/query";
 import { rateLimit } from "../lib/rateLimit";
 import { isSignature, signatureStatus } from "../lib/txStatus";
 import { tokenDetail } from "../lib/tokens/detail";
-import { lookupTokens, searchTokens, topTokens } from "../lib/tokens/store";
+import {
+  isTokenList,
+  listCounts,
+  listTokens,
+  lookupTokens,
+  searchTokens,
+  topTokens,
+} from "../lib/tokens/store";
 import {
   BalancesApiResponse,
   HoldingsApiResponse,
   ImageSearchApiResponse,
   SearchApiResponse,
+  TokenPage,
 } from "../types";
 
 export const apiRouter = Router();
@@ -332,11 +340,28 @@ apiRouter.get("/api/tokens/top", (_req: Request, res: Response) => {
   res.json({ tokens: topTokens(TOKEN_TOP_COUNT) });
 });
 
-/** Searches the in-memory index only; nothing upstream is asked. */
+/**
+ * The wallet page's lists (`c`, Trending when absent), a page at a time from
+ * `after`; or with `q`, a search of the whole index. Memory only; nothing
+ * upstream is asked.
+ */
 apiRouter.get("/api/tokens", searchLimit, (req: Request, res: Response) => {
   const q = asString(req.query.q).slice(0, 64);
+  if (q.trim()) {
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.json({ tokens: searchTokens(q, TOKEN_TOP_COUNT) });
+    return;
+  }
+  const key = asString(req.query.c) || "trending";
+  if (!isTokenList(key)) {
+    res.status(400).json({ error: "No such list." });
+    return;
+  }
+  const after = asString(req.query.after).slice(0, 128);
+  const page: TokenPage = listTokens(key, after, TOKEN_TOP_COUNT);
+  if (!after) page.counts = listCounts();
   res.setHeader("Cache-Control", "public, max-age=60");
-  res.json({ tokens: searchTokens(q, TOKEN_TOP_COUNT) });
+  res.json(page);
 });
 
 /** Every row click on the wallet page is one of these; each mint reaches Jupiter at most every 30 s. */

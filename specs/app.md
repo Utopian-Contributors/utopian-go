@@ -96,8 +96,8 @@ there only: a phone has no tab for it, and the search home has an Advertise pill
 footer on wide screens only. The timeline, and a post opened from it (so the
 post stays in the column it was read in), then have a column at the right:
 **Friends to add** (whoever posted most in the last 30 days, less the viewer and the people
-they already added) and **Trending assets** (the most-traded verified tokens of the day,
-stablecoins and yield-bearing receipts left out). That column is its own bundle, `rail.js`,
+they already added) and **Trending assets (N)** (the top five of the wallet page's Trending
+list, its length in the heading, and **See all** to the wallet page). That column is its own bundle, `rail.js`,
 and neither it nor its data is fetched on a phone, where the tabs are a bottom bar and there
 are no side columns.
 
@@ -118,7 +118,9 @@ GET /                         search home
 GET /?q=<query>&lang=<code>   results; tabs: Web, Images
 GET /?q=<sym>&buy=<mint>      results with the buy dialog open (wallet in-app browsers, QR hand-off)
 GET /search?q=                302 → /?q=
-GET /wallet                   left: holdings, 24h line, Receive/Send/Swap, Trending + search
+GET /wallet                   left: holdings, 24h line (a line per kind beside it, with three
+                              kinds or more), Receive/Send/Swap, the token lists + search
+GET /wallet?c=<list>          the wallet page on one list: trending, stocks, memes, rwas, majors, defi
 GET /wallet?t=<mint>          the wallet page opened on that token's chart (Social's Trending assets link here)
                               right: the chosen token's line and market data
 GET /icon/<mint>              token thumbnail, image/webp, 64 px
@@ -150,14 +152,33 @@ GET  /api/images?q&lang          → Brave image results
 POST /api/balances {owner, mint?} → BalancesApiResponse
 POST /api/holdings {owner}        → HoldingsApiResponse
 GET  /api/tokens/top              → {tokens: TopToken[]}   30 verified mints by 24h volume
+GET  /api/tokens?c=&after=        → TokenPage              one list, 30 a page, by cursor; counts on page 1
 GET  /api/tokens?q=               → {tokens: TopToken[]}   the whole index: mint, symbol, name
 GET  /api/tokens/<mint>           → TokenDetail            indexed mints only; Jupiter, cached 30 s
 ```
 
 The wallet page reads the signed-in account's address, or a wallet connected in the trade
-dialog when nobody is signed in. On a desktop it fills the viewport exactly: the holdings and
-token lists scroll inside the left half, and the page itself never scrolls. `Holding` and `TopToken` carry `icon: true` when a thumbnail is
-served at `/icon/<mint>`.
+dialog when nobody is signed in. On a desktop it fills the viewport exactly: the left half
+scrolls as one column, with the token list's name, list buttons and search pinned over its
+rows, and the page itself never scrolls. `Holding` and `TopToken` carry `icon: true` when a
+thumbnail is served at `/icon/<mint>`.
+
+Every indexed token is one **kind**, read off Jupiter's tags at the hourly rebuild
+(`tokenKind`, `src/lib/tokens/jupiter.ts`), first match winning: Stablecoins (`stable`,
+`yb`), Stocks (`stocks`, `xstocks`, `equities`, and pre-IPO shares), RWAs (`rwa`,
+`commodities`), Majors (`major`, and a verified wrapper of BTC, ETH or SOL), DeFi (`lst`,
+`yield`, `defi`, `infra`), Memes (`meme`), else Other. The wallet page lists **Trending** (the
+busiest 5% of verified tokens traded today, stablecoins left out before the cut,
+`TOKEN_TRENDING_SHARE`), then Stocks, Memes, RWAs, Majors and DeFi, each all of its kind,
+busiest first. Every list is built once per rebuild and served a page at a time by a
+`volume_mint` cursor, which stays put across a rebuild where an offset would not. Infinite
+scroll asks for the next page a screen ahead.
+
+With three kinds or more, `/api/holdings` adds `slices`: the total by kind, each with its own
+24h series, and the portfolio chart draws them all on one axis beside the total, each as its
+change over the day. The rows under it are the legend and read the hovered hour; picking one
+brings its line forward, shows its worth in the figure, and narrows the holdings to it. With
+one or two kinds there is no split: the chart is the total's line alone.
 
 A browser wallet swaps against Jupiter (`lite-api.jup.ag`) directly. A signed-in account's
 swap is quoted, built, signed and sent by the server; see Keys below.
@@ -190,7 +211,7 @@ GET  /api/social/me                                          → {me: Me | null}
 GET  /api/social/timeline?before&id&friends=1&saved=1&images=0&audio=0
                                     → {me, posts: Card[], notes, next: {at, id} | null}
                                       friends and saved are ignored signed out
-GET  /api/social/rail               → {people: {name, bio, avatarRev, posts}[], assets: TopToken[]}
+GET  /api/social/rail               → {people: {name, bio, avatarRev, posts}[], assets: RailAssets}
 GET  /api/social/u/<name>           → {me, user: {name, address, bio, loc, avatarRev, posts: Card[]}}
 POST /api/social/open    {post}     → {me, post: Card, comments}
 POST /api/social/post    {text} | application/octet-stream (text + up to 4 photos + a voice memo) → {post: Card}

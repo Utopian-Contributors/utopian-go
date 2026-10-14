@@ -2,7 +2,7 @@ import { createPublicKey, randomBytes } from "crypto";
 import express, { NextFunction, Request, Response, Router } from "express";
 import { ADS_PAY_TO, SITE_URL, TERMS_VERSION } from "../config";
 import { rateLimit } from "../lib/rateLimit";
-import { lookupMints, trendingTokens } from "../lib/tokens/store";
+import { lookupMints, railAssets } from "../lib/tokens/store";
 import { FRESH_MS, ORDER_OPEN_MS, adsPayable, orderAmounts, orderCodes, payUrl } from "./adPay";
 import { matchesAd, reloadAds, socialAdFor } from "./ads";
 import { audioKind } from "./audio";
@@ -848,7 +848,8 @@ const BUSIEST_TTL_MS = 60_000;
 /** Deep enough to still fill the list once a viewer's friends and self are taken out. */
 const BUSIEST_KEPT = 50;
 const TO_ADD = 5;
-const TRENDING = 5;
+/** Rows under the rail's Trending assets. */
+const ASSETS = 5;
 
 let busiest: { at: number; list: Promise<Awaited<ReturnType<typeof busiestPosters>>> } | null = null;
 
@@ -867,8 +868,8 @@ function busiestNow() {
 
 /**
  * The desktop timeline's right column: the most active people, less the
- * viewer and whoever they already added, then the most traded assets that are
- * not stablecoins. Only a wide screen asks (client/rail); phones have no column.
+ * viewer and whoever they already added, then the top of the wallet page's
+ * Trending list. Only a wide screen asks (client/rail); phones have no column.
  */
 socialRouter.get(
   "/rail",
@@ -879,7 +880,7 @@ socialRouter.get(
     const skip = new Set([me?.name, ...added]);
     res.json({
       people: ranked.filter((person) => !skip.has(person.name)).slice(0, TO_ADD),
-      assets: trendingTokens(TRENDING),
+      assets: railAssets(ASSETS),
     });
   }),
 );

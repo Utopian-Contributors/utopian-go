@@ -114,6 +114,18 @@ export interface TokenQuote {
   ticks?: string;
 }
 
+/**
+ * What a token is, read off Jupiter's tags (lib/tokens/jupiter.ts). One per
+ * token, so the wallet page's breakdown adds up to its total.
+ */
+export type TokenKind = "majors" | "stocks" | "rwas" | "memes" | "defi" | "stables" | "other";
+
+/**
+ * The wallet page's lists: Trending, which cuts across kinds, then each kind
+ * worth browsing. Stablecoins are not, and neither is the unsorted rest.
+ */
+export type TokenList = "trending" | Exclude<TokenKind, "stables" | "other">;
+
 /** Server-side index entry. Superset of TokenQuote; never sent whole. */
 export interface TokenRecord {
   mint: string;
@@ -133,6 +145,11 @@ export interface TokenRecord {
    * Social's Trending assets.
    */
   stable?: true;
+  /**
+   * What it is, from its tags. Absent on a record from a snapshot written
+   * before kinds were kept; kindOf (lib/tokens/store.ts) answers for those.
+   */
+  kind?: TokenKind;
   /**
    * Extra lookup keys. Tokenized equities trade as "AAPLx" / "Apple xStock",
    * but people search "AAPL" and "apple" — without aliases they are indexed
@@ -209,9 +226,23 @@ export interface Holding {
   change24h?: number;
   /** A thumbnail is served at /icon/<mint>. */
   icon?: true;
+  /** Which line of the breakdown it counts towards. */
+  kind: TokenKind;
 }
 
-/** One row of the wallet page's most-traded list. */
+/** One line of the wallet page's breakdown: everything held of one kind. */
+export interface PortfolioSlice {
+  kind: TokenKind;
+  /** USD, dust included, so the slices add up to Holdings.total. */
+  usd: number;
+  /** As Holdings.series and its range, for this kind alone. */
+  series?: string;
+  seriesLo?: number;
+  seriesHi?: number;
+  change24h?: number;
+}
+
+/** One row of the wallet page's lists. */
 export interface TopToken {
   mint: string;
   symbol: string;
@@ -222,6 +253,23 @@ export interface TopToken {
   /** 24h traded volume, USD. */
   volume: number;
   icon?: true;
+}
+
+/** One page of a wallet page list. */
+export interface TokenPage {
+  tokens: TopToken[];
+  /** Everything on the list, not just this page. */
+  total: number;
+  /** Where the next page starts; absent on the last. */
+  after?: string;
+  /** Every list's length, on the first page only, so empty lists can go unoffered. */
+  counts?: Record<TokenList, number>;
+}
+
+/** Social's rail: the top of Trending, and how long the whole of it is. */
+export interface RailAssets {
+  count: number;
+  tokens: TopToken[];
 }
 
 export interface TokenWindow {
@@ -295,6 +343,8 @@ export interface Holdings {
   seriesHi?: number;
   /** Change across `series`, percent. Present whenever `series` is. */
   change24h?: number;
+  /** The total by kind, largest first. Only when there are three kinds or more. */
+  slices?: PortfolioSlice[];
   /** Priced rows past the display cap. */
   more?: number;
   /** Priced rows worth less than a cent. */
