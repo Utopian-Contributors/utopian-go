@@ -1,6 +1,6 @@
 /**
- * The wallet page. Left: what you hold, and the tokens you could add. Right:
- * the chosen token's line and market data.
+ * The wallet page. Left: what you hold, by kind and by token, and the tokens
+ * you could add, list by list. Right: the chosen token's line and market data.
  *
  * The portfolio is the signed-in account's wallet. A wallet connected in the
  * trade dialog stands in when nobody is signed in. /api/holdings answers about
@@ -15,7 +15,9 @@ import { mountPwa } from "../js/pwa.js";
 import { dollars, fiat, percent, tokenPrice } from "../js/num.js";
 import { onSession, readSession } from "../js/session.js";
 import { openSwap, swapUrl } from "../js/swap.js";
-import { hoursAgo, lineChart, valueAt } from "./chart.js";
+import { KINDS } from "../js/kinds.js";
+import { mountBreakdown } from "./breakdown.js";
+import { decode, hoursAgo, lineChart, valueAt } from "./chart.js";
 import { icon, mountPanel } from "./panel.js";
 
 const total = $("wl-v");
@@ -29,6 +31,8 @@ const topList = $("wl-tl");
 const topNote = $("wl-tn");
 const filter = /** @type {HTMLInputElement} */ ($("wl-q"));
 const side = $("wl-s");
+const pfHead = $("wl-pf-h");
+const chips = /** @type {HTMLButtonElement[]} */ ([...$("wl-cats").querySelectorAll("button")]);
 
 const actions = $("wl-acts");
 /** Re-asked once the login dialog signs someone in. */
@@ -68,6 +72,7 @@ function setNote(text, kind) {
 /** Everything below the total, cleared before each render. */
 function reset() {
   list.replaceChildren();
+  breakdown.clear();
   extra.replaceChildren();
   note.replaceChildren();
   note.className = "wl-n";
@@ -88,21 +93,68 @@ function paintFigures(data) {
   delta.textContent = `${percent(move, true)} 24h`;
 }
 
+/** Each line's dollars by the hour: "total", then every kind with a day behind it. */
+let hourly = new Map();
+
 const portfolio = lineChart($("wl-c"), "wlg", (i) => {
-  if (!shown) return;
-  const value = i < 0 ? null : valueAt(portfolio.bytes, i, shown.seriesLo, shown.seriesHi);
-  if (value == null) return paintFigures(shown);
-  total.textContent = dollars(value);
-  const from = valueAt(portfolio.bytes, 0, shown.seriesLo, shown.seriesHi);
-  const move = from ? (value / from - 1) * 100 : 0;
+  const now = view();
+  if (!now) return;
+  breakdown.at(i, hourly);
+  const line = hourly.get(breakdown.picked || "total");
+  if (i < 0 || !line) return paintFigures(now);
+  total.textContent = dollars(line[i]);
+  const move = (line[i] / line[0] - 1) * 100;
   delta.className = `wl-d ${dirOf(move)}`;
-  delta.textContent = `${percent(move, true)} · ${hoursAgo(portfolio.bytes, i)}`;
+  delta.textContent = `${percent(move, true)} · ${hoursAgo(line, i)}`;
 });
 
-function paintTotal(data) {
-  paintFigures(data);
-  if (data.change24h == null) portfolio.draw("", "");
-  else portfolio.draw(data.series, dirOf(data.change24h));
+/**
+ * The figure, and the chart: the total's line alone, or with three kinds or
+ * more, a line for each of them beside it, the picked one in front.
+ */
+function paintTotal() {
+  const now = view() ?? { total: NaN };
+  paintFigures(now);
+  hourly = new Map();
+  const add = (key, of) => {
+    const bytes = decode(of.series);
+    if (bytes) hourly.set(key, bytes.map((_, i) => valueAt(bytes, i, of.seriesLo, of.seriesHi)));
+  };
+  if (shown) add("total", shown);
+  for (const slice of shown?.slices ?? []) add(slice.kind, slice);
+  if (shown?.slices && hourly.has("total")) {
+    portfolio.drawMany([...hourly].map(([key, values]) => ({ key, values })), breakdown.picked);
+  } else if (now.change24h == null) portfolio.draw("", "");
+  else portfolio.draw(now.series, dirOf(now.change24h));
+}
+
+/**
+ * The portfolio by kind. A pick brings that kind's line forward, puts its
+ * worth and day where the total's were, and narrows the holdings to it.
+ */
+const breakdown = mountBreakdown($("wl-bk"), () => {
+  paintHead();
+  paintTotal();
+  paintRows();
+});
+
+function paintHead() {
+  const kind = shown ? breakdown.picked : "";
+  pfHead.textContent = kind ? `Portfolio · ${KINDS[kind] ?? kind}` : "Portfolio";
+}
+
+/** What the figure shows: the whole portfolio, or the kind picked from its breakdown. */
+function view() {
+  const slice = shown?.slices?.find((s) => s.kind === breakdown.picked);
+  if (!slice) return shown;
+  const { usd, series, seriesLo, seriesHi, change24h } = slice;
+  return { total: usd, series, seriesLo, seriesHi, change24h };
+}
+
+/** The holdings, or those of the kind picked. */
+function paintRows() {
+  const kind = breakdown.picked;
+  list.replaceChildren(...(shown?.items ?? []).filter((h) => !kind || h.kind === kind).map(row));
 }
 
 /**
@@ -267,28 +319,148 @@ function topRow(t) {
 
 let searchRun = 0;
 
-/** Trending with an empty field; otherwise the whole index, closest first. */
+/** The list on show: Trending, or one kind. `?c=` picks it; the buttons pick it after that. */
+let cat = (() => {
+  const asked = new URLSearchParams(location.search).get("c");
+  return chips.some((chip) => chip.dataset.c === asked) ? asked : "trending";
+})();
+/** Where the list's next page starts; empty once there is none, and while searching. */
+let after = "";
+let paging = false;
+/** Sits after the last row while there is more, and asks for it when scrolled near. */
+const end = el("div", { "aria-hidden": "true" });
+
+function press(key) {
+  for (const chip of chips) chip.setAttribute("aria-pressed", String(chip.dataset.c === key));
+}
+
+async function tokens(query) {
+  const res = await fetch(`/api/tokens?${new URLSearchParams(query)}`, { headers: { Accept: "application/json" } });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error);
+  return data;
+}
+
+/** The chosen list's first page with an empty field; otherwise the whole index, closest first. */
 async function paintTop() {
   const q = filter.value.trim();
   const id = ++searchRun;
+  watch("");
+  // A search is of everything, so no list is pressed while one is showing.
+  press(q ? "" : cat);
   try {
-    const res = await fetch(`/api/tokens${q ? `?q=${encodeURIComponent(q)}` : ""}`, {
-      headers: { Accept: "application/json" },
-    });
-    const data = await res.json();
+    const data = await tokens(q ? { q } : { c: cat });
     if (id !== searchRun) return;
-    if (!res.ok) throw new Error(data.error);
-    const tokens = data.tokens ?? [];
-    topHead.textContent = q ? "Results" : "Trending";
-    topList.replaceChildren(...tokens.map(topRow));
-    topNote.hidden = tokens.length > 0;
-    topNote.textContent = q ? "No token by that name." : "Nothing is trending right now.";
-    if (!q) chooseFirst(tokens[0]?.mint);
+    const rows = data.tokens ?? [];
+    // A list with nothing on it today is not offered, unless it is the one asked for.
+    if (data.counts) for (const chip of chips) chip.hidden = !data.counts[chip.dataset.c] && chip.dataset.c !== cat;
+    const name = chips.find((chip) => chip.dataset.c === cat)?.textContent;
+    topHead.textContent = q ? "Results" : `${name} (${data.total.toLocaleString("en-US")})`;
+    topList.replaceChildren(...rows.map(topRow));
+    topNote.hidden = rows.length > 0;
+    topNote.textContent = q
+      ? "No token by that name."
+      : cat === "trending"
+        ? "Nothing is trending right now."
+        : "Nothing on this list right now.";
+    if (!q) chooseFirst(rows[0]?.mint);
+    watch(q ? "" : data.after);
   } catch {
     if (id !== searchRun) return;
     topNote.hidden = false;
     topNote.textContent = "Could not load tokens.";
   }
+}
+
+/** The next page of the list on show, onto the end of it. */
+async function paintMore() {
+  if (!after || paging) return;
+  const id = searchRun;
+  paging = true;
+  try {
+    const data = await tokens({ c: cat, after });
+    if (id !== searchRun) return;
+    end.before(...data.tokens.map(topRow));
+    watch(data.after);
+  } catch {
+    // Asked again in a moment, if the end is still where it was.
+    setTimeout(() => id === searchRun && watch(after), 3000);
+  } finally {
+    paging = false;
+  }
+}
+
+/**
+ * Where the list scrolls: with the left half on a desktop (wallet.css), with
+ * the page on a phone. The watcher has to be told which, so it can ask for
+ * the next page a screenful ahead rather than once the end is on screen.
+ */
+const desk = matchMedia("(min-width: 960px)");
+const column = /** @type {HTMLElement} */ (document.querySelector(".wl-main"));
+let pager = watcher();
+
+function watcher() {
+  const next = new IntersectionObserver(
+    (seen) => {
+      if (seen.some((e) => e.isIntersecting)) void paintMore();
+    },
+    { root: desk.matches ? column : null, rootMargin: "0px 0px 600px 0px" },
+  );
+  if (end.isConnected) next.observe(end);
+  return next;
+}
+
+desk.addEventListener("change", () => {
+  pager.disconnect();
+  pager = watcher();
+});
+
+/**
+ * Put the end marker after the last row and watch it, or take it away once
+ * there is nothing after. Observing reports straight away, so a page too short
+ * to scroll asks for the next one by itself.
+ */
+function watch(cursor) {
+  after = cursor || "";
+  pager.unobserve(end);
+  if (!after) return end.remove();
+  topList.append(end);
+  pager.observe(end);
+}
+
+/**
+ * Back up to the list's first row when it has scrolled up out of sight, so a
+ * new list starts at its top; left alone when the list is already in view.
+ * Under the page's own sticky header on a phone; at the top of the left half
+ * on a desktop.
+ */
+function toListTop() {
+  const floor = desk.matches ? column.getBoundingClientRect().top : $("chrome").getBoundingClientRect().bottom;
+  const over = /** @type {HTMLElement} */ (topList.parentElement).getBoundingClientRect().top - floor;
+  if (over >= 0) return;
+  if (desk.matches) column.scrollTop += over;
+  else window.scrollBy(0, over);
+}
+
+/** A linked list may be off the end of a phone's row of them; bring it into view. */
+function showCat() {
+  press(cat);
+  const on = chips.find((chip) => chip.dataset.c === cat);
+  const row = on?.parentElement;
+  if (on && row) row.scrollLeft += on.getBoundingClientRect().left - row.getBoundingClientRect().left - 16;
+}
+
+for (const chip of chips) {
+  chip.addEventListener("click", () => {
+    cat = chip.dataset.c;
+    filter.value = "";
+    const url = new URL(location.href);
+    if (cat === "trending") url.searchParams.delete("c");
+    else url.searchParams.set("c", cat);
+    history.replaceState(history.state, "", url);
+    toListTop();
+    void paintTop();
+  });
 }
 
 let typing = 0;
@@ -375,14 +547,16 @@ function omitted(data) {
 function paint(data) {
   reset();
   shown = data;
-  paintTotal(data);
+  breakdown.paint(data);
+  paintHead();
+  paintTotal();
 
   if (!data.items.length) {
     setNote(data.unpriced ? omitted(data) : "This wallet holds nothing we can price.");
     return;
   }
 
-  list.append(...data.items.map(row));
+  paintRows();
   setNote(omitted(data));
   chooseFirst(data.items[0].mint);
 }
@@ -391,7 +565,8 @@ function paint(data) {
 function offer() {
   reset();
   shown = null;
-  paintTotal({ total: NaN });
+  paintHead();
+  paintTotal();
   total.textContent = "—";
   setNote("Log in to see your wallet.");
   extra.append(el("button", { class: "ac-go", type: "button", text: LOGIN, onclick: () => openLogin(switched) }));
@@ -494,6 +669,7 @@ mountPwa();
 onSession(refresh);
 void openLinked();
 refresh();
+showCat();
 paintTop();
 paintKeys();
 paintActions();

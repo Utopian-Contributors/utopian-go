@@ -37,6 +37,18 @@
   /* The header's spacer (header.css) sizes itself off these, as on search. */
   --side: 480px;
   --col-gap: 40px;
+  /*
+   * The portfolio chart's line per kind, in a fixed order that keeps every
+   * neighbouring pair apart under colour blindness, checked against this
+   * page's own background in each theme. Green and red are left out on
+   * purpose: here they mean up and down. Total takes the ink, Other the gray.
+   */
+  --k-stocks: #2a78d6;
+  --k-memes: #eb6834;
+  --k-rwas: #1baf7a;
+  --k-majors: #eda100;
+  --k-defi: #e87ba4;
+  --k-stables: #6250d6;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -60,6 +72,12 @@
     --in: #202124;
     --in-ink: #e8eaed;
     --in-ph: #9aa0a6;
+    --k-stocks: #3987e5;
+    --k-memes: #d95926;
+    --k-rwas: #199e70;
+    --k-majors: #c98500;
+    --k-defi: #d55181;
+    --k-stables: #9085e9;
   }
 }
 
@@ -279,6 +297,167 @@ a:hover {
   box-shadow: 0 0 0 2px var(--bg);
   transform: translate(-50%, -50%);
   pointer-events: none;
+}
+
+/* —— The breakdown —— */
+
+/*
+ * With three kinds or more, the portfolio chart draws a line per kind beside
+ * the total's, each as its change over the day so that a small kind moves as
+ * visibly as a large one. The breakdown under it is its legend: a key, a
+ * name, the worth and the move, reading the hovered hour when there is one.
+ */
+.k-total {
+  color: var(--t);
+}
+
+.k-stocks {
+  color: var(--k-stocks);
+}
+
+.k-memes {
+  color: var(--k-memes);
+}
+
+.k-rwas {
+  color: var(--k-rwas);
+}
+
+.k-majors {
+  color: var(--k-majors);
+}
+
+.k-defi {
+  color: var(--k-defi);
+}
+
+.k-stables {
+  color: var(--k-stables);
+}
+
+.k-other {
+  color: var(--f);
+}
+
+/* Taller than one line needs: several have to part to be told apart. */
+.wl-c.many {
+  height: 120px;
+}
+
+.wl-c.many path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.wl-c.many path.k-total,
+.wl-c.many path.on {
+  stroke-width: 2.25;
+}
+
+/* No change since the day began: the line every line starts on. */
+.wl-c.many path.z {
+  stroke: var(--b);
+  stroke-width: 1;
+}
+
+/* A kind picked from the breakdown: its line in front, the rest stepped back. */
+.wl-c[data-pick] path:not(.on, .z) {
+  opacity: 0.25;
+}
+
+/* The hovered hour, down through every line. */
+.wl-rule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--b);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/*
+ * Total, then one row per kind. The rows share one set of columns (subgrid),
+ * so the names, worths and moves each read straight down whatever their
+ * widths. The row on show is pressed, Total until another is picked.
+ */
+.wl-bk {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
+  column-gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--b);
+}
+
+.wl-bk-r {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-height: 34px;
+  /* The pressed fill runs a little past the text on both sides. */
+  margin: 0 -8px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--t);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wl-bk-r:hover,
+.wl-bk-r[aria-pressed="true"] {
+  background: var(--hover);
+}
+
+.wl-bk-r:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: -2px;
+}
+
+/* A short stroke of the row's line. A kind with no day behind it has no line,
+   so its key is left empty rather than promising one. */
+.wl-key {
+  height: 3px;
+  border-radius: 2px;
+}
+
+.wl-key[class*="k-"] {
+  background: currentColor;
+}
+
+.wl-bk-n {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Its share of the total, read as the rest of the name. */
+.wl-bk-n small {
+  margin-left: 7px;
+  color: var(--f);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-bk-v {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.wl-bk-r .wl-d {
+  min-width: 56px;
+  font-size: 12px;
+  text-align: right;
 }
 
 /* —— Holdings —— */
@@ -525,6 +704,49 @@ a:hover {
 
 .wl-top {
   margin-top: 36px;
+}
+
+/*
+ * The lists: Trending, then each kind. One row that scrolls sideways on a
+ * phone, where wrapping would push the rows a screen down; wrapped on a
+ * desktop, where a sideways scroll hides lists from a mouse.
+ */
+.wl-cats {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.wl-cats::-webkit-scrollbar {
+  display: none;
+}
+
+.wl-cats button {
+  flex: none;
+  padding: 5px 12px;
+  border: 1px solid var(--b);
+  border-radius: 999px;
+  background: none;
+  color: var(--t);
+  font: 600 12.5px/1.2 var(--ff);
+  cursor: pointer;
+}
+
+.wl-cats button:hover {
+  background: var(--hover);
+}
+
+.wl-cats button[aria-pressed="true"] {
+  border-color: var(--t);
+  background: var(--t);
+  color: var(--bg);
+}
+
+.wl-cats button:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: 2px;
 }
 
 .wl-q {
@@ -988,8 +1210,15 @@ a:hover {
 }
 
 /* —— Two halves, one screen ——
-   On a desktop the page is exactly the viewport: the lists scroll inside the
-   left half and the page itself never does. */
+   On a desktop the page is exactly the viewport: the left half scrolls as one
+   column, and the page itself never does, so the token panel stays put.
+
+   The left half used to be fixed too, with the holdings and the market list
+   each scrolling in a share of it. The breakdown left no share to give: on a
+   laptop screen, the total, a line per kind and the holdings filled the
+   column, and the lists below them had no room at all. Scrolled as one, every
+   part keeps its full height, and the market list keeps its name, its lists
+   and its field pinned while its rows scroll under them. */
 
 @media (min-width: 960px) {
   body {
@@ -1007,14 +1236,14 @@ a:hover {
   }
 
   .wl-main {
-    display: flex;
-    flex-direction: column;
     min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   /* The scrollbar gets its own lane beside the rows, clear of the + and − buttons. */
-  #wl-l,
-  #wl-tl {
+  .wl-main,
+  #wl-l {
     scrollbar-gutter: stable;
     padding-right: 12px;
   }
@@ -1025,18 +1254,20 @@ a:hover {
   }
 
   .wl-top {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
     margin-top: 20px;
   }
 
-  #wl-tl {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+  .wl-tb {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding-bottom: 2px;
+    background: var(--bg);
+  }
+
+  .wl-cats {
+    flex-wrap: wrap;
+    overflow: visible;
   }
 
   /* Fits on a laptop screen; scrolls on its own below that rather than moving the page. */
@@ -1080,6 +1311,7 @@ a:hover {
   .wl-r {
     gap: 10px;
   }
+
 
   .wl-v {
     font-size: 27px;
