@@ -15,6 +15,9 @@ import { injectStyles } from "../js/ui.js";
 const CSS = `
 .rl-s{margin:0 0 28px}
 .rl-s h2{margin:0 0 6px;font:700 15px/1.3 var(--ff);color:var(--t)}
+.rl-hd{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.rl-hd h2{min-width:0}
+.rl-all{flex:none;font-size:13px;font-weight:600}
 .rl ul,.rl ol{margin:0;padding:0;list-style:none}
 .rl li{display:flex;align-items:center;gap:10px;min-height:52px}
 .rl-who,.rl-tk{display:flex;align-items:center;gap:10px;flex:1;min-width:0;color:inherit;text-decoration:none}
@@ -83,10 +86,15 @@ function people(list, { send, face, openAuth, me }) {
   );
 }
 
-/** Most traded first, stablecoins left out by the server. Each opens its chart on the wallet page. */
-function assets(list) {
-  if (!list.length) return null;
-  const rows = list.map((token) => {
+/**
+ * The wallet page's Trending list: the busiest 5% of everything but
+ * stablecoins, its top few here under its length. Each opens its chart on the
+ * wallet page; See all opens the whole list there.
+ * @param {{ count: number, tokens: object[] }} trending
+ */
+function assets(trending) {
+  if (!trending?.tokens?.length) return null;
+  const rows = trending.tokens.map((token) => {
     const price = tokenPrice(token.price);
     const move = token.change24h;
     return el(
@@ -110,7 +118,12 @@ function assets(list) {
   return el(
     "section",
     { class: "rl-s", "aria-labelledby": "rl-a" },
-    el("h2", { id: "rl-a", text: "Trending assets" }),
+    el(
+      "div",
+      { class: "rl-hd" },
+      el("h2", { id: "rl-a", text: `Trending assets (${trending.count.toLocaleString("en-US")})` }),
+      el("a", { class: "rl-all", href: "/wallet", text: "See all", "aria-label": "See all trending assets" }),
+    ),
     el("ol", {}, ...rows),
   );
 }
