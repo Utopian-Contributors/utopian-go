@@ -708,49 +708,6 @@ body.home #ft .ft-lang {
 }
 
 /*
- * Places: opens hive.js. Top right, in the corner the account control takes on
- * results, and fixed, so appearing after boot moves nothing. It lives in
- * #hm-tk, which only the home page shows, so it goes wherever the strip goes.
- *
- * The corner is the results control's: the glyph's right edge on the shell's
- * content edge (the button's 5px pad back out), and its centre on the line
- * 16px of header pad and a 44px field put that control on. 16 + 44 / 2 = 38,
- * less half the button, is 20.
- */
-.hvb {
-  position: fixed;
-  top: 20px;
-  right: calc(max(0px, (100% - var(--shell)) / 2) + var(--pad) - 5px);
-  z-index: 50;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 8px;
-  padding: 5px;
-  background: none;
-  color: var(--m);
-  cursor: pointer;
-}
-
-.hvb::before {
-  content: "";
-  display: block;
-  height: 100%;
-  background: currentColor;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.1' stroke-linejoin='round'%3E%3Cpath d='M8 1.5l5.6 3.25v6.5L8 14.5l-5.6-3.25v-6.5z'/%3E%3C/svg%3E") center / contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.1' stroke-linejoin='round'%3E%3Cpath d='M8 1.5l5.6 3.25v6.5L8 14.5l-5.6-3.25v-6.5z'/%3E%3C/svg%3E") center / contain no-repeat;
-}
-
-.hvb:hover {
-  color: var(--t);
-}
-
-.hvb:focus-visible {
-  outline: 2px solid var(--a);
-  outline-offset: 2px;
-}
-
-/*
  * Home has no second column, so #mn is not a grid there — it stays in the flow
  * as a plain block carrying nothing but the footer. Hiding #mn outright, as
  * the home page used to, would take the footer with it.

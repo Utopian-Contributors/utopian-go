@@ -46,7 +46,7 @@ graph LR
         S[index.html + app.js<br/>Search]
         W[wallet.html + wallet.js<br/>Wallet]
         P[social.html + social.js<br/>Timeline, profiles, chat]
-        L[lazy bundles<br/>swap.js · connect.js · qr.js · login.js · hive.js]
+        L[lazy bundles<br/>swap.js · connect.js · qr.js · login.js]
     end
     subgraph Server["Express (src/server.ts)"]
         API[/api/*]
@@ -71,7 +71,7 @@ Anything that is only needed after a click is a lazy bundle.
 
 | Surface | Path | Document | Bundle | Lazy |
 |---|---|---|---|---|
-| Search | `/`, `/?q=` | `index.html` | `app.js` | `swap.js`, `connect.js`, `qr.js`, `login.js`, `hive.js` |
+| Search | `/`, `/?q=` | `index.html` | `app.js` | `swap.js`, `connect.js`, `qr.js`, `login.js` |
 | Wallet | `/wallet` | `wallet.html` | `wallet.js` | `connect.js`, `swap.js`, `qr.js`, `keys.js`, `login.js` |
 | Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js`, `ads.js` |
 
@@ -538,35 +538,6 @@ entry; until then swap, send and passkey reveal answer `409 {setup: true}`.
    `403 {stepUp: true}`. The dialog always shows a review step with the full address.
 3. A rent failure ("Every Solana account must keep about 0.001 SOL") is explained, not
    reported as a generic error.
-
-**Places.** Desktop only: under 901 px wide, the same line the rail uses, there is no
-button, `hive.js` is never fetched, and nothing is recorded; narrowing the window closes
-Places. On a desktop, every link someone follows off search to another host (click or
-middle click) is kept in `localStorage` (`tr`), and nowhere else: one entry per host
-with the favicon, newest first, each holding its pages (URL, link text) newest first. At
-most 120 hosts and 60 pages a host.
-
-1. Web, news, video and discussion results carry `meta_url.favicon`, Brave's 32 px proxy
-   URL, passed through only when it is on `imgs.search.brave.com`. Results never draw it.
-2. With a trail, home shows a hexagon button centred under the price strip. It is
-   absolutely placed, so appearing after boot moves nothing. It loads `hive.js`, which
-   injects its own sheet.
-3. `hive.js` fills the page under the search header, which switches to its results row
-   and stays usable; a search or the wordmark closes Places. Each host is its 32 px
-   favicon in a grey circle, the one with the most pages in the middle and the rest in
-   hexagonal rings by page count, ties newest first. The canvas is a native scroll box
-   sized to its content, so panning (trackpad or mouse drag) stops at its edges.
-4. A host zooms into its pages. The host stays a circle on the left, and its pages run
-   newest first down an arc around its right side: each a one-line pill with its title
-   (or path), cut with an ellipsis at 360 px, under a heading for its day, "Today" or
-   else "10. September", with the year when it is not this one. The arc grows with the
-   pages to a radius of 300 px (less where the view is short), spanning at most a third
-   of a circle. Past that the list scrolls through the arc with the host held in the
-   middle, and pages fade as they leave either end. A list that scrolls gets a tick for
-   each day down the right edge, placed where that day starts in the list: the days in
-   sight are marked, hovering one shows its date, and a click scrolls to it. The host
-   again folds the pages back. Edit removes a host or a page, and Clear all forgets the
-   trail.
 
 **The wallet page's dialogs** live in `keys.js`: Recovery phrase (password or passkey),
 Receive (address as a QR code, plus Copy), and Send (token, recipient with Paste, amount

@@ -1,8 +1,6 @@
 export interface MetaUrl {
   netloc?: string;
   path?: string;
-  /** Brave's proxied favicon. Not drawn on results; the trail keeps it. */
-  favicon?: string;
 }
 
 export interface Profile {
@@ -410,7 +408,6 @@ export interface BraveSearchResponse {
       meta_url?: {
         netloc?: string;
         path?: string;
-        favicon?: string;
       };
       cluster?: Array<{
         title?: string;
@@ -443,7 +440,7 @@ export interface BraveSearchResponse {
       url?: string;
       description?: string;
       page_age?: string;
-      meta_url?: { netloc?: string; favicon?: string };
+      meta_url?: { netloc?: string };
     }>;
   };
   videos?: {
@@ -451,7 +448,7 @@ export interface BraveSearchResponse {
       title?: string;
       url?: string;
       description?: string;
-      meta_url?: { netloc?: string; favicon?: string };
+      meta_url?: { netloc?: string };
       thumbnail?: { src?: string };
     }>;
   };
@@ -460,7 +457,7 @@ export interface BraveSearchResponse {
       title?: string;
       url?: string;
       description?: string;
-      meta_url?: { netloc?: string; favicon?: string };
+      meta_url?: { netloc?: string };
     }>;
   };
 }

@@ -248,13 +248,6 @@ const loginOpts = {
   outfile: path.join(outDir, "login.js"),
 };
 
-/** Places, the honeycomb of links left search for: fetched on its button. */
-const hiveOpts = {
-  ...jsOpts,
-  entryPoints: [path.join(clientDir, "hive", "main.js")],
-  outfile: path.join(outDir, "hive.js"),
-};
-
 /** The install panel, fetched on phones only; see client/js/pwa.js. */
 const installOpts = {
   ...jsOpts,
@@ -542,7 +535,7 @@ async function buildSocialCss() {
   );
 }
 
-async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, hiveHash, installHash) {
+async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, installHash) {
   let raw = readFileSync(path.join(clientDir, "index.html"), "utf8");
   verifyLoadingChrome(raw);
 
@@ -593,12 +586,6 @@ async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, 
     /data-lg="\/login\.js"/,
     `data-lg="/login.js?v=${loginHash}"`,
     "login.js attribute",
-  );
-  raw = replaceOnce(
-    raw,
-    /data-hv="\/hive\.js"/,
-    `data-hv="/hive.js?v=${hiveHash}"`,
-    "hive.js attribute",
   );
   raw = replaceOnce(
     raw,
@@ -879,7 +866,7 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , , , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
+  const [, , , , , , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
     esbuild.build(installOpts),
     esbuild.build(swOpts),
     esbuild.build(jsOpts),
@@ -888,7 +875,6 @@ async function buildAssets() {
     esbuild.build(swapOpts),
     esbuild.build(connectOpts),
     esbuild.build(qrOpts),
-    esbuild.build(hiveOpts),
     esbuild.build(walletOpts),
     esbuild.build(recOpts),
     esbuild.build(railOpts),
@@ -908,7 +894,7 @@ async function buildAssets() {
   const installHash = hash("install.js");
 
   await Promise.all([
-    buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, hash("hive.js"), installHash),
+    buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, installHash),
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
     buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("pay.js"), hash("chat.js"), hash("rec.js"), hash("rail.js"), hash("ads.js"), hash("avatar.js"), installHash),
   ]);
