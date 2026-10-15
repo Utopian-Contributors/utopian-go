@@ -128,6 +128,13 @@
         <a class="tab" href="/social" id="me" data-nav="profile"><svg class="ni" aria-hidden="true"><use href="#n-me" /></svg><span><b class="my">My </b>Profile</span></a>
         <!-- Wide screens only; social.css hides it on a phone. -->
         <a class="tab tab-ad" href="/social/ads" data-nav="ads"><svg class="ni" aria-hidden="true"><use href="#n-ad" /></svg><span>Advertise</span></a>
+        <!-- The account's $UTCC, wide screens only. social.js gives it the coin's
+             link and logo (client/js/utcc.js has the mint) and shows it once
+             there is a figure to put in it. -->
+        <a class="tb-bal" id="bal" hidden>
+          <img class="tb-bal-ic" id="balic" alt="" width="24" height="24" decoding="async" />
+          <span class="tb-bal-t"><small>$UTCC balance</small><b class="tb-bal-n" id="baln"></b><b class="tb-bal-s" id="bals" aria-hidden="true"></b></span>
+        </a>
       </nav>
     </div>
 

@@ -572,9 +572,20 @@ most 120 hosts and 60 pages a host.
 Receive (address as a QR code, plus Copy), and Send (token, recipient with Paste, amount
 with Max).
 
-**Paying someone.** On a profile, **Pay via QR code** copies the owner's address and shows
-it as a QR code. The code is the bare address, not a Solana Pay request, so any wallet or
-exchange scanner reads it; the payer picks the amount and sends from their own app.
+**Paying someone.** People pay each other in $UTCC (mint `HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA`,
+6 decimals, kept in `client/js/utcc.js`) and nothing else. A profile's **Pay** opens one
+amount field in $UTCC with the payer's balance (pressing it sends all of it) and four
+steps, **+10**, **+100**, **+1k** and **+10k**, each added to the amount; a step the balance
+cannot cover is off. Short of $UTCC, the note links to the coin in the wallet to buy it.
+**Send** reviews and then sends from the account's wallet (`POST /api/social/send` with the
+$UTCC mint). **Scan QR code** shows a Solana Pay request with `spl-token` set to $UTCC, and
+the amount when there is one. On your own profile the code asks to be paid, and Send asks
+who to pay first.
+
+**$UTCC balance.** On screens 901 px and wider, the signed-in account's $UTCC sits under
+the section tabs, linking to `/wallet?t=<mint>`. Where the tabs are icons alone it is the
+coin over an abbreviated figure. It is read again after a send and when the page comes
+back into view. Phones neither show it nor ask for it.
 
 **Messaging.**
 

@@ -13,6 +13,7 @@ import { open as openLogin } from "../js/login.js";
 import { readName, writeName } from "../js/me.js";
 import { b64u, needPasskey, u8, why } from "../js/passkey.js";
 import { mountPwa } from "../js/pwa.js";
+import { UTCC, utccShort, utccText } from "../js/utcc.js";
 
 const main = $("m");
 /** Matches MAX_POST in src/social/limits.ts. */
@@ -70,6 +71,7 @@ function applyMe(next) {
   badge.hidden = !(me?.unseen > 0);
   unread.hidden = !(me?.unread > 0);
   link.href = me ? `/social/u/${me.name}` : "/social";
+  showBalance();
   if (!me) return;
   badge.textContent = me.unseen;
   unread.textContent = me.unread;
@@ -307,6 +309,8 @@ function payButton(person) {
           to: { name: person.name, address: person.address },
           me,
           login: () => openAuth("login"),
+          // Not yet confirmed when it returns, and /api/balances keeps an answer for 5 s.
+          sent: () => setTimeout(() => showBalance(true), 6000),
         });
       } catch {
         button.textContent = "Could not open Pay";
@@ -978,6 +982,46 @@ function railSide() {
   load("rl", "__rail").then((rail) => rail.mount({ side: $("side"), pull, send, face, openAuth, me: () => me }), () => {});
 }
 WIDE.addEventListener("change", () => document.body.classList.contains("tl") && railSide());
+
+/** Whose $UTCC the tab column is showing, and the latest ask for it, so a late answer for someone else is dropped. */
+let balanceOf = "";
+let balanceRun = 0;
+
+/**
+ * The account's $UTCC, under the tabs. Wide screens only, as the rail is: on a
+ * phone the tabs are the bottom bar, with no room under them, so it is not even
+ * asked for there. A failed read keeps the last figure, or shows none.
+ */
+function showBalance(again = false) {
+  const owner = me?.address || "";
+  if (owner !== balanceOf) {
+    balanceOf = owner;
+    balanceRun++;
+    $("bal").hidden = true;
+  } else if (!again) return;
+  if (!owner || !WIDE.matches) return;
+  const run = ++balanceRun;
+  send("/api/balances", { owner, mint: UTCC.mint }).then(
+    (data) => run === balanceRun && data.token != null && paintBalance(BigInt(data.token)),
+    () => {},
+  );
+}
+
+function paintBalance(units) {
+  const link = $("bal");
+  const text = utccText(units);
+  // The logo only now, so a phone, or anyone signed out, never fetches it.
+  link.href = `/wallet?t=${UTCC.mint}`;
+  $("balic").src = `/icon/${UTCC.mint}`;
+  $("baln").textContent = text;
+  $("bals").textContent = utccShort(units);
+  link.title = `${text} ${UTCC.symbol}`;
+  link.hidden = false;
+}
+
+WIDE.addEventListener("change", () => showBalance(true));
+// Someone may have paid you while the page was in another tab.
+document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && showBalance(true));
 
 function renderTimeline(data) {
   const gen = feedGen;

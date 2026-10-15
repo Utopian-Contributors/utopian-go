@@ -1,38 +1,32 @@
 /**
  * The Pay dialog — lazy-loaded, exposed as `window.__pay`.
  *
- * A profile's Pay button opens it: one amount, in SOL or USDC, and two ways to
- * move it. Send pays from the signed-in account's own wallet, which the server
+ * A profile's Pay button opens it: one amount, in $UTCC, and two ways to move
+ * it. People pay each other in $UTCC and nothing else, so there is no token to
+ * pick. Send pays from the signed-in account's own wallet, which the server
  * signs for (POST /api/social/send, the same route as the wallet page's Send).
- * Scan QR code draws a Solana Pay request, so any wallet app can pay it.
+ * Scan QR code draws a Solana Pay request for $UTCC, so any wallet app can pay it.
  *
  * On someone else's profile both go to them. On your own, the code asks to be
  * paid, which is the old "Pay via QR code" with an amount on it. Send asks who
  * to pay first, since a wallet cannot send to itself.
  *
- * The amount is sized from the payer's balance, the way a trade is, and draws
- * on the trade form's controls (swap/form.css) to do it.
+ * The amount is typed, built up from quick steps, or the whole balance, and
+ * draws on the trade form's controls (swap/form.css) to do it.
  */
 import { el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { b64u, needPasskey, u8, why } from "../js/passkey.js";
 import { dialog, injectStyles } from "../js/ui.js";
+import { UTCC, utccText } from "../js/utcc.js";
 import { injectFormStyles } from "../swap/ui.js";
 import CSS from "./pay.css";
 
-const SOL_MINT = "So11111111111111111111111111111111111111112";
+/** Quick steps, in whole coins, each added to the amount already there. */
+const STEPS = [10, 100, 1_000, 10_000];
 
-/** What a payment can be made in: the two quote tokens /api/balances reports. */
-const FUNDS = [
-  { symbol: "SOL", mint: SOL_MINT, decimals: 9, key: "sol" },
-  { symbol: "USDC", mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: 6, key: "usdc" },
-];
-
-/** Left behind on a Max SOL send: the account's own rent minimum and the fee. As on the wallet page. */
-const SOL_KEEP = 2_000_000n;
-
-/** Quick sizes, as percentages of what the wallet can send. */
-const PCTS = [25, 50, 100];
+/** Where someone short of $UTCC can buy it: the coin's own page in the wallet. */
+const BUY = `/wallet?t=${UTCC.mint}`;
 
 const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const HANDLE = /^@?([a-z0-9_]{3,16})$/i;
@@ -57,13 +51,6 @@ function toDecimal(units, decimals) {
   const whole = s.slice(0, s.length - decimals);
   const frac = s.slice(s.length - decimals).replace(/0+$/, "");
   return frac ? `${whole}.${frac}` : whole;
-}
-
-/** Rounded, for the balance line only. */
-function pretty(raw, decimals) {
-  const n = Number(raw) / 10 ** decimals;
-  if (!Number.isFinite(n)) return "0";
-  return n.toLocaleString("en-US", { maximumFractionDigits: n >= 1000 ? 2 : n >= 1 ? 4 : 6 });
 }
 
 async function post(path, body) {
@@ -94,17 +81,22 @@ async function lookup(text) {
 }
 
 /**
- * What the code says. With an amount, a Solana Pay transfer request, which
- * wallet apps open with the sum and the token already filled in. Without one,
- * the bare address, as the profile's code always was: every wallet and
- * exchange scanner reads that, and the sender picks the amount.
+ * What the code says: a Solana Pay transfer request for $UTCC, which wallet
+ * apps open with the coin, and the sum when there is one, already filled in.
+ * Without a sum the wallet asks for one. Never the bare address, which a
+ * wallet would pay in whatever the payer picked.
  */
 function payUrl(address, amt, label) {
-  if (!amt) return address;
-  const p = new URLSearchParams({ amount: amt.text });
-  if (amt.fund.mint !== SOL_MINT) p.set("spl-token", amt.fund.mint);
+  const p = new URLSearchParams();
+  if (amt) p.set("amount", amt.text);
+  p.set("spl-token", UTCC.mint);
   if (label) p.set("label", label);
   return `solana:${address}?${p}`;
+}
+
+/** "+10", "+1k": the steps as the buttons spell them. */
+function stepText(step) {
+  return step >= 1000 ? `+${step / 1000}k` : `+${step}`;
 }
 
 /**
@@ -112,19 +104,19 @@ function payUrl(address, amt, label) {
  *   to: {name: string, address: string},
  *   me: null | {name: string, address: string, passkey?: boolean},
  *   login: () => void,
+ *   sent?: () => void,
  * }} opts
  */
-function open({ to, me, login }) {
+function open({ to, me, login, sent }) {
   const own = !!me && me.address === to.address;
   const title = own ? "Pay" : `Pay @${to.name}`;
   const { body, close, setTitle } = dialog(title);
   injectFormStyles();
   injectStyles("pay-css", CSS);
 
-  let fund = FUNDS[0];
   let typed = "";
-  /** Base-unit strings by fund key, from /api/balances. */
-  let balances = {};
+  /** Base units of $UTCC the wallet holds, or null while that is unknown. */
+  let held = null;
   /** The lookup failed, which is not the same as an empty wallet. */
   let balanceUnknown = false;
   /** Who Send pays from your own profile, kept across Back. */
@@ -133,33 +125,18 @@ function open({ to, me, login }) {
   let repaint = null;
 
   form();
-  if (me) loadBalances();
+  if (me) loadBalance();
 
-  async function loadBalances() {
+  async function loadBalance() {
     try {
-      // POSTed, as everywhere else: an address in a query string ends up in a request log.
-      const res = await fetch("/api/balances", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ owner: me.address }),
-      });
-      const data = await res.json();
-      if (!res.ok || data?.error) throw new Error(data?.error);
-      balances = data;
+      const data = await post("/api/balances", { owner: me.address, mint: UTCC.mint });
+      if (data.token == null) throw new Error();
+      held = BigInt(data.token);
       balanceUnknown = false;
     } catch {
       balanceUnknown = true;
     }
     repaint?.();
-  }
-
-  /** Base units Send may spend, or null while that is unknown. */
-  function spendable() {
-    const raw = balances[fund.key];
-    if (raw == null) return null;
-    const units = BigInt(raw);
-    if (fund.mint !== SOL_MINT) return units;
-    return units > SOL_KEEP ? units - SOL_KEEP : 0n;
   }
 
   // —— the amount, and the two ways to pay it ——
@@ -169,8 +146,8 @@ function open({ to, me, login }) {
     const balance = el("button", {
       class: "swx-bal",
       type: "button",
-      "aria-label": `Send all your ${fund.symbol}`,
-      onclick: () => sizeTo(100),
+      "aria-label": `Send all your ${UTCC.symbol}`,
+      onclick: sendAll,
     });
     const amount = el("input", {
       class: "swx-amt",
@@ -178,36 +155,17 @@ function open({ to, me, login }) {
       inputmode: "decimal",
       autocomplete: "off",
       spellcheck: "false",
-      placeholder: "0.0",
-      "aria-label": `Amount of ${fund.symbol}`,
+      placeholder: "0",
+      "aria-label": `Amount of ${UTCC.symbol}`,
     });
     amount.value = typed;
-    const chips = PCTS.map((pct) =>
+    const chips = STEPS.map((step) =>
       el("button", {
         type: "button",
-        text: pct === 100 ? "Max" : `${pct}%`,
-        "aria-label": `${pct}% of your ${fund.symbol}`,
-        onclick: () => sizeTo(pct),
+        text: stepText(step),
+        "aria-label": `Add ${step.toLocaleString("en-US")} ${UTCC.symbol}`,
+        onclick: () => add(step),
       }),
-    );
-    const seg = el(
-      "div",
-      { class: "swx-seg", role: "group", "aria-label": "Pay in" },
-      ...FUNDS.map((f) =>
-        el("button", {
-          type: "button",
-          text: f.symbol,
-          class: f === fund ? "on" : "",
-          "aria-pressed": String(f === fund),
-          onclick: () => {
-            if (fund === f) return;
-            fund = f;
-            // 0.5 SOL and 0.5 USDC are very different payments.
-            typed = "";
-            form();
-          },
-        }),
-      ),
     );
     const send = el("button", { class: "swx-go", type: "button", text: me ? "Send" : "Log in to send", onclick: onSend });
     const scan = el("button", { class: "swx-2nd", type: "button", text: "Scan QR code", onclick: onScan });
@@ -218,8 +176,9 @@ function open({ to, me, login }) {
         "div",
         { class: "swx-pane" },
         el("div", { class: "swx-lbl" }, el("span", { text: own ? "Amount" : "You pay" }), me ? balance : null),
-        el("div", { class: "swx-body" }, seg, amount),
-        me ? el("div", { class: "swx-pct", role: "group", "aria-label": "Size from balance" }, ...chips) : null,
+        // The trade form's locked ticker: one coin, so chosen is the truth about it.
+        el("div", { class: "swx-body" }, el("span", { class: "swx-lock", text: UTCC.symbol }), amount),
+        el("div", { class: "swx-pct", role: "group", "aria-label": "Add to the amount" }, ...chips),
       ),
       el("div", { class: "swx-act" }, send, scan),
       note,
@@ -238,36 +197,43 @@ function open({ to, me, login }) {
 
     /** The amount, or null when there is none to pay. */
     function entered() {
-      const units = toUnits(typed, fund.decimals);
-      return units ? { units, text: toDecimal(units, fund.decimals), fund } : null;
+      const units = toUnits(typed, UTCC.decimals);
+      return units ? { units, text: toDecimal(units, UTCC.decimals) } : null;
     }
 
-    function sizeTo(pct) {
-      const max = spendable();
-      if (!max) return;
-      typed = toDecimal((max * BigInt(pct)) / 100n, fund.decimals);
+    /** Text that is not an amount counts as none, so a step replaces it. */
+    function add(step) {
+      const units = (toUnits(typed, UTCC.decimals) ?? 0n) + BigInt(step) * 10n ** BigInt(UTCC.decimals);
+      typed = toDecimal(units, UTCC.decimals);
+      amount.value = typed;
+      update();
+    }
+
+    function sendAll() {
+      if (!held) return;
+      typed = toDecimal(held, UTCC.decimals);
       amount.value = typed;
       update();
     }
 
     function update() {
       if (!amount.isConnected) return;
-      const raw = balances[fund.key];
       balance.textContent = balanceUnknown
         ? "Balance unknown"
-        : raw == null
+        : held == null
           ? "Balance —"
-          : `Balance ${pretty(raw, fund.decimals)} ${fund.symbol}`;
-      const max = spendable();
-      const units = toUnits(typed, fund.decimals);
+          : `Balance ${utccText(held)} ${UTCC.symbol}`;
+      const units = toUnits(typed, UTCC.decimals);
+      const known = !!me && held != null;
+      // A step the wallet cannot cover is off, so the buttons say what is affordable.
       chips.forEach((chip, i) => {
-        chip.disabled = !max;
-        chip.classList.toggle("on", !!max && units === (max * BigInt(PCTS[i])) / 100n);
+        chip.disabled = known && (units ?? 0n) + BigInt(STEPS[i]) * 10n ** BigInt(UTCC.decimals) > held;
       });
       const bad = typed !== "" && units == null;
-      const over = !!me && units != null && max != null && units > max;
-      if (bad) setNote(`Enter an amount in ${fund.symbol}.`, "err");
-      else if (over) setNote(`Not enough ${fund.symbol}.`, "err");
+      const over = known && units != null && units > held;
+      if (bad) setNote(`Enter an amount in ${UTCC.symbol}.`, "err");
+      else if (over) setNote(`Not enough ${UTCC.symbol}.`, "err", `Buy ${UTCC.symbol}`);
+      else if (known && !held) setNote(`You have no ${UTCC.symbol} yet.`, "", `Buy ${UTCC.symbol}`);
       else if (me && balanceUnknown) setNote("Balance unknown. Check you can cover this.");
       else setNote("");
       // Without an amount, the code still works: the payer picks one in their wallet.
@@ -275,8 +241,9 @@ function open({ to, me, login }) {
       send.disabled = !!me && (!units || over);
     }
 
-    function setNote(text, kind) {
-      note.textContent = text;
+    /** @param {string} text @param {string} [kind] @param {string} [buy] a link to the coin, worded */
+    function setNote(text, kind, buy) {
+      note.replaceChildren(text, buy ? " " : "", buy ? el("a", { href: BUY, text: buy }) : "");
       note.className = `swx-note${kind ? ` ${kind}` : ""}`;
     }
 
@@ -302,7 +269,7 @@ function open({ to, me, login }) {
 
   function recipient(amt) {
     repaint = null;
-    setTitle(`Send ${amt.text} ${amt.fund.symbol}`);
+    setTitle(`Send ${amt.text} ${UTCC.symbol}`);
     const input = el("input", {
       class: "pay-field",
       id: "pay-to",
@@ -348,13 +315,13 @@ function open({ to, me, login }) {
   // —— the review, where Send actually sends ——
 
   /**
-   * @param {{units: bigint, text: string, fund: typeof FUNDS[number]}} amt
+   * @param {{units: bigint, text: string}} amt
    * @param {{name: string, address: string}} who
    */
   function review(amt, who, back = form) {
     repaint = null;
     setTitle("Review payment");
-    const sum = `${amt.text} ${amt.fund.symbol}`;
+    const sum = `${amt.text} ${UTCC.symbol}`;
     const confirm = el("button", { class: "swx-go", type: "button", text: `Send ${sum}`, onclick: () => submit(confirm, {}) });
     /** The password or passkey a send over the day's allowance needs. */
     const extra = el("div");
@@ -366,7 +333,7 @@ function open({ to, me, login }) {
         "div",
         { class: "swx-pane" },
         el("div", { class: "swx-lbl" }, el("span", { text: "You send" })),
-        el("div", { class: "swx-body" }, el("span", { class: "swx-lock", text: amt.fund.symbol }), el("div", { class: "swx-recv", text: amt.text })),
+        el("div", { class: "swx-body" }, el("span", { class: "swx-lock", text: UTCC.symbol }), el("div", { class: "swx-recv", text: amt.text })),
       ),
       el(
         "div",
@@ -397,13 +364,14 @@ function open({ to, me, login }) {
       try {
         const { signature } = await post("/api/social/send", {
           to: who.address,
-          mint: amt.fund.mint,
+          mint: UTCC.mint,
           amount: amt.units.toString(),
           ...proof,
         });
-        // The balance this dialog sized from has moved.
-        balances = {};
-        loadBalances();
+        // The balance this dialog sized from has moved, and so has the page's.
+        held = null;
+        loadBalance();
+        sent?.();
         if (note.isConnected) done(amt, who, signature);
       } catch (cause) {
         if (cause.stepUp && !Object.keys(proof).length) {
@@ -478,11 +446,11 @@ function open({ to, me, login }) {
 
   // —— the code ——
 
-  /** @param {null | {units: bigint, text: string, fund: typeof FUNDS[number]}} amt */
+  /** @param {null | {units: bigint, text: string}} amt */
   async function code(amt) {
     repaint = null;
     setTitle(own ? "Get paid" : `Pay @${to.name}`);
-    const sum = amt ? `${amt.text} ${amt.fund.symbol}` : "any amount";
+    const sum = amt ? `${amt.text} ${UTCC.symbol}` : `any amount of ${UTCC.symbol}`;
     const holder = el("div", { class: "swx-qr", role: "img", "aria-label": "Payment QR code" });
     const copy = el("button", {
       class: "swx-2nd",
@@ -528,7 +496,7 @@ function open({ to, me, login }) {
         "div",
         { class: "swx-done" },
         disc,
-        el("div", { class: "swx-done-t", text: `You sent ${amt.text} ${amt.fund.symbol}` }),
+        el("div", { class: "swx-done-t", text: `You sent ${amt.text} ${UTCC.symbol}` }),
         el("div", { class: "swx-done-s", text: `to ${who.name ? `@${who.name}` : `${a.slice(0, 4)}…${a.slice(-4)}`}` }),
         el(
           "div",
