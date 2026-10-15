@@ -8,10 +8,12 @@ import { asString } from "../lib/query";
 import { rateLimit } from "../lib/rateLimit";
 import { isSignature, signatureStatus } from "../lib/txStatus";
 import { tokenDetail } from "../lib/tokens/detail";
+import { isChartRange, priceSeries } from "../lib/tokens/history";
 import {
   isTokenList,
   listCounts,
   listTokens,
+  lookupMints,
   lookupTokens,
   searchTokens,
   topTokens,
@@ -309,15 +311,21 @@ apiRouter.post(
   readJson,
   wrap(async (req: Request, res: Response) => {
     const owner = asString(req.body?.owner).trim();
+    const range = asString(req.body?.range) || "24h";
 
     if (!isPubkey(owner)) {
       const body: HoldingsApiResponse = { error: "Invalid wallet address." };
       res.status(400).json(body);
       return;
     }
+    if (!isChartRange(range)) {
+      const body: HoldingsApiResponse = { error: "No such range." };
+      res.status(400).json(body);
+      return;
+    }
 
     try {
-      res.json(await fetchHoldings(owner));
+      res.json(await fetchHoldings(owner, range));
     } catch (err) {
       console.warn("[holdings] lookup failed:", err);
       // The page says "could not read" rather than rendering an empty
@@ -383,6 +391,38 @@ apiRouter.get(
     }
     res.setHeader("Cache-Control", "public, max-age=30");
     res.json(detail);
+  }),
+);
+
+/**
+ * A chart's range other than 24h, which every quote already carries. Each
+ * mint and range reaches Jupiter at most once a minute, shared by everyone;
+ * the bucket is for whoever clicks through every range of every token.
+ */
+const chartLimit = rateLimit({ perMinute: 120, burst: 40 });
+
+apiRouter.get(
+  "/api/tokens/:mint/chart",
+  chartLimit,
+  wrap(async (req: Request, res: Response) => {
+    const mint = req.params.mint;
+    const range = asString(req.query.r);
+    if (!isPubkey(mint) || !isChartRange(range)) {
+      res.status(400).json({ error: "Invalid chart." });
+      return;
+    }
+    const rec = lookupMints([mint]).get(mint);
+    if (!rec) {
+      res.status(404).json({ error: "We don't index that token." });
+      return;
+    }
+    const series = await priceSeries(rec, range);
+    if (!series) {
+      res.status(503).json({ error: "No price history for this range right now." });
+      return;
+    }
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.json(series);
   }),
 );
 

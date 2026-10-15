@@ -144,10 +144,11 @@ export const TOKEN_TICKS_INTERVAL = "1_HOUR";
 export const TOKEN_TICKS_COUNT = 24;
 
 /**
- * Below half a day there is no day to draw. Brand-new mints, and tokenized
- * equities over a closed weekend, come back with a handful of candles; those
- * cards go out without a line rather than with one implying a history the
- * token doesn't have.
+ * Below half a day there is no day to draw. A brand-new mint has only a few
+ * hours on the clock (onClock in lib/tokens/ticks.ts), and its card goes out
+ * without a line rather than with one implying a history the token doesn't
+ * have. A tokenized equity over a closed weekend is not short: its last close
+ * holds across the whole day, flat, which is what its day was.
  */
 export const TOKEN_TICKS_MIN_POINTS = 12;
 

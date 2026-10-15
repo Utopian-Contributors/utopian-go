@@ -121,6 +121,7 @@ export async function tokenDetail(mint: string): Promise<TokenDetail | null> {
     ticks: rec.ticks,
     tickLo: rec.tickLo,
     tickHi: rec.tickHi,
+    tickAt: rec.tickAt,
     ...(hasIcon(mint) ? { icon: true as const } : {}),
     links: {
       website: https(jup?.website),

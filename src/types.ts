@@ -105,11 +105,19 @@ export interface TokenQuote {
   decimals?: number;
   /**
    * 24 hourly closes as base64, one byte each, scaled so the day's low is 0
-   * and its high is 255. Shape only — the prices behind it are deliberately
-   * not recoverable, because nothing on the card reads a value off the line.
-   * 32 characters, which is what makes a chart affordable on every response.
+   * and its high is 255. 32 characters, which is what makes a chart
+   * affordable on every response.
    */
   ticks?: string;
+  /**
+   * The price range `ticks` was scaled against, so that scrubbing the card's
+   * line can read each hour back out as a price. Accurate to 1/255th of the
+   * day's range — a fraction of a cent on anything that trades near a dollar.
+   */
+  tickLo?: number;
+  tickHi?: number;
+  /** Epoch ms the last tick's hour began; the hours before it follow one apart. */
+  tickAt?: number;
 }
 
 /**
@@ -162,13 +170,14 @@ export interface TokenRecord {
   ticks?: string;
   /**
    * The price range `ticks` was scaled against, so the shape can be read back
-   * as prices. Server-side only — never projected into a TokenQuote, because
-   * nothing the client draws is labelled with a value off the line. The wallet
-   * page's portfolio series is what needs them. Absent on records restored
-   * from a snapshot written before they were kept.
+   * as prices: by the wallet page's portfolio series, and by a scrubbed line
+   * on a card. Absent on records restored from a snapshot written before
+   * they were kept.
    */
   tickLo?: number;
   tickHi?: number;
+  /** Epoch ms the last tick's hour began. Absent on snapshots written before it was kept. */
+  tickAt?: number;
   /** 24h traded volume, USD, buys plus sells. */
   volume24h?: number;
   /** Where Jupiter says the logo lives. Server-side only; the client gets /icon/<mint>. */
@@ -228,16 +237,32 @@ export interface Holding {
   kind: TokenKind;
 }
 
+/**
+ * How far back a chart looks. 24h is drawn from the hourly ticks every token
+ * already carries; the others are fetched for a token when someone asks for
+ * one (lib/tokens/history.ts).
+ */
+export type ChartRange = "1h" | "24h" | "1w" | "1m";
+
+/**
+ * A price line on the clock: `v` oldest first, `step` ms apart, the last
+ * taken in the bucket that began at `at`. A token too new for the range has
+ * fewer points, not invented ones.
+ */
+export interface PriceSeries {
+  at: number;
+  step: number;
+  v: number[];
+}
+
 /** One line of the wallet page's breakdown: everything held of one kind. */
 export interface PortfolioSlice {
   kind: TokenKind;
   /** USD, dust included, so the slices add up to Holdings.total. */
   usd: number;
-  /** As Holdings.series and its range, for this kind alone. */
-  series?: string;
-  seriesLo?: number;
-  seriesHi?: number;
-  change24h?: number;
+  /** As Holdings.series, for this kind alone. */
+  series?: number[];
+  change?: number;
 }
 
 /** One row of the wallet page's lists. */
@@ -294,10 +319,11 @@ export interface TokenDetail {
   fdv?: number;
   mcap?: number;
   holders?: number;
-  /** As TokenQuote.ticks, with the price range so a hovered hour can be read as a price. */
+  /** As TokenQuote's. */
   ticks?: string;
   tickLo?: number;
   tickHi?: number;
+  tickAt?: number;
   icon?: true;
   /** https only. */
   links: { website?: string; twitter?: string; telegram?: string; discord?: string };
@@ -314,33 +340,28 @@ export interface Holdings {
   items: Holding[];
   /** USD across everything held, including the rows omitted below. */
   total: number;
+  /** The window `series` and the slices' lines cover. */
+  range: ChartRange;
+  /** The clock those lines are on, as PriceSeries' `at` and `step`. */
+  seriesAt: number;
+  seriesStep: number;
   /**
-   * What these holdings were worth over the last 24 hours, one byte an hour,
-   * encoded exactly as a token's own sparkline is.
+   * What these holdings were worth across `range`, in dollars, oldest first;
+   * the last point is `total`.
    *
-   * Read it for what it is: today's balances priced at each hour's price. It
-   * is not a record of what the wallet held — we have no transaction history
-   * and do not want one — so a position opened an hour ago appears across the
-   * whole day. What it does answer is the question people actually have when
-   * they open this page: which way did the market move what I am holding.
+   * Read it for what it is: today's balances priced at each moment's price.
+   * It is not a record of what the wallet held — we have no transaction
+   * history and do not want one — so a position opened an hour ago appears
+   * across the whole window. What it does answer is the question people
+   * actually have when they open this page: which way did the market move
+   * what I am holding.
    *
    * Absent when too little of the portfolio has price history behind it for a
    * line to mean anything.
    */
-  series?: string;
-  /**
-   * The dollar range `series` was scaled against, low and high.
-   *
-   * A token card ships its shape without a range on purpose — nothing there is
-   * labelled with a value read off the line. Here something is: hovering the
-   * chart reads the portfolio's worth at that hour back out of it, so the two
-   * numbers that turn a byte into dollars have to come with it. Twenty bytes,
-   * against a second endpoint for the same information.
-   */
-  seriesLo?: number;
-  seriesHi?: number;
+  series?: number[];
   /** Change across `series`, percent. Present whenever `series` is. */
-  change24h?: number;
+  change?: number;
   /** The total by kind, largest first. Only when there are three kinds or more. */
   slices?: PortfolioSlice[];
   /** Priced rows past the display cap. */

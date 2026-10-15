@@ -175,6 +175,7 @@ async function refreshIndex(): Promise<void> {
       rec.ticks = was.ticks;
       rec.tickLo = was.tickLo;
       rec.tickHi = was.tickHi;
+      rec.tickAt = was.tickAt;
     }
 
     adopt(list);
@@ -197,8 +198,9 @@ async function refreshIndex(): Promise<void> {
   // before ranges were kept, say. Those are fresh and undecodable at the same
   // time, and left to the clock alone they are carried forward another hour
   // before anything re-encodes them. Re-encoding is the only way to acquire a
-  // range, so a rangeless index is never fresh enough to skip.
-  const ranged = records.some((r) => r.ticks && r.tickLo != null);
+  // range, so a rangeless index is never fresh enough to skip. The same goes
+  // for the hour the ticks end on, which came later still.
+  const ranged = records.some((r) => r.ticks && r.tickLo != null && r.tickAt != null);
   if (ranged && ticksFresh()) return;
   await refreshTicks(records);
   saveSnapshot();
@@ -254,8 +256,13 @@ function toQuote(rec: TokenRecord): TokenQuote {
     ...(rec.change24h != null ? { change24h: rec.change24h } : {}),
     ...(rec.mcap != null ? { mcap: rec.mcap } : {}),
     ...(rec.decimals != null ? { decimals: rec.decimals } : {}),
-    ...(rec.ticks ? { ticks: rec.ticks } : {}),
+    ...(rec.ticks ? { ticks: rec.ticks, tickLo: sig(rec.tickLo), tickHi: sig(rec.tickHi), tickAt: rec.tickAt } : {}),
   };
+}
+
+/** Six significant figures: far finer than one byte of the range resolves, at a third of the length. */
+function sig(v: number | undefined): number | undefined {
+  return v == null ? v : Number(v.toPrecision(6));
 }
 
 /**

@@ -3,8 +3,8 @@ import {
   TOKEN_PRICE_TIMEOUT_MS,
   TOKEN_TICKS_COUNT,
 } from "../config";
-import { Holding, Holdings, PortfolioSlice, TokenKind } from "../types";
-import { decodeTicks, encodeTicks } from "./tokens/ticks";
+import { ChartRange, Holding, Holdings, PortfolioSlice, PriceSeries, TokenKind, TokenRecord } from "../types";
+import { countOf, priceSeries, stepOf } from "./tokens/history";
 import { hasIcon } from "./tokens/icons";
 import { kindOf, lookupMints } from "./tokens/store";
 
@@ -62,8 +62,8 @@ const DUST_USD = 0.01;
 const CACHE_TTL_MS = 5_000;
 
 /**
- * How much of a portfolio's value must have real price history before the
- * 24-hour line is worth drawing.
+ * How much of a portfolio's value must have real price history before its
+ * line is worth drawing.
  *
  * Holdings with no series are carried flat, which keeps the total honest but
  * contributes nothing to the shape. Below this the line is mostly a straight
@@ -73,42 +73,27 @@ const CACHE_TTL_MS = 5_000;
 const MIN_SERIES_COVERAGE = 0.5;
 
 /**
- * Hours in the portfolio series — the same window, and the same count, the
- * token cards' own sparklines use, so the two lines mean the same thing.
+ * Holdings whose history is fetched for a range other than 24h, largest
+ * first. A real portfolio's value sits almost entirely in its top few; past
+ * them each would be one more request upstream for a line nobody could see
+ * move, so the rest are held flat and counted against the coverage above.
  */
-const POINTS = TOKEN_TICKS_COUNT;
+const HISTORY_MAX = 16;
 
-/**
- * The portfolio's day, as the client receives it.
- *
- * Six significant figures on the range is far more than two decimals of
- * dollars needs and keeps a sub-cent portfolio from collapsing to zero, while
- * costing about ten bytes each.
- */
-function encodeSeries(series: number[]) {
-  const { ticks, lo, hi } = encodeTicks(series);
-  return {
-    series: ticks,
-    seriesLo: Number(lo.toPrecision(6)),
-    seriesHi: Number(hi.toPrecision(6)),
-    change24h: Number(((series[POINTS - 1] / series[0] - 1) * 100).toFixed(2)),
-  };
+/** One priced holding, dust included: what a line is summed from. */
+interface Held {
+  rec: TokenRecord;
+  units: number;
+  usd: number;
+  kind: TokenKind;
 }
 
-/**
- * A token's closes as exactly POINTS values, oldest first.
- *
- * A mint too new for a full day comes back with fewer candles, and those are
- * the most *recent* hours — so they are right-aligned and the unknown earlier
- * ones hold at the oldest price we actually have, rather than inventing a move
- * into existence at the left edge of the chart.
- */
-function align(closes: number[]): number[] {
-  if (closes.length >= POINTS) return closes.slice(closes.length - POINTS);
-  return [...new Array(POINTS - closes.length).fill(closes[0]), ...closes];
+/** Dollars to the cent, and a sub-dollar portfolio to four figures rather than to zero. */
+function usd(v: number): number {
+  return v >= 1 ? Math.round(v * 100) / 100 : Number(v.toPrecision(4));
 }
 
-/** Worth, and its day, summed over some set of holdings: the whole portfolio, or one kind of it. */
+/** Worth, and its line, summed over some set of holdings: the whole portfolio, or one kind of it. */
 interface Tally {
   usd: number;
   /** USD whose movement the series actually knows about. */
@@ -116,29 +101,98 @@ interface Tally {
   series: number[];
 }
 
-function tally(): Tally {
-  return { usd: 0, covered: 0, series: new Array(POINTS).fill(0) };
+function tally(points: number): Tally {
+  return { usd: 0, covered: 0, series: new Array(points).fill(0) };
 }
 
-/** One holding into a tally: its worth now, and over the day where its price has a history. */
-function count(into: Tally, usd: number, units: number, closes: number[] | null): void {
-  into.usd += usd;
-  if (closes) {
-    into.covered += usd;
-    const hourly = align(closes);
-    for (let i = 0; i < POINTS; i += 1) into.series[i] += units * hourly[i];
-  } else {
+/**
+ * One holding into a tally: its worth now, and back across the window where
+ * its price has a history.
+ *
+ * The portfolio's clock ends on the bucket now falls in; a token's series may
+ * end a bucket or so earlier, having been fetched a few minutes ago. Each
+ * bucket reads the token's point for that same moment, so the holdings add up
+ * moment by moment. A bucket newer than the series takes today's price, and
+ * the last bucket always does, so the line ends on the total printed above
+ * it. A bucket older than the series — a token too new for the window — holds
+ * at the oldest price there is, rather than inventing a move into existence
+ * at the left edge of the chart.
+ */
+function count(into: Tally, h: Held, s: PriceSeries | null, at: number, step: number): void {
+  const points = into.series.length;
+  into.usd += h.usd;
+  if (!s) {
     // No history for this mint. Held flat rather than dropped: its value is
     // part of the total the line ends on, and omitting it would draw a
     // portfolio smaller than the number printed above it.
-    for (let i = 0; i < POINTS; i += 1) into.series[i] += usd;
+    for (let i = 0; i < points; i += 1) into.series[i] += h.usd;
+    return;
   }
+  into.covered += h.usd;
+  const last = s.v.length - 1;
+  for (let i = 0; i < points - 1; i += 1) {
+    const k = last - Math.round((s.at - (at - (points - 1 - i) * step)) / step);
+    into.series[i] += h.units * (k > last ? h.rec.price : s.v[Math.max(0, k)]);
+  }
+  into.series[points - 1] += h.usd;
 }
 
 /** A tally's line, when enough of the value behind it actually moved for one to mean anything. */
-function line(of: Tally) {
-  const drawable = of.usd > 0 && of.series[0] > 0 && of.covered / of.usd >= MIN_SERIES_COVERAGE;
-  return drawable ? encodeSeries(of.series) : {};
+function line(of: Tally): { series?: number[]; change?: number } {
+  const first = of.series[0];
+  const drawable = of.usd > 0 && first > 0 && of.covered / of.usd >= MIN_SERIES_COVERAGE;
+  if (!drawable) return {};
+  return {
+    series: of.series.map(usd),
+    change: Number(((of.series[of.series.length - 1] / first - 1) * 100).toFixed(2)),
+  };
+}
+
+/**
+ * The portfolio's line across `range`, and one per kind past two kinds.
+ *
+ * 24h is summed from the ticks every token carries. Any other range asks for
+ * the largest holdings' own series, which are shared with every chart of
+ * those tokens and mostly already held.
+ */
+async function lines(held: Held[], range: ChartRange) {
+  const step = stepOf(range);
+  const points = countOf(range, TOKEN_TICKS_COUNT);
+  const at = Math.floor(Date.now() / step) * step;
+  const asked = new Set(
+    range === "24h"
+      ? held
+      : [...held]
+          .filter((h) => h.usd >= DUST_USD)
+          .sort((a, b) => b.usd - a.usd)
+          .slice(0, HISTORY_MAX),
+  );
+  const series = await Promise.all(held.map((h) => (asked.has(h) ? priceSeries(h.rec, range) : null)));
+
+  // Each kind keeps the same tally of its own, so the breakdown's lines add
+  // up to the total's.
+  const whole = tally(points);
+  const kinds = new Map<TokenKind, Tally>();
+  held.forEach((h, i) => {
+    let mine = kinds.get(h.kind);
+    if (!mine) kinds.set(h.kind, (mine = tally(points)));
+    count(whole, h, series[i], at, step);
+    count(mine, h, series[i], at, step);
+  });
+
+  // Split by kind only past two: one or two kinds read as well off the
+  // holdings themselves, and their lines would mostly retrace the total's.
+  const slices: PortfolioSlice[] = [...kinds]
+    .map(([kind, of]) => ({ kind, usd: of.usd, ...line(of) }))
+    .sort((a, b) => b.usd - a.usd);
+
+  return {
+    range,
+    seriesAt: at,
+    seriesStep: step,
+    ...line(whole),
+    ...(slices.length > 2 ? { slices } : {}),
+  };
 }
 
 /**
@@ -149,8 +203,18 @@ function line(of: Tally) {
  */
 const MAX_CACHED_WALLETS = 2_000;
 
-const cache = new Map<string, { at: number; value: Holdings }>();
-const inFlight = new Map<string, Promise<Holdings>>();
+/** What one wallet holds, priced, before any line is drawn through it. */
+interface Book {
+  items: Holding[];
+  total: number;
+  held: Held[];
+  more?: number;
+  dust?: number;
+  unpriced?: number;
+}
+
+const cache = new Map<string, { at: number; value: Book }>();
+const inFlight = new Map<string, Promise<Book>>();
 
 function sweepCache(now: number): void {
   for (const [key, entry] of cache) {
@@ -221,7 +285,13 @@ function toUnits(amount: bigint, decimals: number): number {
   return Number(amount) / 10 ** decimals;
 }
 
-export async function fetchHoldings(owner: string): Promise<Holdings> {
+/** What `owner` holds, and its line across `range`. */
+export async function fetchHoldings(owner: string, range: ChartRange = "24h"): Promise<Holdings> {
+  const { held, ...book } = await readBook(owner);
+  return { ...book, ...(await lines(held, range)) };
+}
+
+async function readBook(owner: string): Promise<Book> {
   // No RPC configured is a deployment fault, not an empty wallet — the same
   // distinction lib/balances.ts draws, and for the same reason: reporting an
   // empty portfolio would be a confident lie about someone's money.
@@ -243,7 +313,7 @@ export async function fetchHoldings(owner: string): Promise<Holdings> {
   return task;
 }
 
-async function lookup(owner: string): Promise<Holdings> {
+async function lookup(owner: string): Promise<Book> {
   const calls = [
     { jsonrpc: "2.0", id: 1, method: "getBalance", params: [owner] },
     {
@@ -305,15 +375,12 @@ async function lookup(owner: string): Promise<Holdings> {
   const priced = lookupMints([...totals.keys()]);
 
   const items: Holding[] = [];
+  // Every priced holding, dust included, because it counts towards the total
+  // the line has to end on.
+  const held: Held[] = [];
+  let total = 0;
   let unpriced = 0;
   let dust = 0;
-
-  // The portfolio's own 24 hours, accumulated across every priced holding —
-  // dust included, because it counts towards the total the line has to end on.
-  // Each kind keeps the same tally of its own, so the breakdown's lines add up
-  // to the total's.
-  const whole = tally();
-  const kinds = new Map<TokenKind, Tally>();
 
   for (const [mint, { amount, decimals }] of totals) {
     const rec = priced.get(mint);
@@ -336,12 +403,9 @@ async function lookup(owner: string): Promise<Holdings> {
       continue;
     }
 
-    const closes = decodeTicks(rec);
     const kind = kindOf(rec);
-    let mine = kinds.get(kind);
-    if (!mine) kinds.set(kind, (mine = tally()));
-    count(whole, usd, units, closes);
-    count(mine, usd, units, closes);
+    held.push({ rec, units, usd, kind });
+    total += usd;
 
     if (usd < DUST_USD) {
       dust += 1;
@@ -365,17 +429,11 @@ async function lookup(owner: string): Promise<Holdings> {
   // Largest first: a portfolio is read top-down and the top is what matters.
   items.sort((a, b) => b.usd - a.usd);
   const shown = items.slice(0, MAX_ITEMS);
-  // Split by kind only past two: one or two kinds read as well off the
-  // holdings themselves, and their lines would mostly retrace the total's.
-  const slices: PortfolioSlice[] = [...kinds]
-    .map(([kind, of]) => ({ kind, usd: of.usd, ...line(of) }))
-    .sort((a, b) => b.usd - a.usd);
 
-  const value: Holdings = {
+  const value: Book = {
     items: shown,
-    total: whole.usd,
-    ...line(whole),
-    ...(slices.length > 2 ? { slices } : {}),
+    total,
+    held,
     ...(items.length > shown.length ? { more: items.length - shown.length } : {}),
     ...(dust ? { dust } : {}),
     ...(unpriced ? { unpriced } : {}),

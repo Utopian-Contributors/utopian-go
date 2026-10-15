@@ -12,13 +12,14 @@ import {
 import { TokenRecord } from "../../types";
 
 /**
- * The 24h shape of every indexed token, refreshed once per index rebuild.
+ * The 24h shape of every indexed token, refreshed once per index rebuild, and
+ * the one door to Jupiter's chart API — lib/tokens/history.ts asks through it
+ * for the other ranges.
  *
- * A sparkline needs a shape, not prices: nothing on the card is labelled with
- * a value read off the line. So the series is normalised to 24 bytes here and
- * shipped as base64 — 32 characters, about 33 bytes gzipped onto a quote,
- * against the four kilobytes a drawn image of the same line would cost. The
- * client scales those bytes to whatever box it has.
+ * The series is normalised to 24 bytes here and shipped as base64 — 32
+ * characters, about 33 bytes gzipped onto a quote, against the four kilobytes
+ * a drawn image of the same line would cost. The client scales those bytes to
+ * whatever box it has, and reads prices back off them with the range.
  *
  * Normalising server-side also keeps the scale decisions in one place, where
  * the flat-day floor below can be explained rather than reimplemented in the
@@ -54,35 +55,95 @@ export function restoreTicks(at: unknown): void {
   updatedAt = Number(at) || 0;
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** The candle widths asked for, in ms. */
+export const INTERVAL_MS = {
+  "1_MINUTE": 60_000,
+  "1_HOUR": 3_600_000,
+  "4_HOUR": 14_400_000,
+} as const;
+
+export type Interval = keyof typeof INTERVAL_MS;
+
+const TICKS_INTERVAL = TOKEN_TICKS_INTERVAL as Interval;
 
 /**
- * Earliest moment the next request may leave, shared across workers.
+ * Earliest moment the next request may leave, shared by every caller.
  *
- * The rate limit upstream is one budget for the whole refresh, so the pacing
- * has to be one budget too — six workers each politely spacing their own
- * requests would still add up to six times the intended rate.
+ * The rate limit upstream is one budget for this server, so the pacing has to
+ * be one budget too — six workers each politely spacing their own requests
+ * would still add up to six times the intended rate.
  */
 const GAP_MS = 1000 / TOKEN_TICKS_RPS;
 let slot = 0;
 
-/** Claim the next slot, waiting for it if it hasn't come round yet. */
-async function pace(): Promise<void> {
-  const now = Date.now();
-  const at = Math.max(now, slot);
-  slot = at + GAP_MS;
-  if (at > now) await sleep(at - now);
+/**
+ * Callers waiting for a slot, in two lanes. Someone who has just asked for a
+ * chart goes ahead of the hourly refresh, which nobody is watching and which
+ * only finishes a few seconds later for it. Both lanes share the one rate.
+ */
+const lanes = { now: [] as Array<() => void>, later: [] as Array<() => void> };
+let timer: NodeJS.Timeout | undefined;
+
+/**
+ * How many people may be waiting at once. Six a second clears this in ten
+ * seconds; past it, a chart nobody will wait that long for is refused rather
+ * than queued.
+ */
+const WAITING_MAX = 60;
+
+/** The chart API is busy enough that a person's request was not queued. */
+export class ChartsBusy extends Error {}
+
+function release(): void {
+  timer = undefined;
+  // A 429 can push the slot back after this timer was set.
+  if (Date.now() < slot) {
+    timer = setTimeout(release, slot - Date.now());
+    return;
+  }
+  const go = lanes.now.shift() ?? lanes.later.shift();
+  if (!go) return;
+  slot = Date.now() + GAP_MS;
+  go();
+  if (lanes.now.length || lanes.later.length) timer = setTimeout(release, GAP_MS);
 }
 
-/** 24h of closes, oldest first. Empty when there is no usable series. */
-async function fetchSeries(mint: string): Promise<number[]> {
+/** Wait for this caller's slot. `urgent` is a person waiting on the answer. */
+function pace(urgent: boolean): Promise<void> {
+  if (urgent && lanes.now.length >= WAITING_MAX) return Promise.reject(new ChartsBusy());
+  return new Promise((go) => {
+    (urgent ? lanes.now : lanes.later).push(go);
+    if (!timer) timer = setTimeout(release, Math.max(0, slot - Date.now()));
+  });
+}
+
+export interface Candle {
+  /** Epoch ms the candle began. */
+  time: number;
+  close: number;
+}
+
+/**
+ * Up to `count` candles of `interval`, oldest first, ending now.
+ *
+ * Throws when the API fails or throttles: an empty answer means the token has
+ * no trades, and the two must not look alike to a cache. A person waiting is
+ * not made to sit through the refresh's backoff — one throttled answer and
+ * they are told, while the refresh retries.
+ */
+export async function fetchCandles(
+  mint: string,
+  interval: Interval,
+  count: number,
+  urgent = false,
+): Promise<Candle[]> {
   for (let attempt = 0; ; attempt += 1) {
-    await pace();
+    await pace(urgent);
 
     const url =
       `${JUP_CHART_ENDPOINT}/${encodeURIComponent(mint)}` +
-      `?interval=${TOKEN_TICKS_INTERVAL}` +
-      `&candles=${TOKEN_TICKS_COUNT}` +
+      `?interval=${interval}` +
+      `&candles=${count}` +
       `&to=${encodeURIComponent(new Date().toISOString())}`;
 
     const res = await fetch(url, {
@@ -91,24 +152,53 @@ async function fetchSeries(mint: string): Promise<number[]> {
     });
 
     if (res.status === 429) {
-      if (attempt >= TOKEN_TICKS_RETRIES) return [];
       // Hold the shared slot back rather than this one request: being
-      // throttled says the whole refresh is going too fast, and retrying alone
+      // throttled says everything here is going too fast, and retrying alone
       // while five other workers keep pushing just fails again.
       slot = Math.max(slot, Date.now() + GAP_MS * 20 * (attempt + 1));
+      if (urgent || attempt >= TOKEN_TICKS_RETRIES) throw new Error("charts 429");
       continue;
     }
-    if (!res.ok) return [];
+    if (!res.ok) throw new Error(`charts ${res.status}`);
 
-    const body = (await res.json()) as { candles?: Array<{ close?: unknown }> };
-    const closes: number[] = [];
+    const body = (await res.json()) as { candles?: Array<{ time?: unknown; close?: unknown }> };
+    const candles: Candle[] = [];
     for (const candle of body.candles ?? []) {
+      const time = Number(candle?.time) * 1000;
       const close = Number(candle?.close);
       // A zero or missing close would flatten the whole scale around it.
-      if (Number.isFinite(close) && close > 0) closes.push(close);
+      if (Number.isFinite(time) && Number.isFinite(close) && close > 0) candles.push({ time, close });
     }
-    return closes;
+    return candles.sort((a, b) => a.time - b.time);
   }
+}
+
+/**
+ * Candles onto the clock: `count` buckets of `step` ms, the last the one now
+ * falls in, each holding the close of the latest candle at or before it.
+ *
+ * Jupiter only returns candles in which something traded, so for a thin token
+ * "the last sixty minutes" comes back as sixty trades spread over days. Read
+ * off the clock instead, a quiet stretch is the flat line it was, and the
+ * time under a scrubbed point is the time it says. Buckets before the first
+ * candle are left out, so a token too new for the window draws what it has.
+ */
+export function onClock(
+  candles: Candle[],
+  step: number,
+  count: number,
+  now = Date.now(),
+): { at: number; closes: number[] } {
+  const at = Math.floor(now / step) * step;
+  const closes: number[] = [];
+  let next = 0;
+  let close: number | undefined;
+  for (let k = count - 1; k >= 0; k -= 1) {
+    const open = at - k * step;
+    while (next < candles.length && candles[next].time <= open) close = candles[next++].close;
+    if (close != null) closes.push(close);
+  }
+  return { at, closes };
 }
 
 /**
@@ -183,7 +273,6 @@ export async function refreshTicks(
 ): Promise<void> {
   if (running) return;
   running = true;
-  slot = 0;
 
   const started = Date.now();
   let ok = 0;
@@ -193,14 +282,16 @@ export async function refreshTicks(
     while (cursor < records.length) {
       const rec = records[cursor++];
       try {
-        const closes = await fetchSeries(rec.mint);
+        const candles = await fetchCandles(rec.mint, TICKS_INTERVAL, TOKEN_TICKS_COUNT);
+        const { at, closes } = onClock(candles, INTERVAL_MS[TICKS_INTERVAL], TOKEN_TICKS_COUNT);
         if (closes.length < TOKEN_TICKS_MIN_POINTS) continue;
         const encoded = encodeTicks(closes);
         rec.ticks = encoded.ticks;
-        // Kept beside the shape so the wallet page can read prices back out of
-        // it without a second trip to the chart API.
+        // Kept beside the shape so a chart can read prices back out of it
+        // without a second trip to the chart API, and say when each was.
         rec.tickLo = encoded.lo;
         rec.tickHi = encoded.hi;
+        rec.tickAt = at;
         ok += 1;
       } catch {
         // One token's line is not worth a log line each hour; the card simply
