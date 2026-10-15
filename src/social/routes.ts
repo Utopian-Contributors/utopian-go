@@ -2,7 +2,7 @@ import { createPublicKey, randomBytes } from "crypto";
 import express, { NextFunction, Request, Response, Router } from "express";
 import { ADS_PAY_TO, SITE_URL, TERMS_VERSION } from "../config";
 import { rateLimit } from "../lib/rateLimit";
-import { lookupMints, railAssets } from "../lib/tokens/store";
+import { railAssets } from "../lib/tokens/store";
 import { FRESH_MS, ORDER_OPEN_MS, adsPayable, orderAmounts, orderCodes, payUrl } from "./adPay";
 import { matchesAd, reloadAds, socialAdFor } from "./ads";
 import { audioKind } from "./audio";
@@ -329,7 +329,7 @@ function readJson(req: Request, res: Response, next: NextFunction) {
  */
 /**
  * Anything that checks a password, per address: three guesses a minute,
- * shared across login, the phrase, adding a passkey and confirming a send.
+ * shared across login, the phrase and adding a passkey.
  */
 const passwordLimit = rateLimit({ perMinute: 3, burst: 3 });
 /** Two scrypt derivations and a new wallet each. */
@@ -1081,42 +1081,6 @@ socialRouter.post(
   }),
 );
 
-/**
- * What a session alone may send in a day, in dollars.
- *
- * Past it, a send needs the password or the passkey again, the same proof the
- * phrase asks for: a cookie that leaks can move at most this much. Kept in
- * memory, per account, over a rolling 24 hours; a restart forgets it, which
- * costs at most one more allowance. A send the person confirmed does not
- * count against it.
- */
-const SEND_FREE_USD = 25;
-const SEND_WINDOW_MS = 24 * 60 * 60 * 1000;
-const sent = new Map<string, { at: number; usd: number }[]>();
-
-function sentToday(name: string, now: number): number {
-  const list = (sent.get(name) ?? []).filter((s) => now - s.at < SEND_WINDOW_MS);
-  if (list.length) sent.set(name, list);
-  else sent.delete(name);
-  return list.reduce((sum, s) => sum + s.usd, 0);
-}
-
-/** Dollar value from the token index, or null when this mint has no price there. */
-function sendValue(mint: string, amount: bigint): number | null {
-  const rec = lookupMints([mint]).get(mint);
-  if (!rec || !(rec.price > 0) || rec.decimals == null) return null;
-  return (Number(amount) / 10 ** rec.decimals) * rec.price;
-}
-
-/** Runs an IP limiter inside a handler. True when it refused, and has answered. */
-function limited(limiter: ReturnType<typeof rateLimit>, req: Request, res: Response): boolean {
-  let passed = false;
-  limiter(req, res, () => {
-    passed = true;
-  });
-  return !passed;
-}
-
 socialRouter.post(
   "/send/passkey/options",
   requireAuth,
@@ -1134,9 +1098,11 @@ socialRouter.post(
 /**
  * Send SOL or an SPL token from the account's own wallet.
  *
- * Within the day's allowance the session is enough. Past it the body must
- * carry `password`, or a passkey assertion against a /send/passkey/options
- * challenge; without one the answer is 403 with `stepUp`, and the client asks.
+ * Every send carries a passkey assertion against a /send/passkey/options
+ * challenge, whatever it is worth: a session cookie on its own moves nothing,
+ * and neither does a password a phishing page could have asked for. Without
+ * one the answer is 403 with `stepUp`, and `passkey` says whether the account
+ * has one to confirm with or has to add one first.
  */
 socialRouter.post(
   "/send",
@@ -1158,29 +1124,15 @@ socialRouter.post(
     if (!me.keyBox) {
       throw new SocialError(409, "Log in with your password once to send from this account.", { setup: true });
     }
-
-    const now = Date.now();
-    const usd = sendValue(mint, BigInt(amount));
-    let confirmed = false;
-    if (typeof req.body?.password === "string") {
-      if (limited(passwordLimit, req, res)) return;
-      if (!(await passwordMatches(me, req.body.password))) throw new SocialError(403, "Wrong password.");
-      confirmed = true;
-    } else if (req.body?.challenge != null) {
-      await assertPasskey(req, me, "send");
-      confirmed = true;
+    if (req.body?.challenge == null) {
+      throw new SocialError(
+        403,
+        me.passkey ? "Confirm this send with your passkey." : "Add a passkey to send from this account.",
+        { stepUp: true, passkey: !!me.passkey },
+      );
     }
-    // An unpriced token is never inside the allowance: its worth is unknown.
-    if (!confirmed && (usd == null || sentToday(me.name, now) + usd > SEND_FREE_USD)) {
-      throw new SocialError(403, "Confirm this send with your password or passkey.", {
-        stepUp: true,
-        passkey: !!me.passkey,
-      });
-    }
-
-    const result = await sendFor(me.address, openForServer(me.keyBox), { to, mint, amount: BigInt(amount) });
-    if (!confirmed && usd != null) sent.set(me.name, [...(sent.get(me.name) ?? []), { at: now, usd }]);
-    res.json(result);
+    await assertPasskey(req, me, "send");
+    res.json(await sendFor(me.address, openForServer(me.keyBox), { to, mint, amount: BigInt(amount) }));
   }),
 );
 

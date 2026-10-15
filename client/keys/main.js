@@ -6,6 +6,8 @@ import { el } from "../js/dom.js";
 import { dismissible } from "../js/sheet.js";
 import { load } from "../js/lazy.js";
 import { b64u, needPasskey, u8, why } from "../js/passkey.js";
+import { confirmSend } from "../js/sendconfirm.js";
+import { dialog } from "../js/ui.js";
 
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 /** Left behind on a Max SOL send: the account's own rent minimum and the fee. */
@@ -21,8 +23,6 @@ async function send(path, body) {
   if (!res.ok) {
     throw Object.assign(new Error(data.error || "Something went wrong."), {
       setup: data.setup,
-      stepUp: data.stepUp,
-      passkey: data.passkey,
     });
   }
   return data;
@@ -183,13 +183,15 @@ function receive(me) {
 }
 
 /**
- * @param {{address: string}} me
+ * The wallet's Send: which token, to whom, how much, then the confirmation
+ * every send goes through (js/sendconfirm.js), in the trade dialog's shell.
+ *
+ * @param {{name: string, address: string, passkey: boolean}} me
  * @param {import('../../src/types').Holding[]} holdings
  * @param {() => void} onSent
  */
 function transfer(me, holdings, onSent) {
   const err = el("p", { class: "ks-err", role: "alert" });
-  const done = el("p", { class: "ks-n" });
   const pick = el(
     "select",
     { id: "ks-t" },
@@ -254,146 +256,40 @@ function transfer(me, holdings, onSent) {
   );
   for (const input of [pick, to, amount]) input.addEventListener("input", label);
 
-  /**
-   * The second screen. Enter in the form lands here, never on a send: the
-   * whole address is spelled out, since a lookalike that matches only its
-   * first and last few characters is exactly how a poisoned address works.
-   */
-  const review = el("div", { class: "ks-f", hidden: true });
-  /** @type {{to: string, mint: string, amount: string, text: string, symbol: string} | null} */
-  let pending = null;
+  const { body, close, setTitle } = dialog("Send");
 
+  /** The form again, as it was left: Back from the confirmation. */
   function back() {
-    review.hidden = true;
-    review.replaceChildren();
-    form.hidden = false;
-    pending = null;
-    err.textContent = "";
+    setTitle("Send");
+    body.replaceChildren(form, err);
     to.focus();
-  }
-
-  function showReview() {
-    const p = /** @type {NonNullable<typeof pending>} */ (pending);
-    const confirm = el("button", { type: "button", class: "wl-cta", text: `Send ${p.text} ${p.symbol}` });
-    confirm.addEventListener("click", () => submit(confirm, {}));
-    review.replaceChildren(
-      el("p", { class: "ks-n", text: `Send ${p.text} ${p.symbol} to this address:` }),
-      el("p", { class: "ks-a", text: p.to }),
-      el("p", { class: "ks-n ks-warn", text: "Check every character. A sent transfer cannot be undone." }),
-      el("div", { class: "ks-row" }, confirm, el("button", { type: "button", class: "ks-side", text: "Back", onclick: back })),
-    );
-    form.hidden = true;
-    review.hidden = false;
-    confirm.focus();
-  }
-
-  /** Over the day's allowance: the server wants the password or the passkey again. */
-  function stepUp(withPasskey) {
-    const pass = el("input", {
-      type: "password",
-      id: "ks-sp",
-      autocomplete: "current-password",
-      required: true,
-      minlength: "8",
-      maxlength: "128",
-    });
-    const ok = el("button", { type: "submit", class: "wl-cta", text: "Confirm and send" });
-    const check = el(
-      "form",
-      { class: "ks-f" },
-      el("label", { for: "ks-sp", text: "Password" }),
-      pass,
-      ok,
-    );
-    check.addEventListener("submit", (e) => {
-      e.preventDefault();
-      submit(ok, { password: pass.value });
-    });
-    const key =
-      withPasskey && window.PublicKeyCredential
-        ? el("button", {
-            type: "button",
-            class: "wl-b",
-            text: "Confirm with passkey",
-            onclick: async () => {
-              err.textContent = "";
-              try {
-                needPasskey();
-                const opt = await send("/api/social/send/passkey/options");
-                const cred = await navigator.credentials.get({
-                  publicKey: {
-                    challenge: u8(opt.challenge),
-                    rpId: location.hostname,
-                    allowCredentials: [{ type: "public-key", id: u8(opt.id) }],
-                    userVerification: "required",
-                    timeout: 60_000,
-                  },
-                });
-                if (!cred) throw new Error("Passkey was cancelled.");
-                const response = /** @type {AuthenticatorAssertionResponse} */ (cred.response);
-                await submit(key, {
-                  challenge: opt.challenge,
-                  clientData: b64u(response.clientDataJSON),
-                  authenticatorData: b64u(response.authenticatorData),
-                  signature: b64u(response.signature),
-                });
-              } catch (cause) {
-                err.textContent = why(cause);
-              }
-            },
-          })
-        : null;
-    review.append(el("p", { class: "ks-n", text: "This is more than a session can send on its own today." }), key, check);
-    (key || pass).focus();
-  }
-
-  /** @param {HTMLButtonElement} button @param {Record<string, string>} proof */
-  async function submit(button, proof) {
-    if (!pending) return;
-    err.textContent = "";
-    button.disabled = true;
-    const was = button.textContent;
-    button.textContent = "Sending…";
-    try {
-      const { signature } = await send("/api/social/send", {
-        to: pending.to,
-        mint: pending.mint,
-        amount: pending.amount,
-        ...proof,
-      });
-      review.hidden = true;
-      done.replaceChildren(
-        `Sent ${pending.text} ${pending.symbol}. `,
-        el("a", { href: `https://solscan.io/tx/${signature}`, target: "_blank", rel: "noopener", text: "Check the transaction" }),
-      );
-      pending = null;
-      onSent();
-    } catch (cause) {
-      if (cause.stepUp && !Object.keys(proof).length) {
-        button.hidden = true;
-        stepUp(cause.passkey);
-      } else err.textContent = cause.message;
-    } finally {
-      button.disabled = false;
-      button.textContent = was;
-    }
   }
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     err.textContent = "";
-    done.replaceChildren();
     const h = held();
     const addr = to.value.trim();
     if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return void (err.textContent = "That isn't a Solana address.");
     const units = toUnits(amount.value, h.decimals);
     if (units == null || units <= 0n) return void (err.textContent = "Enter an amount.");
     if (units > BigInt(h.amount)) return void (err.textContent = `You hold ${toDecimal(BigInt(h.amount), h.decimals)} ${h.symbol}.`);
-    pending = { to: addr, mint: h.mint, amount: units.toString(), text: toDecimal(units, h.decimals), symbol: h.symbol };
-    showReview();
+    // The whole address is spelled out on the next screen, never shortened: a
+    // lookalike that matches only its first and last few characters is
+    // exactly how a poisoned address works.
+    confirmSend(body, {
+      me,
+      token: { mint: h.mint, symbol: h.symbol, decimals: h.decimals, price: h.price },
+      amount: { units, text: toDecimal(units, h.decimals) },
+      to: { address: addr },
+      setTitle,
+      back,
+      close,
+      sent: onSent,
+    });
   });
 
-  modal("Send", holdings.length ? form : el("p", { class: "ks-n", text: "This wallet holds nothing to send yet." }), review, err, done);
+  body.append(holdings.length ? form : el("p", { class: "ks-n", text: "This wallet holds nothing to send yet." }), err);
 }
 
 window.__keys = { open: phrase, receive, send: transfer };

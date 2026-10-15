@@ -11,7 +11,7 @@ import { load } from "../js/lazy.js";
 import { noZoom } from "../js/device.js";
 import { open as openLogin } from "../js/login.js";
 import { readName, writeName } from "../js/me.js";
-import { b64u, needPasskey, u8, why } from "../js/passkey.js";
+import { register, why } from "../js/passkey.js";
 import { mountPwa } from "../js/pwa.js";
 import { UTCC, utccShort, utccText } from "../js/utcc.js";
 
@@ -1344,38 +1344,8 @@ function passForm(id, hint, label, run, box) {
 }
 
 /** Register this device's passkey. The server asks for the password first. */
-async function addPasskey(password) {
-  needPasskey();
-  const opt = await send("/api/social/passkey/options", { password });
-  const cred = await navigator.credentials.create({
-    publicKey: {
-      challenge: u8(opt.challenge),
-      rp: { name: "utopian-go", id: location.hostname },
-      user: { id: u8(opt.uid), name: me.name, displayName: me.name },
-      pubKeyCredParams: [
-        { type: "public-key", alg: -7 },
-        { type: "public-key", alg: -8 },
-      ],
-      authenticatorSelection: {
-        userVerification: "required",
-        residentKey: "required",
-        requireResidentKey: true,
-      },
-      timeout: 60_000,
-      attestation: "none",
-      // No `prf` here. Asking for it at creation made Firefox on macOS offer
-      // only a security key, never the Mac's own passkey sheet. Messenger asks
-      // for PRF when it signs in with the passkey (chat/main.js).
-    },
-  });
-  if (!cred) throw new Error("Passkey was cancelled.");
-  const response = /** @type {AuthenticatorAttestationResponse} */ (cred.response);
-  await send("/api/social/passkey", {
-    id: cred.id,
-    challenge: opt.challenge,
-    clientData: b64u(response.clientDataJSON),
-    attestation: b64u(response.attestationObject),
-  });
+function addPasskey(password) {
+  return register(me.name, password, send);
 }
 
 /** Your profile as others see it: the card and the posts, nothing to edit. */

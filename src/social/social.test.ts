@@ -601,14 +601,16 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const adaPhrase = String(phrase.json?.phrase);
     assert.equal(phrase.status, 200);
 
-    // A token the index cannot price is never inside what a session may send alone.
-    const unpriced = await call("POST", "/api/social/send", {
-      to: base58(Buffer.alloc(32, 7)),
-      mint: base58(Buffer.alloc(32, 9)),
-      amount: "1",
-    });
-    assert.equal(unpriced.status, 403, unpriced.text);
-    assert.equal(unpriced.json?.stepUp, true);
+    // Every send is confirmed with a passkey, however small; the session alone
+    // moves nothing, and neither does the password.
+    const tiny = { to: base58(Buffer.alloc(32, 7)), mint: SOL_MINT, amount: "1" };
+    const unconfirmed = await call("POST", "/api/social/send", tiny);
+    assert.equal(unconfirmed.status, 403, unconfirmed.text);
+    assert.equal(unconfirmed.json?.stepUp, true);
+    assert.equal(unconfirmed.json?.passkey, false, "ada has no passkey, so she is told to add one");
+    const byPassword = await call("POST", "/api/social/send", { ...tiny, password: "password1" });
+    assert.equal(byPassword.status, 403, byPassword.text);
+    assert.equal(byPassword.json?.stepUp, true);
     // A swap states the output it reviewed, or it is not a swap the server will make.
     const unreviewed = await call("POST", "/api/social/swap", {
       inputMint: SOL_MINT,
@@ -777,6 +779,26 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal((await send({ to: "nope", mint: sol, amount: "1" })).status, 400);
     assert.equal((await send({ to: adaAddress, mint: sol, amount: "1" })).status, 400);
     assert.equal((await send({ to: usdc, mint: sol, amount: "-1" })).status, 400);
+    // With a passkey on the account, a send asks for that passkey and takes no other.
+    const asked = await send({ to: usdc, mint: sol, amount: "1" });
+    assert.equal(asked.status, 403, asked.text);
+    assert.equal(asked.json?.passkey, true);
+    const sendOpt = await call("POST", "/api/social/send/passkey/options", {});
+    assert.equal(sendOpt.status, 200, sendOpt.text);
+    const sendCh = String(sendOpt.json?.challenge);
+    const sendData = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: sendCh, origin: base }));
+    const sendAuth = authData(rpId, 0x05, 6, null, null);
+    const forged = await send({
+      to: usdc,
+      mint: sol,
+      amount: "1",
+      challenge: sendCh,
+      clientData: sendData.toString("base64url"),
+      authenticatorData: sendAuth.toString("base64url"),
+      signature: sign("sha256", Buffer.concat([sendAuth, createHash("sha256").update(sendData).digest()]), otherKey).toString("base64url"),
+    });
+    assert.equal(forged.status, 403, forged.text);
+    assert.match(String(forged.json?.error), /Passkey was not accepted/);
 
     await call("POST", "/api/social/logout", {});
     assert.equal((await call("POST", "/api/social/login", { username: "ben", password: "password2" })).status, 200);

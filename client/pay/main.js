@@ -16,7 +16,7 @@
  */
 import { el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
-import { b64u, needPasskey, u8, why } from "../js/passkey.js";
+import { confirmSend } from "../js/sendconfirm.js";
 import { dialog, injectStyles } from "../js/ui.js";
 import { UTCC, utccText } from "../js/utcc.js";
 import { injectFormStyles } from "../swap/ui.js";
@@ -30,10 +30,6 @@ const BUY = `/wallet?t=${UTCC.mint}`;
 
 const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const HANDLE = /^@?([a-z0-9_]{3,16})$/i;
-
-/** The trade dialog's tick, for the same green disc. */
-const CHECK_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
 // —— base units, never through a float ——
 
@@ -60,12 +56,7 @@ async function post(path, body) {
     body: JSON.stringify(body || {}),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw Object.assign(new Error(data.error || "Something went wrong."), {
-      stepUp: data.stepUp,
-      passkey: data.passkey,
-    });
-  }
+  if (!res.ok) throw new Error(data.error || "Something went wrong.");
   return data;
 }
 
@@ -315,133 +306,28 @@ function open({ to, me, login, sent }) {
   // —— the review, where Send actually sends ——
 
   /**
+   * The same confirmation the wallet page's Send uses, passkey and all.
+   *
    * @param {{units: bigint, text: string}} amt
    * @param {{name: string, address: string}} who
    */
   function review(amt, who, back = form) {
     repaint = null;
-    setTitle("Review payment");
-    const sum = `${amt.text} ${UTCC.symbol}`;
-    const confirm = el("button", { class: "swx-go", type: "button", text: `Send ${sum}`, onclick: () => submit(confirm, {}) });
-    /** The password or passkey a send over the day's allowance needs. */
-    const extra = el("div");
-    const note = el("div", { class: "swx-note", role: "alert" });
-    let busy = false;
-
-    body.replaceChildren(
-      el(
-        "div",
-        { class: "swx-pane" },
-        el("div", { class: "swx-lbl" }, el("span", { text: "You send" })),
-        el("div", { class: "swx-body" }, el("span", { class: "swx-lock", text: UTCC.symbol }), el("div", { class: "swx-recv", text: amt.text })),
-      ),
-      el(
-        "div",
-        { class: "pay-to" },
-        el("div", { class: "swx-lbl" }, el("span", { text: "To" })),
-        who.name ? el("div", { class: "pay-who", text: `@${who.name}` }) : null,
-        el("div", { class: "pay-addr", text: who.address }),
-      ),
-      el("p", {
-        class: "pay-warn",
-        text: who.name ? "A sent payment cannot be undone." : "Check every character. A sent payment cannot be undone.",
-      }),
-      extra,
-      el("div", { class: "swx-act" }, confirm, el("button", { class: "swx-2nd", type: "button", text: "Back", onclick: back })),
-      note,
-    );
-    confirm.focus();
-
-    /** @param {HTMLButtonElement} button @param {Record<string, string>} proof */
-    async function submit(button, proof) {
-      if (busy) return;
-      busy = true;
-      note.textContent = "";
-      note.className = "swx-note";
-      button.disabled = true;
-      const was = button.textContent;
-      button.textContent = "Sending…";
-      try {
-        const { signature } = await post("/api/social/send", {
-          to: who.address,
-          mint: UTCC.mint,
-          amount: amt.units.toString(),
-          ...proof,
-        });
+    confirmSend(body, {
+      me,
+      token: UTCC,
+      amount: amt,
+      to: who,
+      setTitle,
+      back,
+      close,
+      sent: () => {
         // The balance this dialog sized from has moved, and so has the page's.
         held = null;
         loadBalance();
         sent?.();
-        if (note.isConnected) done(amt, who, signature);
-      } catch (cause) {
-        if (cause.stepUp && !Object.keys(proof).length) {
-          confirm.hidden = true;
-          stepUp(cause.passkey);
-        } else {
-          note.textContent = cause.message;
-          note.className = "swx-note err";
-        }
-      } finally {
-        busy = false;
-        button.disabled = false;
-        button.textContent = was;
-      }
-    }
-
-    /** Over the day's allowance: the server wants the password or the passkey again. */
-    function stepUp(withPasskey) {
-      const pass = el("input", {
-        class: "pay-field",
-        type: "password",
-        id: "pay-pw",
-        autocomplete: "current-password",
-        required: true,
-        minlength: "8",
-        maxlength: "128",
-      });
-      const ok = el("button", { class: "swx-go", type: "submit", text: `Confirm and send ${sum}` });
-      const check = el("form", { class: "pay-step" }, el("label", { class: "pay-lbl", for: "pay-pw", text: "Password" }), pass, ok);
-      check.addEventListener("submit", (e) => {
-        e.preventDefault();
-        submit(ok, { password: pass.value });
-      });
-      const key =
-        withPasskey && window.PublicKeyCredential
-          ? el("button", { class: "swx-2nd", type: "button", text: "Confirm with passkey", onclick: () => viaPasskey(key) })
-          : null;
-      extra.replaceChildren(
-        el("div", {}, el("p", { class: "pay-warn", text: "This is more than a session can send on its own today." }), key, check),
-      );
-      (key || pass).focus();
-    }
-
-    async function viaPasskey(key) {
-      note.textContent = "";
-      try {
-        needPasskey();
-        const opt = await post("/api/social/send/passkey/options");
-        const cred = await navigator.credentials.get({
-          publicKey: {
-            challenge: u8(opt.challenge),
-            rpId: location.hostname,
-            allowCredentials: [{ type: "public-key", id: u8(opt.id) }],
-            userVerification: "required",
-            timeout: 60_000,
-          },
-        });
-        if (!cred) throw new Error("Passkey was cancelled.");
-        const response = /** @type {AuthenticatorAssertionResponse} */ (cred.response);
-        await submit(key, {
-          challenge: opt.challenge,
-          clientData: b64u(response.clientDataJSON),
-          authenticatorData: b64u(response.authenticatorData),
-          signature: b64u(response.signature),
-        });
-      } catch (cause) {
-        note.textContent = why(cause);
-        note.className = "swx-note err";
-      }
-    }
+      },
+    });
   }
 
   // —— the code ——
@@ -481,32 +367,6 @@ function open({ to, me, login, sent }) {
     } catch {
       holder.replaceChildren(el("div", { class: "swx-note err", text: "Could not draw the code." }));
     }
-  }
-
-  // —— sent ——
-
-  function done(amt, who, signature) {
-    setTitle("Sent");
-    const disc = el("div", { class: "swx-check", role: "img", "aria-label": "Payment sent" });
-    disc.innerHTML = CHECK_SVG;
-    const finish = el("button", { class: "swx-go", type: "button", text: "Done", onclick: close });
-    const a = who.address;
-    body.replaceChildren(
-      el(
-        "div",
-        { class: "swx-done" },
-        disc,
-        el("div", { class: "swx-done-t", text: `You sent ${amt.text} ${UTCC.symbol}` }),
-        el("div", { class: "swx-done-s", text: `to ${who.name ? `@${who.name}` : `${a.slice(0, 4)}…${a.slice(-4)}`}` }),
-        el(
-          "div",
-          { class: "swx-done-s" },
-          el("a", { href: `https://solscan.io/tx/${signature}`, target: "_blank", rel: "noopener", text: "View transaction" }),
-        ),
-      ),
-      finish,
-    );
-    finish.focus();
   }
 }
 
