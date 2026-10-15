@@ -16,8 +16,8 @@ import { dollars, fiat, percent, tokenPrice } from "../js/num.js";
 import { onSession, readSession } from "../js/session.js";
 import { openSwap, swapUrl } from "../js/swap.js";
 import { KINDS } from "../js/kinds.js";
+import { dirOf, figure, lineChart, paintMove, rangeTabs, since, when } from "../js/chart.js";
 import { mountBreakdown } from "./breakdown.js";
-import { decode, hoursAgo, lineChart, valueAt } from "./chart.js";
 import { icon, mountPanel } from "./panel.js";
 
 const total = $("wl-v");
@@ -80,33 +80,37 @@ function reset() {
   total.classList.remove("is-wait");
 }
 
-function dirOf(v) {
-  return v > 0 ? "up" : v < 0 ? "dn" : "";
-}
-
+/** The figure, and its move across the range on show. */
 function paintFigures(data) {
-  total.textContent = dollars(data.total);
-  const move = data.change24h;
-  delta.hidden = move == null || !data.series;
-  if (delta.hidden) return;
-  delta.className = `wl-d ${dirOf(move)}`;
-  delta.textContent = `${percent(move, true)} 24h`;
+  figure(total, { text: dollars(data.total) });
+  const line = data.series;
+  if (!line) return paintMove(delta, null, 0, dollars, "");
+  paintMove(delta, data.change, line[line.length - 1] - line[0], dollars, since(shown.range));
 }
 
-/** Each line's dollars by the hour: "total", then every kind with a day behind it. */
-let hourly = new Map();
+/** Each line's dollars, oldest first: "total", then every kind with a line of its own. */
+let lines = new Map();
 
-const portfolio = lineChart($("wl-c"), "wlg", (i) => {
+const portfolio = lineChart($("wl-c"), (i) => {
   const now = view();
   if (!now) return;
-  breakdown.at(i, hourly);
-  const line = hourly.get(breakdown.picked || "total");
+  breakdown.at(i, lines);
+  const line = lines.get(breakdown.picked || "total");
   if (i < 0 || !line) return paintFigures(now);
-  total.textContent = dollars(line[i]);
-  const move = (line[i] / line[0] - 1) * 100;
-  delta.className = `wl-d ${dirOf(move)}`;
-  delta.textContent = `${percent(move, true)} · ${hoursAgo(line, i)}`;
+  figure(total, { text: dollars(line[i]) });
+  const clock = { at: shown.seriesAt, step: shown.seriesStep };
+  paintMove(delta, (line[i] / line[0] - 1) * 100, line[i] - line[0], dollars, when(clock, line.length, i));
 });
+
+/** The range the portfolio's line covers, asked of the server with every read. */
+let range = "24h";
+
+const ranges = rangeTabs(range, (next) => {
+  range = next;
+  void reread();
+});
+ranges.hidden = true;
+$("wl-c").after(ranges);
 
 /**
  * The figure, and the chart: the total's line alone, or with three kinds or
@@ -115,17 +119,17 @@ const portfolio = lineChart($("wl-c"), "wlg", (i) => {
 function paintTotal() {
   const now = view() ?? { total: NaN };
   paintFigures(now);
-  hourly = new Map();
-  const add = (key, of) => {
-    const bytes = decode(of.series);
-    if (bytes) hourly.set(key, bytes.map((_, i) => valueAt(bytes, i, of.seriesLo, of.seriesHi)));
-  };
-  if (shown) add("total", shown);
-  for (const slice of shown?.slices ?? []) add(slice.kind, slice);
-  if (shown?.slices && hourly.has("total")) {
-    portfolio.drawMany([...hourly].map(([key, values]) => ({ key, values })), breakdown.picked);
-  } else if (now.change24h == null) portfolio.draw("", "");
-  else portfolio.draw(now.series, dirOf(now.change24h));
+  lines = new Map();
+  if (shown?.series) lines.set("total", shown.series);
+  for (const slice of shown?.slices ?? []) if (slice.series) lines.set(slice.kind, slice.series);
+  // Nothing held, nothing to draw or to range over.
+  ranges.hidden = !shown?.items?.length;
+  if (ranges.hidden) portfolio.clear();
+  else if (shown.slices && lines.has("total")) {
+    portfolio.drawMany([...lines].map(([key, values]) => ({ key, values })), shown.seriesStep, breakdown.picked);
+  } else if (now.series) {
+    portfolio.draw({ at: shown.seriesAt, step: shown.seriesStep, v: now.series }, dirOf(now.change));
+  } else portfolio.clear("Too little of this has a price history to draw.");
 }
 
 /**
@@ -147,8 +151,8 @@ function paintHead() {
 function view() {
   const slice = shown?.slices?.find((s) => s.kind === breakdown.picked);
   if (!slice) return shown;
-  const { usd, series, seriesLo, seriesHi, change24h } = slice;
-  return { total: usd, series, seriesLo, seriesHi, change24h };
+  const { usd, series, change } = slice;
+  return { total: usd, series, change };
 }
 
 /** The holdings, or those of the kind picked. */
@@ -589,7 +593,7 @@ async function readHoldings(address) {
   const res = await fetch("/api/holdings", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ owner: address }),
+    body: JSON.stringify({ owner: address, range }),
   });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data || data.error) {
@@ -621,6 +625,25 @@ async function refresh() {
     total.textContent = "—";
     setNote(err?.message || "Could not read this wallet.", "err");
     extra.append(el("button", { class: "wl-b", type: "button", text: "Try again", onclick: refresh }));
+  }
+}
+
+/**
+ * Another range picked: the page stays as it is, its line let down, until the
+ * new one lands. A failed read puts the old line back and says so.
+ */
+async function reread() {
+  const id = ++run;
+  const address = await owner();
+  if (id !== run || !address) return;
+  portfolio.busy();
+  try {
+    const data = await readHoldings(address);
+    if (id === run) paint(data);
+  } catch {
+    if (id !== run) return;
+    paintTotal();
+    setNote("Could not load that range. Try again.", "err");
   }
 }
 

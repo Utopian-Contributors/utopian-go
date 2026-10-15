@@ -2,6 +2,7 @@
  * Solana token price card — the answer, not a sidebar fact, so it sits above
  * the web results.
  */
+import { daySeries, dirOf, lineChart, priceChart } from "./chart.js";
 import { el } from "./dom.js";
 import { fiat, percent, tokenPrice } from "./num.js";
 import { openSwap, swapUrl } from "./swap.js";
@@ -41,47 +42,51 @@ async function buyClick(e, link, t) {
   }
 }
 
-/** Gradient ids have to be unique within the document. */
-let chartSeq = 0;
-
 /**
- * The 24h line.
+ * A runner-up's day: the line alone, nothing to scrub. Its card has room for
+ * the price and the move, not for the readout and the ranges the leader
+ * carries, so it says what the line says and leaves it there.
  *
- * SVG rather than an image because the card's height is whatever its text
- * needs, and only a vector can take that height without being stretched or
- * cropped to fit it. `preserveAspectRatio="none"` lets the drawing fill the
- * box exactly, and the stroke opts back out of that scaling in CSS so the
- * line keeps one weight whatever shape the box turns out to be.
- *
- * Only geometry is written here — stroke, fill, the gradient's colours and
- * the room kept above and below the line are all stylesheet, which is both
- * fewer bytes in the bundle and the reason the line is the same --go / --dn
- * as the percentage beside it in either theme.
+ * The box is stretched by the row and contributes no height of its own, so
+ * the card is sized by its text and the drawing takes whatever that comes to
+ * — which is why the chart is drawn rather than fetched.
  *
  * @param {TokenQuote} t
  * @param {string} dir Direction class, shared with the percentage.
  * @returns {HTMLElement | null}
  */
-function tokenChart(t, dir) {
-  // x is the hour, y is the byte flipped. No scaling arithmetic — that is
-  // what the viewBox is for.
-  const pts = [...atob(t.ticks)].map((c, i) => `${i},${255 - c.charCodeAt(0)}`);
-  if (pts.length < 2) return null;
-
-  const line = pts.join("L");
-  const last = pts.length - 1;
-  const id = `tkc${(chartSeq += 1)}`;
-
-  const box = el("div", { class: `tk-c${dir ? ` ${dir}` : ""}` });
-  // Every value interpolated below is a number this function computed, or the
-  // id it just minted.
-  box.innerHTML =
-    `<svg viewBox="0 0 ${last} 255" preserveAspectRatio="none"` +
-    ` aria-hidden="true"><linearGradient id="${id}" x2="0" y2="1">` +
-    `<stop/><stop offset="1"/></linearGradient>` +
-    `<path d="M${line}L${last},255L0,255Z" fill="url(#${id})"/>` +
-    `<path d="M${line}"/></svg>`;
+function sparkline(t, dir) {
+  const day = daySeries(t);
+  if (!day) return null;
+  const box = el("div", { class: "pc tk-c" });
+  lineChart(box, null).draw(day, dir);
   return box;
+}
+
+/**
+ * The leading match: the price as the figure, its move, the line to scrub
+ * and the ranges under it, with Buy beside the name. Laid out down the card
+ * rather than beside the facts, so the line has the card's whole width at
+ * any width, phones included.
+ *
+ * @param {TokenQuote} t
+ * @param {HTMLElement} card
+ * @param {HTMLElement} head
+ * @param {HTMLElement} buy
+ * @param {HTMLElement} foot
+ */
+function leadCard(t, card, head, buy, foot) {
+  head.append(buy);
+  const fig = el("div", { class: "tk-px" });
+  const move = el("span", { class: "pc-m", hidden: true });
+  const box = el("div", { class: "pc" });
+  const ranges = priceChart(t, fig, move, box);
+  const body = el("div", { class: "tk-b" }, fig, move);
+  // No line for a mint too new to have a day of history — the card is
+  // complete without one, so nothing takes its place.
+  if (ranges) body.append(box, ranges);
+  body.append(foot);
+  card.append(body);
 }
 
 /**
@@ -102,38 +107,9 @@ function tokenCard(t, alt) {
   }
   card.append(head);
 
-  // The stack of facts, unchanged — it just shares the row with the chart now.
-  const body = el("div", { class: "tk-b" });
-
-  const row = el("div", { class: "tk-r" });
-  const price = tokenPrice(t.price);
-  row.append(
-    el("span", {
-      class: "tk-px",
-      text: price.text,
-      // Abbreviated or subscripted displays keep the exact value reachable.
-      ...(price.title ? { title: price.title } : {}),
-      ...(price.label ? { "aria-label": price.label } : {}),
-    }),
-  );
-
-  // One direction for the whole card: the number and the line are the same
-  // claim, so they read it off the same expression.
-  const dir =
-    t.change24h == null ? "" : t.change24h > 0 ? "up" : t.change24h < 0 ? "dn" : "";
-
-  if (t.change24h != null) {
-    row.append(
-      el("span", {
-        class: `tk-ch${dir ? ` ${dir}` : ""}`,
-        text: `${percent(t.change24h, true)} 24h`,
-      }),
-    );
-  }
-  body.append(row);
-
-  // The trade action is the point of the card, so it sits above the metadata
-  // rather than trailing it as one more small grey link.
+  // The trade action is the point of the card: beside the name on the
+  // leader, above the metadata on a runner-up, never trailing as one more
+  // small grey link.
   const href = swapUrl(t.mint);
   const target = {
     mint: t.mint,
@@ -151,7 +127,6 @@ function tokenCard(t, alt) {
     text: `Buy ${t.symbol}`,
     onclick: (e) => buyClick(e, buy, target),
   });
-  body.append(buy);
 
   // The far end of the QR code and the wallet links in swap/main.js. Both carry
   // ?buy=<mint> for exactly this: the phone that scanned or tapped lands on the
@@ -176,13 +151,39 @@ function tokenCard(t, alt) {
       text: shortMint(t.mint),
     }),
   );
-  body.append(foot);
+  if (!alt) {
+    leadCard(t, card, head, buy, foot);
+    return card;
+  }
+
+  // A runner-up: the facts, and its day beside them.
+  const row = el("div", { class: "tk-r" });
+  const price = tokenPrice(t.price);
+  row.append(
+    el("span", {
+      class: "tk-px",
+      text: price.text,
+      // Abbreviated or subscripted displays keep the exact value reachable.
+      ...(price.title ? { title: price.title } : {}),
+      ...(price.label ? { "aria-label": price.label } : {}),
+    }),
+  );
+
+  // One direction for the whole card: the number and the line are the same
+  // claim, so they read it off the same expression.
+  const dir = dirOf(t.change24h);
+  if (t.change24h != null) {
+    row.append(
+      el("span", {
+        class: `tk-ch${dir ? ` ${dir}` : ""}`,
+        text: `${percent(t.change24h, true)} 24h`,
+      }),
+    );
+  }
 
   const grid = el("div", { class: "tk-g" });
-  grid.append(body);
-  // No line for a mint too new to have a day of history — the card is
-  // complete without one, so nothing takes its place.
-  const chart = t.ticks ? tokenChart(t, dir) : null;
+  grid.append(el("div", { class: "tk-b" }, row, buy, foot));
+  const chart = sparkline(t, dir);
   if (chart) grid.append(chart);
   card.append(grid);
 

@@ -1,0 +1,170 @@
+/*
+ * A price line to scrub (js/chart.js), the same on the search card and the
+ * wallet page. build-client.mjs appends this to both pages' sheets.
+ *
+ * The line alone, in the colour of the move beside it: no fill under it and
+ * no axis, because the figure above already says what the line is worth and
+ * scrubbing it says what it was. Only geometry comes from the bundle.
+ */
+.pc {
+  /*
+   * Room around the line for the ring, which is centred on whatever point is
+   * read: the high or the low, or either end. Inside the box rather than
+   * spilling out of it, because whatever holds a chart may scroll, and a
+   * scroller grows a sideways bar for anything past its edge.
+   */
+  --pc-pad: 10px;
+  --pc-side: 7px;
+  position: relative;
+  height: 150px;
+  margin-top: 16px;
+  color: var(--f);
+  cursor: crosshair;
+  /* A sideways drag reads the line; a vertical one still scrolls the page. */
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pc.up {
+  color: var(--go);
+}
+
+.pc.dn {
+  color: var(--dn);
+}
+
+.pc svg {
+  position: absolute;
+  inset: var(--pc-pad) var(--pc-side);
+  display: block;
+  width: calc(100% - 2 * var(--pc-side));
+  height: calc(100% - 2 * var(--pc-pad));
+  overflow: visible;
+  transition: opacity 0.2s;
+}
+
+/*
+ * The drawing is stretched to whatever shape the box is; the stroke opts out
+ * of that, so it keeps one weight at any width.
+ */
+.pc path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Another range on its way: the last one stays, let down, until it lands. */
+.pc[aria-busy] svg,
+.pc[aria-busy] .pc-dot {
+  opacity: 0.3;
+}
+
+/*
+ * The ring on the line under the pointer, while it is read. Filled with what
+ * it sits on, so the line stops at its edge rather than running through it:
+ * the page, with whatever tint the chart's surface lays over the page
+ * (--pc-tint) laid over it in turn, which comes out as that surface exactly.
+ */
+.pc-dot {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border: 2.5px solid currentColor;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 7px var(--pc-tint, transparent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* The moment under the pointer, down the chart's whole height. */
+.pc-rule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: currentColor;
+  opacity: 0.4;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.pc-note {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  color: var(--f);
+  font-size: 13px;
+}
+
+/*
+ * The ranges, the width of the chart in equal parts. The one on show sits in
+ * a pill one step off the surface — base.css's wash, which is that step on
+ * any surface; a neutral grey at the same strength where it is not defined —
+ * and the rest are just their names.
+ */
+.pc-r {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.pc-r button {
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--f);
+  font: 600 14px/1 var(--ff);
+  cursor: pointer;
+}
+
+.pc-r button:hover {
+  color: var(--t);
+}
+
+.pc-r button[aria-pressed="true"] {
+  background: var(--wash2, rgba(128, 128, 128, 0.16));
+  color: var(--t);
+}
+
+.pc-r button:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: 2px;
+}
+
+/* A figure's decimals, a step back from the whole of it. */
+.pc-fr {
+  color: var(--f);
+}
+
+/* "+$1,204.60 · 2.10%", then what it is over: a range, or the moment read. */
+.pc-m {
+  display: block;
+  margin-top: 4px;
+  color: var(--f);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pc-m.up {
+  color: var(--go);
+}
+
+.pc-m.dn {
+  color: var(--dn);
+}
+
+.pc-m span {
+  margin-left: 10px;
+  color: var(--f);
+}

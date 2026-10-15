@@ -511,7 +511,13 @@ function inlineWordmark() {
 
 /**
  * A page's stylesheet, plus the header's and the account control's, then any
- * sheet only that page needs (search: the ad a results page can carry).
+ * sheet only some pages need (search: the ad a results page can carry;
+ * search and the wallet page: the price chart, chart.css).
+ *
+ * base.css goes in front of all of them: the surfaces buttons, chips and
+ * fields are drawn on and the way they answer a press, so no page can drift
+ * from another on either. It is the lowest layer, and each page's own sheet
+ * (palette included) comes after it.
  *
  * header.css and acct.css are appended to every page's sheet rather than
  * living in any one of them, because every page wears the same header and a
@@ -912,8 +918,8 @@ async function buildAssets() {
     esbuild.build(payOpts),
     esbuild.build(socialOpts),
     esbuild.build(chatOpts),
-    buildCss("app.css", "ad.css"),
-    buildCss("wallet.css"),
+    buildCss("app.css", "ad.css", "chart.css"),
+    buildCss("wallet.css", "chart.css"),
   ]);
   // After every bundle, because each one Social can load is its list of names.
   const socialCss = await buildSocialCss();

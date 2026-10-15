@@ -1,7 +1,7 @@
 /**
  * The portfolio by kind, once it holds three kinds or more: Total, then a row
  * for each kind, largest first. The rows are the legend of the chart above,
- * which draws all of their lines at once; hovering it reads that hour into
+ * which draws all of their lines at once; hovering it reads that moment into
  * every row. Picking a row brings its line forward and hands its kind to the
  * page, which narrows the holdings to it; picking it again, or Total, goes
  * back to everything.
@@ -32,7 +32,7 @@ function paintMove(cell, move) {
  */
 export function mountBreakdown(box, onPick) {
   let picked = "";
-  /** Each row's figures as painted, so a hovered hour can be read in and taken back out. */
+  /** Each row's figures as painted, so a hovered moment can be read in and taken back out. */
   let rows = /** @type {{ key: string, usd: number, move?: number, value: HTMLElement, delta: HTMLElement }[]} */ ([]);
 
   function pick(kind) {
@@ -77,22 +77,22 @@ export function mountBreakdown(box, onPick) {
       if (!slices.some((s) => s.kind === picked)) picked = "";
       rows = [];
       box.replaceChildren(
-        line("", "total", "Total", "", data.total, data.change24h, !!data.series),
+        line("", "total", "Total", "", data.total, data.change, !!data.series),
         ...slices.map((s) =>
-          line(s.kind, s.kind, KINDS[s.kind] ?? s.kind, share(s.usd, data.total), s.usd, s.change24h, !!s.series),
+          line(s.kind, s.kind, KINDS[s.kind] ?? s.kind, share(s.usd, data.total), s.usd, s.change, !!s.series),
         ),
       );
       box.hidden = !slices.length;
     },
     /**
-     * Every row's worth at hour `i`, and its change from the first hour to
+     * Every row's worth at point `i`, and its change from the first point to
      * it; -1 puts back what the rows said before the pointer came.
      * @param {number} i
-     * @param {Map<string, number[]>} hourly each line's dollars, by key
+     * @param {Map<string, number[]>} lines each line's dollars, by key
      */
-    at(i, hourly) {
+    at(i, lines) {
       for (const row of rows) {
-        const values = hourly.get(row.key);
+        const values = lines.get(row.key);
         const now = i >= 0 && values ? values[i] : null;
         row.value.textContent = dollars(now ?? row.usd);
         paintMove(row.delta, now == null || !values ? row.move : (now / values[0] - 1) * 100);

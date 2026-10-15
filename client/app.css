@@ -859,12 +859,16 @@ body:not(.home) #bm {
  * ellipsises into it, and the floor below falls back to the price line alone
  * — which is what the floor was always meant to be.
  */
+/*
+ * A surface rather than a box: no edge, the page let down a step (base.css).
+ * The chart's hover ring is filled to match it through --pc-tint on .tkg, so
+ * a new background here goes there too.
+ */
 .tk {
   animation: enter 0.24s both;
-  border: 1px solid var(--b);
-  border-radius: 12px;
+  border-radius: 20px;
   max-width: 70ch;
-  background: var(--pn);
+  background: var(--wash);
   overflow: hidden;
 }
 
@@ -898,64 +902,17 @@ body:not(.home) #bm {
 }
 
 /*
- * The 24h line, bled to the right and bottom edges — the header holds the top
- * now, and the line starts where the facts do.
- *
- * The box is stretched by the row and contributes no height of its own, so
- * the card is sized by its text and the drawing takes whatever that comes to
- * — which is why the chart is drawn rather than fetched. Absolute rather than
- * a plain `height: 100%` so the SVG's own 300x150 default can never get a
- * vote in how tall the row is.
+ * A runner-up's day (.pc in chart.css), beside its facts and nothing to
+ * scrub. The box is stretched by the row and contributes no height of its
+ * own, so the card is sized by its text and the drawing takes whatever that
+ * comes to — which is why the chart is drawn rather than fetched.
  */
-.tk-c {
-  position: relative;
+.pc.tk-c {
+  --pc-pad: 8px;
   align-self: stretch;
-  color: var(--f);
-}
-
-.tk-c.up {
-  color: var(--go);
-}
-
-.tk-c.dn {
-  color: var(--dn);
-}
-
-/*
- * Inset vertically so the day's high and low don't sit on the card's own
- * edge, where half the stroke would fall outside it.
- */
-.tk-c svg {
-  position: absolute;
-  inset: 7px 0;
-  display: block;
-  width: 100%;
-  height: calc(100% - 14px);
-}
-
-/*
- * The line — the second path, drawn over the filled one.
- *
- * `non-scaling-stroke` is what makes the box's aspect ratio irrelevant: the
- * drawing is stretched to fill whatever the text sized, and the stroke
- * declines to be stretched with it.
- */
-.tk-c path + path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-}
-
-/* Gradient under the curve, from the line's own colour down to nothing. */
-.tk-c stop {
-  stop-color: currentColor;
-  stop-opacity: 0.34;
-}
-
-.tk-c stop + stop {
-  stop-opacity: 0;
+  height: auto;
+  margin: 0 9px 0 0;
+  cursor: default;
 }
 
 /* Above the grid, so it carries the card's top padding for the whole width. */
@@ -1070,6 +1027,37 @@ body:not(.home) #bm {
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  /* The tint a card lays over the page (.tk), for a chart's ring to match. */
+  --pc-tint: var(--wash);
+}
+
+/*
+ * The leading match, read down the card: the name with Buy beside it, the
+ * price as the figure, its move, the line to scrub and its ranges
+ * (chart.css), then the footer. The figure is the largest thing on a results
+ * page, because it is the answer to the query.
+ */
+.tk:not(.tk-alt) .tk-h {
+  align-items: center;
+}
+
+.tk-h .tk-buy {
+  flex: none;
+  margin: 0 0 0 auto;
+}
+
+.tk:not(.tk-alt) .tk-px {
+  margin-top: 6px;
+  font-size: 40px;
+  letter-spacing: -0.01em;
+}
+
+.tk:not(.tk-alt) .tk-b {
+  padding-bottom: 16px;
+}
+
+.tk:not(.tk-alt) .tk-f {
+  margin-top: 14px;
 }
 
 /* Runner-ups stay legible but yield the page to the leader. */

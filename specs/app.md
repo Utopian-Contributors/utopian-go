@@ -118,8 +118,9 @@ GET /                         search home
 GET /?q=<query>&lang=<code>   results; tabs: Web, Images
 GET /?q=<sym>&buy=<mint>      results with the buy dialog open (wallet in-app browsers, QR hand-off)
 GET /search?q=                302 → /?q=
-GET /wallet                   left: holdings, 24h line (a line per kind beside it, with three
-                              kinds or more), Receive/Send/Swap, the token lists + search
+GET /wallet                   left: holdings, their line over 1H/24H/1W/1M (a line per kind
+                              beside it, with three kinds or more), Receive/Send/Swap, the token
+                              lists + search
 GET /wallet?c=<list>          the wallet page on one list: trending, stocks, memes, rwas, majors, defi
 GET /wallet?t=<mint>          the wallet page opened on that token's chart (Social's Trending assets link here)
                               right: the chosen token's line and market data
@@ -150,12 +151,23 @@ GET /healthz
 GET  /api/search?q&lang&offset   → SearchApiResponse   (src/types.ts)
 GET  /api/images?q&lang          → Brave image results
 POST /api/balances {owner, mint?} → BalancesApiResponse
-POST /api/holdings {owner}        → HoldingsApiResponse
+POST /api/holdings {owner, range?} → HoldingsApiResponse  range: 1h, 24h (default), 1w, 1m
 GET  /api/tokens/top              → {tokens: TopToken[]}   30 verified mints by 24h volume
 GET  /api/tokens?c=&after=        → TokenPage              one list, 30 a page, by cursor; counts on page 1
 GET  /api/tokens?q=               → {tokens: TopToken[]}   the whole index: mint, symbol, name
 GET  /api/tokens/<mint>           → TokenDetail            indexed mints only; Jupiter, cached 30 s
+GET  /api/tokens/<mint>/chart?r=  → PriceSeries            1h, 24h, 1w or 1m; indexed mints only
 ```
+
+Every price chart (the search card, the wallet page's token and portfolio) is one line to
+scrub, with 1H, 24H, 1W and 1M under it (client/js/chart.js, client/chart.css). 24H comes
+with every quote: 24 hourly ticks and their range. The other ranges are fetched for a mint
+when someone picks one (src/lib/tokens/history.ts): 60 one-minute, 168 one-hour or 180
+four-hour candles, held 1, 10 and 30 minutes and shared by everyone. Every series is read
+onto the clock (`onClock`), because Jupiter only returns candles in which something traded
+and a quiet token's "last sixty minutes" would otherwise span days. The hourly tick refresh
+and these fetches share one pace to the chart API, and a person's fetch goes ahead of the
+refresh.
 
 The wallet page reads the signed-in account's address, or a wallet connected in the trade
 dialog when nobody is signed in. On a desktop it fills the viewport exactly: the left half
@@ -175,8 +187,11 @@ busiest first. Every list is built once per rebuild and served a page at a time 
 scroll asks for the next page a screen ahead.
 
 With three kinds or more, `/api/holdings` adds `slices`: the total by kind, each with its own
-24h series, and the portfolio chart draws them all on one axis beside the total, each as its
-change over the day. The rows under it are the legend and read the hovered hour; picking one
+series over the range asked for, and the portfolio chart draws them all on one axis beside the
+total, each as its change over the range. Past 24h, only the 16 largest holdings are asked for
+their history; the rest are held flat and count against the half of the value that must have
+a history for a line to be drawn. The rows under the chart are the legend and read the hovered
+moment; picking one
 brings its line forward, shows its worth in the figure, and narrows the holdings to it. With
 one or two kinds there is no split: the chart is the total's line alone.
 

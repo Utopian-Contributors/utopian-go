@@ -171,18 +171,16 @@ a:hover {
   text-transform: uppercase;
 }
 
-/* The figure and its day's move, on one baseline. */
-.wl-vr {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 2px;
-}
-
+/*
+ * A figure, with its move under it and its line under that (chart.css): the
+ * portfolio's and the chosen token's alike.
+ */
 .wl-v {
-  font: 600 32px/1.15 var(--ff);
+  display: block;
+  margin-top: 2px;
+  font: 500 38px/1.15 var(--ff);
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
   /* The figure changes width as it loads and again on every refresh; leaving
      it to wrap on a narrow phone would move the whole list under it. */
   overflow-wrap: anywhere;
@@ -226,79 +224,6 @@ a:hover {
   color: var(--dn);
 }
 
-/*
- * The 24h line.
- *
- * Same construction as a token card's sparkline, and deliberately so: one byte
- * an hour, scaled by the viewBox rather than by arithmetic, with the stroke
- * opting out of that scaling so it keeps one weight whatever the box's shape.
- * Only geometry is written by the bundle; colour and inset are here.
- */
-.wl-c {
-  position: relative;
-  height: 66px;
-  margin-top: 14px;
-  color: var(--f);
-}
-
-.wl-c.up {
-  color: var(--go);
-}
-
-.wl-c.dn {
-  color: var(--dn);
-}
-
-/* Inset vertically so the day's high and low don't sit on the box's own edge,
-   where half the stroke would fall outside it. */
-.wl-c svg {
-  position: absolute;
-  inset: 5px 0;
-  display: block;
-  width: 100%;
-  height: calc(100% - 10px);
-}
-
-.wl-c path + path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-}
-
-.wl-c stop {
-  stop-color: currentColor;
-  stop-opacity: 0.28;
-}
-
-.wl-c stop + stop {
-  stop-opacity: 0;
-}
-
-/* Reading the line costs nothing on a device that can hover, so say so. */
-.wl-c {
-  cursor: crosshair;
-}
-
-/*
- * The scrub marker. A DOM element rather than an SVG circle because the
- * drawing is stretched to fill the box and a circle inside the viewBox would
- * be stretched with it; positioned in the box's own coordinates, it stays
- * round at any width.
- */
-.wl-dot {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-  /* Reads on the line rather than as a hole punched in it, in either theme. */
-  box-shadow: 0 0 0 2px var(--bg);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
 /* —— The breakdown —— */
 
 /*
@@ -340,43 +265,28 @@ a:hover {
 }
 
 /* Taller than one line needs: several have to part to be told apart. */
-.wl-c.many {
-  height: 120px;
+.pc.many {
+  height: 190px;
 }
 
-.wl-c.many path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
+.pc.many path {
+  stroke-width: 1.75;
 }
 
-.wl-c.many path.k-total,
-.wl-c.many path.on {
-  stroke-width: 2.25;
+.pc.many path.k-total,
+.pc.many path.on {
+  stroke-width: 2.5;
 }
 
-/* No change since the day began: the line every line starts on. */
-.wl-c.many path.z {
+/* No change since the range began: the line every line starts on. */
+.pc.many path.z {
   stroke: var(--b);
   stroke-width: 1;
 }
 
 /* A kind picked from the breakdown: its line in front, the rest stepped back. */
-.wl-c[data-pick] path:not(.on, .z) {
+.pc[data-pick] path:not(.on, .z) {
   opacity: 0.25;
-}
-
-/* The hovered hour, down through every line. */
-.wl-rule {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--b);
-  transform: translateX(-50%);
-  pointer-events: none;
 }
 
 /*
@@ -842,18 +752,13 @@ a:hover {
   text-decoration: none;
 }
 
-.tp-h + .wl-vr,
-.tp-lk + .wl-vr {
+.tp-h + .wl-v,
+.tp-lk + .wl-v {
   margin-top: 16px;
 }
 
-.tp-v {
-  font: 600 28px/1.15 var(--ff);
-  font-variant-numeric: tabular-nums;
-}
-
-.tp-c {
-  height: 160px;
+.pc.tp-c {
+  height: 170px;
 }
 
 .tp-g {
@@ -1330,6 +1235,6 @@ a:hover {
 
 
   .wl-v {
-    font-size: 27px;
+    font-size: 32px;
   }
 }

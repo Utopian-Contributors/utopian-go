@@ -1,11 +1,12 @@
 /**
  * The right half of the wallet page: one token's line and market data.
- * Everything comes from /api/tokens/<mint>, which only answers for indexed mints.
+ * Everything comes from /api/tokens/<mint>, which only answers for indexed
+ * mints; a range of the line other than 24h, from the chart beside it.
  */
+import { dirOf, priceChart } from "../js/chart.js";
 import { coinIcon } from "../js/coin.js";
 import { el } from "../js/dom.js";
 import { fiat, percent, tokenPrice } from "../js/num.js";
-import { hoursAgo, lineChart, valueAt } from "./chart.js";
 
 const WINDOWS = ["5m", "1h", "6h", "24h"];
 const LINKS = [
@@ -18,10 +19,6 @@ const LINKS = [
 /** The synced thumbnail, or a coin the same size so the tickers stay in line. */
 export function icon(t, size = 20) {
   return coinIcon(t, size, "wl-ic", "wl-coin");
-}
-
-function dirOf(v) {
-  return v > 0 ? "up" : v < 0 ? "dn" : "";
 }
 
 function count(n) {
@@ -87,27 +84,11 @@ export function mountPanel(box, buy) {
   let current = "";
 
   function render(d) {
-    const price = el("strong", { class: "tp-v" });
-    const move = el("span", { class: "wl-d" });
-    const chartBox = el("div", { class: "wl-c tp-c" });
+    const price = el("strong", { class: "wl-v" });
+    const move = el("span", { class: "pc-m", hidden: true });
+    const chartBox = el("div", { class: "pc tp-c" });
     const body = el("div", { class: "tp-st" });
-    const day = d.windows?.["24h"]?.change;
-
-    function paintPrice(value, change, label) {
-      const p = tokenPrice(value);
-      price.textContent = p.text;
-      price.title = p.title || "";
-      move.hidden = change == null;
-      move.className = `wl-d ${dirOf(change)}`;
-      move.textContent = `${percent(change, true)} ${label}`;
-    }
-
-    const line = lineChart(chartBox, "tpg", (i) => {
-      const at = i < 0 ? null : valueAt(line.bytes, i, d.tickLo, d.tickHi);
-      if (at == null) return paintPrice(d.price, day, "24h");
-      const from = valueAt(line.bytes, 0, d.tickLo, d.tickHi);
-      paintPrice(at, from ? (at / from - 1) * 100 : 0, `· ${hoursAgo(line.bytes, i)}`);
-    });
+    const ranges = priceChart({ ...d, change24h: d.windows?.["24h"]?.change }, price, move, chartBox);
 
     const tabs = WINDOWS.map((key) => {
       const change = d.windows?.[key]?.change;
@@ -141,8 +122,10 @@ export function mountPanel(box, buy) {
           buy(d),
         ),
         links.length ? el("div", { class: "tp-lk" }, ...links) : null,
-        el("div", { class: "wl-vr" }, price, move),
-        chartBox,
+        price,
+        move,
+        ranges && chartBox,
+        ranges,
         el(
           "div",
           { class: "tp-g" },
@@ -157,8 +140,6 @@ export function mountPanel(box, buy) {
         body,
       ].filter(Boolean),
     );
-    paintPrice(d.price, day, "24h");
-    line.draw(d.ticks, dirOf(day));
     body.replaceChildren(...stats(d.windows?.["24h"]));
   }
 
