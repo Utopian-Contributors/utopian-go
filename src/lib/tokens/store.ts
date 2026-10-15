@@ -289,6 +289,21 @@ export function lookupTokens(
 }
 
 /**
+ * A live price for an indexed mint, fetched by someone else.
+ *
+ * Helius prices only verified mints, so an unverified one — $UTCC, any
+ * pump.fun coin — otherwise holds the hourly rebuild's price all hour, and a
+ * thin coin can move by half in that time. Holdings and the trade dialog both
+ * read the index: a buyer who paid the market was shown having lost a third.
+ */
+export function notePrice(mint: string, price: number): void {
+  const rec = index.byMint.get(mint);
+  if (!rec || !Number.isFinite(price) || price <= 0) return;
+  rec.price = price;
+  rec.priceAt = rec.checkedAt = Date.now();
+}
+
+/**
  * Prices for mints the caller already knows the identity of.
  *
  * The inverse of lookupTokens: no matching, no ranking, no ambiguity to

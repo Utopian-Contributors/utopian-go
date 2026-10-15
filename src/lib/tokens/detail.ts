@@ -2,7 +2,7 @@ import { JUP_TOKENS_ENDPOINT, TOKEN_PRICE_TIMEOUT_MS } from "../../config";
 import { JupStats, JupToken, TokenDetail, TokenRecord, TokenWindow } from "../../types";
 import { JupiterBusy, jupFetch } from "../jupiterGate";
 import { hasIcon } from "./icons";
-import { lookupMints } from "./store";
+import { lookupMints, notePrice } from "./store";
 
 const WSOL_MINT = "So11111111111111111111111111111111111111112";
 /** Market stats this recent are served as they are. */
@@ -79,6 +79,9 @@ async function marketData(mint: string): Promise<JupToken | null> {
       .then((token) => {
         const at = Date.now();
         remember(mint, { at, token, triedAt: at });
+        // Fresher than the index's hourly figure, so the index takes it too.
+        const price = num(token?.usdPrice);
+        if (price != null) notePrice(mint, price);
         return token;
       })
       .catch((err: unknown) => {

@@ -16,6 +16,7 @@ import { load } from "../js/lazy.js";
 // page rather than defined twice, so a balance reads the same in both places.
 import { dollars as usd } from "../js/num.js";
 import { renderPicker } from "../js/picker.js";
+import { livePrice } from "../js/price.js";
 import { account } from "../js/me.js";
 import { onSession, readSession, shortAddr } from "../js/session.js";
 import { dialog } from "../js/ui.js";
@@ -41,6 +42,17 @@ const REQUOTE_MS = 15_000;
 
 /** Price impact at or above this reads as a warning rather than a detail. */
 const HIGH_IMPACT_PCT = 1;
+
+/**
+ * "You receive" worth this much less than "You pay", in percent, is said in
+ * words above the button. A fair trade on a thin pool costs one or two — the
+ * pool's fee, ours, the price it moves — so five is a trade worth stopping
+ * for, or a price gone stale under the screen, which is ruled out first.
+ */
+const LOSS_WARN_PCT = 5;
+
+/** How old the prices behind that warning may be before they are asked for again. */
+const PRICE_FRESH_MS = 60_000;
 
 /** Lamports held back from MAX so the wallet can still pay network fees. */
 const SOL_RESERVE = 10_000_000n;
@@ -289,8 +301,50 @@ function open(t) {
   });
   // Buying SOL cannot be funded with SOL, and vice versa for USDC.
   const funds = FUNDS.filter((f) => f.mint !== t.mint);
-  /** The searched token's USD price, carried in from the card. */
-  const tokenUsd = Number.isFinite(t.price) ? t.price : null;
+  /**
+   * The searched token's USD price. The card that opened this dialog carries
+   * the index's, up to an hour old, and a thin coin can move by half in that
+   * time — enough for the review screen to show a fair trade as a third lost.
+   * The server's own figure is at most a minute old, so it replaces the card's
+   * as soon as it lands, and whichever screen is up redraws with it.
+   */
+  let tokenUsd = Number.isFinite(t.price) ? t.price : null;
+  /** When tokenUsd last came from the server rather than the card. */
+  let pricedAt = 0;
+  /** SOL and USDC as the server last priced them, by fund key, once a warning made us ask. */
+  const fundUsd = {};
+  /** Set by the screen on display, to redraw its dollar figures. */
+  let repaint = null;
+  void livePrice(t.mint).then((price) => {
+    if (price == null) return;
+    tokenUsd = price;
+    pricedAt = Date.now();
+    repaint?.();
+  });
+
+  /** The price strip's figure for SOL or USDC, unless the server has given a newer one. */
+  const fundUsdOf = (key) => fundUsd[key] ?? fundPrice(key);
+
+  /**
+   * Price both sides again, from the server and past the browser's copy: the
+   * review is about to say this trade loses money, and the figure saying so
+   * must not be the stale one. At most once a minute, which is as fresh as
+   * the server's own answer gets; a failed ask still counts, so the warning
+   * stands on what we have rather than waiting on an answer that is not coming.
+   */
+  let rechecking = false;
+  function recheck() {
+    if (rechecking || Date.now() - pricedAt < PRICE_FRESH_MS) return;
+    rechecking = true;
+    const side = fund;
+    void Promise.all([livePrice(t.mint, true), livePrice(side.mint, true)]).then(([token, other]) => {
+      if (token != null) tokenUsd = token;
+      if (other != null) fundUsd[side.key] = other;
+      pricedAt = Date.now();
+      rechecking = false;
+      repaint?.();
+    });
+  }
   // Selling means converting a typed amount of the token into base units,
   // which needs its decimals. Records from an older snapshot may lack them.
   const canSell = t.decimals != null;
@@ -610,6 +664,11 @@ function open(t) {
     showBalance();
     if (session) loadBalances();
     refresh();
+    // Only the unconnected estimate is in dollars here; a connected form shows
+    // the quote's token amounts, and re-quoting them would gain nothing.
+    repaint = () => {
+      if (!session) refresh();
+    };
 
     // —— helpers ——
 
@@ -628,13 +687,14 @@ function open(t) {
     /**
      * Base units of one side, in dollars.
      *
-     * The searched token is priced by the card that opened this dialog; the
-     * other side is always SOL or USDC, priced by the strip the server renders.
+     * The searched token is priced by the server's freshest figure (see
+     * tokenUsd); the other side is always SOL or USDC, priced by the strip the
+     * server renders.
      * Both come from the same index the quote does, so the two sides are
      * comparable rather than one being an oracle and one a market.
      */
     function toUsd(side, units) {
-      const price = side.key === "token" ? tokenUsd : fundPrice(side.key);
+      const price = side.key === "token" ? tokenUsd : fundUsdOf(side.key);
       if (price == null || side.decimals == null) return NaN;
       return (Number(units) / 10 ** side.decimals) * price;
     }
@@ -655,7 +715,7 @@ function open(t) {
      */
     function estimate(units) {
       const spent = toUsd(pay, units);
-      const price = recv.key === "token" ? tokenUsd : fundPrice(recv.key);
+      const price = recv.key === "token" ? tokenUsd : fundUsdOf(recv.key);
       if (!Number.isFinite(spent) || price == null || recv.decimals == null) {
         return null;
       }
@@ -997,6 +1057,8 @@ function open(t) {
       const payUnits = el("div", { class: "swx-sub" });
       const recvUnits = el("div", { class: "swx-sub" });
       const rows = el("div", { class: "swx-sum" });
+      /** Above the button, in words, when this trade gives back far less than it takes. */
+      const loss = el("div", { class: "swx-note err", role: "alert", hidden: true });
       const rnote = el("div", { class: "swx-note" });
       const go = el("button", {
         class: `swx-go${buying ? "" : " sell"}`,
@@ -1104,6 +1166,17 @@ function open(t) {
         stateSide(payAmt, payUnits, pay, q.inAmount, paid);
         stateSide(recvAmt, recvUnits, recv, q.outAmount, got);
 
+        // Said the moment it is true, and the prices behind it asked for again
+        // if they are over a minute old: the repaint when they land takes the
+        // warning back if a stale price was all it was.
+        const lostPct = ((paid - got) / paid) * 100;
+        const losing = Number.isFinite(lostPct) && lostPct >= LOSS_WARN_PCT;
+        if (losing) recheck();
+        loss.hidden = !losing;
+        loss.textContent = losing
+          ? `You get back ${usd(got)} for ${usd(paid)}, ${Math.round(lostPct)}% less. A smaller amount moves the price less.`
+          : "";
+
         // Impact is a fraction from Jupiter, and it is only worth a row when
         // it is large enough to cost real money — as money, not as basis points.
         const impact = Number(q.priceImpactPct) * 100;
@@ -1191,12 +1264,16 @@ function open(t) {
           recvUnits,
         ),
         rows,
+        loss,
         go,
         back,
         rnote,
       );
 
       paint(current);
+      repaint = () => {
+        if (!sending && !done) paint(current);
+      };
       go.focus();
       timer = setInterval(requote, REQUOTE_MS);
 
