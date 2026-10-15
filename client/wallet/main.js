@@ -12,7 +12,7 @@ import { noZoom } from "../js/device.js";
 import { load } from "../js/lazy.js";
 import { account as whoami } from "../js/me.js";
 import { mountPwa } from "../js/pwa.js";
-import { dollars, fiat, percent, tokenPrice } from "../js/num.js";
+import { dollars, percent, tokenPrice } from "../js/num.js";
 import { onSession, readSession } from "../js/session.js";
 import { openSwap, swapUrl } from "../js/swap.js";
 import { KINDS } from "../js/kinds.js";
@@ -26,7 +26,6 @@ const list = $("wl-l");
 const note = $("wl-n");
 const extra = $("wl-x");
 const keys = $("wl-ph");
-const topHead = $("wl-th");
 const topList = $("wl-tl");
 const topNote = $("wl-tn");
 const filter = /** @type {HTMLInputElement} */ ($("wl-q"));
@@ -316,7 +315,6 @@ function topRow(t) {
       el("span", { text: price.text, title: price.title }),
       move == null ? null : el("span", { class: `wl-d ${dirOf(move)}`, text: percent(move, true) }),
     ),
-    el("span", { class: "wl-vol", text: t.volume ? fiat(t.volume) : "", title: "24h volume" }),
     el("span", { class: "wl-act" }, trade(t, "buy")),
   );
 }
@@ -356,10 +354,15 @@ async function paintTop() {
     const data = await tokens(q ? { q } : { c: cat });
     if (id !== searchRun) return;
     const rows = data.tokens ?? [];
-    // A list with nothing on it today is not offered, unless it is the one asked for.
-    if (data.counts) for (const chip of chips) chip.hidden = !data.counts[chip.dataset.c] && chip.dataset.c !== cat;
-    const name = chips.find((chip) => chip.dataset.c === cat)?.textContent;
-    topHead.textContent = q ? "Results" : `${name} (${data.total.toLocaleString("en-US")})`;
+    // Each list's length in its chip. One with nothing on it today is not
+    // offered, unless it is the one asked for.
+    if (data.counts) {
+      for (const chip of chips) {
+        const n = data.counts[chip.dataset.c] ?? 0;
+        /** @type {HTMLElement} */ (chip.lastElementChild).textContent = n.toLocaleString("en-US");
+        chip.hidden = !n && chip.dataset.c !== cat;
+      }
+    }
     topList.replaceChildren(...rows.map(topRow));
     topNote.hidden = rows.length > 0;
     topNote.textContent = q

@@ -617,14 +617,14 @@ a:hover {
 }
 
 /*
- * The lists: Trending, then each kind. One row that scrolls sideways on a
- * phone, where wrapping would push the rows a screen down; wrapped on a
- * desktop, where a sideways scroll hides lists from a mouse.
+ * The lists, under the field: Trending, then each kind. One row that scrolls
+ * sideways on a phone, where wrapping would push the rows a screen down;
+ * wrapped on a desktop, where a sideways scroll hides lists from a mouse.
  */
 .wl-cats {
   display: flex;
   gap: 6px;
-  margin: 6px 0 4px;
+  margin: 8px 0 4px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -637,7 +637,7 @@ a:hover {
 .wl-cats button {
   flex: none;
   height: 32px;
-  padding: 0 14px;
+  padding: 0 11px;
   border: 0;
   border-radius: 999px;
   background: var(--wash);
@@ -660,11 +660,19 @@ a:hover {
   outline-offset: 2px;
 }
 
+/* The list's length: after its name, a step quieter, in whichever colour the chip is. */
+.wl-cats span:not(:empty) {
+  margin-left: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+
 /* The search field's surface (header.css): a wash, deeper while it has the caret. */
 .wl-q {
   box-sizing: border-box;
   width: 100%;
-  margin: 6px 0 4px;
+  margin: 0;
   padding: 9px 16px;
   border: 1px solid transparent;
   border-radius: 999px;
@@ -864,13 +872,8 @@ a:hover {
   background: var(--dn);
 }
 
-.wl-top .wl-k {
-  margin: 0 0 4px;
-  font-weight: 400;
-}
-
 .wl-tr {
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   cursor: pointer;
 }
 
@@ -894,14 +897,6 @@ a:hover {
 .wl-px .wl-d {
   font-size: 12px;
   font-weight: 400;
-}
-
-.wl-vol {
-  min-width: 56px;
-  text-align: right;
-  font-size: 12.5px;
-  color: var(--f);
-  font-variant-numeric: tabular-nums;
 }
 
 /* —— Recovery phrase —— */
@@ -1138,8 +1133,8 @@ a:hover {
    each scrolling in a share of it. The breakdown left no share to give: on a
    laptop screen, the total, a line per kind and the holdings filled the
    column, and the lists below them had no room at all. Scrolled as one, every
-   part keeps its full height, and the market list keeps its name, its lists
-   and its field pinned while its rows scroll under them. */
+   part keeps its full height, and the market list keeps its field and its
+   lists pinned while its rows scroll under them. */
 
 @media (min-width: 960px) {
   body {

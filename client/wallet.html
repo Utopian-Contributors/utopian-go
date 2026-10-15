@@ -95,21 +95,9 @@
           <p class="wl-n" id="wl-n">Reading your wallet…</p>
           <div id="wl-x"></div>
         </section>
-        <section class="wl-top" aria-labelledby="wl-th">
+        <section class="wl-top" aria-label="Tokens">
           <!-- Pinned over the rows as they scroll, on a desktop. -->
           <div class="wl-tb">
-            <h2 class="wl-k" id="wl-th">Trending</h2>
-            <!-- The lists, in TOKEN_LISTS order (src/lib/tokens/store.ts).
-                 Shipped here rather than drawn by the bundle so the field and
-                 the rows below them never move when it lands. -->
-            <div class="wl-cats" id="wl-cats" role="group" aria-label="Lists">
-              <button type="button" data-c="trending" aria-pressed="true">Trending</button>
-              <button type="button" data-c="stocks" aria-pressed="false">Stocks</button>
-              <button type="button" data-c="memes" aria-pressed="false">Memes</button>
-              <button type="button" data-c="rwas" aria-pressed="false">RWAs</button>
-              <button type="button" data-c="majors" aria-pressed="false">Majors</button>
-              <button type="button" data-c="defi" aria-pressed="false">DeFi</button>
-            </div>
             <input
               class="wl-q"
               id="wl-q"
@@ -120,6 +108,18 @@
               spellcheck="false"
               maxlength="64"
             />
+            <!-- The lists, in TOKEN_LISTS order (src/lib/tokens/store.ts).
+                 Shipped here rather than drawn by the bundle so the rows below
+                 them never move when it lands. Each one's length fills its
+                 <span> with the first page (main.js). -->
+            <div class="wl-cats" id="wl-cats" role="group" aria-label="Lists">
+              <button type="button" data-c="trending" aria-pressed="true">Trending<span></span></button>
+              <button type="button" data-c="stocks" aria-pressed="false">Stocks<span></span></button>
+              <button type="button" data-c="memes" aria-pressed="false">Memes<span></span></button>
+              <button type="button" data-c="rwas" aria-pressed="false">RWAs<span></span></button>
+              <button type="button" data-c="majors" aria-pressed="false">Majors<span></span></button>
+              <button type="button" data-c="defi" aria-pressed="false">DeFi<span></span></button>
+            </div>
           </div>
           <div id="wl-tl"></div>
           <p class="wl-n" id="wl-tn" hidden></p>
