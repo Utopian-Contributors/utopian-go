@@ -361,14 +361,37 @@ function pruneVisitor(names) {
       style(rule) {
         const selectors = rule.value.selectors.filter(possible);
         if (!selectors.length) return [];
-        // Untouched rules are not handed back: lightningcss cannot always
-        // re-read a rule it serialised, and there is nothing to change.
+        // Untouched rules are not handed back: there is nothing to change.
         if (selectors.length === rule.value.selectors.length) return undefined;
         rule.value.selectors = selectors;
-        return rule;
+        return withoutNulls(rule);
       },
     },
   };
+}
+
+/**
+ * A rule lightningcss can read back.
+ *
+ * It hands a rule to the visitor with its absent optionals spelled out as
+ * null — every var() comes as `{ name: { ident, from: null }, fallback: null }`
+ * — and then refuses those same nulls on the way back in ("expected a
+ * sequence, found ()"). One trimmed rule with a var() in it failed the whole
+ * transform, and the fallback below cannot prune, so Social shipped every rule
+ * of app.css. Absent is what it means by null, so the keys go.
+ *
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
+function withoutNulls(value) {
+  if (value && typeof value === "object") {
+    for (const key in value) {
+      if (value[key] === null) delete value[key];
+      else withoutNulls(value[key]);
+    }
+  }
+  return value;
 }
 
 /**
@@ -516,15 +539,19 @@ async function buildCss(name, ...extra) {
  * lightbox, the home banner), and inlining it would put about 3KB of gzip on
  * every social load for rules that cannot match. Pruning against what the
  * page actually writes keeps the one source and drops the dead weight. It
- * runs after social.js and chat.js are built, since those bundles are the
- * list of names. Messenger's rules ride in this document, not in its bundle:
- * a few hundred bytes of gzip, and no second request before it can paint.
+ * runs after every bundle the page can load is built, since those bundles are
+ * the list of names: not only social.js but each one social.html names to
+ * fetch later, which write their own markup into this page and style it with
+ * rules from these sheets (the rail's .mini, say). Messenger's rules ride in
+ * this document, not in its bundle: a few hundred bytes of gzip, and no second
+ * request before it can paint.
  */
+const SOCIAL_BUNDLES = ["social.js", "chat.js", "pay.js", "rec.js", "rail.js", "ads.js", "avatar.js", "qr.js", "install.js"];
+
 async function buildSocialCss() {
   const words = (text) => text.match(/[A-Za-z_][\w-]*/g) ?? [];
   const names = new Set([
-    ...words(readFileSync(path.join(outDir, "social.js"), "utf8")),
-    ...words(readFileSync(path.join(outDir, "chat.js"), "utf8")),
+    ...SOCIAL_BUNDLES.flatMap((file) => words(readFileSync(path.join(outDir, file), "utf8"))),
     ...words(readFileSync(path.join(clientDir, "social.html"), "utf8")),
   ]);
   return minifyCss(
@@ -866,7 +893,7 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , , , , , , , , , , socialCss, css, walletCss] = await Promise.all([
+  const [, , , , , , , , , , , , , , , , css, walletCss] = await Promise.all([
     esbuild.build(installOpts),
     esbuild.build(swOpts),
     esbuild.build(jsOpts),
@@ -881,10 +908,13 @@ async function buildAssets() {
     esbuild.build(adsOpts),
     esbuild.build(avatarOpts),
     esbuild.build(payOpts),
-    Promise.all([esbuild.build(socialOpts), esbuild.build(chatOpts)]).then(buildSocialCss),
+    esbuild.build(socialOpts),
+    esbuild.build(chatOpts),
     buildCss("app.css", "ad.css"),
     buildCss("wallet.css"),
   ]);
+  // After every bundle, because each one Social can load is its list of names.
+  const socialCss = await buildSocialCss();
 
   const hash = (file) => contentHash(readFileSync(path.join(outDir, file)));
   const connectHash = hash("connect.js");
