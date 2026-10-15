@@ -654,10 +654,10 @@ a:hover {
   gap: 8px;
   padding: 16px 6px 13px;
   border: 0;
-  border-radius: 14px;
-  background: var(--hover);
+  border-radius: 20px;
+  background: var(--wash);
   color: var(--t);
-  font: 600 13px/1.2 var(--ff);
+  font: 500 13px/1.2 var(--ff);
   cursor: pointer;
 }
 
@@ -671,7 +671,7 @@ a:hover {
 }
 
 .wl-a:hover:not(:disabled) {
-  filter: brightness(0.96);
+  background: var(--wash2);
 }
 
 .wl-a:disabled {
@@ -723,23 +723,24 @@ a:hover {
   display: none;
 }
 
+/* Chips on a wash with no edge (base.css); the one on show in the text colour. */
 .wl-cats button {
   flex: none;
-  padding: 5px 12px;
-  border: 1px solid var(--b);
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
   border-radius: 999px;
-  background: none;
+  background: var(--wash);
   color: var(--t);
-  font: 600 12.5px/1.2 var(--ff);
+  font: 500 13px/1 var(--ff);
   cursor: pointer;
 }
 
 .wl-cats button:hover {
-  background: var(--hover);
+  background: var(--wash2);
 }
 
 .wl-cats button[aria-pressed="true"] {
-  border-color: var(--t);
   background: var(--t);
   color: var(--bg);
 }
@@ -749,16 +750,23 @@ a:hover {
   outline-offset: 2px;
 }
 
+/* The search field's surface (header.css): a wash, deeper while it has the caret. */
 .wl-q {
   box-sizing: border-box;
   width: 100%;
   margin: 6px 0 4px;
-  padding: 9px 14px;
-  border: 1px solid var(--b);
+  padding: 9px 16px;
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--in);
+  background: var(--wash);
   color: var(--in-ink);
   font: inherit;
+  outline: 0;
+  transition: background-color 0.16s;
+}
+
+.wl-q:focus {
+  background: var(--wash2);
 }
 
 .wl-q::placeholder {
@@ -820,16 +828,17 @@ a:hover {
 }
 
 .tp-lk a {
-  padding: 3px 11px;
-  border: 1px solid var(--b);
+  padding: 5px 12px;
   border-radius: 999px;
+  background: var(--wash);
   color: var(--t);
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 500;
+  transition: background-color 0.16s;
 }
 
 .tp-lk a:hover {
-  background: var(--hover);
+  background: var(--wash2);
   text-decoration: none;
 }
 
@@ -855,9 +864,9 @@ a:hover {
 }
 
 .tp-cell {
-  padding: 8px 10px;
-  border: 1px solid var(--b);
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: var(--wash);
   text-align: center;
 }
 
@@ -873,8 +882,8 @@ a:hover {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 16px;
-  border: 1px solid var(--b);
-  border-radius: 8px 8px 0 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--wash);
   overflow: hidden;
 }
 
@@ -890,6 +899,7 @@ a:hover {
   color: var(--f);
   font: 12px/1.3 var(--ff);
   cursor: pointer;
+  --press: 0.985;
 }
 
 .tp-tabs button:first-child {
@@ -897,7 +907,7 @@ a:hover {
 }
 
 .tp-tabs button[aria-pressed="true"] {
-  background: var(--hover);
+  background: var(--wash2);
   color: var(--t);
 }
 
@@ -910,9 +920,9 @@ a:hover {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 20px;
   padding: 14px;
-  border: 1px solid var(--b);
-  border-top: 0;
-  border-radius: 0 0 8px 8px;
+  border-top: 1px solid var(--b);
+  border-radius: 0 0 16px 16px;
+  background: var(--wash);
 }
 
 .tp-l,
@@ -1016,7 +1026,7 @@ a:hover {
 .ks {
   width: min(420px, calc(100vw - 32px));
   border: 1px solid var(--b);
-  border-radius: 12px;
+  border-radius: 24px;
   padding: 20px;
   background: var(--pn);
   color: var(--t);
@@ -1050,12 +1060,18 @@ a:hover {
 
 .ks-f input,
 .ks-f select {
-  padding: 9px 10px;
-  border: 1px solid var(--b);
-  border-radius: 8px;
-  background: var(--in);
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--wash);
   color: var(--in-ink);
   font: inherit;
+  outline: 0;
+}
+
+.ks-f input:focus,
+.ks-f select:focus {
+  background: var(--wash2);
 }
 
 .ks-f input::placeholder {
@@ -1085,12 +1101,12 @@ a:hover {
 
 .ks-side {
   flex: none;
-  padding: 0 12px;
-  border: 1px solid var(--b);
-  border-radius: 8px;
-  background: var(--hover);
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--wash);
   color: var(--t);
-  font: 600 12.5px/1 var(--ff);
+  font: 500 12.5px/1 var(--ff);
   cursor: pointer;
 }
 
@@ -1188,7 +1204,7 @@ a:hover {
   padding: 11px 20px;
   background: var(--a);
   color: var(--bg);
-  font: 600 14px/1.2 var(--ff);
+  font: 500 14px/1.2 var(--ff);
   cursor: pointer;
 }
 
@@ -1200,7 +1216,7 @@ a:hover {
   border: 0;
   background: none;
   padding: 0;
-  font: 600 12.5px/1.2 var(--ff);
+  font: 500 12.5px/1.2 var(--ff);
   color: var(--a);
   cursor: pointer;
 }

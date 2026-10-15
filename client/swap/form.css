@@ -1,5 +1,5 @@
-.swx-pane{background:var(--bg);border:1px solid var(--b);border-radius:12px;
- padding:10px 12px}
+/* A wash with no edge (base.css); the pixel the border took is back in the padding. */
+.swx-pane{background:var(--wash);border-radius:18px;padding:11px 13px}
 .swx-bal{background:none;border:0;color:var(--f);font-size:12px;cursor:pointer;
  padding:0;font-family:var(--ff)}
 .swx-bal:hover{color:var(--a)}
@@ -10,7 +10,7 @@
  * vanishing into it. The pane keeps the page colour around it: the balance
  * line, the receive figure and the size chips stay as they were.
  */
-.swx-amt{flex:1;min-width:0;padding:4px 10px;border:0;border-radius:8px;
+.swx-amt{flex:1;min-width:0;padding:4px 10px;border:0;border-radius:10px;
  background:var(--in);outline:none;text-align:right;font:500 22px/1.2 var(--ff);
  color:var(--in-ink);font-variant-numeric:tabular-nums}
 .swx-amt::placeholder{color:var(--in-ph)}
@@ -40,11 +40,11 @@
  * fill — which reads as chosen at a glance in either theme and stays on the
  * grayscale the rest of the dialog keeps, leaving colour to mean direction.
  */
-.swx-seg{display:flex;gap:4px;background:var(--ch);border-radius:999px;padding:3px}
+.swx-seg{display:flex;gap:4px;background:var(--wash);border-radius:999px;padding:3px}
 .swx-seg button{border:0;background:none;border-radius:999px;padding:5px 12px;
  font:600 13px/1.2 var(--ff);color:var(--m);cursor:pointer;
  transition:background .15s,color .15s}
-.swx-seg button:hover:not(.on){background:var(--hover);color:var(--t)}
+.swx-seg button:hover:not(.on){background:var(--wash);color:var(--t)}
 .swx-seg button.on{background:var(--t);color:var(--bg)}
 /*
  * The fixed side's ticker — and on the confirmation screen, both sides'.
@@ -54,14 +54,15 @@
  * the disabled one, sitting pale beside a SOL/USDC control where something
  * clearly had been chosen.
  *
- * The 3px border is the seg's track on a single element — --ch around a pill
- * filled with --t, which is where the .on segment sits. So the geometry is
+ * The 3px border is the seg's track on a single element — the wash around a
+ * pill filled with --t, which is where the .on segment sits. The fill stops at
+ * the padding box, or the wash would be laid over the ink and vanish into it. So the geometry is
  * identical rather than close: 3+5+15.6+5+3 is the seg's 31.6px, and 3+12 puts
  * both tickers' text 15px in. The form's panes match, and nothing moves when a
  * chosen ticker becomes a locked one on the confirmation.
  */
 .swx-lock{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;
- border:3px solid var(--ch);border-radius:999px;background:var(--t);
+ border:3px solid var(--wash);border-radius:999px;background:var(--t);background-clip:padding-box;
  font:600 13px/1.2 var(--ff);color:var(--bg)}
 
 .swx-arrow{display:flex;justify-content:center;margin:-7px 0;position:relative;
@@ -83,8 +84,8 @@
  * ends of a direction have to stay told apart first.
  */
 .swx-go{width:100%;margin-top:12px;border:0;border-radius:999px;padding:12px;
- background:var(--buy);color:var(--buy-ink);font:600 15px/1.2 var(--ff);cursor:pointer;
- transition:background .18s}
+ background:var(--buy);color:var(--buy-ink);font:500 15px/1.2 var(--ff);cursor:pointer;
+ --press:.985}
 .swx-go.sell{background:#c2410c}
 .swx-go:hover:not(:disabled){filter:brightness(1.1)}
 .swx-go:disabled{opacity:.55;cursor:not-allowed}
@@ -138,9 +139,9 @@
  font-variant-numeric:tabular-nums}
 .swx-v.warn{color:var(--dn);font-weight:600}
 .swx-2nd{width:100%;margin-top:8px;border:1px solid var(--b);border-radius:999px;
- padding:10px;background:none;color:var(--t);font:600 14px/1.2 var(--ff);
- cursor:pointer}
-.swx-2nd:hover:not(:disabled){background:var(--hover)}
+ padding:10px;background:none;color:var(--t);font:500 14px/1.2 var(--ff);
+ cursor:pointer;--press:.985}
+.swx-2nd:hover:not(:disabled){background:var(--wash)}
 .swx-2nd:disabled{opacity:.55;cursor:not-allowed}
 .swx-acct{font-size:12px;color:var(--f);font-variant-numeric:tabular-nums}
 /*
@@ -158,8 +159,8 @@
  */
 .swx-lnk{display:block;width:100%;margin-top:8px;border:1px solid var(--b);
  border-radius:999px;padding:10px;background:none;color:var(--t);
- font:600 14px/1.2 var(--ff);text-align:center;text-decoration:none}
-.swx-lnk:hover{background:var(--hover)}
+ font:500 14px/1.2 var(--ff);text-align:center;text-decoration:none;--press:.985}
+.swx-lnk:hover{background:var(--wash);text-decoration:none}
 .swx-qr{width:220px;max-width:100%;margin:14px auto 0}
 .swx-qr svg{display:block;width:100%;height:auto;border-radius:6px}
 /*
@@ -168,10 +169,10 @@
  * the seg control's inverted fill, the one "selected" this dialog already uses.
  */
 .swx-pct{display:flex;justify-content:flex-end;gap:6px;margin-top:8px}
-.swx-pct button{border:1px solid var(--b);background:none;border-radius:999px;
- padding:3px 10px;font:600 12px/1.3 var(--ff);color:var(--m);cursor:pointer;
- font-variant-numeric:tabular-nums;transition:background .15s,color .15s,border-color .15s}
-.swx-pct button:hover:not(:disabled):not(.on){background:var(--hover);color:var(--t)}
+.swx-pct button{border:1px solid transparent;background:var(--wash);border-radius:999px;
+ padding:3px 10px;font:500 12px/1.3 var(--ff);color:var(--m);cursor:pointer;
+ font-variant-numeric:tabular-nums}
+.swx-pct button:hover:not(:disabled):not(.on){background:var(--wash2);color:var(--t)}
 .swx-pct button.on{background:var(--t);border-color:var(--t);color:var(--bg)}
 .swx-pct button:disabled{opacity:.45;cursor:default}
 /*

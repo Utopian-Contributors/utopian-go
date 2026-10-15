@@ -526,7 +526,9 @@ function inlineWordmark() {
  */
 async function buildCss(name, ...extra) {
   return minifyCss(
-    [name, "header.css", "acct.css", ...extra].map((file) => readFileSync(path.join(clientDir, file), "utf8")).join(""),
+    ["base.css", name, "header.css", "acct.css", ...extra]
+      .map((file) => readFileSync(path.join(clientDir, file), "utf8"))
+      .join(""),
   );
 }
 
@@ -555,7 +557,7 @@ async function buildSocialCss() {
     ...words(readFileSync(path.join(clientDir, "social.html"), "utf8")),
   ]);
   return minifyCss(
-    ["app.css", "header.css", "acct.css", "social.css"]
+    ["base.css", "app.css", "header.css", "acct.css", "social.css"]
       .map((name) => readFileSync(path.join(clientDir, name), "utf8"))
       .join(""),
     names,

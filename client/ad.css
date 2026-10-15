@@ -1,6 +1,6 @@
 /*
- * A sponsored result, above the results, boxed like the token card so it is
- * never read as one of them. Words only; a banner is for timelines. The whole
+ * A sponsored result, above the results, on a surface like the token card's
+ * so it is never read as one of them. Words only; a banner is for timelines. The whole
  * card is the link. Search inlines this sheet; client/ads injects it for its
  * preview, so the two cannot drift. The markup is adMarkup in src/social/ads.ts.
  *
@@ -12,10 +12,9 @@
   display: block;
   max-width: 70ch;
   margin-bottom: 22px;
-  padding: 12px 16px 14px;
-  border: 1px solid var(--b);
-  border-radius: 12px;
-  background: var(--pn);
+  padding: 14px 18px 16px;
+  border-radius: 20px;
+  background: var(--wash);
   color: var(--t);
   text-decoration: none;
 }
@@ -61,7 +60,8 @@
   border: 1px solid var(--go);
   border-radius: 999px;
   color: var(--go);
-  font: 600 14px/1 var(--ff);
+  font: 500 14px/1 var(--ff);
+  transition: background-color 0.16s, color 0.16s;
 }
 
 .ad:hover .sp-go {

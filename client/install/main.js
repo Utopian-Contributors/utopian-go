@@ -26,13 +26,13 @@ import { injectStyles } from "../js/ui.js";
 const CSS = `
 dialog.pw{inset:auto 0 0;z-index:25;width:min(420px,calc(100% - 32px));max-height:calc(100% - 96px);
  margin:0 auto 16px;padding:0;overflow:auto;overscroll-behavior:contain;border:1px solid var(--b);
- border-radius:16px;background:var(--pn);color:var(--t);font:14px/1.45 var(--ff);
+ border-radius:24px;background:var(--pn);color:var(--t);font:14px/1.45 var(--ff);
  box-shadow:0 8px 32px rgba(0,0,0,.18);animation:pw-up .3s ease-out}
 @keyframes pw-up{from{opacity:0;transform:translateY(24px)}}
 .pw summary{display:flex;align-items:center;gap:12px;padding:12px 56px 12px 12px;list-style:none;
  cursor:pointer;-webkit-tap-highlight-color:transparent}
 .pw summary::-webkit-details-marker{display:none}
-.pw summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;border-radius:16px}
+.pw summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;border-radius:24px}
 .pw-ic{flex:none;border-radius:10px;box-shadow:0 0 0 1px var(--b)}
 .pw-tx{display:flex;flex-direction:column;flex:1;min-width:0}
 .pw-tx b{font-weight:600}
@@ -41,22 +41,22 @@ dialog.pw{inset:auto 0 0;z-index:25;width:min(420px,calc(100% - 32px));max-heigh
 .pw [open] .pw-ch{transform:rotate(180deg)}
 .pw .dlg-x{top:17px}
 .pw-b{padding:0 16px 16px}
-.pw-go,.pw-cp{display:block;width:100%;padding:10px 12px;border:0;border-radius:999px;
- font:600 14px/1 var(--ff);cursor:pointer}
+.pw-go,.pw-cp{display:block;width:100%;padding:11px 12px;border:0;border-radius:999px;
+ font:500 14px/1 var(--ff);cursor:pointer;--press:.985}
 .pw-go{margin:0 0 14px;background:var(--buy);color:var(--buy-ink)}
-.pw-cp{margin:12px 0 0;background:rgba(127,127,127,.16);color:var(--t)}
+.pw-cp{margin:12px 0 0;background:var(--wash);color:var(--t)}
 .pw-h{margin:0 0 6px;font-weight:600}
 .pw-s{margin:0;padding-left:22px}
 .pw-s li{margin:0 0 6px;padding-left:2px}
 .pw-s b{font-weight:600}
 .pw-i{display:inline-grid;place-items:center;width:24px;height:22px;border-radius:6px;
- background:rgba(127,127,127,.16);vertical-align:middle}
+ background:var(--wash);vertical-align:middle}
 .pw-i svg{display:block}
 .pw-n{margin:8px 0 0;font-size:13px;color:var(--f)}
 body.chat dialog.pw{display:none}
 @media (prefers-reduced-motion:reduce){dialog.pw{animation:none}.pw-ch{transition:none}}
 @media (max-width:620px){dialog.pw{width:100%;margin:0;border-width:1px 0 0;
- border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom)}}
+ border-radius:24px 24px 0 0;padding-bottom:env(safe-area-inset-bottom)}}
 @media (max-width:900px){body.soc dialog.pw{bottom:65px;padding-bottom:0;clip-path:inset(-48px -48px -16px)}}
 @media (max-width:620px){body.soc dialog.pw{clip-path:inset(-48px 0 0)}}
 `;

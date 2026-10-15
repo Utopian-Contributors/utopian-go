@@ -25,7 +25,7 @@ const CSS = `
 .swx-bd{position:absolute;inset:0;background:rgba(0,0,0,.55);
  backdrop-filter:blur(2px);animation:swx-in .15s both}
 .swx-d{position:relative;width:100%;max-width:400px;background:var(--pn);
- border:1px solid var(--b);border-radius:16px;padding:16px;
+ border:1px solid var(--b);border-radius:24px;padding:18px;
  box-shadow:0 16px 48px rgba(0,0,0,.35);animation:swx-up .18s both}
 @keyframes swx-in{from{opacity:0}}
 @keyframes swx-up{from{opacity:0;transform:translateY(8px)}}
@@ -33,8 +33,8 @@ const CSS = `
  margin-bottom:14px}
 .swx-t{font-size:15px;font-weight:600;color:var(--t)}
 .swx-x{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;
- border-radius:50%;background:rgba(127,127,127,.16);color:var(--t);font-size:20px;line-height:1;cursor:pointer}
-.swx-x:hover{background:rgba(127,127,127,.28)}
+ border-radius:50%;background:var(--wash);color:var(--t);font-size:20px;line-height:1;cursor:pointer}
+.swx-x:hover{background:var(--wash2)}
 .swx-x svg{display:block}
 .swx-h .swx-x{margin:-4px -4px -4px 0}
 .swx-lbl{display:flex;justify-content:space-between;align-items:center;
@@ -47,14 +47,14 @@ const CSS = `
 .swx-note a{color:var(--a);text-decoration:underline}
 
 .swx-w{display:flex;flex-direction:column;gap:8px}
-.swx-w button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;
- border:1px solid var(--b);border-radius:12px;background:var(--bg);cursor:pointer;
- font:600 14px/1.2 var(--ff);color:var(--t)}
-.swx-w button:hover:not(:disabled){border-color:var(--a)}
+.swx-w button{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;
+ border:0;border-radius:16px;background:var(--wash);cursor:pointer;
+ font:500 14px/1.2 var(--ff);color:var(--t);--press:.985}
+.swx-w button:hover:not(:disabled){background:var(--wash2)}
 .swx-w button:disabled{opacity:.6;cursor:progress}
 .swx-w img{width:22px;height:22px;border-radius:6px}
 @media (max-width:620px){.swx{align-items:flex-end;padding:0}
- .swx-d{max-width:none;border-radius:16px 16px 0 0;border-bottom:0}}
+ .swx-d{max-width:none;border-radius:24px 24px 0 0;border-bottom:0}}
 @media (max-width:620px) and (display-mode:standalone){.swx-d{border-bottom:24px solid transparent}}
 `;
 

@@ -1,0 +1,104 @@
+/*
+ * What every page's controls share, in front of each page's own sheet —
+ * search, Social, the wallet page (build-client.mjs). The palette itself stays
+ * where it was, in app.css and wallet.css; this only adds what buttons, chips
+ * and fields are drawn with.
+ *
+ * Controls sit on the page as surfaces rather than outlines: a chip, a field
+ * or a quiet button is the page's own ink let down to a few percent, with no
+ * edge, and a few percent more under the pointer or while it has focus. Alpha
+ * rather than a fixed grey, so the cream shows through by day and the plum
+ * after dark, and the same rule gives a control one step off whatever it sits
+ * on — the page, a card, a dialog.
+ */
+:root {
+  /* The page's ink, --t, as channels: #202124 by day, #e8eaed after dark.
+     Written out because Safari 14, still a build target, has no color-mix(). */
+  --rgb: 32, 33, 36;
+  --wash: rgba(var(--rgb), 0.06);
+  --wash2: rgba(var(--rgb), 0.1);
+  /*
+   * Two curves. --out decelerates into place, for anything arriving. --spring
+   * overshoots a little and settles, for anything let go of — a button coming
+   * back from a press.
+   */
+  --out: cubic-bezier(0.22, 1, 0.36, 1);
+  --spring: cubic-bezier(0.28, 1.4, 0.36, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rgb: 232, 234, 237;
+    --wash: rgba(var(--rgb), 0.09);
+    --wash2: rgba(var(--rgb), 0.14);
+  }
+}
+
+/*
+ * Scrollbars, the page's and every box's that scrolls: the thumb alone, on no
+ * track, so a scrolling column reads as part of the page rather than as a box
+ * with a bar down its side. A neutral grey part-way through, so the one rule
+ * reads on cream and on plum.
+ *
+ * scrollbar-color is the standard, and wins wherever it is understood; it
+ * inherits, so set on the root it reaches every scroller, the viewport's
+ * included. No scrollbar-width beside it: a browser that understands that too
+ * may take it as the cue to drop the -webkit- parts below, which are all
+ * Safari reads. A sheet that hides a strip's bar outright (.wl-cats, .flt)
+ * still does, being the more specific.
+ */
+:root {
+  scrollbar-color: rgba(128, 128, 128, 0.45) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.45);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/*
+ * A press, on anything pressable: it gives a little under the finger and
+ * springs back when let go. The give is --press, so a control as wide as its
+ * column can ask for less — the same 4% that reads as a squeeze on a pill is
+ * a lurch on a row 600px across.
+ *
+ * `scale` rather than `transform`, so it composes with any transform a control
+ * already wears (a centring translate, a flipped arrow) instead of replacing it.
+ * Pills drawn as links are named here alongside the buttons.
+ */
+button,
+.tk-buy,
+.ac-w,
+.ac-soc,
+.adv,
+.go-pill,
+.dm,
+.swx-lnk {
+  transition:
+    background-color 0.16s,
+    border-color 0.16s,
+    color 0.16s,
+    opacity 0.16s,
+    filter 0.16s,
+    scale 0.2s var(--spring);
+}
+
+:is(button, .tk-buy, .ac-w, .ac-soc, .adv, .go-pill, .dm, .swx-lnk):active:not(:disabled) {
+  scale: var(--press, 0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(button, .tk-buy, .ac-w, .ac-soc, .adv, .go-pill, .dm, .swx-lnk):active:not(:disabled) {
+    scale: none;
+  }
+}

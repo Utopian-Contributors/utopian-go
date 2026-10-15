@@ -33,8 +33,8 @@ const CSS = `
 .rl-q{margin-left:auto;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rl .up{color:var(--go)}
 .rl .dn{color:var(--dn)}
-.rl-add{flex:none;height:30px;padding:0 14px;border:1px solid var(--go);border-radius:999px;background:none;
- color:var(--go);font:600 13px/1 var(--ff);cursor:pointer}
+.rl-add{flex:none;height:32px;padding:0 15px;border:1px solid var(--go);border-radius:999px;background:none;
+ color:var(--go);font:500 13px/1 var(--ff);cursor:pointer}
 .rl-add:hover:not(:disabled){background:var(--go);color:var(--go-ink)}
 .rl-add:focus-visible{outline:2px solid var(--go);outline-offset:2px}
 .rl-add:disabled{border-color:var(--b);color:var(--f);cursor:default}

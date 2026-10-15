@@ -14,23 +14,23 @@ import { dismissible } from "./sheet.js";
 import { injectStyles } from "./ui.js";
 
 const CSS = `
-.lgd{width:min(360px,calc(100% - 32px));padding:18px;border:1px solid var(--b);
- border-radius:12px;background:var(--pn);color:var(--t);font:14px/1.5 var(--ff)}
+.lgd{width:min(360px,calc(100% - 32px));padding:20px;border:1px solid var(--b);
+ border-radius:24px;background:var(--pn);color:var(--t);font:14px/1.5 var(--ff)}
 .lgd::backdrop{background:rgb(0 0 0/40%)}
 .lgd h2{margin:0;font-size:18px}
 .lgd label{display:block;margin-top:14px;font-size:13px;color:var(--m)}
-.lgd input,.lgd textarea{box-sizing:border-box;width:100%;margin-top:4px;padding:8px 10px;
- border:1px solid var(--b);border-radius:8px;background:var(--in);font:inherit;color:var(--in-ink);
+.lgd input,.lgd textarea{box-sizing:border-box;width:100%;margin-top:4px;padding:10px 13px;
+ border:0;border-radius:12px;background:var(--wash);font:inherit;color:var(--in-ink);
  outline:0}
-.lgd input:focus,.lgd textarea:focus{box-shadow:0 1px 6px rgba(0,0,0,.18)}
+.lgd input:focus,.lgd textarea:focus{background:var(--wash2)}
 .lgd textarea{resize:none}
 .lgd-h{margin:4px 0 0;font-size:12px;line-height:1.4;color:var(--f)}
 .lgd-e{margin:8px 0 0;color:var(--dn)}
 .lgd-e:empty{display:none}
 .lgd-go{display:block;width:100%;margin-top:12px;border:0;border-radius:999px;background:var(--buy);
- color:var(--buy-ink);font:600 13px/1 var(--ff);padding:13px 12px;cursor:pointer}
+ color:var(--buy-ink);font:500 14px/1 var(--ff);padding:13px 12px;cursor:pointer}
 .lgd-go:hover:not(:disabled){filter:brightness(1.08)}
-.lgd-t{background:none;color:var(--go);border:0;padding:12px 0;font:600 13px/1 var(--ff);cursor:pointer}
+.lgd-t{background:none;color:var(--go);border:0;padding:12px 0;font:500 13px/1 var(--ff);cursor:pointer}
 .lgd-t:hover{color:var(--buy)}
 .lgd button:disabled{opacity:.55;cursor:default}
 .lgd .lgd-c{display:flex;gap:8px;align-items:flex-start;color:var(--t)}

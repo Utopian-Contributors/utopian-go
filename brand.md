@@ -78,7 +78,13 @@ Apple-inspired stark minimal search UI.
   - Dark bg `#000` / elevated surfaces, accent `#0a84ff`
 - **Typography:** System stack only, weight 400–600
 - **Surfaces:** Soft cards, pill search field, whitespace
-- **Motion:** Ease-out entrances, staggered result hydrate, skeleton shimmer
+- **Controls** (after bencho.dev; `client/base.css`): buttons, chips and fields
+  are pills on a wash of the page's own ink (`--wash`, 6% by day / 9% after
+  dark) with no edge, a step deeper (`--wash2`) on hover or focus. Cards are
+  the same wash at 20px radius. The palette is unchanged: these are shapes,
+  not colours.
+- **Motion:** Ease-out entrances, staggered result hydrate, skeleton shimmer;
+  every pressable gives under a press and springs back (`--press`, `--spring`)
 - **Voice:** "Search the web. Instantly."
 
 ## Do

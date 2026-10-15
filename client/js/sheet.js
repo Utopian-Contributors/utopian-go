@@ -13,12 +13,12 @@ import { X_ICON, injectStyles } from "./ui.js";
 const CSS = `
 dialog.dlg{position:fixed}
 .dlg-x{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:30px;height:30px;
- padding:0;border:0;border-radius:50%;background:rgba(127,127,127,.16);color:var(--t);cursor:pointer}
-.dlg-x:hover{background:rgba(127,127,127,.28)}
+ padding:0;border:0;border-radius:50%;background:var(--wash);color:var(--t);cursor:pointer}
+.dlg-x:hover{background:var(--wash2)}
 .dlg-x svg{display:block}
 dialog.dlg h2{margin-right:36px}
 @media (max-width:620px){dialog.dlg{width:100%;max-width:none;max-height:calc(100% - 24px);
- margin:auto 0 0;border-bottom:0;border-radius:16px 16px 0 0}}
+ margin:auto 0 0;border-bottom:0;border-radius:24px 24px 0 0}}
 @media (max-width:620px) and (display-mode:standalone){dialog.dlg{border-bottom:24px solid transparent}}
 `;
 

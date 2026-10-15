@@ -55,24 +55,26 @@ dialog textarea {
   box-sizing: border-box;
   width: 100%;
   margin-top: 4px;
-  padding: 8px 10px;
-  border: 1px solid var(--b);
-  border-radius: 8px;
-  /* The field surface every input shares; see --in in app.css. */
-  background: var(--in);
+  padding: 9px 12px;
+  /* Transparent, so the field keeps the height its border gave it. */
+  border: 1px solid transparent;
+  border-radius: 12px;
+  /* The surface every field shares, the search field's (base.css). */
+  background: var(--wash);
   font: inherit;
   color: var(--in-ink);
   outline: 0;
+  transition: background-color 0.16s;
 }
 
-/* Same lift as the search field (.sf:focus-within). No browser focus ring. */
+/* Deeper while it has the caret, as the search field does. No browser focus ring. */
 .tools textarea:focus,
 .tools input:focus,
 .cmt input:focus,
 .find input:focus,
 dialog input:focus,
 dialog textarea:focus {
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+  background: var(--wash2);
 }
 
 .tools textarea::placeholder,
@@ -99,8 +101,8 @@ dialog textarea { resize: none; }
   border-radius: 999px;
   background: var(--buy);
   color: var(--buy-ink);
-  font: 600 13px/1 var(--ff);
-  padding: 7px 12px;
+  font: 500 13px/1 var(--ff);
+  padding: 9px 14px;
   cursor: pointer;
 }
 
@@ -146,10 +148,10 @@ dialog textarea { resize: none; }
      filled block reads as a mistake, where flush with nothing read as a line. */
   padding: 8px 12px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 16px;
   resize: none;
   overflow: hidden;
-  background: var(--in);
+  background: var(--wash);
   font: 20px/1.35 var(--ff);
   color: var(--in-ink);
 }
@@ -176,6 +178,7 @@ dialog textarea { resize: none; }
 
 .tool {
   border: 0;
+  border-radius: 999px;
   padding: 6px;
   background: none;
   color: var(--m);
@@ -183,7 +186,7 @@ dialog textarea { resize: none; }
   cursor: pointer;
 }
 
-.tool:hover:not(:disabled) { color: var(--go); }
+.tool:hover:not(:disabled) { background: var(--wash); color: var(--go); }
 .tool:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
 .tool:disabled { opacity: 0.4; cursor: default; }
 
@@ -198,8 +201,8 @@ dialog textarea { resize: none; }
 .composer .count.low { color: var(--dn); }
 
 .composer .post-go {
-  padding: 9px 18px;
-  font: 700 15px/1 var(--ff);
+  padding: 10px 18px;
+  font: 600 15px/1 var(--ff);
 }
 
 .composer .post-go:disabled {
@@ -212,8 +215,9 @@ dialog textarea { resize: none; }
 
 /*
  * The timeline's filters. On is green like every other pressable thing here;
- * off is an outline in the muted grey. On phones one row that scrolls
- * sideways (see the phone gutters below), so they never stack.
+ * off is a wash with no edge. One weight on and off, so a chip never changes
+ * width as it is pressed. On phones one row that scrolls sideways (see the
+ * phone gutters below), so they never stack.
  */
 .flt {
   display: flex;
@@ -226,12 +230,12 @@ dialog textarea { resize: none; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 5px;
   height: 32px;
-  padding: 0 10px 0 8px;
-  border: 1px solid var(--b);
+  padding: 0 13px 0 11px;
+  border: 0;
   border-radius: 999px;
-  background: none;
+  background: var(--wash);
   color: var(--f);
   font: 500 13px/1 var(--ff);
   cursor: pointer;
@@ -240,14 +244,12 @@ dialog textarea { resize: none; }
 /* All and Friends swap in place, so the chip holds the longer one's width. */
 .flt button:first-child { min-width: 82px; }
 .flt svg { flex: none; }
-.flt button:hover { background: var(--ch); }
+.flt button:hover { background: var(--wash2); color: var(--t); }
 .flt button:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
 
 .flt button[aria-pressed="true"] {
-  border-color: var(--go);
-  background: color-mix(in srgb, var(--go) 12%, transparent);
+  background: color-mix(in srgb, var(--go) 14%, transparent);
   color: var(--go);
-  font-weight: 600;
 }
 
 /* The old posts stay put, dimmed, until the filtered ones replace them. */
@@ -489,7 +491,7 @@ dialog textarea { resize: none; }
   color: var(--go);
   border: 0;
   padding: 8px 0;
-  font: 600 13px/1 var(--ff);
+  font: 500 13px/1 var(--ff);
   cursor: pointer;
 }
 
@@ -501,10 +503,10 @@ button:disabled { opacity: 0.55; cursor: default; }
 
 .notes {
   margin: 0 0 16px;
-  padding: 10px 12px;
+  padding: 12px 16px;
   list-style: none;
-  background: var(--ch);
-  border-radius: 8px;
+  background: var(--wash);
+  border-radius: 20px;
 }
 
 .notes li { margin: 4px 0; }
@@ -551,9 +553,9 @@ button:disabled { opacity: 0.55; cursor: default; }
 .hits {
   list-style: none;
   margin: 6px 0 0;
-  padding: 4px;
+  padding: 5px;
   border: 1px solid var(--b);
-  border-radius: 8px;
+  border-radius: 16px;
   background: var(--bg);
 }
 
@@ -571,12 +573,13 @@ button:disabled { opacity: 0.55; cursor: default; }
   margin: 0;
   padding: 6px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 11px;
   background: none;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+  --press: 0.985;
 }
 
 .hit .who { font-weight: 600; }
@@ -633,12 +636,12 @@ a.sad:hover .sad-l b { text-decoration: underline; }
   text-decoration: none;
   background: none;
   color: var(--go);
-  font: 600 13px/1 var(--ff);
+  font: 500 13px/1 var(--ff);
   cursor: pointer;
 }
 
 .act:disabled { color: var(--f); cursor: default; }
-.act:hover:not(:disabled) { background: var(--ch); color: var(--buy); text-decoration: none; }
+.act:hover:not(:disabled) { background: var(--wash); color: var(--buy); text-decoration: none; }
 .act.saved,
 .act.saved:hover { color: var(--f); }
 
@@ -751,9 +754,10 @@ img.pfp {
   border-radius: 999px;
   background: var(--go);
   color: var(--go-ink);
-  font: 600 16px/1 var(--ff);
+  font: 500 16px/1 var(--ff);
   text-shadow: 0 -1px 0 rgb(0 0 0 / 35%);
   cursor: pointer;
+  --press: 0.985;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -775,13 +779,14 @@ img.pfp {
   border-radius: 999px;
   background: none;
   color: var(--t);
-  font: 600 16px/1 var(--ff);
+  font: 500 16px/1 var(--ff);
   text-align: center;
   text-decoration: none;
+  --press: 0.985;
 }
 
 .dm:hover {
-  background: var(--hover);
+  background: var(--wash);
   color: var(--t);
   text-decoration: none;
 }
@@ -798,16 +803,16 @@ img.pfp {
 
 .phrase {
   padding: 10px 12px;
-  background: var(--ch);
-  border-radius: 8px;
+  background: var(--wash);
+  border-radius: 12px;
   overflow-wrap: anywhere;
 }
 
 dialog {
   width: min(360px, calc(100% - 32px));
-  padding: 18px;
+  padding: 20px;
   border: 1px solid var(--b);
-  border-radius: 12px;
+  border-radius: 24px;
   background: var(--pn);
   color: var(--t);
 }
@@ -1226,7 +1231,7 @@ a.crow.on {
   max-height: 160px;
   padding: 8px 12px;
   border-radius: 18px;
-  background: var(--in);
+  background: var(--wash);
   font-size: 16px;
   line-height: 1.35;
   overflow-y: auto;
@@ -1344,7 +1349,8 @@ a.crow.on {
     font-size: 16px;
   }
 
-  body.soc #tb .tab:hover { background: var(--ch); }
+  body.soc #tb .tab { --press: 0.985; }
+  body.soc #tb .tab:hover { background: var(--wash); }
   body.soc #tb .tab.on { color: var(--go); font-weight: 700; }
 
   /*
@@ -1374,7 +1380,7 @@ a.crow.on {
     border-top: 1px solid var(--ln);
   }
 
-  body.soc #tb .tb-bal:hover { background: var(--ch); }
+  body.soc #tb .tb-bal:hover { background: var(--wash); }
   body.soc #tb .tb-bal[hidden] { display: none; }
 
   /* A plain coin under the logo, which is all that shows if the logo fails. */
