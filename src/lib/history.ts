@@ -1,4 +1,4 @@
-import { HELIUS_RPC_URL, UTCC_MINT } from "../config";
+import { HELIUS_RPC_URL, TX_VERSION, UTCC_MINT } from "../config";
 import { Activity, ActivityMove, HistoryPage, TokenRecord } from "../types";
 import { lookupMints } from "./tokens/store";
 
@@ -279,7 +279,7 @@ async function readPage(owner: string, after: string): Promise<HistoryPage> {
           sortOrder: "desc",
           limit: PAGE,
           encoding: "json",
-          maxSupportedTransactionVersion: 0,
+          maxSupportedTransactionVersion: TX_VERSION,
           // A trade made a moment ago is in the history when the page is opened.
           commitment: "confirmed",
           filters: { tokenAccounts: "balanceChanged" },

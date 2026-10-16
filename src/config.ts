@@ -273,6 +273,16 @@ export const JUP_FEE_BPS = (() => {
  */
 export const TOKEN_MIN_LIQUIDITY_USD = 25_000;
 
+/**
+ * The newest transaction version this server reads. An RPC refuses the whole
+ * request when any transaction in it is newer than this, so a page of history
+ * fails, and the ad payment scan stalls on that payment and everything after
+ * it. Version 1 is already a quarter of mainnet's traffic; the parsers read only
+ * keys, balances and the parsed instructions, which it shares with 0. When
+ * Solana adds another, the RPC's error names the number to put here.
+ */
+export const TX_VERSION = 1;
+
 /** $UTCC, Utopian Contributor Coin: this project's own token (client/js/utcc.js). */
 export const UTCC_MINT = "HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA";
 

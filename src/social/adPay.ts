@@ -1,5 +1,5 @@
 import { randomBytes, randomInt } from "crypto";
-import { ADS_PAY_TO, HELIUS_RPC_URL } from "../config";
+import { ADS_PAY_TO, HELIUS_RPC_URL, TX_VERSION } from "../config";
 import { lookupToken } from "../lib/tokens/store";
 import { reloadAds } from "./ads";
 import { type AdOrder, openOrders, payOrder, sweepAds } from "./db";
@@ -186,7 +186,7 @@ async function scan(address: string, since: number, open: AdOrder[]): Promise<bo
     if (!entry.err && at >= since - SKEW_MS) {
       const tx = (await rpc("getTransaction", [
         entry.signature,
-        { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 0 },
+        { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: TX_VERSION },
       ])) as ParsedTx | null;
       for (const t of transfersIn(entry.signature, at, tx, ADS_PAY_TO)) {
         const hit = matchTransfer(t, open);
