@@ -490,8 +490,8 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const selfComment = await call("POST", "/api/social/comment", { post: postId, text: "myself" });
     assert.equal(selfComment.status, 200);
 
-    const home = await call("GET", "/api/social/timeline");
-    assert.equal((home.json?.notes as unknown[]).length, 0);
+    const own = await call("GET", "/api/social/notes");
+    assert.equal((own.json?.notes as unknown[]).length, 0, "commenting on your own post notifies nobody");
 
     const beforeLogout = jar;
     await call("POST", "/api/social/logout", {});
@@ -500,6 +500,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     jar = beforeLogout;
     assert.equal((await call("GET", "/api/social/me")).json?.me, null, "a copied cookie dies with logout");
     jar = "";
+    assert.equal((await call("GET", "/api/social/notes")).status, 401);
 
     // A throwaway account for the guessing limits, so nobody below is held up.
     assert.equal((await call("POST", "/api/social/register", { username: "cat", password: "password3", terms: true })).status, 200);
@@ -591,11 +592,15 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
 
     const adaIn = await call("POST", "/api/social/login", { username: "ada", password: "password1" });
     assert.equal(adaIn.status, 200);
-    const noted = await call("GET", "/api/social/timeline");
-    const notes = noted.json?.notes as { from: string; post: string }[];
+    const noted = await call("GET", "/api/social/notes");
+    const notes = noted.json?.notes as { from: string; post: string; avatarRev: number; at: number; seen: boolean }[];
     assert.equal(notes.length, 1);
     assert.equal(notes[0].from, "ben");
     assert.equal(notes[0].post, postId);
+    assert.equal(typeof notes[0].avatarRev, "number");
+    assert.equal(typeof notes[0].at, "number");
+    assert.equal(notes[0].seen, false);
+    assert.equal((noted.json?.me as { unseen: number }).unseen, 1);
 
     const phrase = await call("POST", "/api/social/phrase", { password: "password1" });
     const adaPhrase = String(phrase.json?.phrase);
@@ -852,9 +857,14 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
       ).status,
       200,
     );
-    const noted2 = await call("GET", "/api/social/timeline");
+    const noted2 = await call("GET", "/api/social/notes");
     const kinds = (noted2.json?.notes as { kind: string; from: string }[]).map((note) => note.kind).sort();
     assert.deepEqual(kinds, ["comment", "repost"]);
+    assert.equal((await call("POST", "/api/social/notes/seen", {})).status, 200);
+    // Seen notes stay listed, as Earlier; only the badge's count goes.
+    const read = await call("GET", "/api/social/notes");
+    assert.deepEqual((read.json?.notes as { seen: boolean }[]).map((note) => note.seen), [true, true]);
+    assert.equal((read.json?.me as { unseen: number }).unseen, 0);
     const opened = await call("POST", "/api/social/open", { post: postId });
     assert.equal(opened.status, 200, opened.text);
     assert.equal((opened.json?.me as { name: string }).name, "ada");
@@ -892,7 +902,6 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const secondPosts = secondPage.json?.posts as { id: string }[];
     assert.equal(secondPosts.length, 3);
     assert.equal(secondPage.json?.next, null);
-    assert.deepEqual(secondPage.json?.notes, []);
     const seenIds = new Set(firstPosts.map((post) => post.id));
     for (const post of secondPosts) assert.equal(seenIds.has(post.id), false);
     assert.equal((await call("GET", "/api/social/timeline?before=nope&id=x")).status, 400);

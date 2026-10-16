@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import { readFileSync } from "fs";
 import path from "path";
 import { Pool, type PoolClient, types } from "pg";
-import { type AdDevices, CHAT_PAGE, MAX_CHAT_KEEP, MAX_COMMENTS, SocialError, postWait } from "./limits";
+import { type AdDevices, CHAT_PAGE, MAX_CHAT_KEEP, MAX_COMMENTS, MAX_NOTES_KEEP, SocialError, postWait } from "./limits";
 import type { AudioKind } from "./audio";
 import {
   removeBanner,
@@ -386,9 +386,11 @@ export interface CommentRow {
 export interface NoteRow {
   id: string;
   from: string;
+  avatarRev: number;
   post: string;
   at: number;
   kind: string;
+  seen: boolean;
 }
 
 const USER_COLS = `name, uid, pass_salt, pass_hash, phrase_salt, phrase_iv, phrase_tag, phrase_ct,
@@ -630,19 +632,31 @@ export async function postsBy(name: string, who: string | null): Promise<Card[]>
   return rows.map(cardFrom);
 }
 
-export async function unseenNotes(name: string): Promise<NoteRow[]> {
-  const rows = await many<{ id: string; from_name: string; post: string; at: number; kind: string }>(
-    `SELECT id, from_name, post, at, kind FROM notes
-     WHERE to_name = $1 AND seen = false
-     ORDER BY at DESC LIMIT 30`,
-    [name],
+/** Every note kept for this person, seen or not, newest first, with the sender's picture. */
+export async function notesFor(name: string): Promise<NoteRow[]> {
+  const rows = await many<{
+    id: string;
+    from_name: string;
+    avatar_rev: number;
+    post: string;
+    at: number;
+    kind: string;
+    seen: boolean;
+  }>(
+    `SELECT n.id, n.from_name, u.avatar_rev, n.post, n.at, n.kind, n.seen
+     FROM notes n JOIN users u ON u.name = n.from_name
+     WHERE n.to_name = $1
+     ORDER BY n.at DESC LIMIT $2`,
+    [name, MAX_NOTES_KEEP],
   );
   return rows.map((row) => ({
     id: row.id,
     from: row.from_name,
+    avatarRev: row.avatar_rev,
     post: row.post,
     at: Number(row.at),
     kind: row.kind,
+    seen: row.seen,
   }));
 }
 
@@ -652,12 +666,12 @@ async function note(client: PoolClient, to: string, from: string, post: string, 
     `INSERT INTO notes (id, to_name, from_name, post, at, seen, kind) VALUES ($1,$2,$3,$4,$5,false,$6)`,
     [newId(), to, from, post, at, kind],
   );
-  // Keep the newest hundred. The cut-off is one index probe, not a scan.
+  // The cut-off is one index probe, not a scan.
   await client.query(
     `DELETE FROM notes WHERE to_name = $1 AND at < (
-       SELECT at FROM notes WHERE to_name = $1 ORDER BY at DESC OFFSET 99 LIMIT 1
+       SELECT at FROM notes WHERE to_name = $1 ORDER BY at DESC OFFSET $2 LIMIT 1
      )`,
-    [to],
+    [to, MAX_NOTES_KEEP - 1],
   );
 }
 

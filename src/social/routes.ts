@@ -49,6 +49,7 @@ import {
   insertUser,
   openOrders,
   markSeen,
+  notesFor,
   openPost,
   orderOf,
   postsBy,
@@ -67,7 +68,6 @@ import {
   thread,
   timeline,
   toggleSave,
-  unseenNotes,
   updateProfile,
   userByPasskey
 } from "./db";
@@ -583,14 +583,12 @@ socialRouter.get(
     const me = currentUser(res);
     const cursor = timelineCursor(req);
     const filter = feedFilter(req);
-    const first = !cursor && !!me;
-    const [{ posts, next }, notes, topic] = await Promise.all([
+    const [{ posts, next }, topic] = await Promise.all([
       timeline(me?.name ?? null, cursor, filter),
-      first ? unseenNotes(me.name) : [],
-      first && !filter.saved ? adTopic(me.name) : "",
+      !cursor && me && !filter.saved ? adTopic(me.name) : "",
     ]);
     const ad = me && topic ? socialAdFor(req, topic, me.name) : null;
-    res.json({ me: await publicMe(me), posts, notes, next, ad });
+    res.json({ me: await publicMe(me), posts, next, ad });
   }),
 );
 
@@ -778,6 +776,16 @@ socialRouter.post(
     const opened = await openPost(postId, who);
     if (!opened) throw new SocialError(404, "That post is gone.");
     res.json({ ...opened, me: await publicMe(currentUser(res)) });
+  }),
+);
+
+socialRouter.get(
+  "/notes",
+  requireAuth,
+  readLimit,
+  wrap(async (req, res) => {
+    const me = requireUser(res);
+    res.json({ me: await publicMe(me), notes: await notesFor(me.name) });
   }),
 );
 

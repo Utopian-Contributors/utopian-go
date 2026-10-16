@@ -21,6 +21,8 @@ export const MAX_TEXT = 160;
 export const MAX_POST = 256;
 /** A post takes this many comments, and the post page shows all of them. */
 export const MAX_COMMENTS = 100;
+/** Notifications kept per person; older ones are dropped as new ones arrive, and the page shows all of them. */
+export const MAX_NOTES_KEEP = 100;
 export const MAX_BIO = 160;
 export const MAX_LOC = 40;
 

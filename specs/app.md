@@ -3,7 +3,7 @@
 **Status:** Draft
 **Author:** Ludwig Schubert
 **Created:** 2026-09-25
-**Updated:** 2026-10-02
+**Updated:** 2026-10-15
 
 ## Summary
 
@@ -90,8 +90,8 @@ click. Every Log in button, in a header or on a page, opens it and never navigat
 Messenger is part of Social: one more tab and one more route in the same document, with
 its own lazy bundle (`chat.js`), served by the same API and stored in the same database.
 
-On a screen wider than 900px, Social's tabs (Timeline, Friends, Messenger, My Profile,
-Advertise) are a column at the left, icons alone up to 1100px. Advertise, a magic wand, is
+On a screen wider than 900px, Social's tabs (Timeline, Friends, Messenger, Notifications,
+My Profile, Advertise) are a column at the left, icons alone up to 1100px. Advertise, a magic wand, is
 there only: a phone has no tab for it, and the search home has an Advertise pill above its
 footer on wide screens only. The timeline, and a post opened from it (so the
 post stays in the column it was read in), then have a column at the right:
@@ -128,6 +128,7 @@ GET /icon/<mint>              token thumbnail, image/webp, 64 px
 GET /social                   timeline
 GET /social/saved             the timeline with Saved on (Saved was a page before it was a filter)
 GET /social/friends           friends, and search for people
+GET /social/notifications     comments on your posts and re-posts of them: New, then Earlier
 GET /social/u/<name>          profile: card left, posts right (stacked on phones)
 GET /social/edit              edit profile: photo, bio, location, passkey, recovery phrase
 GET /social/p/<id>            one post with its comments
@@ -210,6 +211,8 @@ Every write requires a matching `Origin`. Errors have the form `{error: string}`
 ```typescript
 type Me = { name: string; address: string; bio: string; loc: string;
             avatarRev: number; passkey: boolean; wait: number; unseen: number; unread: number };
+type Note = { id: string; from: string; avatarRev: number; post: string; at: number;
+             kind: "comment" | "repost"; seen: boolean };
 type Card = { id: string; by: string; text: string; at: number; views: number;
               comments: number; saved: boolean; reposted: boolean; repost: string | null;
               repostBy: string | null; originalRev: number; avatarRev: number; photos: number;
@@ -224,7 +227,7 @@ POST /api/social/logout        {}                            → {ok}   ends eve
 GET  /api/social/me                                          → {me: Me | null}
 
 GET  /api/social/timeline?before&id&friends=1&saved=1&images=0&audio=0
-                                    → {me, posts: Card[], notes, next: {at, id} | null}
+                                    → {me, posts: Card[], next: {at, id} | null}
                                       friends and saved are ignored signed out
 GET  /api/social/rail               → {people: {name, bio, avatarRev, posts}[], assets: RailAssets}
 GET  /api/social/u/<name>           → {me, user: {name, address, bio, loc, avatarRev, posts: Card[]}}
@@ -233,6 +236,7 @@ POST /api/social/post    {text} | application/octet-stream (text + up to 4 photo
 POST /api/social/comment {post, text} → {comment}
 POST /api/social/plus    {post}     → {saved}
 POST /api/social/repost  {post}     → {ok}
+GET  /api/social/notes              → {me, notes: Note[]}   every note kept, newest first
 POST /api/social/notes/seen {}      → {ok}
 
 GET    /api/social/users?q=<prefix> → {me, users}
@@ -270,6 +274,14 @@ the level meanwhile to make the shape. A post draws the shape and its length wit
 fetching the file; the audio loads only when play is pressed. Only `/social` pages are
 allowed the microphone (`Permissions-Policy`), and `media-src blob:` lets the composer
 play a memo back before it is posted.
+
+**Notifications.** A comment on your post, or a re-post of it, by anyone but you is a note.
+The newest 100 are kept. The Notifications tab carries the count not yet seen (`Me.unseen`)
+on every page, and its page lists every kept note, newest first: the ones not seen before
+under **New**, the rest under **Earlier**. Each row shows the sender's timeline picture, what
+they did, and the date and time in the reader's locale, and the whole row opens the post.
+Opening the page marks every note seen, but a note stays listed under New until the next
+visit.
 
 #### Messenger
 

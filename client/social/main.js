@@ -49,7 +49,7 @@ function route() {
   const m = location.pathname
     .replace(/\/+$/, "")
     .match(
-      /^\/social(?:\/(saved|friends|edit|c)|\/p\/([A-Za-z0-9_-]{1,32})|\/u\/([a-z0-9_]{3,16})|\/c\/[a-z0-9_]{3,16})?$/,
+      /^\/social(?:\/(saved|friends|notifications|edit|c)|\/p\/([A-Za-z0-9_-]{1,32})|\/u\/([a-z0-9_]{3,16})|\/c\/[a-z0-9_]{3,16})?$/,
     );
   if (!m) return { page: "missing" };
   if (m[1] === "c" || location.pathname.startsWith("/social/c/")) return { page: "chat" };
@@ -100,6 +100,7 @@ function markNav() {
     friends: "Friends",
     post: "Post",
     chat: "Messenger",
+    notifications: "Notifications",
     ads: "Advertise",
   };
   document.title = `${titles[page] || name || "Social"} | Social`;
@@ -1026,35 +1027,8 @@ document.addEventListener("visibilitychange", () => document.visibilityState ===
 function renderTimeline(data) {
   const gen = feedGen;
   railSide();
-  const kids = [];
-  if (data.notes?.length) {
-    const list = el("ul", { class: "notes" });
-    for (const note of data.notes) {
-      list.append(
-        el(
-          "li",
-          {},
-          el("a", {
-            href: `/social/p/${note.post}`,
-            text:
-              note.kind === "repost"
-                ? `${note.from} re-posted your post`
-                : `${note.from} commented on your post`,
-          }),
-          el("time", { text: ago(note.at) }),
-        ),
-      );
-    }
-    kids.push(list);
-    send("/api/social/notes/seen")
-      .then(() => {
-        $("badge").hidden = true;
-      })
-      .catch(() => {});
-  }
   const feed = el("div", { class: "feed" });
-  kids.push(composer(), filterBar(feed), feed);
-  main.replaceChildren(...kids.filter(Boolean));
+  main.replaceChildren(...[composer(), filterBar(feed), feed].filter(Boolean));
   paintFeed(feed, data, gen);
 }
 
@@ -1316,6 +1290,48 @@ function renderFriends(data) {
   input.focus();
 }
 
+/**
+ * Comments on your posts and re-posts of them: the ones you have not seen
+ * under New, the rest under Earlier, newest first. Each opens its post.
+ */
+function renderNotes(data) {
+  useSide(false);
+  const when = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const group = (title, notes) =>
+    notes.length
+      ? el(
+          "section",
+          { class: "abc", "aria-label": title },
+          el("h3", { class: "abc-h", text: title }),
+          ...notes.map((note) =>
+            el(
+              "a",
+              { class: "friend nt", href: `/social/p/${note.post}` },
+              face(note.from, note.avatarRev),
+              el(
+                "div",
+                { class: "friend-main" },
+                el("b", { text: note.from }),
+                note.kind === "repost" ? " re-posted your post" : " commented on your post",
+                el("time", { datetime: new Date(note.at).toISOString(), text: when.format(note.at) }),
+              ),
+            ),
+          ),
+        )
+      : null;
+  const fresh = data.notes.filter((note) => !note.seen);
+  main.replaceChildren(
+    data.notes.length
+      ? el("div", { class: "friends" }, group("New", fresh), group("Earlier", data.notes.filter((note) => note.seen)))
+      : el("p", { class: "muted", text: "No notifications yet." }),
+  );
+  if (fresh.length) {
+    send("/api/social/notes/seen").then(() => {
+      $("badge").hidden = true;
+    }, () => {});
+  }
+}
+
 /** A password box in front of one action. The password is checked by the server. */
 function passForm(id, hint, label, run, box) {
   const input = el("input", { id, type: "password", autocomplete: "current-password", required: true });
@@ -1575,6 +1591,8 @@ async function show() {
       renderTimeline(await pull(`/api/social/timeline?${feedQuery()}`));
     else if (here.page === "friends")
       renderFriends(await pull("/api/social/friends"));
+    else if (here.page === "notifications")
+      renderNotes(await pull("/api/social/notes"));
     else if (here.page === "edit") await renderEdit();
     else if (here.page === "profile")
       renderProfile(await pull(`/api/social/u/${here.name}`));
@@ -1587,7 +1605,7 @@ async function show() {
     }
   } catch (cause) {
     detail = null;
-    if (here.page === "friends" && me) useSide(false);
+    if ((here.page === "friends" || here.page === "notifications") && me) useSide(false);
     else renderSide(me);
     main.replaceChildren(el("p", { class: "err", text: cause.message }));
   }
@@ -1651,14 +1669,14 @@ $("in").addEventListener("click", () => openAuth("login"));
 // Until the server answers, the remembered name points My Profile at the right page.
 if (readName()) $("me").href = `/social/u/${readName()}`;
 // Signed out, My Profile is still there; it asks you to log in. So do Friends,
-// Messenger and Advertise, which have nothing to show anyone signed out, and
-// go on to their page once you have.
+// Messenger, Notifications and Advertise, which have nothing to show anyone
+// signed out, and go on to their page once you have.
 $("me").addEventListener("click", (e) => {
   if (me || readName()) return;
   e.preventDefault();
   openAuth("login");
 });
-for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data-nav="chat"], #tb [data-nav="ads"]')) {
+for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data-nav="chat"], #tb [data-nav="notifications"], #tb [data-nav="ads"]')) {
   tab.addEventListener("click", (e) => {
     if (me || readName()) return;
     e.preventDefault();
