@@ -72,13 +72,33 @@
 
     <main class="wrap" id="wl">
       <div class="wl-main">
+        <!-- In the portfolio's and the lists' place while open (body.hist);
+             wallet/history.js fills it. -->
+        <section class="wl-hs" id="wl-hs" aria-labelledby="wl-hs-h" hidden>
+          <div class="wl-hh">
+            <button type="button" class="wl-back" id="wl-hx">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Back
+            </button>
+            <h2 id="wl-hs-h">History</h2>
+          </div>
+          <div id="wl-hl"></div>
+          <p class="wl-n" id="wl-hn" hidden></p>
+        </section>
         <div class="wl-ph" id="wl-ph" hidden></div>
         <section class="wl-pf" aria-labelledby="wl-pf-h">
           <!-- Shipped in its final geometry so the bundle taking over moves
                nothing. A dash, not a zero: no balance reads as empty before it
                has been read. -->
           <div class="wl-tot">
-            <h2 class="wl-k" id="wl-pf-h">Portfolio</h2>
+            <!-- History sits on the heading's line, which is as tall as the
+                 button whether or not it is shown yet. -->
+            <div class="wl-hd">
+              <h2 class="wl-k" id="wl-pf-h">Portfolio</h2>
+              <button type="button" class="wl-hb" id="wl-hb" hidden>History</button>
+            </div>
             <strong class="wl-v" id="wl-v">—</strong>
             <span class="pc-m" id="wl-d" hidden></span>
             <div class="pc" id="wl-c" hidden></div>

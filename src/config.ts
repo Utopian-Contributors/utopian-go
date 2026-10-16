@@ -273,6 +273,9 @@ export const JUP_FEE_BPS = (() => {
  */
 export const TOKEN_MIN_LIQUIDITY_USD = 25_000;
 
+/** $UTCC, Utopian Contributor Coin: this project's own token (client/js/utcc.js). */
+export const UTCC_MINT = "HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA";
+
 /**
  * Mints indexed by hand, whatever their depth.
  *
@@ -285,10 +288,7 @@ export const TOKEN_MIN_LIQUIDITY_USD = 25_000;
  * Jupiter's verified, lst and top-traded lists, and a mint this small is in
  * none of them. See SOURCES in lib/tokens/jupiter.ts.
  */
-export const TOKEN_PINNED_MINTS = new Set([
-  // $UTCC — Utopian Contributor Coin, this project's own token.
-  "HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA",
-]);
+export const TOKEN_PINNED_MINTS = new Set([UTCC_MINT]);
 
 /**
  * The Terms of Service a new account agrees to, recorded against it at sign-up.

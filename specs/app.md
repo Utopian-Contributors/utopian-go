@@ -118,9 +118,9 @@ GET /                         search home
 GET /?q=<query>&lang=<code>   results; tabs: Web, Images
 GET /?q=<sym>&buy=<mint>      results with the buy dialog open (wallet in-app browsers, QR hand-off)
 GET /search?q=                302 → /?q=
-GET /wallet                   left: holdings, their line over 1H/24H/1W/1M (a line per kind
-                              beside it, with three kinds or more), Receive/Send/Swap, the token
-                              lists + search
+GET /wallet                   left: holdings (each with its balance, abbreviated), their line
+                              over 1H/24H/1W/1M (a line per kind beside it, with three kinds or
+                              more), History, Receive/Send/Swap, the token lists + search
 GET /wallet?c=<list>          the wallet page on one list: trending, stocks, memes, rwas, majors, defi
 GET /wallet?t=<mint>          the wallet page opened on that token's chart (Social's Trending assets link here)
                               right: the chosen token's line and market data
@@ -153,6 +153,7 @@ GET  /api/search?q&lang&offset   → SearchApiResponse   (src/types.ts)
 GET  /api/images?q&lang          → Brave image results
 POST /api/balances {owner, mint?} → BalancesApiResponse
 POST /api/holdings {owner, range?} → HoldingsApiResponse  range: 1h, 24h (default), 1w, 1m
+POST /api/history {owner, after?} → HistoryApiResponse   20 transactions a page, newest first
 GET  /api/tokens/top              → {tokens: TopToken[]}   30 verified mints by 24h volume
 GET  /api/tokens?c=&after=        → TokenPage              one list, 30 a page, by cursor; counts on page 1
 GET  /api/tokens?q=               → {tokens: TopToken[]}   the whole index: mint, symbol, name
@@ -195,6 +196,21 @@ a history for a line to be drawn. The rows under the chart are the legend and re
 moment; picking one
 brings its line forward, shows its worth in the figure, and narrows the holdings to it. With
 one or two kinds there is no split: the chart is the total's line alone.
+
+**History**, on the Portfolio heading's line, takes the left half's place with Back at the
+top left (the phone's own back gesture works too) and lists what the wallet has done, newest
+first under day headings: Sent, Received, Swapped, Failed, each opening on Solscan
+(`src/lib/history.ts`, `client/wallet/history.js`). Pages come from Helius's
+`getTransactionsForAddress` with `tokenAccounts: "balanceChanged"`, because a token paid into
+an account the wallet already holds never names the wallet's own address; the cursor is
+Helius's `paginationToken`, and nothing is stored. Each transaction is read as the wallet's net
+change per token from the balances before and after, with the fee and the rent of any token
+account it opened put back, so a token sent reads as that token alone. Amounts only, never
+dollars, since nothing knows the price at the time. A transaction the wallet did not sign is
+left out, and counted, when it moved under a cent or only tokens the index does not carry:
+airdrop spam and address poisoning. The other end shows as `@name` when it is an account here.
+
+The portfolio's chart and the chosen token's are one height (170px), so the halves line up.
 
 A browser wallet swaps against Jupiter (`lite-api.jup.ag`) directly. A signed-in account's
 swap is quoted, built, signed and sent by the server; see Keys below.

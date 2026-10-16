@@ -1,6 +1,8 @@
 import express, { NextFunction, Request, Response, Router } from "express";
 import { fetchBalances, isPubkey } from "../lib/balances";
+import { BadCursor, fetchHistory } from "../lib/history";
 import { fetchHoldings } from "../lib/holdings";
+import { namesOf } from "../social/db";
 import { BRAVE_MAX_OFFSET, TOKEN_TOP_COUNT } from "../config";
 import { BraveApiError, braveImageSearch, braveSearch } from "../lib/brave";
 import { DEFAULT_LANG, isLanguage } from "../lib/lang";
@@ -20,6 +22,8 @@ import {
 } from "../lib/tokens/store";
 import {
   BalancesApiResponse,
+  HistoryApiResponse,
+  HistoryPage,
   HoldingsApiResponse,
   ImageSearchApiResponse,
   SearchApiResponse,
@@ -93,6 +97,13 @@ const txLimit = rateLimit({ perMinute: 120, burst: 40 });
  * address, which makes it the cheapest thing on this server to point a script at.
  */
 const holdingsLimit = rateLimit({ perMinute: 60, burst: 20 });
+
+/**
+ * History is a page per scroll, and each is Helius's heaviest kind of call
+ * against our key. Ten at once covers a quick scroll back; past that, a page
+ * every three seconds is faster than anyone reads one.
+ */
+const historyLimit = rateLimit({ perMinute: 20, burst: 10 });
 
 /**
  * Route an async handler's rejection to Express instead of into the void.
@@ -339,6 +350,73 @@ apiRouter.post(
       };
       res.status(502).json(body);
     }
+  }),
+);
+
+/**
+ * A page of one wallet's history: sends, receipts and swaps, newest first.
+ *
+ * POST, and as public, for the reasons /api/holdings is: the address stays
+ * out of the request log, and everything returned is on-chain data any
+ * explorer shows for any address. `after` is the last page's cursor.
+ */
+apiRouter.post(
+  "/api/history",
+  historyLimit,
+  readJson,
+  wrap(async (req: Request, res: Response) => {
+    const owner = asString(req.body?.owner).trim();
+    const after = asString(req.body?.after);
+
+    if (!isPubkey(owner)) {
+      const body: HistoryApiResponse = { error: "Invalid wallet address." };
+      res.status(400).json(body);
+      return;
+    }
+    if (after && !/^[\w:.=+/-]{1,256}$/.test(after)) {
+      const body: HistoryApiResponse = { error: "No such page." };
+      res.status(400).json(body);
+      return;
+    }
+
+    let page: HistoryPage;
+    try {
+      page = await fetchHistory(owner, after);
+    } catch (err) {
+      if (err instanceof BadCursor) {
+        const body: HistoryApiResponse = { error: "No such page." };
+        res.status(400).json(body);
+        return;
+      }
+      console.warn("[history] lookup failed:", err);
+      // As with holdings: a failed read must never pass for an empty history.
+      const body: HistoryApiResponse = {
+        error: "Could not read this wallet's history.",
+        ...(process.env.NODE_ENV === "production"
+          ? {}
+          : { detail: err instanceof Error ? err.message : String(err) }),
+      };
+      res.status(502).json(body);
+      return;
+    }
+
+    // Who's who among the other ends, where they are accounts here. A name is
+    // a nicety: without the database the addresses still stand.
+    const peers = [...new Set(page.items.map((i) => i.peer).filter((p): p is string => !!p))];
+    let names = new Map<string, string>();
+    try {
+      names = await namesOf(peers);
+    } catch (err) {
+      console.warn("[history] names unavailable:", err instanceof Error ? err.message : err);
+    }
+    const body: HistoryApiResponse = {
+      ...page,
+      items: page.items.map((i) => {
+        const peerName = i.peer && names.get(i.peer);
+        return peerName ? { ...i, peerName } : i;
+      }),
+    };
+    res.json(body);
   }),
 );
 

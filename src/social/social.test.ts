@@ -8,7 +8,7 @@ import path from "path";
 import { Client } from "pg";
 import test, { after } from "node:test";
 import { checkPassword, newPassword, openPhrase, sealPhrase, stale } from "./auth";
-import { TERMS_VERSION } from "../config";
+import { TERMS_VERSION, UTCC_MINT } from "../config";
 import { audioKind } from "./audio";
 import { jpegSize } from "./jpeg";
 import {
@@ -34,6 +34,7 @@ import { drawAvatar } from "./avatar";
 import { backdrop, palette } from "./backdrop";
 import { tokenKind } from "../lib/tokens/jupiter";
 import { buildLists, isStable, pageOf } from "../lib/tokens/store";
+import { type RawTx, readTx } from "../lib/history";
 import type { TokenKind, TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
 
@@ -275,6 +276,99 @@ test("a swap never pays out below what was reviewed, less its slippage", () => {
   assert.ok((995_000n * BigInt(10_000 - s)) / 10_000n >= 990_000n);
   // Moved past the floor: refused.
   assert.equal(slippageFor(989_999n, 990_000n, 100), -1);
+});
+
+test("history reads each transaction as what it did to the wallet, fee and rent aside", () => {
+  const [O, R, S, M, P, X] = ["Owner", "Recipient", "Sender", "Mint", "PoolAuthority", "Unlisted"].map((n) => `${n}1111111111111111111111111111`);
+  const RENT = 2_039_280;
+  const FEE = 5_000;
+  const priced = { [M]: 1, [SOL_MINT]: 100 } as Record<string, number>;
+  const lookup = (mints: string[]) =>
+    new Map(mints.filter((m) => priced[m]).map((m) => [m, { mint: m, symbol: m === SOL_MINT ? "SOL" : "M", name: m, price: priced[m], liquidity: 1, verified: true } as TokenRecord]));
+  const bal = (accountIndex: number, mint: string, owner: string, amount: number) => ({
+    accountIndex,
+    mint,
+    owner,
+    uiTokenAmount: { amount: String(amount), decimals: mint === SOL_MINT ? 9 : 6 },
+  });
+  const tx = (keys: string[], pre: number[], post: number[], tokens: [ReturnType<typeof bal>[], ReturnType<typeof bal>[]], extra = {}) => ({
+    blockTime: 1_700_000_000,
+    transaction: { signatures: [`sig${keys.join("").length}${pre.join("")}`], message: { accountKeys: keys } },
+    meta: { err: null, fee: FEE, preBalances: pre, postBalances: post, preTokenBalances: tokens[0], postTokenBalances: tokens[1], ...extra },
+  });
+  const read = (t: RawTx) => {
+    const hidden = { n: 0 };
+    return { a: readTx(O, t, hidden, lookup), hidden: hidden.n };
+  };
+
+  // A token sent, opening the recipient's account: the token alone, and to whom.
+  const sent = read(
+    tx([O, "Ar", R, M, "Ao"], [1e9, 0, 0, 1, RENT], [1e9 - FEE - RENT, RENT, 0, 1, RENT], [
+      [bal(4, M, O, 5_000_000)],
+      [bal(4, M, O, 3_000_000), bal(1, M, R, 2_000_000)],
+    ]),
+  ).a;
+  assert.equal(sent?.kind, "send");
+  assert.deepEqual(sent?.moves.map((m) => [m.mint, m.amount]), [[M, "-2000000"]]);
+  assert.equal(sent?.peer, R);
+
+  // SOL for a token, through a wrapped-SOL account opened and closed inside
+  // the swap, into a token account it opened: SOL out, the token in.
+  const swap = read(
+    tx([O, "Ao", "W", "PoolSol", "PoolM"], [1e9, 0, 0, 5e9, RENT], [1e9 - FEE - RENT - 1e8, RENT, 0, 5e9 + 1e8, RENT], [
+      [bal(3, SOL_MINT, P, 5e9), bal(4, M, P, 90_000_000)],
+      [bal(1, M, O, 42_000_000), bal(3, SOL_MINT, P, 5e9 + 1e8), bal(4, M, P, 48_000_000)],
+    ]),
+  ).a;
+  assert.equal(swap?.kind, "swap");
+  assert.deepEqual(swap?.moves.map((m) => [m.mint, m.amount]), [[SOL_MINT, "-100000000"], [M, "42000000"]]);
+  assert.equal(swap?.peer, undefined);
+
+  // Paid into an account the wallet already holds, in a transaction that
+  // never names the wallet: still its receipt, from the sender.
+  const paid = read(
+    tx([S, "As", "Ao"], [1e9, RENT, RENT], [1e9 - FEE, RENT, RENT], [
+      [bal(1, M, S, 10_000_000), bal(2, M, O, 1_000_000)],
+      [bal(1, M, S, 7_000_000), bal(2, M, O, 4_000_000)],
+    ]),
+  ).a;
+  assert.equal(paid?.kind, "receive");
+  assert.equal(paid?.peer, S);
+
+  // SOL from someone else, who paid the fee.
+  const sol = read(tx([S, O], [5e9, 1e9], [5e9 - 1e8 - FEE, 1e9 + 1e8], [[], []])).a;
+  assert.deepEqual(sol?.moves.map((m) => [m.mint, m.amount]), [[SOL_MINT, "100000000"]]);
+  assert.equal(sol?.peer, S);
+
+  // $UTCC paid while the index has no record of it: still UTCC, and still shown.
+  const utcc = read(
+    tx([S, "As", "Ao"], [1e9, RENT, RENT], [1e9 - FEE, RENT, RENT], [
+      [bal(1, UTCC_MINT, S, 5e12), bal(2, UTCC_MINT, O, 0)],
+      [bal(1, UTCC_MINT, S, 3.5e12), bal(2, UTCC_MINT, O, 1.5e12)],
+    ]),
+  );
+  assert.equal(utcc.a?.kind, "receive");
+  assert.deepEqual(utcc.a?.moves.map((m) => [m.symbol, m.amount]), [["UTCC", "1500000000000"]]);
+
+  // Dust sent unasked, and a token nobody lists: left out, and counted.
+  const dust = read(tx([S, O], [5e9, 1e9], [5e9 - 1 - FEE, 1e9 + 1], [[], []]));
+  assert.equal(dust.a, null);
+  assert.equal(dust.hidden, 1);
+  const spam = read(
+    tx([S, "As", "Ao"], [1e9, RENT, 0], [1e9 - FEE - RENT, RENT, RENT], [
+      [bal(1, X, S, 1e12)],
+      [bal(1, X, S, 0), bal(2, X, O, 1e12)],
+    ]),
+  );
+  assert.equal(spam.a, null);
+  assert.equal(spam.hidden, 1);
+
+  // The wallet's own failure is news; someone else's is not, and is not counted.
+  const mine = read(tx([O, R], [1e9, 0], [1e9 - FEE, 0], [[], []], { err: { InstructionError: [0, "Custom"] } }));
+  assert.equal(mine.a?.kind, "failed");
+  const theirs = read(tx([S, O], [1e9, 0], [1e9 - FEE, 0], [[], []], { err: { InstructionError: [0, "Custom"] } }));
+  assert.equal(theirs.a, null);
+  assert.equal(theirs.hidden, 0);
 });
 
 test("posting waits ten minutes", () => {

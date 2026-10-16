@@ -140,6 +140,65 @@ export function dollars(v) {
 }
 
 /**
+ * A token amount, compact: "12K", "1.5M", and below a thousand to as many
+ * places as are worth a cent at today's price (four without one). Under a
+ * thousandth it is zero-subscript, as prices are.
+ *
+ * Cut rather than rounded, as utccShort is, so a balance never reads as more
+ * than is there. Worked on the base-unit digits rather than on a float, which
+ * would cut 1.15 to 1.14.
+ *
+ * @param {string | bigint} units base units, signed
+ * @param {number} decimals
+ * @param {number} [price] USD per token
+ * @returns {{ text: string, title?: string, label?: string }} title is the exact amount
+ */
+export function amount(units, decimals, price) {
+  let raw;
+  try {
+    raw = BigInt(units);
+  } catch {
+    return { text: "--" };
+  }
+  if (raw === 0n) return { text: "0" };
+
+  const sign = raw < 0n ? "-" : "";
+  const abs = raw < 0n ? -raw : raw;
+  const scale = 10n ** BigInt(decimals);
+  const whole = abs / scale;
+  const frac = (abs % scale).toString().padStart(decimals, "0");
+  const title = `${sign}${whole.toLocaleString("en-US")}${frac.replace(/0+$/, "") ? `.${frac.replace(/0+$/, "")}` : ""}`;
+
+  for (const [factor, suffix] of /** @type {[bigint, string][]} */ ([
+    [10n ** 12n, "T"],
+    [10n ** 9n, "B"],
+    [10n ** 6n, "M"],
+    [10n ** 3n, "K"],
+  ])) {
+    if (whole >= factor) {
+      const tenths = (whole * 10n) / factor;
+      const rest = tenths % 10n;
+      return { text: `${sign}${tenths / 10n}${rest ? `.${rest}` : ""}${suffix}`, title };
+    }
+  }
+
+  if (!whole) {
+    const zeros = frac.length - frac.replace(/^0+/, "").length;
+    if (zeros >= 3) {
+      const digits = frac.slice(zeros, zeros + 2).replace(/0+$/, "");
+      return { text: `${sign}0.0${subscript(zeros)}${digits}`, title, label: `${sign}0.${"0".repeat(zeros)}${digits}` };
+    }
+  }
+
+  const worth = typeof price === "number" && price > 0 ? Math.ceil(-Math.log10(0.01 / price)) : 4;
+  const places = Math.min(6, Math.max(0, worth));
+  const shown = frac.slice(0, places).replace(/0+$/, "");
+  // Something there, but less than the last place shown: say so, not zero.
+  if (!whole && !shown) return { text: `${sign}<${places ? `0.${"0".repeat(places - 1)}1` : "1"}`, title };
+  return { text: `${sign}${whole.toLocaleString("en-US")}${shown ? `.${shown}` : ""}`, title };
+}
+
+/**
  * USD value, compact context — abbreviates at 1K and above.
  * @param {number | null | undefined} v
  */

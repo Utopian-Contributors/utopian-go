@@ -12,12 +12,13 @@ import { noZoom } from "../js/device.js";
 import { load } from "../js/lazy.js";
 import { account as whoami } from "../js/me.js";
 import { mountPwa } from "../js/pwa.js";
-import { dollars, percent, tokenPrice } from "../js/num.js";
+import { amount, dollars, percent, tokenPrice } from "../js/num.js";
 import { onSession, readSession } from "../js/session.js";
 import { openSwap, swapUrl } from "../js/swap.js";
 import { KINDS } from "../js/kinds.js";
 import { dirOf, figure, lineChart, paintMove, rangeTabs, since, when } from "../js/chart.js";
 import { mountBreakdown } from "./breakdown.js";
+import { mountHistory } from "./history.js";
 import { icon, mountPanel } from "./panel.js";
 
 const total = $("wl-v");
@@ -240,9 +241,11 @@ function shallow() {
   (on || $("wl")).scrollIntoView({ block: "center" });
 }
 
-// The phone's own back gesture leaves the panel the same way the header's Back does.
+// The phone's own back gesture leaves the panel the same way the header's Back
+// does, and History the way its own Back does.
 window.addEventListener("popstate", () => {
   if (document.body.classList.contains("deep")) shallow();
+  if (!history.state?.wlHist) closeHistory();
 });
 
 $("bk").addEventListener("click", () => {
@@ -284,10 +287,17 @@ function ident(t) {
 
 /** @param {import('../../src/types').Holding} h */
 function row(h) {
+  const held = amount(h.amount, h.decimals, h.price);
   return el(
     "div",
-    { class: `wl-r${h.mint === chosen ? " on" : ""}`, "data-mint": h.mint },
+    { class: `wl-r wl-own${h.mint === chosen ? " on" : ""}`, "data-mint": h.mint },
     ident(h),
+    el("span", {
+      class: "wl-amt",
+      text: held.text,
+      title: `${held.title ?? held.text} ${h.symbol}`,
+      "aria-label": held.label ? `${held.label} ${h.symbol}` : null,
+    }),
     el("span", { class: "wl-usd", text: dollars(h.usd) }),
     el("span", { class: "wl-act" }, trade(h, "buy"), trade(h, "sell")),
   );
@@ -420,6 +430,47 @@ function watcher() {
 desk.addEventListener("change", () => {
   pager.disconnect();
   pager = watcher();
+  past.rewatch();
+});
+
+/**
+ * History, in the left half's place. Its Back, or the phone's own, puts the
+ * portfolio back where it was scrolled to. Offered for whichever wallet the
+ * portfolio is showing.
+ */
+const historyButton = $("wl-hb");
+const historyView = $("wl-hs");
+const past = mountHistory(() => (desk.matches ? column : null));
+/** Where the page was scrolled before History took its place. */
+let historyFrom = 0;
+
+async function openHistory() {
+  const address = await owner();
+  if (!address || document.body.classList.contains("hist")) return;
+  historyFrom = desk.matches ? column.scrollTop : window.scrollY;
+  document.body.classList.add("hist");
+  historyView.hidden = false;
+  history.pushState({ wlHist: true }, "");
+  if (desk.matches) column.scrollTop = 0;
+  else window.scrollTo(0, 0);
+  $("wl-hx").focus();
+  past.open(address);
+}
+
+function closeHistory() {
+  if (!document.body.classList.contains("hist")) return;
+  past.close();
+  document.body.classList.remove("hist");
+  historyView.hidden = true;
+  if (desk.matches) column.scrollTop = historyFrom;
+  else window.scrollTo(0, historyFrom);
+  historyButton.focus({ preventScroll: true });
+}
+
+historyButton.addEventListener("click", () => void openHistory());
+$("wl-hx").addEventListener("click", () => {
+  if (history.state?.wlHist) history.back();
+  else closeHistory();
 });
 
 /**
@@ -572,6 +623,7 @@ function paint(data) {
 function offer() {
   reset();
   shown = null;
+  historyButton.hidden = true;
   paintHead();
   paintTotal();
   total.textContent = "—";
@@ -584,6 +636,8 @@ function offer() {
  * server who, and paint their wallet or the offer to log in.
  */
 function switched() {
+  // Someone else's history is not the one on show.
+  closeHistory();
   window.__ugme = null;
   account = whoami();
   refresh();
@@ -614,6 +668,7 @@ async function refresh() {
   if (id !== run) return;
   if (!address) return offer();
 
+  historyButton.hidden = false;
   reset();
   setNote("Reading your wallet…");
 

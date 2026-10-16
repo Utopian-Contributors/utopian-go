@@ -350,9 +350,9 @@ export interface Holdings {
    * the last point is `total`.
    *
    * Read it for what it is: today's balances priced at each moment's price.
-   * It is not a record of what the wallet held — we have no transaction
-   * history and do not want one — so a position opened an hour ago appears
-   * across the whole window. What it does answer is the question people
+   * It is not a record of what the wallet held — the line is drawn from
+   * today's balances, never from the wallet's history (see History below) —
+   * so a position opened an hour ago appears across the whole window. What it does answer is the question people
    * actually have when they open this page: which way did the market move
    * what I am holding.
    *
@@ -375,6 +375,56 @@ export interface Holdings {
 export interface HoldingsApiResponse extends Partial<Holdings> {
   error?: string;
   /** Cause of a failure, development only. */
+  detail?: string;
+}
+
+/** One token's net change in a transaction, from the wallet's side. */
+export interface ActivityMove {
+  mint: string;
+  /** Empty for a mint the token index does not carry. */
+  symbol: string;
+  decimals: number;
+  /** Base units, signed: "-1500000" left the wallet. A string for the reason Holding's is. */
+  amount: string;
+  /** Today's price, for how many places the amount is worth showing. Never a value at the time. */
+  price?: number;
+}
+
+/**
+ * One transaction, as the wallet saw it: what came in and what went out.
+ * The network fee and the rent of a token account it opened are not moves;
+ * they are what doing it cost, not what was done.
+ */
+export interface Activity {
+  signature: string;
+  /** Unix ms, from the block. Null for the rare block with no time. */
+  at: number | null;
+  /** In and out is a swap; out only a send; in only a receipt. Other moved nothing. */
+  kind: "swap" | "send" | "receive" | "other" | "failed";
+  moves: ActivityMove[];
+  /** The other wallet, for a send or receipt of one token. */
+  peer?: string;
+  /** Its Social username, when it is an account here. */
+  peerName?: string;
+}
+
+/**
+ * A page of a wallet's history, newest first.
+ *
+ * Transactions this wallet did not sign and that moved under a cent, or moved
+ * only tokens the index does not carry, are left out and counted: that is how
+ * airdrop spam and address poisoning arrive, and a lookalike address sitting
+ * in someone's history is how the second one works.
+ */
+export interface HistoryPage {
+  items: Activity[];
+  /** Asks for the next page. Absent on the last. */
+  after?: string;
+  hidden?: number;
+}
+
+export interface HistoryApiResponse extends Partial<HistoryPage> {
+  error?: string;
   detail?: string;
 }
 

@@ -454,6 +454,16 @@ export async function getUser(name: string): Promise<User | null> {
   return row ? userFrom(row) : null;
 }
 
+/** The accounts among these wallet addresses: address → username. Profiles publish both already. */
+export async function namesOf(addresses: string[]): Promise<Map<string, string>> {
+  if (!addresses.length) return new Map();
+  const rows = await many<{ name: string; address: string }>(
+    "SELECT name, address FROM users WHERE address = ANY($1)",
+    [addresses],
+  );
+  return new Map(rows.map((r) => [r.address, r.name]));
+}
+
 export async function userByPasskey(id: string): Promise<User | null> {
   const row = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE passkey_id = $1`, [id]);
   return row ? userFrom(row) : null;
