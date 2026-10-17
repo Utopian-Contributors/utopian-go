@@ -675,6 +675,9 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(((await call("GET", "/api/social/people?q=a_%25")).json?.people as unknown[]).length, 0);
     await call("POST", "/api/social/login", { username: "ben", password: "password2" });
 
+    // The profile card offers Add until it has been used.
+    const before = await call("GET", "/api/social/u/ada");
+    assert.equal((before.json?.user as { friend: boolean }).friend, false);
     const added = await call("POST", "/api/social/friends", { username: "ada" });
     assert.equal(added.status, 200);
     assert.equal((added.json?.friends as { name: string }[])[0].name, "ada");
@@ -682,7 +685,11 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal((friends.json?.friends as { name: string }[])[0].name, "ada");
     const marked = await call("GET", "/api/social/users?q=ada");
     assert.equal((marked.json?.users as { friend: boolean }[])[0].friend, true);
+    const after = await call("GET", "/api/social/u/ada");
+    assert.equal((after.json?.user as { friend: boolean }).friend, true);
     await call("POST", "/api/social/logout", {});
+    const out = await call("GET", "/api/social/u/ada");
+    assert.equal((out.json?.user as { friend: boolean }).friend, false);
 
     const adaIn = await call("POST", "/api/social/login", { username: "ada", password: "password1" });
     assert.equal(adaIn.status, 200);

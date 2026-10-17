@@ -918,7 +918,10 @@ socialRouter.get(
       res.status(404).json({ error: "No such person.", me: await publicMe(me) });
       return;
     }
-    const posts = await postsBy(user.name, me?.name ?? null);
+    const [posts, added] = await Promise.all([
+      postsBy(user.name, me?.name ?? null),
+      me ? friendNames(me.name) : ([] as string[]),
+    ]);
     res.json({
       me: await publicMe(me),
       user: {
@@ -927,6 +930,8 @@ socialRouter.get(
         bio: user.bio,
         loc: user.loc,
         avatarRev: user.avatarRev,
+        // Whether the viewer has added them, so the card offers Add only when it would do something.
+        friend: added.includes(user.name),
         posts,
       },
     });

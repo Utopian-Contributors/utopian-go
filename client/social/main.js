@@ -301,7 +301,7 @@ function payButton(person) {
   if (!person.address) return null;
   const button = el("button", {
     type: "button",
-    class: "pay",
+    class: "pa pay",
     text: "Pay",
     onclick: async () => {
       button.disabled = true;
@@ -329,11 +329,34 @@ function useSide(show) {
   $("mn").classList.toggle("solo", !show);
 }
 
-/** The profile card; nobody to show (signed out) hides it — Log in is in the header. */
+/**
+ * The profile card; nobody to show (signed out) hides it — Log in is in the header.
+ *
+ * Its actions are one row of tiles, like the wallet's: Pay, Add and Message on
+ * someone else's, Pay and Edit profile on your own. Their marks are social.css
+ * [data-ic]. Signed out, Add asks you to log in. Once added it says Friends and
+ * does nothing more; Friends is where people come off.
+ */
 function renderSide(person) {
   if (!person) return useSide(false);
   useSide(true);
   const side = $("side");
+  const own = me?.name === person.name;
+  const added = () => {
+    add.disabled = true;
+    add.textContent = "Friends";
+  };
+  const add = el("button", {
+    type: "button",
+    class: "pa",
+    "data-ic": "add",
+    text: "Add",
+    onclick: () =>
+      me
+        ? send("/api/social/friends", { username: person.name }).then(added, () => (add.textContent = "Something went wrong."))
+        : openAuth("login"),
+  });
+  if (person.friend) added();
   const bits = [
     photo(person.name, person.avatarRev),
     el(
@@ -343,16 +366,15 @@ function renderSide(person) {
       person.loc ? el("span", { class: "muted", text: `[${person.loc}]` }) : null,
     ),
     person.bio ? el("p", { class: "ld", text: person.bio }) : null,
-    payButton(person),
-    !me
-      ? null
-      : me.name === person.name
-        ? el("a", { class: "dm", href: "/social/edit", text: "Edit profile" })
-        : el("a", {
-            class: "dm",
-            href: `/social/c/${person.name}`,
-            text: "Message",
-          }),
+    el(
+      "div",
+      { class: "pacts" },
+      payButton(person),
+      own ? null : add,
+      own
+        ? el("a", { class: "pa", "data-ic": "edit", href: "/social/edit", text: "Edit profile" })
+        : el("a", { class: "pa", "data-ic": "msg", href: `/social/c/${person.name}`, text: "Message" }),
+    ),
   ];
   side.replaceChildren(...bits.filter(Boolean));
 }

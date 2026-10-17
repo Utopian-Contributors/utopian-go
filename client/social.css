@@ -734,69 +734,92 @@ img.pfp {
 .name h2 { margin: 0; }
 
 /*
- * Pay: the profile's first action, so it runs the width of the column and
- * stands taller than the pills under it.
+ * The profile's actions: one row of big tiles, the mark above the word, as on
+ * the wallet (.wl-a). Pay, Add and Message on someone else's card; Pay and
+ * Edit profile on your own. However many there are, they share the row.
  *
- * Filled with --go, the green to read, rather than --buy, the green to press,
- * so it stands apart from the pills, and labelled in the ink --go names.
- *
- * The label is pressed into the fill by a line on whichever edge of the
- * letters faces away from the light, so it flips with the ink: by day, white
- * on green, a dark line above each letter; after dark, near-black on a pale
- * green, a pale line below.
+ * The marks are masks, so they take --go on the wash, and the ink on Pay.
  */
-.pay {
-  display: block;
-  width: 100%;
-  margin-top: 12px;
-  padding: 12px 16px;
+.pacts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pa {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 84px;
+  padding: 16px 6px 14px;
   border: 0;
-  border-radius: 999px;
-  background: var(--go);
-  color: var(--go-ink);
-  font: 500 16px/1 var(--ff);
-  text-shadow: 0 -1px 0 rgb(0 0 0 / 35%);
-  cursor: pointer;
-  --press: 0.985;
-}
-
-@media (prefers-color-scheme: dark) {
-  .pay { text-shadow: 0 1px 0 rgb(255 255 255 / 45%); }
-}
-
-/*
- * Message under Pay, or Edit profile on your own: Pay's shape and size, drawn
- * as the secondary. An outline on the page instead of a fill, its border --f
- * like the trade dialog's secondary, so it reads as a button and not a panel
- * edge. The border's pixel comes off the padding, so both stand 40px.
- */
-.dm {
-  display: block;
-  width: 100%;
-  margin-top: 8px;
-  padding: 11px 16px;
-  border: 1px solid var(--f);
-  border-radius: 999px;
-  background: none;
-  color: var(--t);
-  font: 500 16px/1 var(--ff);
-  text-align: center;
-  text-decoration: none;
-  --press: 0.985;
-}
-
-.dm:hover {
+  border-radius: 20px;
   background: var(--wash);
   color: var(--t);
+  font: 600 15px/1.2 var(--ff);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  --press: 0.97;
+}
+
+.pa::before {
+  content: "";
+  width: 28px;
+  height: 28px;
+  flex: none;
+  background: var(--go);
+  -webkit-mask: var(--ic) center / contain no-repeat;
+  mask: var(--ic) center / contain no-repeat;
+}
+
+.pa:hover:not(:disabled) {
+  background: var(--wash2);
+  color: var(--t);
   text-decoration: none;
 }
 
-.dm:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+.pa:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+.pa:disabled { cursor: progress; }
 
-.pay:hover:not(:disabled) { filter: brightness(1.06); }
-.pay:active:not(:disabled) { filter: brightness(0.96); }
-.pay:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
-.pay:disabled { cursor: progress; }
+/* Add, once added: says so, and is not a button to press any more. */
+.pa[data-ic="add"]:disabled { cursor: default; color: var(--m); }
+
+/*
+ * Pay is the one to press, so it is filled: --go, the green to read, labelled
+ * in the ink --go names, its mark in that ink too.
+ */
+.pa.pay {
+  background: var(--go);
+  color: var(--go-ink);
+}
+
+.pa.pay::before { background: currentColor; }
+.pa.pay:hover:not(:disabled) { background: var(--go); color: var(--go-ink); filter: brightness(1.06); }
+
+.pay {
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2'/%3E%3Ccircle cx='12' cy='12' r='2.5'/%3E%3Cpath d='M6 9.5v5M18 9.5v5'/%3E%3C/svg%3E");
+}
+
+[data-ic="add"] {
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='8' r='3.5'/%3E%3Cpath d='M2.5 20c.6-3.6 3.2-5.6 6.5-5.6s5.9 2 6.5 5.6M19 8v6M16 11h6'/%3E%3C/svg%3E");
+}
+
+[data-ic="add"]:disabled {
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='8' r='3.5'/%3E%3Cpath d='M2.5 20c.6-3.6 3.2-5.6 6.5-5.6s5.9 2 6.5 5.6M16 11.5l2 2 4-4.5'/%3E%3C/svg%3E");
+}
+
+[data-ic="msg"] {
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 4V6a1 1 0 0 1 1-1z'/%3E%3C/svg%3E");
+}
+
+[data-ic="edit"] {
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4'/%3E%3C/svg%3E");
+}
 
 .tools { margin: 14px 0; }
 .tools label { display: block; margin-top: 10px; font-size: 13px; color: var(--m); }
