@@ -340,7 +340,6 @@ function useSide(show) {
 function renderSide(person) {
   if (!person) return useSide(false);
   useSide(true);
-  const side = $("side");
   const own = me?.name === person.name;
   const added = () => {
     add.disabled = true;
@@ -376,7 +375,7 @@ function renderSide(person) {
         : el("a", { class: "pa", "data-ic": "msg", href: `/social/c/${person.name}`, text: "Message" }),
     ),
   ];
-  side.replaceChildren(...bits.filter(Boolean));
+  $("side").replaceChildren(...bits.filter(Boolean));
 }
 
 /**
@@ -464,8 +463,8 @@ function commentForm(post) {
 }
 
 /**
- * Save or re-post, then redraw only that post. An error borrows the label for
- * a moment and gives it back, so the button still says what it does.
+ * Save or re-post, then redraw only that post's buttons. An error borrows the
+ * label for a moment and gives it back, so the button still says what it does.
  */
 function react(kind, post, inDetail, label, props) {
   const button = el("button", { type: "button", class: "act", text: label, ...props });
@@ -476,10 +475,11 @@ function react(kind, post, inDetail, label, props) {
       const data = await send(`/api/social/${kind}`, { post: post.id });
       if (kind === "plus") post.saved = data.saved;
       else post.reposted = true;
-      const card = button.closest("article");
       // Un-saving on a timeline of saved posts only takes the post off it.
-      if (!post.saved && kind === "plus" && route().page === "timeline" && shown.saved) card.remove();
-      else card.replaceWith(renderPost(post, inDetail));
+      if (!post.saved && kind === "plus" && route().page === "timeline" && shown.saved) button.closest("article").remove();
+      // Only the action row: swapping the whole card would rebuild its images,
+      // which blink as they decode again.
+      else button.closest(".acts").replaceWith(renderPost(post, inDetail).querySelector(".acts"));
     } catch (cause) {
       button.textContent = cause.message;
       setTimeout(() => {
