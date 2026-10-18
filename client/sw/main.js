@@ -16,6 +16,8 @@
  *    prices. The copy is only for when the network fails. Each is kept under
  *    its own URL and under its section's shell (/, /social, /wallet), so a
  *    social or wallet route never visited still opens on the right page.
+ *    The three shells, and the bundles they name, are fetched when the worker
+ *    installs, so there is always an app to open offline.
  *  - Assets with ?v=: cache first. The query is the content hash, so a cached
  *    copy is the file itself, for good. Same-origin assets without one (an
  *    icon, a banner) go network first like pages.
@@ -39,6 +41,9 @@ const PAGES = "ug-pages-1";
 const ASSETS = "ug-assets-1";
 const API = "ug-api-1";
 const KEEP = { [PAGES]: 40, [ASSETS]: 400, [API]: 150 };
+
+/** The app's three documents: kept from the moment a worker installs, so offline always has one to open. */
+const SHELLS = ["/", "/social", "/wallet"];
 
 /** Set on a page served from the cache, so client/offline knows at once. */
 const MARK = '<meta name="ug-offline" content="';
@@ -131,8 +136,13 @@ async function page(event) {
     return response;
   } catch {
     const cache = await caches.open(PAGES);
-    const hit = (await cache.match(url.pathname + url.search, ANY)) || (await cache.match(shellOf(url), ANY));
-    return hit ? stale(hit) : offline();
+    // Its own copy, then its section's shell, then any shell: a working app
+    // to move around in beats a page with nothing on it but Retry.
+    for (const key of [url.pathname + url.search, shellOf(url), ...SHELLS]) {
+      const hit = await cache.match(key, ANY);
+      if (hit) return stale(hit);
+    }
+    return offline();
   }
 }
 
@@ -175,7 +185,39 @@ async function asset(event, hashed) {
   }
 }
 
-self.addEventListener("install", () => self.skipWaiting());
+/**
+ * Fetch the shells and the bundles each names in a <script src>, so the app
+ * opens offline even where nothing was ever visited through this worker: an
+ * upgrade from a worker that kept nothing, say, whose last pages it never saw.
+ * Best effort: an install while offline keeps whatever it got.
+ */
+async function precache() {
+  await Promise.all(
+    SHELLS.map(async (path) => {
+      try {
+        const response = await fetch(path, { credentials: "same-origin" });
+        if (response.status !== 200) return;
+        const html = await response.clone().text();
+        await keep(PAGES, path, response);
+        const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="(\/[^"]+)"/g)].map((m) => m[1]);
+        await Promise.all(
+          scripts.map(async (src) => {
+            if (await caches.match(src, { ...ANY, cacheName: ASSETS })) return;
+            const bundle = await fetch(src);
+            if (bundle.status === 200) await keep(ASSETS, src, bundle);
+          }),
+        );
+      } catch {
+        // Offline mid-install: the next visit fills it in.
+      }
+    }),
+  );
+}
+
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
+  event.waitUntil(precache());
+});
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(

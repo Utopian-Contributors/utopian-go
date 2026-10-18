@@ -25,15 +25,18 @@
  * search field on a wide screen.
  *
  * It also seeds the cache. A first visit runs before the worker is in charge,
- * so nothing it fetched went through the worker; once the worker is ready, it
- * is handed the list, and the next visit can open offline.
+ * and the first after an update under the old one, so nothing it fetched
+ * went through the worker now in charge; that worker is handed the list, and
+ * the next visit can open offline.
  */
 
 const CSS = `
 body.ug-off .lg-mark{fill:var(--f)}
 body.ug-off .lg::after{filter:grayscale(1)}
-.ugo{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:72px 24px;
- background:var(--bg);text-align:center;font-family:var(--ff);animation:ugo-in .2s ease-out}
+.ugo{position:fixed;inset:0;display:grid;place-items:center;box-sizing:border-box;width:100%;height:100%;
+ max-width:none;max-height:none;margin:0;padding:72px 24px;border:0;border-radius:0;
+ background:var(--bg);color:var(--t);text-align:center;font-family:var(--ff);animation:ugo-in .2s ease-out}
+.ugo::backdrop{background:transparent}
 @keyframes ugo-in{from{opacity:0}}
 .ugo p{max-width:360px;margin:0 0 28px;color:var(--f);font-size:18px;line-height:1.5}
 .ugo-r{min-width:180px;padding:15px 36px;border:0;border-radius:999px;background:var(--buy);
@@ -126,6 +129,7 @@ function styles() {
 }
 
 function close() {
+  panel?.close();
   panel?.remove();
   panel = null;
 }
@@ -135,17 +139,20 @@ function dismiss() {
   close();
 }
 
-function onKey(e) {
-  if (e.key === "Escape" && panel) dismiss();
-}
-
 function open() {
   if (panel || isShut()) return;
-  panel = document.createElement("div");
+  // A modal <dialog>, for the top layer: the login dialog and every other
+  // sheet on the site are modal dialogs too, and a plain element under one of
+  // them would have its x and Retry out of reach.
+  panel = document.createElement("dialog");
   panel.className = "ugo";
   panel.setAttribute("role", "alertdialog");
-  panel.setAttribute("aria-modal", "true");
   panel.setAttribute("aria-labelledby", "ugo-t");
+  // Escape closes it the way the x does.
+  panel.addEventListener("cancel", (e) => {
+    e.preventDefault();
+    dismiss();
+  });
 
   const x = document.createElement("button");
   x.type = "button";
@@ -183,6 +190,7 @@ function open() {
   }
   panel.append(x, box);
   document.body.append(panel);
+  panel.showModal();
   retry.focus({ preventScroll: true });
 }
 
@@ -247,7 +255,6 @@ async function backOnline() {
   if (served) offerUpdate();
 }
 
-addEventListener("keydown", onKey);
 addEventListener("offline", goOffline);
 addEventListener("online", backOnline);
 navigator.serviceWorker?.addEventListener("message", (e) => {
@@ -259,15 +266,21 @@ if (stale || navigator.onLine === false) goOffline();
 // A live page means the network answered, so whatever outage the x closed the panel for is over.
 else shut(false);
 
-// Seed the cache with what this page fetched before the worker was in charge.
-if (navigator.serviceWorker && !navigator.serviceWorker.controller && !stale) {
-  addEventListener("load", () => {
-    navigator.serviceWorker.ready.then((reg) => {
-      const urls = performance
-        .getEntriesByType("resource")
-        .map((entry) => entry.name)
-        .filter((name) => name.startsWith(location.origin));
-      reg.active?.postMessage({ ugSeed: [location.href, ...urls], page: location.href });
-    });
+/** Hand the worker in charge everything this page fetched, for it to keep. */
+function seed() {
+  navigator.serviceWorker.ready.then((reg) => {
+    const urls = performance
+      .getEntriesByType("resource")
+      .map((entry) => entry.name)
+      .filter((name) => name.startsWith(location.origin));
+    reg.active?.postMessage({ ugSeed: [location.href, ...urls], page: location.href });
   });
+}
+
+// Seed the cache with what this page fetched before the worker in charge
+// saw it: on a first visit there is no worker yet, and on the first visit
+// after an update the old one served the page and the new one takes it over.
+if (navigator.serviceWorker && !stale) {
+  if (!navigator.serviceWorker.controller) addEventListener("load", seed);
+  navigator.serviceWorker.addEventListener("controllerchange", seed);
 }
