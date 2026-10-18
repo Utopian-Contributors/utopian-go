@@ -435,18 +435,23 @@ body.res .sf {
 @media (max-width: 900px) {
   body.deep #hd .sf { display: none; }
 
+  /* The Wallet pill's shape and wash (acct.css .ac-w), in the link green. */
   body.deep .hb {
     display: inline-flex;
     align-self: flex-start;
     align-items: center;
     gap: 4px;
+    height: 36px;
     /* The field's height, so swapping one for the other moves nothing below. */
-    min-height: 44px;
-    padding: 0 14px 0 6px;
+    margin: 4px 0;
+    padding: 0 15px 0 10px;
     border: 0;
-    background: transparent;
+    border-radius: 999px;
+    background: var(--wash);
     color: var(--go);
-    font: 600 15px var(--ff);
+    font: 600 14px var(--ff);
     cursor: pointer;
   }
+
+  body.deep .hb:hover { background: var(--wash2); }
 }

@@ -692,13 +692,35 @@ a.sad:hover .sad-l b { text-decoration: underline; }
   margin: 0 0 4px;
 }
 
+/*
+ * Back: the Wallet pill's shape and wash (acct.css .ac-w), in the link green,
+ * with the header's chevron as a mask so it takes that green in either theme.
+ */
 a.back {
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 5l-7 7 7 7'/%3E%3C/svg%3E");
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 15px 0 10px;
+  border-radius: 999px;
+  background: var(--wash);
   color: var(--go);
-  font: 600 13px/1 var(--ff);
+  font: 600 14px/1 var(--ff);
   text-decoration: none;
 }
 
-a.back:hover { color: var(--buy); text-decoration: none; }
+a.back::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  flex: none;
+  background: currentColor;
+  -webkit-mask: var(--chev) center / contain no-repeat;
+  mask: var(--chev) center / contain no-repeat;
+}
+
+a.back:hover { background: var(--wash2); color: var(--go); text-decoration: none; }
 
 .views {
   margin: 0;
@@ -1500,9 +1522,12 @@ a.crow.on {
   body.soc #hd .sf,
   body.soc #ft { display: none; }
 
-  /* The header's Back stands in for these. */
+  /* The header's Back stands in for these, except on a page with a bar of its
+     own (a post, with its views): there the bar's Back stays, on the views'
+     line, and the header's goes. */
   body.soc #m .back { display: none; }
-  body.soc .detail-bar { justify-content: flex-end; }
+  body.soc #m .detail-bar .back { display: inline-flex; }
+  body.soc.deep:has(#m .detail-bar) .hb { display: none; }
 
   body.soc #tb {
     order: 1;
