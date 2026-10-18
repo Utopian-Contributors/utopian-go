@@ -53,6 +53,7 @@ export async function assertion(opt) {
  * @param {string} name
  * @param {string} password
  * @param {(path: string, body?: object) => Promise<any>} post
+ * @returns {Promise<{me: {passkey: false | {id: string}}}>} the server's answer, with the account as it now is
  */
 export async function register(name, password, post) {
   needPasskey();
@@ -80,7 +81,7 @@ export async function register(name, password, post) {
   });
   if (!cred) throw new Error("Passkey was cancelled.");
   const response = /** @type {AuthenticatorAttestationResponse} */ (cred.response);
-  await post("/api/social/passkey", {
+  return post("/api/social/passkey", {
     id: cred.id,
     challenge: opt.challenge,
     clientData: b64u(response.clientDataJSON),

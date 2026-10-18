@@ -14,6 +14,7 @@ import { open as openLogin } from "../js/login.js";
 import { readName, writeName } from "../js/me.js";
 import { register, why } from "../js/passkey.js";
 import { mountPwa } from "../js/pwa.js";
+import { dismissible } from "../js/sheet.js";
 import { UTCC, utccShort, utccText } from "../js/utcc.js";
 
 const main = $("m");
@@ -22,7 +23,7 @@ const MAX_POST = 256;
 /** Insecure pages (a phone on the LAN over http) have no microphone, so no button either. */
 const CAN_RECORD = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 
-/** @type {null | {name: string, address: string, bio: string, loc: string, avatarRev: number, passkey: boolean, wait: number, unseen: number}} */
+/** @type {null | {name: string, address: string, bio: string, loc: string, avatarRev: number, passkey: false | {id: string}, wait: number, unseen: number}} */
 let me = null;
 /** Object URLs of photos in an open composer, freed when the page is redrawn. */
 const drafts = [];
@@ -1348,37 +1349,84 @@ function renderNotes(data) {
       : el("p", { class: "muted", text: "No notifications yet." }),
   );
   if (fresh.length) {
-    send("/api/social/notes/seen").then(() => {
-      $("badge").hidden = true;
-    }, () => {});
+    // The answer's `me` has nothing unseen, which takes the badge down.
+    send("/api/social/notes/seen").catch(() => {});
   }
 }
 
-/** A password box in front of one action. The password is checked by the server. */
-function passForm(id, hint, label, run, box) {
-  const input = el("input", { id, type: "password", autocomplete: "current-password", required: true });
-  const err = el("p", { class: "err" });
-  const form = el(
-    "form",
-    { class: "tools" },
-    el("p", { class: "hint", text: hint }),
-    el("label", { for: id }, "Password"),
-    input,
-    el("button", { type: "submit", text: label }),
-    err,
-    box,
+/** 4…4, as an address or a credential id is shown in a row. */
+const short = (s) => (s.length > 12 ? `${s.slice(0, 4)}…${s.slice(-4)}` : s);
+
+/** One setting: its name, its value in grey, and a chevron. Pressed, it opens what changes it. */
+function settingRow(label, value, onclick) {
+  return el(
+    "button",
+    { type: "button", class: "row", onclick },
+    el("span", { text: label }),
+    el("span", { class: "row-v", text: value }),
   );
+}
+
+/**
+ * A password box in front of one action, in a dialog that removes itself,
+ * and whatever it showed, when closed. The password is checked by the server.
+ */
+function passDialog(title, label, run) {
+  const input = el("input", { id: "pd-pw", type: "password", autocomplete: "current-password", required: true });
+  const err = el("p", { class: "err", role: "alert" });
+  const go = el("button", { type: "submit", text: label });
+  const form = el("form", { class: "tools" }, el("label", { for: "pd-pw" }, "Password"), input, go, err);
+  const dialog = /** @type {HTMLDialogElement} */ (
+    el("dialog", { class: "pd", "aria-label": title }, el("h2", { text: title }), form)
+  );
+  dismissible(dialog);
+  dialog.addEventListener("close", () => dialog.remove());
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     err.textContent = "";
+    go.disabled = true;
     try {
       await run(input.value);
       input.value = "";
     } catch (cause) {
       err.textContent = why(cause);
+    } finally {
+      go.disabled = false;
     }
   });
-  return form;
+  document.body.append(dialog);
+  dialog.showModal();
+  return { dialog, form };
+}
+
+/** Add this device's passkey, or replace the one on the account. The server asks for the password first. */
+function passkeyDialog() {
+  const label = me.passkey ? "Replace passkey" : "Add passkey";
+  const { dialog } = passDialog("Passkey", label, async (password) => {
+    await register(me.name, password, send);
+    dialog.close();
+    show();
+  });
+}
+
+/**
+ * The recovery phrase, behind the password. The words leave with the dialog:
+ * on its X, after two minutes, or as soon as the tab is put away, whichever
+ * comes first. A phrase left on an unattended screen is a wallet left open.
+ */
+function phraseDialog() {
+  let timer = 0;
+  const away = () => document.hidden && dialog.close();
+  const { dialog, form } = passDialog("Recovery phrase", "Show phrase", async (password) => {
+    const result = await send("/api/social/phrase", { password });
+    form.replaceWith(el("p", { class: "phrase", text: result.phrase }));
+    timer = window.setTimeout(() => dialog.close(), 120_000);
+    document.addEventListener("visibilitychange", away);
+  });
+  dialog.addEventListener("close", () => {
+    clearTimeout(timer);
+    document.removeEventListener("visibilitychange", away);
+  });
 }
 
 /** Your profile as others see it: the card and the posts, nothing to edit. */
@@ -1428,6 +1476,7 @@ async function renderEdit() {
     e.preventDefault();
     saveErr.textContent = "";
     try {
+      // The answer carries the saved `me`, which the redraw fills the fields from.
       await send("/api/social/profile", {
         bio: bioInput.value,
         loc: locInput.value,
@@ -1456,58 +1505,16 @@ async function renderEdit() {
         ],
         (await load("av", "__avatar")).under(me.name),
       );
-      const result = await pull("/api/social/avatar", {
+      await pull("/api/social/avatar", {
         method: "POST",
         body: bin([lens(tiny, full), tiny, full]),
       });
-      me.avatarRev = result.avatarRev;
       show();
     } catch (cause) {
       photoErr.textContent = cause.message;
     }
     file.value = "";
   });
-
-  const phraseBox = el("div", {});
-  /**
-   * The words leave the page on Hide, after two minutes, or as soon as the
-   * tab is put away, whichever comes first: a phrase left on an unattended
-   * screen is a wallet left open.
-   */
-  let phraseTimer = 0;
-  const hidePhrase = () => {
-    clearTimeout(phraseTimer);
-    document.removeEventListener("visibilitychange", onPhraseAway);
-    phraseBox.replaceChildren();
-  };
-  const onPhraseAway = () => {
-    if (document.hidden || !phraseBox.isConnected) hidePhrase();
-  };
-  const phraseForm = passForm(
-    "phrase",
-    "Enter your password to see your recovery phrase.",
-    "Show phrase",
-    async (password) => {
-      const result = await send("/api/social/phrase", { password });
-      phraseBox.replaceChildren(
-        el("p", { class: "phrase", text: result.phrase }),
-        el("p", {
-          class: "hint",
-          text: "Write this down. It recovers this account and wallet if you forget your password. It hides itself after two minutes.",
-        }),
-        el("button", {
-          type: "button",
-          class: "ghost",
-          text: "Hide",
-          onclick: hidePhrase,
-        }),
-      );
-      clearTimeout(phraseTimer);
-      phraseTimer = window.setTimeout(hidePhrase, 120_000);
-      document.addEventListener("visibilitychange", onPhraseAway);
-    },
-    phraseBox,
-  );
 
   main.replaceChildren(
     el(
@@ -1520,33 +1527,27 @@ async function renderEdit() {
       "section",
       { class: "sec" },
       el("h3", { text: "General" }),
-      face(me.name, me.avatarRev),
-      el("p", {
-        class: "hint",
-        text: "Square or portrait. The profile keeps that shape at 200px. The timeline uses a smaller copy.",
-      }),
       el(
         "label",
         { class: "file", for: "pic" },
-        me.avatarRev ? "Change photo" : "Add photo",
+        photo(me.name, me.avatarRev),
+        el("span", { text: me.avatarRev ? "Change photo" : "Add photo" }),
         file,
       ),
       photoErr,
       save,
-      passForm(
-        "pkp",
-        me.passkey
-          ? "A passkey is on this account. Enter your password to replace it."
-          : "Add a passkey to sign in without a password. Enter your password first.",
-        me.passkey ? "Replace passkey" : "Add passkey",
-        async (password) => {
-          // This device's passkey. The server asks for the password first.
-          await register(me.name, password, send);
-          show();
-        },
+    ),
+    el(
+      "section",
+      { class: "sec" },
+      el("h3", { text: "Security" }),
+      el(
+        "div",
+        { class: "rows" },
+        settingRow("Passkey", me.passkey ? short(me.passkey.id) : "Not set up", passkeyDialog),
+        settingRow("Wallet", short(me.address), phraseDialog),
       ),
     ),
-    el("section", { class: "sec" }, el("h3", { text: "Wallet" }), phraseForm),
   );
 }
 

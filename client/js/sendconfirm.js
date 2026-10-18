@@ -54,7 +54,7 @@ const short = (a) => `${a.slice(0, 4)}…${a.slice(-4)}`;
 /**
  * @param {HTMLElement} body where the screens draw
  * @param {{
- *   me: {name: string, address: string, passkey?: boolean},
+ *   me: {name: string, address: string, passkey?: false | {id: string}},
  *   token: {mint: string, symbol: string, decimals: number, price?: number},
  *   amount: {units: bigint, text: string},
  *   to: {name?: string, address: string},
@@ -192,8 +192,7 @@ export function confirmSend(body, p) {
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       attempt(ok, async (button) => {
-        await register(p.me.name, pass.value, post);
-        p.me.passkey = true;
+        p.me.passkey = (await register(p.me.name, pass.value, post)).me.passkey;
         try {
           await send(button);
         } finally {

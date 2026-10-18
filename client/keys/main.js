@@ -59,7 +59,7 @@ function toDecimal(units, decimals) {
   return frac ? `${whole}.${frac}` : whole;
 }
 
-/** @param {{passkey: boolean}} me */
+/** @param {{passkey: false | {id: string}}} me */
 function phrase(me) {
   const err = el("p", { class: "ks-err", role: "alert" });
   const out = el("div", {});
@@ -186,7 +186,7 @@ function receive(me) {
  * The wallet's Send: which token, to whom, how much, then the confirmation
  * every send goes through (js/sendconfirm.js), in the trade dialog's shell.
  *
- * @param {{name: string, address: string, passkey: boolean}} me
+ * @param {{name: string, address: string, passkey: false | {id: string}}} me
  * @param {import('../../src/types').Holding[]} holdings
  * @param {() => void} onSent
  */

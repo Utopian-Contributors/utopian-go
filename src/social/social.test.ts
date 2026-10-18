@@ -757,6 +757,10 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
 
     const saved = await call("POST", "/api/social/profile", { bio: "hello there", loc: "Lisbon" });
     assert.equal(saved.status, 200);
+    // The answer is the saved state, which Edit profile redraws from.
+    const savedMe = saved.json?.me as { bio: string; loc: string };
+    assert.equal(savedMe.bio, "hello there");
+    assert.equal(savedMe.loc, "Lisbon");
     const profile = await call("GET", "/api/social/u/ada");
     const user = profile.json?.user as { bio: string; loc: string; name: string };
     assert.equal(user.bio, "hello there");
@@ -769,6 +773,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
 
     const photo = await call("POST", "/api/social/avatar", jpeg(10, 20));
     assert.equal(photo.status, 200);
+    assert.equal((photo.json?.me as { avatarRev: number }).avatarRev, photo.json?.avatarRev);
     const avatar = await fetch(`${base}/social/a/ada?v=${photo.json?.avatarRev}`);
     assert.equal(avatar.status, 200);
     assert.equal(avatar.headers.get("content-type"), "image/jpeg");
@@ -811,6 +816,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
       attestation: attestation.toString("base64url"),
     });
     assert.equal(enrolled.status, 200, enrolled.text);
+    assert.deepEqual((enrolled.json?.me as { passkey: unknown }).passkey, { id: credId.toString("base64url") });
 
     await call("POST", "/api/social/logout", {});
     const needsKey = await call("POST", "/api/social/login", {
@@ -839,7 +845,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.ok(jar.includes("soc="));
 
     const seen = await call("GET", "/api/social/timeline");
-    assert.equal((seen.json?.me as { passkey: boolean }).passkey, true);
+    assert.deepEqual((seen.json?.me as { passkey: unknown }).passkey, { id: credId.toString("base64url") });
     assert.equal(challenge.length, 32);
 
     await call("POST", "/api/social/logout", {});
@@ -979,7 +985,9 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const noted2 = await call("GET", "/api/social/notes");
     const kinds = (noted2.json?.notes as { kind: string; from: string }[]).map((note) => note.kind).sort();
     assert.deepEqual(kinds, ["comment", "repost"]);
-    assert.equal((await call("POST", "/api/social/notes/seen", {})).status, 200);
+    const noteSeen = await call("POST", "/api/social/notes/seen", {});
+    assert.equal(noteSeen.status, 200);
+    assert.equal((noteSeen.json?.me as { unseen: number }).unseen, 0);
     // Seen notes stay listed, as Earlier; only the badge's count goes.
     const read = await call("GET", "/api/social/notes");
     assert.deepEqual((read.json?.notes as { seen: boolean }[]).map((note) => note.seen), [true, true]);

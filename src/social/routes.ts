@@ -212,7 +212,8 @@ export interface PublicMe {
   bio: string;
   loc: string;
   avatarRev: number;
-  passkey: boolean;
+  /** The passkey's credential id, for Edit profile to show; false with none. Never the key itself (guard.ts). */
+  passkey: { id: string } | false;
   wait: number;
   unseen: number;
   unread: number;
@@ -226,10 +227,20 @@ async function publicMe(user: User | null): Promise<PublicMe | null> {
     bio: user.bio,
     loc: user.loc,
     avatarRev: user.avatarRev,
-    passkey: !!user.passkey,
+    passkey: user.passkey ? { id: user.passkey.id } : false,
     wait: postWait(user.lastPost, Date.now()),
     ...(await countUnseen(user.name)),
   };
+}
+
+/**
+ * `me` as a write left it, read back from the database. The account on
+ * res.locals was loaded before the write, and Social keeps the `me` it was
+ * last sent: a write that answers without one leaves the page drawing what
+ * it sent from the state before it.
+ */
+async function savedMe(name: string): Promise<PublicMe | null> {
+  return publicMe(await getUser(name));
 }
 
 function passwordOk(input: unknown): string | null {
@@ -807,7 +818,8 @@ socialRouter.post(
     assertSameOrigin(req);
     const me = requireUser(res);
     await markSeen(me.name);
-    res.json({ ok: true });
+    // The unseen count is read fresh, so the account loaded before the write still serves.
+    res.json({ me: await publicMe(me) });
   }),
 );
 
@@ -973,7 +985,7 @@ socialRouter.post(
       throw new SocialError(400, loc.ok ? "Write something." : loc.error);
     }
     await updateProfile(me.name, nextBio, nextLoc);
-    res.json({ ok: true });
+    res.json({ me: await savedMe(me.name) });
   }),
 );
 
@@ -1213,7 +1225,7 @@ socialRouter.post(
       throw new SocialError(400, "Passkey was not accepted.");
     }
     await setPasskey(me.name, registered);
-    res.json({ ok: true });
+    res.json({ me: await savedMe(me.name) });
   }),
 );
 
@@ -1568,7 +1580,7 @@ socialRouter.post(
     if (parts.tiny) checkPhoto(parts.tiny, TINY_BYTES, TINY_W, "Timeline photo is too big.");
     const rev = await bumpAvatar(me.name);
     writeAvatar(me.name, parts.full, parts.tiny ?? undefined);
-    res.json({ avatarRev: rev });
+    res.json({ avatarRev: rev, me: await savedMe(me.name) });
   }),
 );
 
