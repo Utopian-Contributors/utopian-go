@@ -248,6 +248,17 @@ const loginOpts = {
   outfile: path.join(outDir, "login.js"),
 };
 
+/**
+ * The offline panel and the grey logo, on every page; see client/offline. Its
+ * own <script defer> after the page's bundle rather than part of it, so no
+ * page's first flight carries it.
+ */
+const offlineOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "offline", "main.js")],
+  outfile: path.join(outDir, "offline.js"),
+};
+
 /** The install panel, fetched on phones only; see client/js/pwa.js. */
 const installOpts = {
   ...jsOpts,
@@ -446,6 +457,12 @@ function replaceOnce(source, pattern, value, what) {
   return source.replace(pattern, () => value);
 }
 
+/** Every document's <script src="/offline.js">, fingerprinted like the page's own bundle. */
+function fingerprintOffline(raw) {
+  const v = contentHash(readFileSync(path.join(outDir, "offline.js")));
+  return replaceOnce(raw, /src="\/offline\.js"/, `src="/offline.js?v=${v}"`, "offline.js src");
+}
+
 /**
  * Guard the two places the shell duplicates the client's own rendering.
  *
@@ -597,6 +614,7 @@ async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, 
     `src="/app.js?v=${jsHash}"`,
     "app.js src",
   );
+  raw = fingerprintOffline(raw);
   // These are fetched by JS, not by a tag, so their hashes ride in attributes.
   raw = replaceOnce(
     raw,
@@ -684,6 +702,7 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
     `src="/wallet.js?v=${walletHash}"`,
     "wallet.js src",
   );
+  raw = fingerprintOffline(raw);
   raw = replaceOnce(
     raw,
     /data-cn="\/connect\.js"/,
@@ -751,6 +770,7 @@ async function buildSocialHtml(css, socialHash, qrHash, payHash, chatHash, recHa
     `src="/social.js?v=${socialHash}"`,
     "social.js src",
   );
+  raw = fingerprintOffline(raw);
   raw = replaceOnce(
     raw,
     /data-qr="\/qr\.js"/,
@@ -901,7 +921,8 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , , , , , , , , , , , , css, walletCss] = await Promise.all([
+  const [, , , , , , , , , , , , , , , , , css, walletCss] = await Promise.all([
+    esbuild.build(offlineOpts),
     esbuild.build(installOpts),
     esbuild.build(swOpts),
     esbuild.build(jsOpts),

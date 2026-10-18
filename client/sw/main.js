@@ -1,40 +1,64 @@
 /**
- * The service worker: pages from the network, and a page of our own when there
- * is no network.
+ * The service worker: the network first, and the last copy of whatever the
+ * app has seen when there is no network.
  *
- * It caches nothing, on purpose. The search shell is rendered per request with
- * live prices in it, and every document revalidates so that it never names a
- * bundle a deploy has since replaced — a cached copy served offline would show
- * yesterday's prices as if they were today's, and the page it loaded could not
- * search anyway. What an installed app needs from offline is to say so in its
- * own window, instead of a browser error page, and that takes no cache at all.
+ * Offline, the app opens on its last synced state: the page as it was last
+ * fetched, the bundles it names, and the API answers it last read (the
+ * timeline, a profile, the wallet's balances, a search's results). Over it,
+ * client/offline says there is no connection and offers Retry; closing that
+ * leaves the old state to read, with the logo greyed so it is never mistaken
+ * for live.
  *
- * Only navigations are answered here. Everything else passes straight through,
- * so the bundles, the API and every thumbnail are fetched exactly as they are
- * without a worker. Navigation preload starts the page's request while the
- * worker is still booting, so being in the path costs a navigation the worker's
- * startup only when that outlasts the network, not on top of it.
+ * Three caches, each by a different rule:
+ *
+ *  - Pages: network first, always. Every document revalidates so it never
+ *    names a bundle a deploy has replaced, and a live page carries live
+ *    prices. The copy is only for when the network fails. Each is kept under
+ *    its own URL and under its section's shell (/, /social, /wallet), so a
+ *    social or wallet route never visited still opens on the right page.
+ *  - Assets with ?v=: cache first. The query is the content hash, so a cached
+ *    copy is the file itself, for good. Same-origin assets without one (an
+ *    icon, a banner) go network first like pages.
+ *  - API: network first. A GET that succeeds is kept; one that fails is
+ *    answered from the copy, and the page that asked is told it is offline.
+ *
+ * What is stored is this device's own state: on a logout, or a 401 that says
+ * the session is gone, the API copies go with it.
+ *
+ * Only this origin's GETs are touched. Jupiter and every result thumbnail
+ * from the open web pass straight through, as does a request made with
+ * `cache: "no-store"`, which is how client/offline asks whether the network
+ * is back without the answer coming from here.
  *
  * Served from /sw.js with no content hash: the browser tells versions apart by
  * comparing the script byte for byte, and the URL has to stay put for that.
  * src/server.ts serves it no-cache.
  */
 
+const PAGES = "ug-pages-1";
+const ASSETS = "ug-assets-1";
+const API = "ug-api-1";
+const KEEP = { [PAGES]: 40, [ASSETS]: 400, [API]: 150 };
+
+/** Set on a page served from the cache, so client/offline knows at once. */
+const MARK = '<meta name="ug-offline" content="';
+
 /**
- * Styled from the site's palette, light and dark. No script and no requests,
- * so it draws whatever is or is not reachable, and the policy below says so.
+ * The page for when nothing at all was ever cached for this address. The same
+ * words and button client/offline shows; no script, so Retry is a reload.
  */
 const OFFLINE = `<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="color-scheme" content="light dark"><title>Offline</title><style>
-:root{--bg:#fffff6;--t:#202124;--f:#70757a;--a:#1a73e8}
-@media (prefers-color-scheme:dark){:root{--bg:#282124;--t:#e8eaed;--f:#9aa0a6;--a:#8ab4f8}}
+:root{--bg:#fffff6;--f:#70757a;--buy:#188038;--ink:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#282124;--f:#9aa0a6;--buy:#81c995;--ink:#202124}}
 body{display:grid;place-items:center;min-height:100vh;min-height:100dvh;margin:0;padding:24px;
-box-sizing:border-box;background:var(--bg);color:var(--t);font:15px/1.5 system-ui,Helvetica,Arial,sans-serif;text-align:center}
-h1{margin:0 0 4px;font-size:20px;font-weight:600}p{margin:0 0 16px;color:var(--f)}
-a{color:var(--a);font-weight:600;text-decoration:none}
-</style><main><h1>You're offline</h1><p>UtopianGO needs a connection to search.</p>
-<a href="">Try again</a></main>`;
+box-sizing:border-box;background:var(--bg);font:16px/1.5 system-ui,Helvetica,Arial,sans-serif;text-align:center}
+p{max-width:340px;margin:0 0 24px;color:var(--f)}
+a{display:inline-block;padding:12px 32px;border-radius:999px;background:var(--buy);color:var(--ink);
+font-weight:600;text-decoration:none}
+</style><main><p>UtopianGo is an Ultra-efficient App to Access the Internet, but we couldn’t make a Connection happen</p>
+<a href="">Retry</a></main>`;
 
 function offline() {
   return new Response(OFFLINE, {
@@ -47,23 +71,160 @@ function offline() {
   });
 }
 
-// Nothing is cached, so there is no old version worth waiting on: take over
-// the open pages the moment a new worker is ready.
+/**
+ * The shell a page falls back to when its own address was never cached. Social
+ * and the wallet are one document whatever the route, so any of their pages
+ * is their shell; a search's results are not the home page, so only "/" is.
+ */
+function shellOf(url) {
+  const p = url.pathname;
+  if (p === "/social" || p.startsWith("/social/")) return "/social";
+  if (p === "/wallet" || p.startsWith("/wallet/")) return "/wallet";
+  return "/";
+}
+
+/** Keep a page under its own address and, where it is one, as its section's shell. */
+function keepPage(url, response) {
+  const own = url.pathname + url.search;
+  const shell = shellOf(url);
+  return Promise.all([
+    keep(PAGES, own, response.clone()),
+    shell === own || shell === "/" ? null : keep(PAGES, shell, response.clone()),
+  ]);
+}
+
+/** Copies are matched by address alone: one seeded from a page has none of a live request's headers. */
+const ANY = { ignoreVary: true };
+
+/**
+ * Keep a copy, stamped with when it was fetched, and hold the cache to its
+ * size by letting the oldest go. Deleting first moves a refreshed entry to the
+ * back of the line, since a cache lists its keys in the order they went in.
+ */
+async function keep(name, key, response) {
+  const headers = new Headers(response.headers);
+  headers.set("ug-at", String(Date.now()));
+  const copy = new Response(await response.blob(), { status: response.status, statusText: response.statusText, headers });
+  const cache = await caches.open(name);
+  await cache.delete(key);
+  await cache.put(key, copy);
+  const keys = await cache.keys();
+  await Promise.all(keys.slice(0, Math.max(0, keys.length - KEEP[name])).map((old) => cache.delete(old)));
+}
+
+/** A cached page, marked as one so the page can say it is offline and since when. */
+async function stale(response) {
+  const html = await response.text();
+  const mark = `${MARK}${response.headers.get("ug-at") || ""}">`;
+  return new Response(html.replace(/<head>/i, (head) => head + mark), {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+
+async function page(event) {
+  const url = new URL(event.request.url);
+  try {
+    // preloadResponse is undefined where navigation preload is unsupported,
+    // and settles to undefined where it is supported but not yet enabled.
+    const response = (await event.preloadResponse) || (await fetch(event.request));
+    if (response.status === 200) event.waitUntil(keepPage(url, response));
+    return response;
+  } catch {
+    const cache = await caches.open(PAGES);
+    const hit = (await cache.match(url.pathname + url.search, ANY)) || (await cache.match(shellOf(url), ANY));
+    return hit ? stale(hit) : offline();
+  }
+}
+
+/** Tell the page behind a request that it is reading a copy. */
+function tell(event) {
+  event.waitUntil(
+    self.clients.get(event.clientId).then((client) => client?.postMessage({ ug: "offline" })),
+  );
+}
+
+async function api(event) {
+  try {
+    const response = await fetch(event.request);
+    if (response.status === 200) event.waitUntil(keep(API, event.request, response.clone()));
+    else if (response.status === 401) event.waitUntil(caches.delete(API));
+    return response;
+  } catch (cause) {
+    const hit = await caches.match(event.request, { ...ANY, cacheName: API });
+    if (!hit) throw cause;
+    tell(event);
+    return hit;
+  }
+}
+
+async function asset(event, hashed) {
+  if (hashed) {
+    const hit = await caches.match(event.request, { ...ANY, cacheName: ASSETS });
+    if (hit) return hit;
+  }
+  try {
+    const response = await fetch(event.request);
+    // 200 only: a 206 (a voice memo, played in ranges) is a slice, and a cache refuses one.
+    if (response.status === 200) event.waitUntil(keep(ASSETS, event.request, response.clone()));
+    return response;
+  } catch (cause) {
+    const hit = await caches.match(event.request, { ...ANY, cacheName: ASSETS });
+    if (!hit) throw cause;
+    tell(event);
+    return hit;
+  }
+}
+
 self.addEventListener("install", () => self.skipWaiting());
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    Promise.all([self.clients.claim(), self.registration.navigationPreload?.enable()]),
+    Promise.all([
+      self.clients.claim(),
+      self.registration.navigationPreload?.enable(),
+      // Caches a past version named and this one does not.
+      caches.keys().then((names) => Promise.all(names.filter((n) => !(n in KEEP)).map((n) => caches.delete(n)))),
+    ]),
   );
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.mode !== "navigate") return;
-  // preloadResponse is undefined where navigation preload is unsupported, and
-  // settles to undefined where it is supported but not yet enabled.
-  event.respondWith(
-    Promise.resolve(event.preloadResponse)
-      .then((preloaded) => preloaded || fetch(event.request))
-      .catch(offline),
+  const request = event.request;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || request.cache === "no-store") return;
+  if (request.method !== "GET") {
+    // Logging out takes this device's copies of the account with it.
+    if (url.pathname === "/api/social/logout") event.waitUntil(caches.delete(API));
+    return;
+  }
+  if (request.mode === "navigate") event.respondWith(page(event));
+  else if (url.pathname.startsWith("/api/")) event.respondWith(api(event));
+  else if (url.pathname !== "/sw.js") event.respondWith(asset(event, url.searchParams.has("v")));
+});
+
+/**
+ * client/offline, on a page loaded before this worker was in charge: the
+ * addresses that page already fetched, so the first visit is enough for the
+ * next one to open offline.
+ */
+self.addEventListener("message", (event) => {
+  const urls = event.data?.ugSeed;
+  if (!Array.isArray(urls)) return;
+  event.waitUntil(
+    Promise.all(
+      urls.slice(0, 100).map(async (href) => {
+        const url = new URL(href, self.location.origin);
+        if (url.origin !== self.location.origin || url.pathname === "/sw.js") return;
+        try {
+          const response = await fetch(url, { credentials: "same-origin" });
+          if (response.status !== 200) return;
+          if (url.href === event.data.page) await keepPage(url, response);
+          else if (url.pathname.startsWith("/api/")) await keep(API, url.href, response);
+          else await keep(ASSETS, url.href, response);
+        } catch {
+          // Gone offline mid-seed: whatever made it in is still worth having.
+        }
+      }),
+    ),
   );
 });
