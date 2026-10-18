@@ -1519,8 +1519,8 @@ async function renderEdit() {
       "div",
       { class: "detail-bar" },
       el("a", { class: "back", href: `/social/u/${me.name}`, text: "Back" }),
+      el("h2", { class: "ed-h", text: "Edit profile" }),
     ),
-    el("h2", { class: "ed-h", text: "Edit profile" }),
     el(
       "section",
       { class: "sec" },
