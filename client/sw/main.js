@@ -23,6 +23,12 @@
  *    icon, a banner) go network first like pages.
  *  - API: network first. A GET that succeeds is kept; one that fails is
  *    answered from the copy, and the page that asked is told it is offline.
+ *    With a copy in hand the request carries its tag, and an unchanged
+ *    answer is a 304 with no body: the copy is the answer (src/state.ts).
+ *
+ * Every copy keeps its ETag, the hash of the state it holds. When the network
+ * comes back, client/offline asks the server about each copy it showed by tag
+ * alone, and offers Update only where the state has moved.
  *
  * What is stored is this device's own state: on a logout, or a 401 that says
  * the session is gone, the API copies go with it.
@@ -120,7 +126,8 @@ async function keep(name, key, response) {
 /** A cached page, marked as one so the page can say it is offline and since when. */
 async function stale(response) {
   const html = await response.text();
-  const mark = `${MARK}${response.headers.get("ug-at") || ""}">`;
+  const tag = (response.headers.get("etag") || "").replace(/"/g, "&quot;");
+  const mark = `${MARK}${response.headers.get("ug-at") || ""}" data-etag="${tag}">`;
   return new Response(html.replace(/<head>/i, (head) => head + mark), {
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
@@ -174,16 +181,34 @@ const DOWN_FOR = 30000;
 const offlineNow = () => self.navigator.onLine === false || Date.now() < downUntil;
 
 /** Tell a page something: that it is reading a copy ("offline"), or that the network answered after all ("online"). */
-function tell(event, id, ug) {
-  event.waitUntil(self.clients.get(id).then((client) => client?.postMessage({ ug })));
+/**
+ * Tell a page something: that it is reading a copy, { ug: "offline" } with
+ * the copy's address and tag when it is one worth checking later; or that the
+ * network answered after all, { ug: "online", changed } with whether that
+ * answer says anything the copy did not.
+ */
+function tell(event, id, message) {
+  event.waitUntil(self.clients.get(id).then((client) => client?.postMessage(message)));
 }
+
+/** The state half of an ETag (src/state.ts): no W/, no quotes, no ad. */
+const stateOf = (tag) => (tag || "").replace(/^W\//, "").replace(/"/g, "").split(".")[0];
+
+/** Whether an answer holds anything its copy does not, going by their tags alone. */
+function differs(response, hit) {
+  const a = stateOf(response.headers.get("etag"));
+  return !a || a !== stateOf(hit.headers.get("etag"));
+}
+
+/** Answers that are the copy itself, confirmed by a 304: nothing changed. */
+const confirmed = new WeakSet();
 
 /**
  * Race the network against a copy. `fetching` is the request already on its
  * way, `keepIt` files a good answer. A copy that wins is returned; the
  * network's answer, if it ever comes, is still kept, and the page told.
  */
-async function race(event, fetching, hit, ms, keepIt, clientId) {
+async function race(event, fetching, hit, ms, keepIt, clientId, judge = (r) => !confirmed.has(r) && differs(r, hit)) {
   // Filed first, so the clone is taken before the page starts reading the body.
   const kept = fetching.then((response) => {
     downUntil = 0;
@@ -195,7 +220,7 @@ async function race(event, fetching, hit, ms, keepIt, clientId) {
   const copy = () => {
     event.waitUntil(
       fetching.then(
-        (response) => response.ok && tell(event, clientId, "online"),
+        (response) => response.ok && tell(event, clientId, { ug: "online", changed: judge(response) }),
         () => {},
       ),
     );
@@ -247,7 +272,22 @@ async function page(event) {
 
 async function api(event) {
   const hit = await caches.match(event.request, { ...ANY, cacheName: API });
-  const fetching = fetchFor(event.request);
+  const tag = hit?.headers.get("etag");
+  // With a copy, ask with its tag: the server answers 304 and no body when the
+  // copy still says what it would (src/state.ts), and the copy is the answer.
+  let request = event.request;
+  let spare = null;
+  if (tag) {
+    const headers = new Headers(request.headers);
+    headers.set("If-None-Match", tag);
+    request = new Request(request, { headers });
+    spare = hit.clone();
+  }
+  const fetching = fetchFor(request).then((r) => {
+    if (r.status !== 304 || !spare) return r;
+    confirmed.add(spare);
+    return spare;
+  });
   const response = await race(
     event,
     fetching,
@@ -261,7 +301,7 @@ async function api(event) {
     event.clientId,
   );
   if (response) return response;
-  tell(event, event.clientId, "offline");
+  tell(event, event.clientId, { ug: "offline", url: event.request.url, etag: tag });
   return hit;
 }
 
@@ -277,9 +317,11 @@ async function asset(event, hashed) {
     // 200 only: a 206 (a voice memo, played in ranges) is a slice, and a cache refuses one.
     (r) => r.status === 200 && keep(ASSETS, event.request, r.clone()),
     event.clientId,
+    // A picture or an icon is not what Update is for.
+    () => false,
   );
   if (response) return response;
-  tell(event, event.clientId, "offline");
+  tell(event, event.clientId, { ug: "offline" });
   return hit;
 }
 
@@ -331,7 +373,8 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || request.cache === "no-store") return;
+  // A check from client/offline goes to the server and only the server.
+  if (url.origin !== self.location.origin || request.cache === "no-store" || request.headers.has("x-ug-check")) return;
   if (request.method !== "GET") {
     // Logging out takes this device's copies of the account with it.
     if (url.pathname === "/api/social/logout") event.waitUntil(caches.delete(API));

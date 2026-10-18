@@ -3,6 +3,7 @@ import express, { NextFunction, Request, Response, Router } from "express";
 import { ADS_PAY_TO, SITE_URL, TERMS_VERSION } from "../config";
 import { rateLimit } from "../lib/rateLimit";
 import { railAssets } from "../lib/tokens/store";
+import { isCheck, unchanged } from "../state";
 import { FRESH_MS, ORDER_OPEN_MS, adsPayable, orderAmounts, orderCodes, payUrl } from "./adPay";
 import { matchesAd, reloadAds, socialAdFor } from "./ads";
 import { audioKind } from "./audio";
@@ -587,8 +588,13 @@ socialRouter.get(
       timeline(me?.name ?? null, cursor, filter),
       !cursor && me && !filter.saved ? adTopic(me.name) : "",
     ]);
-    const ad = me && topic ? socialAdFor(req, topic, me.name) : null;
-    res.json({ me: await publicMe(me), posts, next, ad });
+    // Decided before the ad is picked, so a client that already holds this
+    // timeline costs no impression; a check from the offline app never gets
+    // one (src/state.ts).
+    const state = { me: await publicMe(me), posts, next };
+    if (unchanged(req, res, state)) return;
+    const ad = me && topic && !isCheck(req) ? socialAdFor(req, topic, me.name) : null;
+    res.json({ ...state, ad });
   }),
 );
 

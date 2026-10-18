@@ -35,6 +35,7 @@ import { backdrop, palette } from "./backdrop";
 import { tokenKind } from "../lib/tokens/jupiter";
 import { buildLists, isStable, pageOf } from "../lib/tokens/store";
 import { type RawTx, readTx } from "../lib/history";
+import { stateTags } from "../state";
 import type { TokenKind, TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
 
@@ -450,6 +451,8 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
   await resetSocial();
   const app = express();
   app.set("trust proxy", true);
+  // As src/server.ts has it: state tags on every GET, ahead of the routes.
+  app.use(stateTags);
   app.use("/api/social", socialRouter);
   app.get("/social/a/:name", sendAvatar);
   app.get("/social/t/:name", sendAvatar);
@@ -651,8 +654,23 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(card?.photos, 2);
     assert.equal(card?.text, "");
 
+    // A snapshot's tag (src/state.ts): the offline app asks with it, and an
+    // unchanged timeline is a 304 with no body. The no-cache is what a browser
+    // adds to a request with a conditional header of its author's.
+    const check = (tag: string) =>
+      fetch(`${base}/api/social/timeline`, {
+        headers: { Cookie: jar, "X-UG-Check": "1", "If-None-Match": tag, "Cache-Control": "no-cache" },
+      });
+    const snapshot = (await fetch(`${base}/api/social/timeline`, { headers: { Cookie: jar } })).headers.get("etag") ?? "";
+    assert.match(snapshot, /^"[\w-]+(\.[\w-]+)?"$/);
+    const same = await check(snapshot);
+    assert.equal(same.status, 304);
+    assert.equal(await same.text(), "");
+
     const comment = await call("POST", "/api/social/comment", { post: postId, text: "nice @ada" });
     assert.equal(comment.status, 200);
+    // The comment count moved, so the same snapshot is out of date.
+    assert.equal((await check(snapshot)).status, 200);
     const lookup = await call("GET", "/api/social/users?q=ad");
     assert.equal(lookup.status, 200);
     assert.equal(/pass_hash|phrase_ct|passkey_cose/.test(lookup.text), false);

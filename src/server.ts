@@ -21,6 +21,7 @@ import { startAdPayments } from "./social/adPay";
 import { adFor, flushAds, startAds } from "./social/ads";
 import { ensureSchema } from "./social/db";
 import { sendAvatar, sendBanner, sendPostAudio, sendPostPhoto, socialRouter } from "./social/routes";
+import { isCheck, sameState, stateTag, stateTags } from "./state";
 
 const app = express();
 const publicDir = path.join(__dirname, "..", "public");
@@ -400,6 +401,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// State tags on every GET, ahead of everything that answers one; see src/state.ts.
+app.use(stateTags);
+
 /**
  * URL canonicalisation, ahead of everything that reads the URL.
  *
@@ -596,12 +600,22 @@ function sendIndex(
     TICKER_SLOT,
     `<div id="hm-tk"${renderFundPrices()}>${renderHomeTicker()}</div>`,
   );
-  if (variant === "res") {
-    html = replaceSlot(html, INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);
+  if (variant === "res") html = replaceSlot(html, INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);
+  // Tagged by what it shows, the ad left out (src/state.ts): a check from the
+  // offline app holding this state gets a 304, and never an ad.
+  const state = html;
+  if (isCheck(req) && sameState(req, stateTag(state))) {
+    res.setHeader("ETag", stateTag(state));
+    res.status(304).end();
+    return;
+  }
+  let ad = "";
+  if (variant === "res" && !isCheck(req)) {
     // From memory, never Postgres; the impression is charged as it is rendered.
-    const ad = adFor(req, q);
+    ad = adFor(req, q);
     if (ad) html = replaceSlot(html, AD_SLOT, ad);
   }
+  res.setHeader("ETag", stateTag(state, ad));
 
   const enc = negotiate(req);
   res.setHeader("Vary", "Accept-Encoding");

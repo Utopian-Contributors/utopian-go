@@ -7,10 +7,11 @@
  * the keeping; this is what the person sees of it:
  *
  *  - A page the worker served from its cache arrives marked with
- *    <meta name="ug-offline" content="<when it was fetched>">.
+ *    <meta name="ug-offline" content="<when it was fetched>" data-etag>.
  *  - A live page whose API calls start failing, or hanging, is told by the
- *    worker, which answers them from the cache and posts { ug: "offline" };
- *    and { ug: "online" } if the network answers after all.
+ *    worker, which answers them from the cache and posts { ug: "offline",
+ *    url, etag }; and { ug: "online", changed } if the network answers after
+ *    all, with whether that answer holds anything the copy did not.
  *  - And the browser's own offline event, for the case it does know about.
  *
  * Any of them puts the panel up. Its x takes it down and leaves the last
@@ -20,10 +21,13 @@
  * network directly (no-store, which the worker lets through) and reloads once
  * it answers.
  *
- * When the connection comes back by itself, a page that has shown anything
- * from the cache gets an Update button rather than a reload nobody asked for:
- * floating over the content, on top of the bottom tabs on a phone, under the
- * search field on a wide screen.
+ * When the connection comes back by itself, Update is offered only if what
+ * is on screen is actually out of date. Every copy shown has a tag, the hash
+ * of the state it holds (src/state.ts); the server is asked about each by its
+ * tag alone, and answers 304 and nothing more when the state is the same. One
+ * 200 is a difference, and gets the Update button rather than a reload nobody
+ * asked for: floating over the content, on top of the bottom tabs on a
+ * phone, under the search field on a wide screen.
  *
  * It also seeds the cache. A first visit runs before the worker is in charge,
  * and the first after an update under the old one, so nothing it fetched
@@ -94,8 +98,11 @@ const since = Number(meta?.content) || 0;
 let panel = null;
 /** @type {HTMLElement | null} */
 let update = null;
-/** Something on screen came from the cache, so the page is worth updating once the network is back. */
-let served = stale;
+/** Every copy on screen, address to tag: what to ask the server about once the network is back. */
+const copies = new Map();
+if (stale && meta.dataset.etag) copies.set(location.href, meta.dataset.etag);
+/** The worker already saw an answer that differs from a copy on screen. */
+let changed = false;
 
 function ago(at) {
   const min = Math.round((Date.now() - at) / 60000);
@@ -261,25 +268,68 @@ function goOffline() {
   open();
 }
 
+/** The state half of an ETag (src/state.ts): no W/, no quotes, no ad. */
+const stateOf = (tag) => (tag || "").replace(/^W\//, "").replace(/"/g, "").split(".")[0];
+
+/**
+ * Whether any copy on screen is out of date, asked by tag alone: a 304 and no
+ * body for each that still holds. X-UG-Check takes the request past the
+ * worker, and tells the server it is a check, so it never carries an ad.
+ * Unanswered counts as unchanged: the next check, or a tap, settles it.
+ */
+async function outOfDate() {
+  const asks = [...copies].map(async ([url, etag]) => {
+    const stop = new AbortController();
+    const timer = setTimeout(() => stop.abort(), 8000);
+    try {
+      const res = await fetch(url, {
+        headers: { "X-UG-Check": "1", "If-None-Match": etag },
+        credentials: "same-origin",
+        signal: stop.signal,
+      });
+      return res.status === 200 && stateOf(res.headers.get("etag")) !== stateOf(etag);
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+  return (await Promise.all(asks)).some(Boolean);
+}
+
 /**
  * The connection is back: the panel goes, and with it the grey, and the next
- * outage gets its panel again. A page showing anything from the cache offers
- * Update; one that only lost its connection a while has nothing old on it.
+ * outage gets its panel again. Update only if something on screen is out of
+ * date; a page whose copies all still hold is as good as live.
  */
-async function backOnline() {
-  if (!(await reachable())) return;
-  shut(false);
-  close();
-  document.body.classList.remove("ug-off");
-  if (served) offerUpdate();
+let settling = null;
+function backOnline() {
+  settling ||= (async () => {
+    try {
+      if (!(await reachable())) return;
+      shut(false);
+      close();
+      document.body.classList.remove("ug-off");
+      if (changed || (await outOfDate())) offerUpdate();
+      copies.clear();
+      changed = false;
+    } finally {
+      settling = null;
+    }
+  })();
+  return settling;
 }
 
 addEventListener("offline", goOffline);
 addEventListener("online", backOnline);
 navigator.serviceWorker?.addEventListener("message", (e) => {
-  if (e.data?.ug === "online") return void backOnline();
-  if (e.data?.ug !== "offline") return;
-  served = true;
+  const said = e.data || {};
+  if (said.ug === "online") {
+    if (said.changed) changed = true;
+    return void backOnline();
+  }
+  if (said.ug !== "offline") return;
+  if (said.url && said.etag) copies.set(said.url, said.etag);
   goOffline();
 });
 if (stale || navigator.onLine === false) goOffline();
