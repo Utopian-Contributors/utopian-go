@@ -8,8 +8,9 @@
  *
  *  - A page the worker served from its cache arrives marked with
  *    <meta name="ug-offline" content="<when it was fetched>">.
- *  - A live page whose API calls start failing is told by the worker, which
- *    answers them from the cache and posts { ug: "offline" }.
+ *  - A live page whose API calls start failing, or hanging, is told by the
+ *    worker, which answers them from the cache and posts { ug: "offline" };
+ *    and { ug: "online" } if the network answers after all.
  *  - And the browser's own offline event, for the case it does know about.
  *
  * Any of them puts the panel up. Its x takes it down and leaves the last
@@ -234,8 +235,26 @@ function offerUpdate() {
 addEventListener("resize", place);
 addEventListener("scroll", place, { passive: true });
 
+/**
+ * While offline, ask now and then whether the network is back. A phone that
+ * lost its Wi-Fi often hangs rather than fails, and recovers without any
+ * "online" event; a page left open would otherwise stay grey until tapped.
+ */
+const PROBE_EVERY = 15000;
+let probing = 0;
+function probe() {
+  if (probing) return;
+  probing = setTimeout(async () => {
+    probing = 0;
+    if (!document.body.classList.contains("ug-off")) return;
+    if (await reachable()) backOnline();
+    else probe();
+  }, PROBE_EVERY);
+}
+
 function goOffline() {
   styles();
+  probe();
   document.body.classList.add("ug-off");
   update?.remove();
   update = null;
@@ -258,6 +277,7 @@ async function backOnline() {
 addEventListener("offline", goOffline);
 addEventListener("online", backOnline);
 navigator.serviceWorker?.addEventListener("message", (e) => {
+  if (e.data?.ug === "online") return void backOnline();
   if (e.data?.ug !== "offline") return;
   served = true;
   goOffline();

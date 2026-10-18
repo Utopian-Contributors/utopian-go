@@ -126,63 +126,161 @@ async function stale(response) {
   });
 }
 
-async function page(event) {
-  const url = new URL(event.request.url);
+/**
+ * How long the network gets before a copy is shown instead, when there is
+ * one. A phone that has just lost its Wi-Fi rarely fails a request outright:
+ * it hangs, often until the system gives up a minute or more later, and a
+ * worker that waits that long on every tap is an app that has stopped. Past
+ * this, the copy goes up and the request carries on behind it, so a network
+ * that was only slow still refreshes the cache, and the page hears it is
+ * back. With no copy there is nothing better to show, so it waits as long as
+ * the network takes.
+ */
+const PATIENCE = { page: 3500, api: 4000, asset: 3000 };
+
+/**
+ * A request that gives up after a while. A hung request holds one of the six
+ * connections a browser allows a site, and six of them would queue everything
+ * after, even once the network is back. Not for pages: a navigation's request
+ * is the browser's own, and is not rebuilt here.
+ */
+const GIVE_UP = 20000;
+function fetchFor(request) {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), GIVE_UP);
+  return fetch(request, { signal: stop.signal }).finally(() => clearTimeout(timer));
+}
+
+/** The network's answer, or a rejection once `ms` have passed; Infinity waits for good. */
+function within(fetching, ms) {
+  if (ms === Infinity) return fetching;
+  let timer;
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("slow")), ms);
+  });
+  return Promise.race([fetching, late]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Until when the network counts as down: set by a request that ran out of
+ * patience, cleared by any answer at all. Meanwhile a copy is shown at once,
+ * so only the first tap after the connection goes waits; every request still
+ * goes out behind it, and the first to come back ends the wait.
+ */
+let downUntil = 0;
+const DOWN_FOR = 30000;
+
+/** The device already knows it has no network, or one just stalled: no point waiting on it. */
+const offlineNow = () => self.navigator.onLine === false || Date.now() < downUntil;
+
+/** Tell a page something: that it is reading a copy ("offline"), or that the network answered after all ("online"). */
+function tell(event, id, ug) {
+  event.waitUntil(self.clients.get(id).then((client) => client?.postMessage({ ug })));
+}
+
+/**
+ * Race the network against a copy. `fetching` is the request already on its
+ * way, `keepIt` files a good answer. A copy that wins is returned; the
+ * network's answer, if it ever comes, is still kept, and the page told.
+ */
+async function race(event, fetching, hit, ms, keepIt, clientId) {
+  // Filed first, so the clone is taken before the page starts reading the body.
+  const kept = fetching.then((response) => {
+    downUntil = 0;
+    return keepIt(response);
+  }, () => {});
+  event.waitUntil(kept);
+  // The copy goes up instead of the network's answer; if that answer comes
+  // after all, the page is told the network is back.
+  const copy = () => {
+    event.waitUntil(
+      fetching.then(
+        (response) => response.ok && tell(event, clientId, "online"),
+        () => {},
+      ),
+    );
+    return null;
+  };
+  if (hit && offlineNow()) return copy();
   try {
-    // preloadResponse is undefined where navigation preload is unsupported,
-    // and settles to undefined where it is supported but not yet enabled.
-    const response = (await event.preloadResponse) || (await fetch(event.request));
-    if (response.status === 200) event.waitUntil(keepPage(url, response));
-    return response;
-  } catch {
-    const cache = await caches.open(PAGES);
-    // Its own copy, then its section's shell, then any shell: a working app
-    // to move around in beats a page with nothing on it but Retry.
-    for (const key of [url.pathname + url.search, shellOf(url), ...SHELLS]) {
-      const hit = await cache.match(key, ANY);
-      if (hit) return stale(hit);
-    }
-    return offline();
+    return await within(fetching, hit ? ms : Infinity);
+  } catch (cause) {
+    if (!hit) throw cause;
+    if (cause?.message === "slow") downUntil = Date.now() + DOWN_FOR;
+    return copy();
   }
 }
 
-/** Tell the page behind a request that it is reading a copy. */
-function tell(event) {
-  event.waitUntil(
-    self.clients.get(event.clientId).then((client) => client?.postMessage({ ug: "offline" })),
-  );
+/** A page's copy: its own, then its section's shell, then any shell. */
+async function pageCopy(url) {
+  const cache = await caches.open(PAGES);
+  // A working app to move around in beats a page with nothing on it but Retry.
+  for (const key of [url.pathname + url.search, shellOf(url), ...SHELLS]) {
+    const hit = await cache.match(key, ANY);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+async function page(event) {
+  const url = new URL(event.request.url);
+  const hit = await pageCopy(url);
+  // preloadResponse is undefined where navigation preload is unsupported,
+  // and settles to undefined where it is supported but not yet enabled.
+  const fetching = Promise.resolve(event.preloadResponse).then((pre) => pre || fetch(event.request));
+  try {
+    const response = await race(
+      event,
+      fetching,
+      hit,
+      PATIENCE.page,
+      (r) => r.status === 200 && keepPage(url, r),
+      event.resultingClientId,
+    );
+    if (response) return response;
+  } catch {
+    // No copy, and no network: the page that says so.
+    return offline();
+  }
+  return stale(hit);
 }
 
 async function api(event) {
-  try {
-    const response = await fetch(event.request);
-    if (response.status === 200) event.waitUntil(keep(API, event.request, response.clone()));
-    else if (response.status === 401) event.waitUntil(caches.delete(API));
-    return response;
-  } catch (cause) {
-    const hit = await caches.match(event.request, { ...ANY, cacheName: API });
-    if (!hit) throw cause;
-    tell(event);
-    return hit;
-  }
+  const hit = await caches.match(event.request, { ...ANY, cacheName: API });
+  const fetching = fetchFor(event.request);
+  const response = await race(
+    event,
+    fetching,
+    hit,
+    PATIENCE.api,
+    (r) => {
+      if (r.status === 200) return keep(API, event.request, r.clone());
+      // The session is gone, and this device's copy of the account with it.
+      if (r.status === 401) return caches.delete(API);
+    },
+    event.clientId,
+  );
+  if (response) return response;
+  tell(event, event.clientId, "offline");
+  return hit;
 }
 
 async function asset(event, hashed) {
-  if (hashed) {
-    const hit = await caches.match(event.request, { ...ANY, cacheName: ASSETS });
-    if (hit) return hit;
-  }
-  try {
-    const response = await fetch(event.request);
+  const hit = await caches.match(event.request, { ...ANY, cacheName: ASSETS });
+  // A hashed copy is the file itself, for good.
+  if (hashed && hit) return hit;
+  const response = await race(
+    event,
+    fetchFor(event.request),
+    hit,
+    PATIENCE.asset,
     // 200 only: a 206 (a voice memo, played in ranges) is a slice, and a cache refuses one.
-    if (response.status === 200) event.waitUntil(keep(ASSETS, event.request, response.clone()));
-    return response;
-  } catch (cause) {
-    const hit = await caches.match(event.request, { ...ANY, cacheName: ASSETS });
-    if (!hit) throw cause;
-    tell(event);
-    return hit;
-  }
+    (r) => r.status === 200 && keep(ASSETS, event.request, r.clone()),
+    event.clientId,
+  );
+  if (response) return response;
+  tell(event, event.clientId, "offline");
+  return hit;
 }
 
 /**
