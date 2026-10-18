@@ -378,6 +378,18 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") {
     // Logging out takes this device's copies of the account with it.
     if (url.pathname === "/api/social/logout") event.waitUntil(caches.delete(API));
+    // A write passes straight to the server, but its answer says the network
+    // is up. The page's next read shows what was just saved, and must not be
+    // handed the copy from before it because a stalled request still has the
+    // network counted as down.
+    if (url.pathname.startsWith("/api/")) {
+      event.respondWith(
+        fetch(request).then((response) => {
+          downUntil = 0;
+          return response;
+        }),
+      );
+    }
     return;
   }
   if (request.mode === "navigate") event.respondWith(page(event));
