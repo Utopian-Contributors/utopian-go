@@ -738,7 +738,8 @@ img.pfp {
  * the wallet (.wl-a). Pay, Add and Message on someone else's card; Pay and
  * Edit profile on your own. However many there are, they share the row.
  *
- * The marks are masks, so they take --go on the wash, and the ink on Pay.
+ * The marks are masks, so they take --go on the wash. Pay is a tile like the
+ * others, not a fill: the row reads as one set of equal choices.
  */
 .pacts {
   display: grid;
@@ -788,18 +789,6 @@ img.pfp {
 
 /* Add, once added: says so, and is not a button to press any more. */
 .pa[data-ic="add"]:disabled { cursor: default; color: var(--m); }
-
-/*
- * Pay is the one to press, so it is filled: --go, the green to read, labelled
- * in the ink --go names, its mark in that ink too.
- */
-.pa.pay {
-  background: var(--go);
-  color: var(--go-ink);
-}
-
-.pa.pay::before { background: currentColor; }
-.pa.pay:hover:not(:disabled) { background: var(--go); color: var(--go-ink); filter: brightness(1.06); }
 
 .pay {
   --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2'/%3E%3Ccircle cx='12' cy='12' r='2.5'/%3E%3Cpath d='M6 9.5v5M18 9.5v5'/%3E%3C/svg%3E");
