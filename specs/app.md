@@ -311,7 +311,8 @@ wrote to whom and when; it never holds a key that opens a message.
 ```typescript
 type ChatKey = { v: number; pub: string; cred: string; iv: string; ct: string };
 type Message = { id: string; from: string; at: number; kf: number; kt: number;
-                 iv: string; ct: string; photos: number };
+                 iv: string; ct: string; photos: number;
+                 memo: string };   // a voice memo's sealed length and shape, "" without one
 type Chat = { with: string; avatarRev: number; at: number; unread: number;
               pub: string | null; last: Message };
 
@@ -325,6 +326,7 @@ GET  /api/social/c/<name>[?before=<at>&id= | ?after=<at>&id=]
                                                messages: Message[], next: {at, id} | null}
 POST /api/social/c/<name>  application/octet-stream → {message: Message} | 409 {stale: true}
 GET  /api/social/cp/<id>/<n>                → sealed photo bytes, to the two people only
+GET  /api/social/ca/<id>                    → sealed voice memo bytes, to the two people only
 ```
 
 - **Keys.** Turning Messenger on makes an ECDH P-256 key in the browser. Its private half
@@ -338,13 +340,24 @@ GET  /api/social/cp/<id>/<n>                → sealed photo bytes, to the two p
   none per visit. Logging out deletes the store.
 - **Sealing.** A conversation key is HKDF(ECDH(mine, theirs)), with both names and key
   versions as `info`. Text is AES-GCM with `from>to` as additional data; each photo is its
-  own IV and AES-GCM over the JPEG, with `from>to <message iv> <n>` as additional data. The
-  POST body is a u16 header length, the header JSON `{kf, kt, iv, ct}`, a photo count,
-  then each sealed photo as a u32 length and its bytes.
+  own IV and AES-GCM over the JPEG, with `from>to <message iv> <n>` as additional data. A
+  voice memo is two boxes, each its own IV and AES-GCM: the recording, with
+  `from>to <message iv> audio`, and its length and shape as JSON `{ms, wave}`, with
+  `from>to <message iv> memo`, so the server holds neither what was said nor how long or
+  loud. The POST body is a u16 header length, the header JSON `{kf, kt, iv, ct, memo?}`
+  (`memo` the small box), a photo count, then each sealed photo as a u32 length and its
+  bytes, then, with a memo, the sealed recording as a u32 length and its bytes. The box and
+  the recording come together or not at all.
 - **Stale keys.** `kf` and `kt` must be both people's newest versions. Otherwise the POST
   is `409 {stale: true}`, and the client fetches the keys again and reseals.
 - A message is up to 500 characters and any number of lines, with up to four photos (the
-  post composer's photo button and strip). Enter sends; Shift+Enter is a new line.
+  post composer's photo button and strip) and one voice memo (its microphone and
+  recorder). Enter sends; Shift+Enter is a new line.
+- **Voice memos** are drawn from their opened box, bars and length, as a post's are. The
+  recording is fetched and opened only when play is pressed: the press plays an `<audio>`
+  with no file yet, which starts once the opened file is given to it as a `blob:` URL, so
+  the browser counts it as played from the tap. The list's preview of one says "Voice
+  memo".
 - Anyone signed in can message anyone who has turned Messenger on. Being friends is not
   required. Someone without a key is shown as not reachable yet.
 - **The sidebar** is a filter input ("Message @handle") above the chats, newest first. The
@@ -487,6 +500,7 @@ data/social/posts/<id>-<n>.jpg     ≤ 48 KB, ≤ 1600 px edge
 data/social/posts/<id>-<n>.m.jpg   phone copy, ≤ 14 KB, ≤ 640 px edge
 data/social/posts/<id>.webm|.m4a   voice memo, ≤ 640 KB, ≤ 3 min
 data/social/chat/<id>-<n>.bin      sealed message photo: IV + AES-GCM(JPEG ≤ 48 KB)
+data/social/chat/<id>-a.bin        sealed message voice memo: IV + AES-GCM(recording ≤ 640 KB)
 data/social/ads/<id>.jpg           ad banner, 3:1, ≤ 48 KB, ≤ 1200 px wide
 data/social/ads/<id>.m.jpg         phone copy, 3:1, ≤ 14 KB, ≤ 640 px wide
 data/cache/icons/<mint>.webp       token logo, 64 × 64, about 1 KB; a cache, rebuilt by the sync
@@ -522,7 +536,7 @@ The limits live in `src/social/limits.ts`:
 | Comments per post | 100 |
 | Friends | 200 |
 | Time between posts | 10 minutes |
-| Message | 500 characters, 4 photos |
+| Message | 500 characters, 4 photos, 1 voice memo |
 | Messages kept per conversation | 1,000, oldest dropped with their photos |
 | Ad | call to action 24, title 60, description 140, link 200 characters |
 | Ad keywords | 20, each 40 characters, from $1 in whole dollars |

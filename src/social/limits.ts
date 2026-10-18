@@ -54,11 +54,15 @@ export const WAVE_BARS = 40;
 /**
  * Messenger. The server sees ciphertext only, so these bound bytes, not
  * characters: a message is AES-GCM over at most MAX_CHAT UTF-8 characters,
- * and a photo is a 12-byte IV, the sealed JPEG, and a 16-byte tag.
+ * and a photo is a 12-byte IV, the sealed JPEG, and a 16-byte tag. A voice
+ * memo is the post composer's recording sealed the same way; its length and
+ * shape are a small box of their own, so they are sealed too.
  */
 export const MAX_CHAT = 500;
 export const CHAT_CT_BYTES = MAX_CHAT * 4 + 16;
 export const CHAT_PHOTO_BYTES = PHOTO_BYTES + 28;
+export const CHAT_AUDIO_BYTES = AUDIO_BYTES + 28;
+export const CHAT_MEMO_BYTES = 160;
 export const MAX_CHAT_KEEP = 1000;
 export const CHAT_PAGE = 30;
 

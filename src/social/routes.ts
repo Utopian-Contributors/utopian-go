@@ -37,6 +37,7 @@ import {
   chatKey,
   chatKeys,
   chatList,
+  chatHasAudio,
   chatPhotoCount,
   countUnseen,
   createPost,
@@ -89,7 +90,9 @@ import {
   AUDIO_BYTES,
   BANNER_SMALL_W,
   BANNER_W,
+  CHAT_AUDIO_BYTES,
   CHAT_CT_BYTES,
+  CHAT_MEMO_BYTES,
   CHAT_PHOTO_BYTES,
   MAX_AUDIO_MS,
   MAX_BIO,
@@ -116,7 +119,7 @@ import {
 } from "./limits";
 import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
-import { avatarFile, bannerFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
+import { avatarFile, bannerFile, chatAudioFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
 
@@ -1391,15 +1394,18 @@ socialRouter.get(
 
 const chatRaw = express.raw({
   type: "application/octet-stream",
-  limit: 4 * (CHAT_PHOTO_BYTES + 4) + 8 * 1024,
+  limit: 4 * (CHAT_PHOTO_BYTES + 4) + CHAT_AUDIO_BYTES + 4 + 8 * 1024,
 });
 
 /**
- * Two bytes of header length, the header as JSON ({kf, kt, iv, ct}), one
- * byte of photo count, then each sealed photo as a four-byte length and its
- * bytes. The same shape as a post, with the text replaced by its ciphertext.
+ * Two bytes of header length, the header as JSON ({kf, kt, iv, ct, memo?}),
+ * one byte of photo count, then each sealed photo as a four-byte length and
+ * its bytes. The same shape as a post, with the text replaced by its
+ * ciphertext. A voice memo is an optional tail, as on a post: a four-byte
+ * length and the sealed recording, whose length and shape are the header's
+ * `memo`.
  */
-function readPackedMessage(buf: Buffer): { head: Record<string, unknown>; photos: Buffer[] } {
+function readPackedMessage(buf: Buffer): { head: Record<string, unknown>; photos: Buffer[]; audio: Buffer | null } {
   if (buf.length < 3) throw new SocialError(400, "Malformed request.");
   const headLen = buf.readUInt16BE(0);
   if (headLen > 6 * 1024 || 2 + headLen >= buf.length) throw new SocialError(400, "Malformed request.");
@@ -1423,8 +1429,18 @@ function readPackedMessage(buf: Buffer): { head: Record<string, unknown>; photos
     photos.push(buf.subarray(at, at + len));
     at += len;
   }
+  let audio: Buffer | null = null;
+  if (at < buf.length) {
+    if (at + 4 > buf.length) throw new SocialError(400, "Malformed request.");
+    const len = buf.readUInt32BE(at);
+    at += 4;
+    if (len <= 28 || len > CHAT_AUDIO_BYTES) throw new SocialError(400, "Voice memo is too large.");
+    if (at + len > buf.length) throw new SocialError(400, "Malformed request.");
+    audio = buf.subarray(at, at + len);
+    at += len;
+  }
   if (at !== buf.length) throw new SocialError(400, "Malformed request.");
-  return { head: head as Record<string, unknown>, photos };
+  return { head: head as Record<string, unknown>, photos, audio };
 }
 
 socialRouter.post(
@@ -1434,7 +1450,7 @@ socialRouter.post(
   (req, res, next) => {
     chatRaw(req, res, (err?: unknown) => {
       if (err) {
-        res.status(413).json({ error: "Each photo must be 48KB or smaller." });
+        res.status(413).json({ error: "Photos or voice memo too large." });
         return;
       }
       next();
@@ -1444,16 +1460,20 @@ socialRouter.post(
     assertSameOrigin(req);
     const me = requireUser(res);
     if (!Buffer.isBuffer(req.body)) throw new SocialError(400, "Malformed request.");
-    const { head, photos } = readPackedMessage(req.body);
+    const { head, photos, audio } = readPackedMessage(req.body);
     const kf = version(head.kf);
     const kt = version(head.kt);
     const iv = sealed(head.iv, 12, 12);
-    // A GCM tag alone is sixteen bytes: an empty text, allowed only under a photo.
+    // A GCM tag alone is sixteen bytes: an empty text, allowed only under a photo or a memo.
     const ct = sealed(head.ct, 16, CHAT_CT_BYTES);
-    if (!kf || !kt || !iv || !ct) throw new SocialError(400, "Malformed request.");
-    if (Buffer.from(ct, "base64url").length === 16 && !photos.length) throw new SocialError(400, "Write something.");
+    // The memo's box and its recording come together or not at all.
+    const memo = head.memo === undefined ? "" : sealed(head.memo, 29, CHAT_MEMO_BYTES);
+    if (!kf || !kt || !iv || !ct || memo === null || !memo !== !audio) throw new SocialError(400, "Malformed request.");
+    if (Buffer.from(ct, "base64url").length === 16 && !photos.length && !audio) {
+      throw new SocialError(400, "Write something.");
+    }
     const peer = await peerOf(me, req.params.name);
-    const sent = await sendMessage(me.name, peer.name, { kf, kt, iv, ct }, photos, Date.now());
+    const sent = await sendMessage(me.name, peer.name, { kf, kt, iv, ct, memo }, photos, audio, Date.now());
     if ("stale" in sent) {
       throw new SocialError(409, "A key changed. Try again.", { stale: true });
     }
@@ -1471,6 +1491,21 @@ socialRouter.get(
     const n = /^[0-3]$/.test(req.params.n) ? Number(req.params.n) : -1;
     const id = PAGE_ID.test(req.params.id) ? req.params.id : "";
     const file = id && n >= 0 && n < (await chatPhotoCount(id, me.name)) ? chatPhotoFile(id, n) : null;
+    if (!file) throw new SocialError(404, "Not found.");
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+    res.type("application/octet-stream").sendFile(file);
+  }),
+);
+
+/** A sealed voice memo, the same way. The page fetches it whole and opens it, so no Range is asked for. */
+socialRouter.get(
+  "/ca/:id",
+  requireAuth,
+  readLimit,
+  wrap(async (req, res) => {
+    const me = requireUser(res);
+    const id = PAGE_ID.test(req.params.id) ? req.params.id : "";
+    const file = id && (await chatHasAudio(id, me.name)) ? chatAudioFile(id) : null;
     if (!file) throw new SocialError(404, "Not found.");
     res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
     res.type("application/octet-stream").sendFile(file);

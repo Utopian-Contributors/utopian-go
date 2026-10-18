@@ -1249,6 +1249,15 @@ a.back.chat-back { display: none; }
 
 .pics img.gone { min-width: 0; height: auto; padding: 8px; color: var(--f); font-size: 12px; }
 
+/* A voice memo, at a set width: a bubble is only as wide as what it holds. Your own is in your bubble's green. */
+.msg .memo { width: 260px; max-width: 100%; margin: 0 0 4px; }
+.msg.mine .memo { margin-left: auto; background: var(--buy); color: var(--buy-ink); }
+.msg.mine .memo-go:not(:disabled) { background: var(--buy-ink); color: var(--buy); }
+.msg.mine .wave i { background: currentColor; }
+.msg.mine .memo-t { color: inherit; }
+/* A sealed memo while it is fetched and opened. */
+.memo[aria-busy="true"] .memo-go { opacity: 0.6; cursor: progress; }
+
 .chat-compose {
   flex: none;
   margin: 0;
@@ -1258,7 +1267,8 @@ a.back.chat-back { display: none; }
 }
 
 .chat-compose .compose-bar { align-items: flex-end; margin-top: 0; }
-.chat-compose .shots { margin: 0 0 8px; }
+.chat-compose .shots,
+.chat-compose .voice { margin: 0 0 8px; }
 
 .chat-compose textarea {
   flex: 1 1 auto;

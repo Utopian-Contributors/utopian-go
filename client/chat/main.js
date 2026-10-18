@@ -4,10 +4,10 @@
  * End to end. This device makes an ECDH P-256 key, seals its private half
  * under a key the passkey derives (WebAuthn PRF), and hands the server only
  * the sealed box and the public half. Two people's keys agree on a
- * conversation key through HKDF, and every message and photo is AES-GCM under
- * it before it leaves the page. The direction, sender to recipient, is the
- * additional data, so the server cannot pass one person's message off as the
- * other's.
+ * conversation key through HKDF, and every message, photo and voice memo is
+ * AES-GCM under it before it leaves the page. The direction, sender to
+ * recipient, is the additional data, so the server cannot pass one person's
+ * message off as the other's.
  *
  * Once opened, the private key is kept in IndexedDB as a non-extractable
  * CryptoKey. The page can use it and cannot read it out, so the passkey is
@@ -18,7 +18,8 @@
  * `ctx` rather than carrying copies of them.
  */
 import { el } from "../js/dom.js";
-import { b64u, needPasskey, u8, why } from "../js/passkey.js";
+import { B64, clock } from "../js/memo.js";
+import { b64u, needPasskey, register, u8, why } from "../js/passkey.js";
 
 const te = new TextEncoder();
 const td = new TextDecoder();
@@ -29,6 +30,11 @@ const SALT = te.encode("utopian-go messenger v1");
 const STORE = "ug-chat";
 const POLL_MS = 5000;
 const MAX_CHAT = 500;
+/** A memo's length and shape, as the recorder spells them (MAX_AUDIO_MS and WAVE_BARS in src/social/limits.ts). */
+const MEMO_MS = 3 * 60_000 + 1000;
+const WAVE = /^[A-Za-z0-9_-]{40}$/;
+/** Insecure pages (a phone on the LAN over http) have no microphone, so no button either. */
+const CAN_RECORD = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 
 function random(n) {
   return crypto.getRandomValues(new Uint8Array(n));
@@ -140,7 +146,9 @@ async function prf(challenge, id) {
  *   me: () => any, pull: (path: string, opts?: any) => Promise<any>, send: (path: string, obj?: any) => Promise<any>,
  *   shrink: (file: File, sizes: any[]) => Promise<Blob[]>, face: (name: string, rev: number) => HTMLElement | null,
  *   ago: (at: number) => string, linkedText: (text: string) => Node, useSide: (on: boolean) => void,
- *   renderSide: (person: any) => void, addPasskey: (password: string) => Promise<void>,
+ *   renderSide: (person: any) => void,
+ *   memoPlayer: (src: string | HTMLAudioElement, ms: number, wave: string) => HTMLElement,
+ *   load: (attr: string, global: string) => Promise<any>,
  * }} ctx
  * @returns {() => void} stops polling and frees what the page made
  */
@@ -206,6 +214,7 @@ export function mount(ctx) {
    * Sets `m.text`: the words, or null when this device holds no key that
    * opens it. A message sealed to a key this account has since replaced
    * stays closed; that is the cost of the key never leaving a device.
+   * A voice memo's length and shape go in `m.voice`.
    */
   async function open(who, m) {
     if (m.text !== undefined && m.text !== null) return;
@@ -217,6 +226,18 @@ export function mount(ctx) {
       m.text = td.decode(await unseal(await key, u8(m.iv), u8(m.ct), dir));
     } catch {
       m.text = null;
+    }
+    if (m.memo) m.voice = await openMemo(await key, m, dir);
+  }
+
+  /** The sender's word, sealed where the server could not check it, so checked here. */
+  async function openMemo(key, m, dir) {
+    try {
+      const box = u8(m.memo);
+      const { ms, wave } = JSON.parse(td.decode(await unseal(key, box.subarray(0, 12), box.subarray(12), `${dir} ${m.iv} memo`)));
+      return Number.isInteger(ms) && ms > 0 && ms <= MEMO_MS && WAVE.test(wave) ? { ms, wave } : null;
+    } catch {
+      return null;
     }
   }
 
@@ -293,7 +314,7 @@ export function mount(ctx) {
     const m = c.last;
     const own = m.from === name ? "You: " : "";
     const text = m.text ? m.text : m.text === null ? (mine ? "Can't be opened on this device" : "Encrypted message") : "";
-    return el("span", { class: "prev", text: own + (text || (m.photos ? "Photo" : "…")) });
+    return el("span", { class: "prev", text: own + (text || (m.memo ? "Voice memo" : m.photos ? "Photo" : "…")) });
   }
 
   function row(c) {
@@ -449,7 +470,7 @@ export function mount(ctx) {
       button.disabled = true;
       err.textContent = "";
       try {
-        await ctx.addPasskey(input.value);
+        await register(name, input.value, ctx.send);
         input.value = "";
         added = true;
         await loadStatus();
@@ -550,6 +571,50 @@ export function mount(ctx) {
     return row;
   }
 
+  /**
+   * Drawn from its sealed length and shape. The recording is fetched and
+   * opened on the first press, as a post's is fetched on its first press:
+   * the press plays an element with no file yet, which starts once the
+   * opened file is given to it. Played inside the tap, it is allowed to.
+   */
+  function voice(who, m) {
+    // A box its own key will not open, under words that did: it was altered on the way.
+    if (m.memo && !m.voice && m.text !== null) return el("p", { class: "closed", text: "This voice memo could not be opened." });
+    if (!m.voice) return null;
+    if (m.voiceUrl) return ctx.memoPlayer(m.voiceUrl, m.voice.ms, m.voice.wave);
+    const { myV, theirV, dir } = ends(who, m);
+    const key = myV === mine?.v ? pairKey(who, theirV) : null;
+    if (!key) return null;
+    const audio = new Audio();
+    const player = ctx.memoPlayer(audio, m.voice.ms, m.voice.wave);
+    audio.addEventListener(
+      "play",
+      async () => {
+        player.setAttribute("aria-busy", "true");
+        try {
+          const res = await fetch(`/api/social/ca/${m.id}`);
+          if (!res.ok) throw new Error();
+          const bytes = new Uint8Array(await res.arrayBuffer());
+          const plain = new Uint8Array(await unseal(await key, bytes.subarray(0, 12), bytes.subarray(12), `${dir} ${m.iv} audio`));
+          // The recorder writes WebM, or MP4 on an older Safari. WebM opens with EBML's magic.
+          const webm = plain[0] === 0x1a && plain[1] === 0x45 && plain[2] === 0xdf && plain[3] === 0xa3;
+          const url = URL.createObjectURL(new Blob([plain], { type: webm ? "audio/webm" : "audio/mp4" }));
+          if (stopped) return URL.revokeObjectURL(url);
+          urls.push(url);
+          audio.src = url;
+        } catch {
+          // The player's own failure: its button goes grey and says it can't play.
+          audio.pause();
+          audio.dispatchEvent(new Event("error"));
+        } finally {
+          player.removeAttribute("aria-busy");
+        }
+      },
+      { once: true },
+    );
+    return player;
+  }
+
   function bubble(who, m) {
     const own = m.from === name;
     const text =
@@ -562,6 +627,7 @@ export function mount(ctx) {
       "div",
       { class: own ? "msg mine" : "msg", id: `m-${m.id}` },
       pics(who, m),
+      voice(who, m),
       text,
       el("time", { text: ctx.ago(m.at), datetime: new Date(m.at).toISOString(), title: new Date(m.at).toLocaleString() }),
     );
@@ -647,9 +713,14 @@ export function mount(ctx) {
     const file = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true });
     const add = el("button", { type: "button", class: "tool", "aria-label": "Add photos" });
     add.innerHTML = '<svg width="22" height="22" aria-hidden="true"><use href="#pi"/></svg>';
+    const mic = el("button", { type: "button", class: "tool", "aria-label": "Record a voice memo", hidden: !CAN_RECORD });
+    mic.innerHTML = '<svg width="22" height="22" aria-hidden="true"><use href="#au"/></svg>';
+    /** The recorded memo, until it is sent or removed: {blob, ms, wave, url}. */
+    let memo = null;
+    const voiceRow = el("div", { class: "voice", hidden: true });
     const button = el("button", { type: "submit", class: "post-go", text: "Send", disabled: true });
     const note = el("span", { class: "wait", hidden: true });
-    const ready = () => !busy && (area.value.trim().length > 0 || shots.length > 0);
+    const ready = () => !busy && (area.value.trim().length > 0 || shots.length > 0 || !!memo);
     const sync = () => {
       button.disabled = !ready();
     };
@@ -668,6 +739,39 @@ export function mount(ctx) {
       );
       strip.hidden = !shots.length;
     }
+
+    /** One memo a message: while there is one, the microphone waits and × takes it off. */
+    function paintVoice() {
+      mic.disabled = !!memo;
+      voiceRow.hidden = !memo;
+      if (!memo) return voiceRow.replaceChildren();
+      const remove = el("button", { type: "button", class: "memo-x", "aria-label": "Remove voice memo", text: "×" });
+      remove.addEventListener("click", () => {
+        URL.revokeObjectURL(memo.url);
+        memo = null;
+        paintVoice();
+        sync();
+      });
+      voiceRow.replaceChildren(ctx.memoPlayer(memo.url, memo.ms, memo.wave), remove);
+    }
+
+    mic.addEventListener("click", async () => {
+      note.hidden = true;
+      mic.disabled = true;
+      try {
+        const got = await (await ctx.load("rc", "__rec")).record({ clock, B64 });
+        if (got) {
+          const url = URL.createObjectURL(got.blob);
+          urls.push(url);
+          memo = { ...got, url };
+        }
+      } catch {
+        note.hidden = false;
+        note.textContent = "Could not open the recorder.";
+      }
+      paintVoice();
+      sync();
+    });
 
     add.addEventListener("click", () => file.click());
     file.addEventListener("change", async () => {
@@ -712,7 +816,8 @@ export function mount(ctx) {
       "form",
       { class: "composer chat-compose" },
       strip,
-      el("div", { class: "compose-bar" }, add, file, area, button),
+      voiceRow,
+      el("div", { class: "compose-bar" }, add, mic, file, area, button),
       note,
     );
     form.addEventListener("submit", async (e) => {
@@ -722,14 +827,22 @@ export function mount(ctx) {
       sync();
       note.hidden = true;
       const text = area.value.trim();
+      const spoken = memo;
       try {
-        const m = await deliver(who, text, shots);
+        const m = await deliver(who, text, shots, spoken);
         m.text = text;
         m.urls = shots.map((s) => s.url);
+        // Played back from the recording itself; the sealed copy is for the other person.
+        if (spoken) {
+          m.voice = { ms: spoken.ms, wave: spoken.wave };
+          m.voiceUrl = spoken.url;
+        }
         area.value = "";
         area.style.height = "auto";
         shots.length = 0;
         paintShots();
+        memo = null;
+        paintVoice();
         const p = peerOf(who);
         learn({ with: who, avatarRev: p.avatarRev, at: m.at, unread: 0, pub: p.keys.get(p.cur) || null, last: m });
         paintList();
@@ -749,10 +862,11 @@ export function mount(ctx) {
   }
 
   /**
-   * Header JSON, then the sealed photos. A 409 means a key moved on one side:
-   * the other person's is fetched again and the message is sealed once more.
+   * Header JSON, then the sealed photos, then the sealed memo. A 409 means a
+   * key moved on one side: the other person's is fetched again and the
+   * message is sealed once more.
    */
-  async function deliver(who, text, shots, again = false) {
+  async function deliver(who, text, shots, memo, again = false) {
     const p = peerOf(who);
     const key = pairKey(who, p.cur);
     if (!key) throw new Error(`${who} hasn't turned on Messenger yet.`);
@@ -767,7 +881,17 @@ export function mount(ctx) {
         return new Blob([piv, await seal(k, piv, await shot.full.arrayBuffer(), `${dir} ${ivText} ${i}`)]);
       }),
     );
-    const head = te.encode(JSON.stringify({ kf: mine.v, kt: p.cur, iv: ivText, ct: b64u(ct) }));
+    // The length and shape in a box of their own, so a bubble draws them before the recording is fetched.
+    let box;
+    let audio = null;
+    if (memo) {
+      const miv = random(12);
+      const shape = te.encode(JSON.stringify({ ms: memo.ms, wave: memo.wave }));
+      box = b64u(await new Blob([miv, await seal(k, miv, shape, `${dir} ${ivText} memo`)]).arrayBuffer());
+      const aiv = random(12);
+      audio = new Blob([aiv, await seal(k, aiv, await memo.blob.arrayBuffer(), `${dir} ${ivText} audio`)]);
+    }
+    const head = te.encode(JSON.stringify({ kf: mine.v, kt: p.cur, iv: ivText, ct: b64u(ct), memo: box }));
     const top = new Uint8Array(3 + head.length);
     new DataView(top.buffer).setUint16(0, head.length);
     top.set(head, 2);
@@ -777,6 +901,11 @@ export function mount(ctx) {
       const len = new DataView(new ArrayBuffer(4));
       len.setUint32(0, photo.size);
       parts.push(len, photo);
+    }
+    if (audio) {
+      const len = new DataView(new ArrayBuffer(4));
+      len.setUint32(0, audio.size);
+      parts.push(len, audio);
     }
     const res = await fetch(`/api/social/c/${who}`, {
       method: "POST",
@@ -789,7 +918,7 @@ export function mount(ctx) {
       if (!mine) throw new Error("Your Messenger key changed on another device. Unlock it here to keep writing.");
       const fresh = await ctx.pull(`/api/social/c/${who}`);
       know(fresh.peer);
-      return deliver(who, text, shots, true);
+      return deliver(who, text, shots, memo, true);
     }
     if (!res.ok) throw new Error(data.error || "The message was not sent.");
     return data.message;

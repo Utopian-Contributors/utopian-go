@@ -1172,17 +1172,22 @@ test("messenger keeps only ciphertext and refuses stale or foreign keys", async 
     return hkdf(bits, `ug chat ${[`${me}.${myV}`, `${peer}.${theirV}`].sort().join(" ")}`);
   }
 
-  function pack(head: Record<string, unknown>, photos: Buffer[] = []): Buffer {
+  function pack(head: Record<string, unknown>, photos: Buffer[] = [], audio?: Buffer): Buffer {
     const json = Buffer.from(JSON.stringify(head));
     const len = Buffer.alloc(2);
     len.writeUInt16BE(json.length);
     const parts: Buffer[] = [len, json, Buffer.from([photos.length])];
-    for (const photo of photos) {
+    for (const blob of audio ? [...photos, audio] : photos) {
       const n = Buffer.alloc(4);
-      n.writeUInt32BE(photo.length);
-      parts.push(n, photo);
+      n.writeUInt32BE(blob.length);
+      parts.push(n, blob);
     }
     return Buffer.concat(parts);
+  }
+
+  async function sealWith(key: webcrypto.CryptoKey, aad: string, bytes: Uint8Array): Promise<Buffer> {
+    const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+    return Buffer.concat([iv, Buffer.from(await subtle.encrypt({ name: "AES-GCM", iv, additionalData: te.encode(aad) }, key, bytes))]);
   }
 
   try {
@@ -1303,6 +1308,41 @@ test("messenger keeps only ciphertext and refuses stale or foreign keys", async 
     assert.equal(poll.json?.messages.length, 0);
     const moved = await bob("GET", `/api/social/c?after=${page.json?.messages[29].at}`);
     assert.equal(moved.json?.chats[0].with, "ada");
+
+    // A voice memo: its length and shape in a sealed box of their own, the recording as a sealed tail.
+    const nowPair = await pairKey("ada", 1, adaKey.priv, "bob", 2, bobKey2.pub);
+    const shape = JSON.stringify({ ms: 4200, wave: "A".repeat(40) });
+    const memo = (await sealWith(nowPair, `ada>bob ${ivText} memo`, te.encode(shape))).toString("base64url");
+    const recording = webm(64);
+    const audio = await sealWith(nowPair, `ada>bob ${ivText} audio`, recording);
+    const blank = Buffer.alloc(16).toString("base64url");
+    const spoken = await ada("POST", "/api/social/c/bob", pack({ kf: 1, kt: 2, iv: ivText, ct: blank, memo }, [], audio));
+    assert.equal(spoken.status, 200, spoken.text);
+    const vid = String(spoken.json?.message.id);
+    assert.equal(spoken.json?.message.memo, memo);
+    const heard = await bob("GET", "/api/social/c/ada");
+    const said = heard.json?.messages.at(-1);
+    assert.equal(said.id, vid);
+    assert.equal(heard.text.includes("4200"), false, "the length is sealed too");
+    const bobNow = await pairKey("bob", 2, bobKey2.priv, "ada", 1, adaKey.pub);
+    const memoBox = Buffer.from(said.memo, "base64url");
+    const heardShape = await subtle.decrypt(
+      { name: "AES-GCM", iv: memoBox.subarray(0, 12), additionalData: te.encode(`ada>bob ${said.iv} memo`) },
+      bobNow,
+      memoBox.subarray(12),
+    );
+    assert.equal(new TextDecoder().decode(heardShape), shape, "the recipient opens the memo's shape");
+    const fetched = await bob("GET", `/api/social/ca/${vid}`);
+    assert.equal(fetched.status, 200);
+    assert.deepEqual(fetched.raw, audio, "the recording comes back exactly as sealed");
+    assert.equal((await eve("GET", `/api/social/ca/${vid}`)).status, 404, "only the two people");
+    assert.equal((await bob("GET", `/api/social/ca/${id}`)).status, 404, "a message without a memo has none");
+    const half = await ada("POST", "/api/social/c/bob", pack({ kf: 1, kt: 2, iv: ivText, ct: blank, memo }));
+    assert.equal(half.status, 400, "a memo's box without its recording");
+    const mute = await ada("POST", "/api/social/c/bob", pack({ kf: 1, kt: 2, iv: ivText, ct: blank }, [], audio));
+    assert.equal(mute.status, 400, "a recording without its box");
+    const huge = Buffer.alloc(640 * 1024 + 29);
+    assert.equal((await ada("POST", "/api/social/c/bob", pack({ kf: 1, kt: 2, iv: ivText, ct: blank, memo }, [], huge))).status, 400);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }

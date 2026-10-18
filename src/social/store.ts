@@ -182,6 +182,33 @@ export function removeChatPhotos(id: string, count: number): void {
   }
 }
 
+function chatAudioPath(id: string): string {
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(id)) throw new Error("chat audio path");
+  const file = path.join(chatDir(), `${id}-a.bin`);
+  if (!file.startsWith(chatDir() + path.sep)) throw new Error("chat audio path");
+  return file;
+}
+
+/** A message's voice memo, sealed like its photos. */
+export function chatAudioFile(id: string): string | null {
+  try {
+    const file = chatAudioPath(id);
+    return existsSync(file) ? file : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeChatAudio(id: string, bytes: Buffer): void {
+  mkdirSync(chatDir(), { recursive: true });
+  writeFileSync(chatAudioPath(id), bytes, { mode: 0o600 });
+}
+
+export function removeChatAudio(id: string): void {
+  const file = chatAudioFile(id);
+  if (file) unlinkSync(file);
+}
+
 function adDir(): string {
   return path.join(socialDir(), "ads");
 }

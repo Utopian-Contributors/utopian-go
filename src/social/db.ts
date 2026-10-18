@@ -7,10 +7,12 @@ import { type AdDevices, CHAT_PAGE, MAX_CHAT_KEEP, MAX_COMMENTS, MAX_NOTES_KEEP,
 import type { AudioKind } from "./audio";
 import {
   removeBanner,
+  removeChatAudio,
   removeChatPhotos,
   removePostAudio,
   removePostPhotos,
   writeBanner,
+  writeChatAudio,
   writeChatPhotos,
   writePostAudio,
   writePostPhotos,
@@ -185,8 +187,11 @@ CREATE TABLE IF NOT EXISTS messages (
   kt integer NOT NULL,
   iv text NOT NULL,
   ct text NOT NULL,
-  photos integer NOT NULL DEFAULT 0
+  photos integer NOT NULL DEFAULT 0,
+  memo text NOT NULL DEFAULT ''
 );
+-- A voice memo's length and shape, sealed; empty when the message has none.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS memo text NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS messages_pair ON messages (pair, at DESC, id DESC);
 -- One row per person per conversation: the sidebar, newest first.
 CREATE TABLE IF NOT EXISTS chats (
@@ -1058,6 +1063,8 @@ export interface Message {
   iv: string;
   ct: string;
   photos: number;
+  /** A voice memo's length and shape, sealed (IV, then AES-GCM); "" without one. The recording is a file. */
+  memo: string;
 }
 
 export interface Chat {
@@ -1078,9 +1085,10 @@ type MessageRow = {
   iv: string;
   ct: string;
   photos: number;
+  memo: string;
 };
 
-const MESSAGE_COLS = "m.id, m.from_name, m.at, m.kf, m.kt, m.iv, m.ct, m.photos";
+const MESSAGE_COLS = "m.id, m.from_name, m.at, m.kf, m.kt, m.iv, m.ct, m.photos, m.memo";
 
 function messageFrom(row: MessageRow): Message {
   return {
@@ -1092,6 +1100,7 @@ function messageFrom(row: MessageRow): Message {
     iv: row.iv,
     ct: row.ct,
     photos: row.photos,
+    memo: row.memo,
   };
 }
 
@@ -1141,19 +1150,27 @@ export async function addChatKey(
  * The versions have to be the newest on both sides: a message sealed to a
  * key its recipient has since replaced could never be opened, so it is
  * refused and the sender fetches the new key. Past MAX_CHAT_KEEP in one
- * conversation the oldest go, with their photos.
+ * conversation the oldest go, with their photos and memos.
+ *
+ * `audio` is the sealed recording, given with `sealed.memo` or not at all.
  */
 export async function sendMessage(
   from: string,
   to: string,
-  sealed: { kf: number; kt: number; iv: string; ct: string },
+  sealed: { kf: number; kt: number; iv: string; ct: string; memo: string },
   photos: Buffer[],
+  audio: Buffer | null,
   at: number,
 ): Promise<Message | { stale: true }> {
   const id = newId();
-  writeChatPhotos(id, photos);
-  let result: { message: Message; dropped: { id: string; photos: number }[] } | { stale: true };
+  const unwrite = () => {
+    removeChatPhotos(id, photos.length);
+    if (audio) removeChatAudio(id);
+  };
+  let result: { message: Message; dropped: { id: string; photos: number; audio: boolean }[] } | { stale: true };
   try {
+    writeChatPhotos(id, photos);
+    if (audio) writeChatAudio(id, audio);
     result = await tx(async (client) => {
       const keys = await client.query<{ name: string; v: number }>(
         "SELECT name, max(v) AS v FROM chat_keys WHERE name = ANY($1) GROUP BY name",
@@ -1163,9 +1180,9 @@ export async function sendMessage(
       if (current.get(from) !== sealed.kf || current.get(to) !== sealed.kt) return { stale: true as const };
       const pair = pairOf(from, to);
       await client.query(
-        `INSERT INTO messages (id, pair, from_name, to_name, at, kf, kt, iv, ct, photos)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [id, pair, from, to, at, sealed.kf, sealed.kt, sealed.iv, sealed.ct, photos.length],
+        `INSERT INTO messages (id, pair, from_name, to_name, at, kf, kt, iv, ct, photos, memo)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [id, pair, from, to, at, sealed.kf, sealed.kt, sealed.iv, sealed.ct, photos.length, sealed.memo],
       );
       await client.query(
         `INSERT INTO chats (owner, peer, at, last, unread) VALUES ($1,$2,$3,$4,0), ($2,$1,$3,$4,1)
@@ -1173,26 +1190,32 @@ export async function sendMessage(
            unread = chats.unread + EXCLUDED.unread`,
         [from, to, at, id],
       );
-      const dropped = await client.query<{ id: string; photos: number }>(
+      const dropped = await client.query<{ id: string; photos: number; audio: boolean }>(
         `DELETE FROM messages WHERE pair = $1 AND (at, id) < (
            SELECT at, id FROM messages WHERE pair = $1 ORDER BY at DESC, id DESC OFFSET $2 LIMIT 1
-         ) RETURNING id, photos`,
+         ) RETURNING id, photos, memo <> '' AS audio`,
         [pair, MAX_CHAT_KEEP - 1],
       );
       return {
-        message: { id, from, at, kf: sealed.kf, kt: sealed.kt, iv: sealed.iv, ct: sealed.ct, photos: photos.length },
+        message: {
+          id, from, at, kf: sealed.kf, kt: sealed.kt, iv: sealed.iv, ct: sealed.ct,
+          photos: photos.length, memo: sealed.memo,
+        },
         dropped: dropped.rows,
       };
     });
   } catch (err) {
-    removeChatPhotos(id, photos.length);
+    unwrite();
     throw err;
   }
   if ("stale" in result) {
-    removeChatPhotos(id, photos.length);
+    unwrite();
     return result;
   }
-  for (const gone of result.dropped) removeChatPhotos(gone.id, gone.photos);
+  for (const gone of result.dropped) {
+    removeChatPhotos(gone.id, gone.photos);
+    if (gone.audio) removeChatAudio(gone.id);
+  }
   return result.message;
 }
 
@@ -1311,6 +1334,15 @@ export async function chatPhotoCount(id: string, viewer: string): Promise<number
     [id, viewer],
   );
   return row?.photos ?? 0;
+}
+
+/** Whether a message has a voice memo, when `viewer` is one of its two people. */
+export async function chatHasAudio(id: string, viewer: string): Promise<boolean> {
+  const row = await one<{ id: string }>(
+    "SELECT id FROM messages WHERE id = $1 AND (from_name = $2 OR to_name = $2) AND memo <> ''",
+    [id, viewer],
+  );
+  return !!row;
 }
 
 export interface AdKeyword {

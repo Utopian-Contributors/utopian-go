@@ -8,6 +8,7 @@
 import { logOut } from "../js/acct.js";
 import { $, el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
+import { B64, clock } from "../js/memo.js";
 import { noZoom } from "../js/device.js";
 import { open as openLogin } from "../js/login.js";
 import { readName, writeName } from "../js/me.js";
@@ -18,8 +19,6 @@ import { UTCC, utccShort, utccText } from "../js/utcc.js";
 const main = $("m");
 /** Matches MAX_POST in src/social/limits.ts. */
 const MAX_POST = 256;
-/** A voice memo's shape is spelled in base64url, one character (0–63) per bar. */
-const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 /** Insecure pages (a phone on the LAN over http) have no microphone, so no button either. */
 const CAN_RECORD = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 
@@ -535,12 +534,6 @@ function gallery(post) {
   return row;
 }
 
-/** m:ss */
-function clock(ms) {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
 /** A sprite symbol from social.html, as a button's whole face. */
 function icon(id, size) {
   return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${id}"/></svg>`;
@@ -556,6 +549,11 @@ let playing = null;
  * only their bars. The length drawn is the one posted, not the file's: a
  * browser's own recording often does not say how long it is, and Chrome
  * reports Infinity for one until it has played to the end.
+ *
+ * `src` is the file's address, or an element with none yet: Messenger's memos
+ * are sealed, and a press plays the element before its file is opened. A play
+ * with no file waits, and starts once the file is given.
+ * @param {string | HTMLAudioElement} src
  */
 function memoPlayer(src, ms, wave) {
   const go = el("button", { type: "button", class: "memo-go", "aria-label": "Play voice memo" });
@@ -590,7 +588,8 @@ function memoPlayer(src, ms, wave) {
 
   function player() {
     if (audio) return audio;
-    audio = new Audio(src);
+    // Only an element has play().
+    audio = src.play ? src : new Audio(src);
     audio.addEventListener("play", () => {
       if (playing && playing !== audio) playing.pause();
       playing = audio;
@@ -626,7 +625,8 @@ function memoPlayer(src, ms, wave) {
     const box = bars.getBoundingClientRect();
     const a = player();
     a.currentTime = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width)) * total;
-    if (a.paused) a.play().catch(() => {});
+    // Already playing, play() does nothing.
+    a.play().catch(() => {});
     paint();
   });
   return el("div", { class: "memo", role: "group", "aria-label": "Voice memo" }, go, bars, time);
@@ -1381,11 +1381,6 @@ function passForm(id, hint, label, run, box) {
   return form;
 }
 
-/** Register this device's passkey. The server asks for the password first. */
-function addPasskey(password) {
-  return register(me.name, password, send);
-}
-
 /** Your profile as others see it: the card and the posts, nothing to edit. */
 function renderProfile(data) {
   const user = data.user;
@@ -1545,7 +1540,8 @@ async function renderEdit() {
           : "Add a passkey to sign in without a password. Enter your password first.",
         me.passkey ? "Replace passkey" : "Add passkey",
         async (password) => {
-          await addPasskey(password);
+          // This device's passkey. The server asks for the password first.
+          await register(me.name, password, send);
           show();
         },
       ),
@@ -1591,7 +1587,8 @@ async function renderChat() {
     linkedText,
     useSide,
     renderSide,
-    addPasskey,
+    memoPlayer,
+    load,
   });
 }
 
