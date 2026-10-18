@@ -13,10 +13,16 @@
  *  - And the browser's own offline event, for the case it does know about.
  *
  * Any of them puts the panel up. Its x takes it down and leaves the last
- * synced state to read underneath; the logo stays grey so that state is never
- * mistaken for live. Retry asks the network directly (no-store, which the
- * worker lets through) and reloads once it answers; so does the connection
- * coming back by itself, on a page that is only the worker's copy.
+ * synced state to read underneath, for the rest of that outage: closed once,
+ * it stays closed on every page until the connection is back. The logo stays
+ * grey meanwhile, so that state is never mistaken for live. Retry asks the
+ * network directly (no-store, which the worker lets through) and reloads once
+ * it answers.
+ *
+ * When the connection comes back by itself, a page that has shown anything
+ * from the cache gets an Update button rather than a reload nobody asked for:
+ * floating over the content, on top of the bottom tabs on a phone, under the
+ * search field on a wide screen.
  *
  * It also seeds the cache. A first visit runs before the worker is in charge,
  * so nothing it fetched went through the worker; once the worker is ready, it
@@ -38,12 +44,42 @@ body.ug-off .lg::after{filter:grayscale(1)}
 .ugo-x{position:absolute;top:max(12px,env(safe-area-inset-top));right:12px;display:grid;place-items:center;
  width:44px;height:44px;border:0;border-radius:50%;background:none;color:var(--f);cursor:pointer}
 .ugo-x:hover{background:rgba(127,127,127,.14)}
-@media (prefers-reduced-motion:reduce){.ugo{animation:none}}
+.ugu{position:fixed;z-index:65;display:inline-flex;align-items:center;gap:8px;padding:12px 22px 12px 18px;
+ border:0;border-radius:999px;background:var(--buy);color:var(--buy-ink);font:600 15px/1 var(--ff);
+ box-shadow:0 6px 24px rgba(0,0,0,.22);transform:translateX(-50%);cursor:pointer;animation:ugu-in .25s ease-out}
+.ugu:focus-visible{outline:2px solid var(--buy);outline-offset:3px}
+@keyframes ugu-in{from{opacity:0;translate:0 8px}}
+@media (prefers-reduced-motion:reduce){.ugo,.ugu{animation:none}}
 `;
 
 const X =
   '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
   'stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+
+const SYNC =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>';
+
+/** Set by the panel's x, for the tab: the outage it was closed for is not over until the network answers. */
+const SHUT = "ug.off.x";
+
+function shut(on) {
+  try {
+    if (on) sessionStorage.setItem(SHUT, "1");
+    else sessionStorage.removeItem(SHUT);
+  } catch {
+    // No storage: the panel comes back on the next page, which is all this costs.
+  }
+}
+
+function isShut() {
+  try {
+    return sessionStorage.getItem(SHUT) === "1";
+  } catch {
+    return false;
+  }
+}
 
 const meta = document.querySelector('meta[name="ug-offline"]');
 /** This page is the worker's copy, not the network's, so it stays grey until a reload. */
@@ -52,8 +88,10 @@ const since = Number(meta?.content) || 0;
 
 /** @type {HTMLElement | null} */
 let panel = null;
-/** Closed by its x: it stays closed until the connection comes back and goes again. */
-let dismissed = false;
+/** @type {HTMLElement | null} */
+let update = null;
+/** Something on screen came from the cache, so the page is worth updating once the network is back. */
+let served = stale;
 
 function ago(at) {
   const min = Math.round((Date.now() - at) / 60000);
@@ -78,26 +116,31 @@ async function reachable() {
   }
 }
 
+/** Once, the first time anything here is drawn: the panel, the grey logo or Update. */
+function styles() {
+  if (document.getElementById("ugo-css")) return;
+  const style = document.createElement("style");
+  style.id = "ugo-css";
+  style.textContent = CSS;
+  document.head.append(style);
+}
+
 function close() {
   panel?.remove();
   panel = null;
 }
 
+function dismiss() {
+  shut(true);
+  close();
+}
+
 function onKey(e) {
-  if (e.key === "Escape" && panel) {
-    dismissed = true;
-    close();
-  }
+  if (e.key === "Escape" && panel) dismiss();
 }
 
 function open() {
-  if (panel || dismissed) return;
-  if (!document.getElementById("ugo-css")) {
-    const style = document.createElement("style");
-    style.id = "ugo-css";
-    style.textContent = CSS;
-    document.head.append(style);
-  }
+  if (panel || isShut()) return;
   panel = document.createElement("div");
   panel.className = "ugo";
   panel.setAttribute("role", "alertdialog");
@@ -109,10 +152,7 @@ function open() {
   x.className = "ugo-x";
   x.setAttribute("aria-label", "Close, and show what was last synced");
   x.innerHTML = X;
-  x.addEventListener("click", () => {
-    dismissed = true;
-    close();
-  });
+  x.addEventListener("click", dismiss);
 
   const text = document.createElement("p");
   text.id = "ugo-t";
@@ -146,31 +186,78 @@ function open() {
   retry.focus({ preventScroll: true });
 }
 
+/**
+ * Where Update floats. A phone with Social's bottom tabs: just above them. A
+ * phone without: as far off the bottom edge. A wide screen: under the search
+ * field, centred on it, or near the top once the field has scrolled away.
+ */
+function place() {
+  if (!update) return;
+  const tabs = document.querySelector("body.soc #tb");
+  const field = document.querySelector("form.sf");
+  update.style.top = update.style.bottom = "";
+  if (matchMedia("(max-width: 900px)").matches) {
+    const above = tabs ? innerHeight - tabs.getBoundingClientRect().top : 0;
+    update.style.bottom = `${above + 16}px`;
+    update.style.left = "50%";
+  } else if (field) {
+    const box = field.getBoundingClientRect();
+    update.style.top = `${Math.max(12, box.bottom + 12)}px`;
+    update.style.left = `${box.left + box.width / 2}px`;
+  } else {
+    update.style.top = "16px";
+    update.style.left = "50%";
+  }
+}
+
+function offerUpdate() {
+  if (update) return;
+  styles();
+  update = document.createElement("button");
+  update.type = "button";
+  update.className = "ugu";
+  update.innerHTML = SYNC;
+  update.append("Update");
+  update.addEventListener("click", () => location.reload());
+  document.body.append(update);
+  place();
+}
+
+addEventListener("resize", place);
+addEventListener("scroll", place, { passive: true });
+
 function goOffline() {
+  styles();
   document.body.classList.add("ug-off");
+  update?.remove();
+  update = null;
   open();
 }
 
 /**
- * The connection is back. A page that is the worker's copy is reloaded, since
- * all it has to show is old; a live page only lost its connection for a
- * while, so it keeps what is on it and just loses the panel and the grey.
+ * The connection is back: the panel goes, and with it the grey, and the next
+ * outage gets its panel again. A page showing anything from the cache offers
+ * Update; one that only lost its connection a while has nothing old on it.
  */
 async function backOnline() {
   if (!(await reachable())) return;
-  if (stale) return location.reload();
-  dismissed = false;
+  shut(false);
   close();
   document.body.classList.remove("ug-off");
+  if (served) offerUpdate();
 }
 
 addEventListener("keydown", onKey);
 addEventListener("offline", goOffline);
 addEventListener("online", backOnline);
 navigator.serviceWorker?.addEventListener("message", (e) => {
-  if (e.data?.ug === "offline") goOffline();
+  if (e.data?.ug !== "offline") return;
+  served = true;
+  goOffline();
 });
 if (stale || navigator.onLine === false) goOffline();
+// A live page means the network answered, so whatever outage the x closed the panel for is over.
+else shut(false);
 
 // Seed the cache with what this page fetched before the worker was in charge.
 if (navigator.serviceWorker && !navigator.serviceWorker.controller && !stale) {
