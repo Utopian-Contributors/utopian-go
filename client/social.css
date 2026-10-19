@@ -444,6 +444,10 @@ dialog textarea { resize: none; }
  */
 .coins {
   display: grid;
+  /* One column held to the post's width. Left to size itself, an auto track
+     grows to its cards' unwrapped text, and each card's min(100%, 360px) then
+     resolves against that instead: a 360px card on a 288px post, cut off. */
+  grid-template-columns: minmax(0, 1fr);
   justify-items: start;
   gap: 8px;
   margin: 8px 0 0;
