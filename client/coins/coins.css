@@ -1,0 +1,65 @@
+/*
+ * A ticker's card under a post: the logo, the symbol over its name, then the
+ * price now over the profit since the post. Exactly the height of the
+ * placeholder social.css draws while this bundle and the prices load, so
+ * nothing below it moves when the card arrives.
+ */
+.cc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: min(100%, 360px);
+  height: 58px;
+  padding: 0 14px 0 12px;
+  border-radius: 16px;
+  background: var(--ch);
+  color: var(--t);
+  font-size: 14px;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+a.cc:hover { color: var(--t); text-decoration: none; }
+a.cc:hover .cc-id b { text-decoration: underline; }
+.cc:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+
+.cc-ic { flex: none; width: 32px; height: 32px; border-radius: 50%; }
+
+.cc-coin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 1px;
+  background: var(--b);
+  color: var(--m);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
+.cc-id { min-width: 0; }
+
+.cc b,
+.cc small,
+.cc-q span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cc b { font-weight: 600; }
+.cc small { color: var(--f); font-size: 12px; }
+
+.cc-q {
+  flex: none;
+  margin-left: auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-q i { font-style: normal; font-weight: 600; }
+.cc .up { color: var(--go); }
+.cc .dn { color: var(--dn); }

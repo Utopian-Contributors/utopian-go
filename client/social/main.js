@@ -1,34 +1,28 @@
 /**
- * Timeline, profile, friends.
+ * Timeline, profile, a post.
  *
  * The document is static. This file asks who you are and fills the column.
- * Pictures are scaled here, before they are uploaded: the server only checks
- * the result, and the aspect ratio is kept by scaling both sides together.
+ * Everything the timeline does not draw on its first paint is a bundle of its
+ * own, fetched by the page that needs it and handed this file's helpers
+ * (`kit`) so it carries no copies: the composer, the ticker cards, Friends,
+ * Notifications, Edit profile, Messenger, Advertise, the rail, Pay, and the
+ * Log in dialog.
  */
 import { logOut } from "../js/acct.js";
 import { $, el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { B64, clock } from "../js/memo.js";
 import { noZoom } from "../js/device.js";
-import { open as openLogin } from "../js/login.js";
 import { readName, writeName } from "../js/me.js";
-import { register, why } from "../js/passkey.js";
 import { mountPwa } from "../js/pwa.js";
-import { dismissible } from "../js/sheet.js";
 import { UTCC, utccShort, utccText } from "../js/utcc.js";
 
 const main = $("m");
-/** Matches MAX_POST in src/social/limits.ts. */
-const MAX_POST = 256;
-/** Insecure pages (a phone on the LAN over http) have no microphone, so no button either. */
-const CAN_RECORD = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 
 /** @type {null | {name: string, address: string, bio: string, loc: string, avatarRev: number, passkey: false | {id: string}, wait: number, unseen: number}} */
 let me = null;
 /** Object URLs of photos in an open composer, freed when the page is redrawn. */
 const drafts = [];
-/** A link sent over by a search result's Comment button, for the next composer. */
-let handed = new URLSearchParams(location.search).get("text") || "";
 
 function ago(at) {
   const s = Math.max(0, (Date.now() - at) / 1000);
@@ -36,11 +30,6 @@ function ago(at) {
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   if (s < 86400) return `${Math.floor(s / 3600)}h`;
   return `${Math.floor(s / 86400)}d`;
-}
-
-function waitLabel(ms) {
-  const min = Math.max(1, Math.ceil(ms / 60000));
-  return `You can post again in ${min} min.`;
 }
 
 function route() {
@@ -134,105 +123,17 @@ function send(path, obj) {
   return pull(path, { method: "POST", body: JSON.stringify(obj || {}) });
 }
 
-/** The one login dialog (client/js/login.js); signed in, the page redraws. */
-function openAuth(next) {
-  openLogin(next, show);
+/** The one login dialog, its own bundle (client/login) as on search; signed in, the page redraws. */
+function openAuth(next, done = show) {
+  load("lg", "__login").then((login) => login.open(next, done), () => {});
 }
 
 /**
- * One picture, several JPEGs of it, one per `[edge, byWidth, maxBytes, quality]`.
- *
- * `under` makes it a profile photo. It paints the owner's background
- * (client/avatar) where the picture is transparent, which is white otherwise;
- * and wider than tall is refused before any draw, so every copy keeps the
- * shape the profile shows. Each copy starts at its edge and steps quality
- * down, then size, until it fits.
- * @param {File} file
- * @param {(ctx: CanvasRenderingContext2D, w: number, h: number) => void} [under]
- * @returns {Promise<Blob[]>}
+ * A web address, an @name, or a $ticker (read as src/social/callouts.ts reads
+ * one). The address is tried first, so a name or a ticker inside one stays
+ * part of it.
  */
-async function shrink(file, sizes, under) {
-  let bmp;
-  try {
-    bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
-  } catch {
-    bmp = await createImageBitmap(file);
-  }
-  try {
-    if (under && bmp.width > bmp.height) throw new Error("Use a square or portrait photo.");
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d", { alpha: false });
-    if (!ctx) throw new Error("Could not read that photo.");
-    const out = [];
-    next: for (let [edge, byWidth, maxBytes, quality] of sizes) {
-      // The timeline face caps width, not the long side, so a portrait stays tall.
-      const scale = Math.min(1, edge / (byWidth ? bmp.width : Math.max(bmp.width, bmp.height)));
-      let w = Math.max(1, Math.round(bmp.width * scale));
-      let h = Math.max(1, Math.round(bmp.height * scale));
-      for (let i = 0; i < 12; i++) {
-        canvas.width = w;
-        canvas.height = h;
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, w, h);
-        under?.(ctx, w, h);
-        ctx.drawImage(bmp, 0, 0, w, h);
-        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-        if (blob && blob.size <= maxBytes) {
-          out.push(blob);
-          continue next;
-        }
-        if (quality > 0.45) quality = Math.round((quality - 0.1) * 100) / 100;
-        else {
-          w = Math.max(1, Math.round(w * 0.8));
-          h = Math.max(1, Math.round(h * 0.8));
-          quality = 0.6;
-        }
-      }
-      throw new Error("Could not fit that photo.");
-    }
-    return out;
-  } finally {
-    bmp.close();
-  }
-}
-
-/** Two big-endian u32 lengths, the header in front of each pair of JPEGs. */
-function lens(a, b) {
-  const view = new DataView(new ArrayBuffer(8));
-  view.setUint32(0, a.size);
-  view.setUint32(4, b.size);
-  return view;
-}
-
-/** The Blob holds the parts by reference, so no JPEG is copied to pack it. */
-function bin(parts) {
-  return new Blob(parts, { type: "application/octet-stream" });
-}
-
-/**
- * u16 text length, the text, a photo count, then each phone and desktop JPEG.
- * A memo goes last: u32 bytes, u32 milliseconds, its shape, the recording.
- */
-function packPost(text, shots, memo) {
-  const encoded = new TextEncoder().encode(text);
-  const head = new Uint8Array(3 + encoded.length);
-  new DataView(head.buffer).setUint16(0, encoded.length);
-  head.set(encoded, 2);
-  head[2 + encoded.length] = shots.length;
-  const parts = [head, ...shots.flatMap((s) => [lens(s.small, s.full), s.small, s.full])];
-  if (memo) {
-    const tail = new Uint8Array(8 + memo.wave.length);
-    const view = new DataView(tail.buffer);
-    view.setUint32(0, memo.blob.size);
-    view.setUint32(4, memo.ms);
-    tail.set(new TextEncoder().encode(memo.wave), 8);
-    parts.push(tail, memo.blob);
-  }
-  return bin(parts);
-}
-
-/** A web address, or an @name. The address is tried first, so a name inside one stays part of it. */
-const LINK = /(https?:\/\/|www\.)[^\s<>"]+|(^|[^a-z0-9_])@([a-z0-9_]{3,16})/gi;
+const LINK = /(https?:\/\/|www\.)[^\s<>"]+|(^|[^a-z0-9_])@([a-z0-9_]{3,16})|(?<![\w$])\$([a-z][a-z0-9]{1,11})(?!\w)/gi;
 
 /** Drops the punctuation a sentence puts after an address, and a ")" that closes the sentence's bracket rather than the address's. */
 function trimUrl(raw) {
@@ -262,10 +163,20 @@ function webLink(url) {
   });
 }
 
-function linkedText(text) {
+/** `coins` are a post's callouts: a ticker that got a card is blue, and opens its chart as the card does. */
+function linkedText(text, coins) {
   const frag = document.createDocumentFragment();
   let last = 0;
   for (const match of text.matchAll(LINK)) {
+    if (match[4]) {
+      const key = match[4].toUpperCase();
+      // Posts from before tickers were kept name only their symbols.
+      const coin = coins?.find((c) => (c.tickers || [c.symbol.toUpperCase()]).includes(key));
+      if (!coin) continue;
+      frag.append(text.slice(last, match.index), el("a", { class: "cashtag", href: `/wallet?t=${coin.mint}`, text: match[0] }));
+      last = match.index + match[0].length;
+      continue;
+    }
     if (match[1]) {
       const url = trimUrl(match[0]);
       const link = webLink(url);
@@ -639,8 +550,20 @@ function memo(post) {
   return memoPlayer(`/social/v/${post.repost || post.id}`, post.audio, post.wave);
 }
 
+/**
+ * The tickers the post calls out ($SOL), as cards under its pictures and memo:
+ * their own bundle (client/coins), which fills this box. Its placeholders
+ * hold each card's height until the prices come.
+ */
+function coins(post) {
+  if (!post.coins?.length) return null;
+  const box = el("div", { class: "coins" }, ...post.coins.map(() => el("i")));
+  load("cc", "__coins").then((c) => c.fill(box, post.coins), () => box.remove());
+  return box;
+}
+
 function renderPost(post, inDetail) {
-  const body = el("p", {}, linkedText(post.text));
+  const body = el("p", {}, linkedText(post.text, post.coins));
   if (!post.text) body.hidden = true;
   const comments = el("a", { class: "act", href: `/social/p/${post.id}`, text: `comment (${post.comments || 0})` });
   const block = el(
@@ -675,6 +598,7 @@ function renderPost(post, inDetail) {
         body,
         gallery(post),
         memo(post),
+        coins(post),
         postActions(post, inDetail, comments),
       ),
     ),
@@ -719,201 +643,16 @@ async function renderPostPage(id) {
   paintDetail();
 }
 
+/**
+ * The composer, its own bundle (client/compose). show() asks for it beside the
+ * posts when it remembers someone signed in, so it is already here and the
+ * page paints once; otherwise it takes this box's place when it comes.
+ */
 function composer() {
   if (!me) return null;
-  // A deadline rather than a count, so the button wakes when the wait is over.
-  const until = Date.now() + me.wait;
-  let busy = 0;
-  const area = el("textarea", {
-    maxlength: String(MAX_POST),
-    rows: "1",
-    placeholder: "What’s happening?",
-    "aria-label": "What’s happening?",
-  });
-  const shots = [];
-  // A textarea holds no anchors, so the addresses in it are drawn under it, as the post will draw them.
-  const links = el("div", { class: "compose-links", hidden: true });
-  const strip = el("div", { class: "shots", hidden: true });
-  const file = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true });
-  const add = el("button", { type: "button", class: "tool", "aria-label": "Add photos" });
-  // The drawing is a <symbol> in social.html, so the bundle carries only a reference.
-  add.innerHTML = icon("pi", 22);
-  const mic = el("button", { type: "button", class: "tool", "aria-label": "Record a voice memo", hidden: !CAN_RECORD });
-  mic.innerHTML = icon("au", 22);
-  /** The recorded memo, until it is posted or removed: {blob, ms, wave, url}. */
-  let voice = null;
-  const voiceRow = el("div", { class: "voice", hidden: true });
-  const button = el("button", { type: "submit", class: "post-go", text: "Post", disabled: true });
-  const note = el("span", { class: "wait", hidden: me.wait <= 0, text: waitLabel(me.wait) });
-  const count = el("span", { class: "count", "aria-live": "polite" });
-
-  function tally() {
-    const used = area.value.length;
-    count.textContent = `${used}/${MAX_POST}`;
-    count.classList.toggle("low", MAX_POST - used < 25);
-  }
-  tally();
-
-  function ready() {
-    return !busy && Date.now() >= until && (area.value.trim().length > 0 || shots.length > 0 || !!voice);
-  }
-
-  function sync() {
-    button.disabled = !ready();
-  }
-
-  function paintLinks() {
-    const found = [...area.value.matchAll(LINK)]
-      .filter((match) => match[1])
-      .map((match) => webLink(trimUrl(match[0])))
-      .filter(Boolean);
-    links.replaceChildren(...found);
-    links.hidden = !found.length;
-  }
-
-  if (handed) {
-    area.value = handed.slice(0, MAX_POST);
-    handed = "";
-    history.replaceState(history.state, "", location.pathname);
-    setTimeout(() => {
-      area.focus();
-      area.dispatchEvent(new Event("input"));
-    });
-  }
-
-  if (me.wait > 0) {
-    setTimeout(() => {
-      note.hidden = true;
-      sync();
-    }, me.wait);
-  }
-
-  function paintShots() {
-    strip.replaceChildren(
-      ...shots.map((shot, i) => {
-        const remove = el("button", { type: "button", "aria-label": "Remove photo", text: "×" });
-        remove.addEventListener("click", () => {
-          URL.revokeObjectURL(shot.url);
-          shots.splice(i, 1);
-          paintShots();
-          sync();
-        });
-        return el("figure", {}, el("img", { src: shot.url, alt: "" }), remove);
-      }),
-    );
-    strip.hidden = shots.length === 0;
-  }
-
-  /** One memo a post: while there is one, the microphone waits and × takes it off. */
-  function paintVoice() {
-    mic.disabled = !!voice;
-    voiceRow.hidden = !voice;
-    if (!voice) return voiceRow.replaceChildren();
-    const remove = el("button", { type: "button", class: "memo-x", "aria-label": "Remove voice memo", text: "×" });
-    remove.addEventListener("click", () => {
-      URL.revokeObjectURL(voice.url);
-      voice = null;
-      paintVoice();
-      sync();
-    });
-    voiceRow.replaceChildren(memoPlayer(voice.url, voice.ms, voice.wave), remove);
-  }
-
-  mic.addEventListener("click", async () => {
-    note.hidden = true;
-    mic.disabled = true;
-    try {
-      const rec = await load("rc", "__rec");
-      const got = await rec.record({ clock, B64 });
-      if (got) {
-        const url = URL.createObjectURL(got.blob);
-        drafts.push(url);
-        voice = { ...got, url };
-      }
-    } catch {
-      note.hidden = false;
-      note.textContent = "Could not open the recorder.";
-    }
-    paintVoice();
-    sync();
-  });
-
-  add.addEventListener("click", () => file.click());
-  file.addEventListener("change", async () => {
-    const picked = [...(file.files || [])];
-    file.value = "";
-    if (!picked.length) return;
-    note.hidden = true;
-    const room = 4 - shots.length;
-    if (!room || picked.length > room) {
-      note.hidden = false;
-      note.textContent = "Four photos at most.";
-    }
-    // Post waits for the pictures: sent mid-compression, they would be missing.
-    busy++;
-    sync();
-    for (const item of picked.slice(0, Math.max(0, room))) {
-      try {
-        const [small, full] = await shrink(item, [
-          [480, 0, 14 * 1024, 0.72],
-          [960, 0, 48 * 1024, 0.82],
-        ]);
-        const url = URL.createObjectURL(full);
-        drafts.push(url);
-        shots.push({ url, full, small });
-      } catch (cause) {
-        note.hidden = false;
-        note.textContent = cause.message;
-      }
-    }
-    busy--;
-    paintShots();
-    sync();
-  });
-  area.addEventListener("input", () => {
-    area.style.height = "auto";
-    area.style.height = `${area.scrollHeight}px`;
-    tally();
-    sync();
-    paintLinks();
-  });
-  area.addEventListener("keydown", (e) => {
-    // Enter while an IME is composing picks a candidate; it is not a send.
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      if (ready()) form.requestSubmit();
-    }
-  });
-  const form = el(
-    "form",
-    { class: "composer" },
-    el("div", { class: "compose-top" }, thumb(me.name, me.avatarRev), area),
-    links,
-    strip,
-    voiceRow,
-    el("div", { class: "compose-bar" }, add, file, mic, count, button),
-    note,
-  );
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!ready()) return;
-    note.hidden = true;
-    button.disabled = true;
-    add.disabled = mic.disabled = true;
-    try {
-      const text = area.value.trim();
-      const body = shots.length || voice ? packPost(text, shots, voice) : JSON.stringify({ text });
-      await pull("/api/social/post", { method: "POST", body });
-      show();
-    } catch (cause) {
-      note.hidden = false;
-      note.textContent = cause.message;
-      sync();
-      add.disabled = false;
-      mic.disabled = !!voice;
-    }
-  });
-  return form;
+  const box = el("div");
+  load("cp", "__compose").then((c) => box.isConnected && box.replaceWith(c.composer(kit)), () => {});
+  return box;
 }
 
 /**
@@ -1003,7 +742,7 @@ function railSide() {
   if (!WIDE.matches) return;
   useSide(true);
   $("side").replaceChildren();
-  load("rl", "__rail").then((rail) => rail.mount({ side: $("side"), pull, send, face, openAuth, me: () => me }), () => {});
+  load("rl", "__rail").then((rail) => rail.mount(kit), () => {});
 }
 WIDE.addEventListener("change", () => document.body.classList.contains("tl") && railSide());
 
@@ -1114,321 +853,6 @@ function filterBar(feed) {
   );
 }
 
-/** Search, then the people already added. No profile card on this page. */
-function renderFriends(data) {
-  useSide(false);
-  const input = el("input", {
-    type: "search",
-    maxlength: "16",
-    placeholder: "Find a person",
-    "aria-label": "Find a person",
-    role: "combobox",
-    "aria-autocomplete": "list",
-    "aria-expanded": "false",
-    "aria-controls": "people",
-    autocapitalize: "off",
-    autocomplete: "off",
-    spellcheck: "false",
-  });
-  const hits = el("ul", { id: "people", class: "hits", role: "listbox", hidden: true });
-  const err = el("p", { class: "err" });
-  const list = el("div", { class: "friends" });
-  let wait = 0;
-  let gen = 0;
-  let busy = false;
-  let shown = "";
-
-  function row(friend) {
-    return el(
-      "article",
-      { class: "friend" },
-      thumb(friend.name, friend.avatarRev),
-      el(
-        "div",
-        { class: "friend-main" },
-        el("a", {
-          class: "who",
-          href: `/social/u/${friend.name}`,
-          text: friend.name,
-        }),
-        friend.loc ? el("div", { class: "muted", text: friend.loc }) : null,
-        friend.bio ? el("div", { text: friend.bio }) : null,
-      ),
-      el("button", {
-        type: "button",
-        class: "ghost",
-        text: "Remove",
-        onclick: () => remove(friend.name),
-      }),
-    );
-  }
-
-  /** A to Z like a contact book, one heading per letter. Digits and _ go last, under #. */
-  function paint(friends) {
-    if (!friends.length)
-      return list.replaceChildren(
-        el("p", { class: "muted", text: "No friends yet." }),
-      );
-    const letter = (name) =>
-      /^[a-z]/.test(name) ? name[0].toUpperCase() : "#";
-    const sorted = [...friends].sort((a, b) => {
-      const la = letter(a.name);
-      const lb = letter(b.name);
-      if (la !== lb) return la === "#" ? 1 : lb === "#" ? -1 : la < lb ? -1 : 1;
-      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-    });
-    const groups = [];
-    for (const friend of sorted) {
-      const key = letter(friend.name);
-      if (groups.at(-1)?.key !== key) groups.push({ key, rows: [] });
-      groups.at(-1).rows.push(row(friend));
-    }
-    list.replaceChildren(
-      ...groups.map((group) =>
-        el(
-          "section",
-          { class: "abc", "aria-label": group.key },
-          el("h3", { class: "abc-h", text: group.key }),
-          ...group.rows,
-        ),
-      ),
-    );
-  }
-
-  function remove(name) {
-    pull(`/api/social/friends/${name}`, { method: "DELETE" })
-      .then((fresh) => {
-        err.textContent = "";
-        paint(fresh.friends);
-      })
-      .catch((cause) => {
-        err.textContent = cause.message;
-      });
-  }
-
-  function shut() {
-    shown = "";
-    hits.replaceChildren();
-    hits.hidden = true;
-    input.setAttribute("aria-expanded", "false");
-  }
-
-  function fill(nodes, q) {
-    shown = q;
-    hits.replaceChildren(...nodes);
-    hits.hidden = false;
-    input.setAttribute("aria-expanded", "true");
-  }
-
-  function look() {
-    const q = input.value.trim().toLowerCase();
-    const mine = ++gen;
-    err.textContent = "";
-    if (!q) return shut();
-    if (me && q === me.name) return fill([el("li", { class: "empty", text: "You can't add yourself." })], q);
-    if (!/^[a-z0-9_]{1,16}$/.test(q)) return shut();
-    pull(`/api/social/users?q=${q}`)
-      .then((found) => {
-        if (mine !== gen || input.value.trim().toLowerCase() !== q) return;
-        const users = found.users;
-        if (!users.length) return fill([el("li", { class: "empty", text: "No one by that name." })], q);
-        fill(
-          users.map((user) => {
-            const row = el(
-              "button",
-              { type: "button", class: "hit", disabled: user.friend },
-              face(user.name, user.avatarRev),
-              el("span", { class: "who", text: user.name }),
-              user.loc ? el("span", { class: "muted", text: user.loc }) : null,
-              el("span", { class: "tag", text: user.friend ? "Friends" : "Add" }),
-            );
-            if (!user.friend) row.addEventListener("click", () => add(user.name));
-            return el("li", {}, row);
-          }),
-          q,
-        );
-      })
-      .catch((cause) => {
-        if (mine !== gen) return;
-        err.textContent = cause.message;
-        shut();
-      });
-  }
-
-  function add(name) {
-    if (busy) return;
-    busy = true;
-    err.textContent = "";
-    gen += 1;
-    send("/api/social/friends", { username: name })
-      .then((fresh) => {
-        input.value = "";
-        shut();
-        paint(fresh.friends);
-        input.focus();
-      })
-      .catch((cause) => {
-        err.textContent = cause.message;
-      })
-      .finally(() => {
-        busy = false;
-      });
-  }
-
-  function picks() {
-    if (shown !== input.value.trim().toLowerCase()) return [];
-    return [...hits.querySelectorAll("button.hit:not(:disabled)")];
-  }
-
-  input.addEventListener("input", () => {
-    clearTimeout(wait);
-    wait = setTimeout(look, 150);
-  });
-  input.addEventListener("keydown", (e) => {
-    const rows = picks();
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      if (!rows.length) return;
-      e.preventDefault();
-      const on = rows.findIndex((row) => row.classList.contains("on"));
-      const step = e.key === "ArrowDown" ? 1 : -1;
-      let next = on + step;
-      if (next < 0) next = rows.length - 1;
-      if (next >= rows.length) next = 0;
-      for (const row of rows) row.classList.remove("on");
-      rows[next].classList.add("on");
-      return;
-    }
-    if (e.key === "Escape") return shut();
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    const q = input.value.trim().toLowerCase();
-    if (me && q === me.name) return;
-    const pick = rows.find((row) => row.classList.contains("on")) || (rows.length === 1 ? rows[0] : null);
-    if (pick) pick.click();
-    else if (/^[a-z0-9_]{3,16}$/.test(q)) add(q);
-  });
-  hits.addEventListener("mousedown", (e) => e.preventDefault());
-  paint(data.friends);
-  main.replaceChildren(el("div", { class: "find" }, input, hits), err, list);
-  input.focus();
-}
-
-/**
- * Comments on your posts and re-posts of them: the ones you have not seen
- * under New, the rest under Earlier, newest first. Each opens its post.
- */
-function renderNotes(data) {
-  useSide(false);
-  const when = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
-  const group = (title, notes) =>
-    notes.length
-      ? el(
-          "section",
-          { class: "abc", "aria-label": title },
-          el("h3", { class: "abc-h", text: title }),
-          ...notes.map((note) =>
-            el(
-              "a",
-              { class: "friend nt", href: `/social/p/${note.post}` },
-              face(note.from, note.avatarRev),
-              el(
-                "div",
-                { class: "friend-main" },
-                el("b", { text: note.from }),
-                note.kind === "repost" ? " re-posted your post" : " commented on your post",
-                el("time", { datetime: new Date(note.at).toISOString(), text: when.format(note.at) }),
-              ),
-            ),
-          ),
-        )
-      : null;
-  const fresh = data.notes.filter((note) => !note.seen);
-  main.replaceChildren(
-    data.notes.length
-      ? el("div", { class: "friends" }, group("New", fresh), group("Earlier", data.notes.filter((note) => note.seen)))
-      : el("p", { class: "muted", text: "No notifications yet." }),
-  );
-  if (fresh.length) {
-    // The answer's `me` has nothing unseen, which takes the badge down.
-    send("/api/social/notes/seen").catch(() => {});
-  }
-}
-
-/** 4…4, as an address or a credential id is shown in a row. */
-const short = (s) => (s.length > 12 ? `${s.slice(0, 4)}…${s.slice(-4)}` : s);
-
-/** One setting: its name, its value in grey, and a chevron. Pressed, it opens what changes it. */
-function settingRow(label, value, onclick) {
-  return el(
-    "button",
-    { type: "button", class: "row", onclick },
-    el("span", { text: label }),
-    el("span", { class: "row-v", text: value }),
-  );
-}
-
-/**
- * A password box in front of one action, in a dialog that removes itself,
- * and whatever it showed, when closed. The password is checked by the server.
- */
-function passDialog(title, label, run) {
-  const input = el("input", { id: "pd-pw", type: "password", autocomplete: "current-password", required: true });
-  const err = el("p", { class: "err", role: "alert" });
-  const go = el("button", { type: "submit", text: label });
-  const form = el("form", { class: "tools" }, el("label", { for: "pd-pw" }, "Password"), input, go, err);
-  const dialog = /** @type {HTMLDialogElement} */ (
-    el("dialog", { class: "pd", "aria-label": title }, el("h2", { text: title }), form)
-  );
-  dismissible(dialog);
-  dialog.addEventListener("close", () => dialog.remove());
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    err.textContent = "";
-    go.disabled = true;
-    try {
-      await run(input.value);
-      input.value = "";
-    } catch (cause) {
-      err.textContent = why(cause);
-    } finally {
-      go.disabled = false;
-    }
-  });
-  document.body.append(dialog);
-  dialog.showModal();
-  return { dialog, form };
-}
-
-/** Add this device's passkey, or replace the one on the account. The server asks for the password first. */
-function passkeyDialog() {
-  const label = me.passkey ? "Replace passkey" : "Add passkey";
-  const { dialog } = passDialog("Passkey", label, async (password) => {
-    await register(me.name, password, send);
-    dialog.close();
-    show();
-  });
-}
-
-/**
- * The recovery phrase, behind the password. The words leave with the dialog:
- * on its X, after two minutes, or as soon as the tab is put away, whichever
- * comes first. A phrase left on an unattended screen is a wallet left open.
- */
-function phraseDialog() {
-  let timer = 0;
-  const away = () => document.hidden && dialog.close();
-  const { dialog, form } = passDialog("Recovery phrase", "Show phrase", async (password) => {
-    const result = await send("/api/social/phrase", { password });
-    form.replaceWith(el("p", { class: "phrase", text: result.phrase }));
-    timer = window.setTimeout(() => dialog.close(), 120_000);
-    document.addEventListener("visibilitychange", away);
-  });
-  dialog.addEventListener("close", () => {
-    clearTimeout(timer);
-    document.removeEventListener("visibilitychange", away);
-  });
-}
-
 /** Your profile as others see it: the card and the posts, nothing to edit. */
 function renderProfile(data) {
   const user = data.user;
@@ -1437,118 +861,6 @@ function renderProfile(data) {
     ? user.posts.map((p) => renderPost(p))
     : [el("p", { class: "muted", text: "No posts yet." })];
   main.replaceChildren(...posts);
-}
-
-/** Edit profile: only the settings, no card and no posts. */
-async function renderEdit() {
-  if (!me) await pull("/api/social/me");
-  if (!me) {
-    renderSide(null);
-    main.replaceChildren(
-      el("p", { class: "muted", text: "Log in to edit your profile." }),
-    );
-    return;
-  }
-  useSide(false);
-  const bioInput = el("textarea", {
-    id: "bio",
-    maxlength: "160",
-    text: me.bio,
-  });
-  const locInput = el("input", { id: "loc", maxlength: "40", value: me.loc });
-  const saveErr = el("p", { class: "err" });
-  const save = el(
-    "form",
-    { class: "tools" },
-    el("label", { for: "bio" }, "Bio"),
-    bioInput,
-    el("p", { class: "hint", text: "Up to 160 characters." }),
-    el("label", { for: "loc" }, "Location"),
-    locInput,
-    el("p", {
-      class: "hint",
-      text: "Up to 40 characters. Leave blank to clear.",
-    }),
-    el("button", { type: "submit", text: "Save" }),
-    saveErr,
-  );
-  save.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    saveErr.textContent = "";
-    try {
-      // The answer carries the saved `me`, which the redraw fills the fields from.
-      await send("/api/social/profile", {
-        bio: bioInput.value,
-        loc: locInput.value,
-      });
-      show();
-    } catch (cause) {
-      saveErr.textContent = cause.message;
-    }
-  });
-
-  const photoErr = el("p", { class: "err" });
-  const file = el("input", { type: "file", accept: "image/*", id: "pic" });
-  file.addEventListener("change", async () => {
-    const picked = file.files && file.files[0];
-    photoErr.textContent = "";
-    if (!picked) return;
-    try {
-      // The profile copy stays within 14KB at the uploaded shape. The
-      // timeline copy is at most 80px wide and 2KB: enough to see a face
-      // beside a post, not enough to make a feed of them slow.
-      const [full, tiny] = await shrink(
-        picked,
-        [
-          [480, 0, 14 * 1024, 0.86],
-          [80, 1, 2 * 1024, 0.7],
-        ],
-        (await load("av", "__avatar")).under(me.name),
-      );
-      await pull("/api/social/avatar", {
-        method: "POST",
-        body: bin([lens(tiny, full), tiny, full]),
-      });
-      show();
-    } catch (cause) {
-      photoErr.textContent = cause.message;
-    }
-    file.value = "";
-  });
-
-  main.replaceChildren(
-    el(
-      "div",
-      { class: "detail-bar" },
-      el("a", { class: "back", href: `/social/u/${me.name}`, text: "Back" }),
-      el("h2", { class: "ed-h", text: "Edit profile" }),
-    ),
-    el(
-      "section",
-      { class: "sec" },
-      el("h3", { text: "General" }),
-      el(
-        "label",
-        { class: "file", for: "pic" },
-        photo(me.name, me.avatarRev),
-        el("span", { text: me.avatarRev ? "Change photo" : "Add photo" }),
-        file,
-      ),
-      photoErr,
-      save,
-    ),
-    el(
-      "section",
-      { class: "sec" },
-      el("h3", { text: "Security" }),
-      el(
-        "div",
-        { class: "rows" },
-        settingRow("Passkey", me.passkey ? short(me.passkey.id) : "Not set up", passkeyDialog),
-        settingRow("Wallet", short(me.address), phraseDialog),
-      ),
-    ),
-  );
 }
 
 /**
@@ -1566,32 +878,45 @@ async function renderAds(id) {
     return;
   }
   if (!WIDE.matches) return main.replaceChildren(el("p", { class: "muted", text: "Advertise from a computer." }));
-  (await load("ad", "__ads")).mount({ main, id, pull, adPost, me: () => me });
+  (await load("ad", "__ads")).mount({ ...kit, id });
 }
 
 /** Stops the open Messenger, which polls while it is on screen. */
 let leaveChat = null;
 
-/** Messenger is its own bundle, handed this one's helpers so it carries no copies. */
+/** Messenger is its own bundle. */
 async function renderChat() {
   if (!me) await pull("/api/social/me");
-  const chat = await load("ch", "__chat");
-  leaveChat = chat.mount({
-    main,
-    side: $("side"),
-    me: () => me,
-    pull,
-    send,
-    shrink,
-    face,
-    ago,
-    linkedText,
-    useSide,
-    renderSide,
-    memoPlayer,
-    load,
-  });
+  leaveChat = (await load("ch", "__chat")).mount(kit);
 }
+
+/**
+ * This file's helpers, for the bundles it fetches: each takes what it needs,
+ * so none carries a copy of what is already here.
+ */
+const kit = {
+  main,
+  side: $("side"),
+  me: () => me,
+  pull,
+  send,
+  show,
+  openAuth,
+  face,
+  thumb,
+  photo,
+  ago,
+  linkedText,
+  LINK,
+  trimUrl,
+  webLink,
+  memoPlayer,
+  adPost,
+  useSide,
+  renderSide,
+  load,
+  drafts,
+};
 
 async function show() {
   const here = route();
@@ -1607,13 +932,19 @@ async function show() {
   document.body.classList.toggle("ads", here.page === "ads");
   main.replaceChildren(el("p", { class: "muted", text: "…" }));
   try {
-    if (here.page === "timeline")
-      renderTimeline(await pull(`/api/social/timeline?${feedQuery()}`));
-    else if (here.page === "friends")
-      renderFriends(await pull("/api/social/friends"));
-    else if (here.page === "notifications")
-      renderNotes(await pull("/api/social/notes"));
-    else if (here.page === "edit") await renderEdit();
+    if (here.page === "timeline") {
+      // Remembered as signed in, the composer comes beside the posts, so they paint together.
+      const cp = readName() && load("cp", "__compose").catch(() => {});
+      const data = await pull(`/api/social/timeline?${feedQuery()}`);
+      await cp;
+      renderTimeline(data);
+    } else if (here.page === "friends") {
+      const [data, friends] = await Promise.all([pull("/api/social/friends"), load("fr", "__friends")]);
+      friends.mount(data, kit);
+    } else if (here.page === "notifications") {
+      const [data, notes] = await Promise.all([pull("/api/social/notes"), load("nt", "__notes")]);
+      notes.mount(data, kit);
+    } else if (here.page === "edit") await (await load("ed", "__edit")).mount(kit);
     else if (here.page === "profile")
       renderProfile(await pull(`/api/social/u/${here.name}`));
     else if (here.page === "post") await renderPostPage(here.id);
@@ -1700,7 +1031,7 @@ for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data
   tab.addEventListener("click", (e) => {
     if (me || readName()) return;
     e.preventDefault();
-    openLogin("login", () => location.assign(/** @type {HTMLAnchorElement} */ (tab).href));
+    openAuth("login", () => location.assign(/** @type {HTMLAnchorElement} */ (tab).href));
   });
 }
 $("out").addEventListener("click", async () => {

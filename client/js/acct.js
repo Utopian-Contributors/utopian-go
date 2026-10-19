@@ -25,8 +25,8 @@ export async function openLogin(onDone) {
   try {
     (await load("lg", "__login")).open("login", onDone);
   } catch {
-    // The bundle would not load; Social has the same dialog built in.
-    location.href = "/social";
+    // The bundle would not load, here or on any page: they all fetch it. A
+    // failed load is not kept (js/lazy.js), so the next press tries again.
   }
 }
 

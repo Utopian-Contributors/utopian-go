@@ -1,10 +1,10 @@
 /**
  * The Log in dialog: log in, create an account, or recover one.
  *
- * One implementation for every page. Social bundles it; search and the wallet
- * page fetch it as login.js the first time someone presses Log in. It builds
- * its own markup and injects its own styles, so it looks the same whichever
- * page opened it — every colour comes from the page's custom properties.
+ * One implementation for every page, each of which fetches it as login.js the
+ * first time someone presses Log in. It builds its own markup and injects its
+ * own styles, so it looks the same whichever page opened it — every colour
+ * comes from the page's custom properties.
  */
 import { LOGIN } from "./acct.js";
 import { el } from "./dom.js";

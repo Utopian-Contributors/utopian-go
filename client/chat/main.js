@@ -15,11 +15,13 @@
  * store (social.js), which is why its name is spelled there too.
  *
  * Loaded by social.js on /social/c. It shares that bundle's helpers through
- * `ctx` rather than carrying copies of them.
+ * `ctx` rather than carrying copies of them; the photo scaler is its own,
+ * since social.js no longer carries one.
  */
 import { el } from "../js/dom.js";
 import { B64, clock } from "../js/memo.js";
 import { b64u, needPasskey, register, u8, why } from "../js/passkey.js";
+import { shrink } from "../js/shrink.js";
 
 const te = new TextEncoder();
 const td = new TextDecoder();
@@ -144,7 +146,7 @@ async function prf(challenge, id) {
  * @param {{
  *   main: HTMLElement, side: HTMLElement,
  *   me: () => any, pull: (path: string, opts?: any) => Promise<any>, send: (path: string, obj?: any) => Promise<any>,
- *   shrink: (file: File, sizes: any[]) => Promise<Blob[]>, face: (name: string, rev: number) => HTMLElement | null,
+ *   face: (name: string, rev: number) => HTMLElement | null,
  *   ago: (at: number) => string, linkedText: (text: string) => Node, useSide: (on: boolean) => void,
  *   renderSide: (person: any) => void,
  *   memoPlayer: (src: string | HTMLAudioElement, ms: number, wave: string) => HTMLElement,
@@ -788,7 +790,7 @@ export function mount(ctx) {
       sync();
       for (const item of picked.slice(0, Math.max(0, room))) {
         try {
-          const [full] = await ctx.shrink(item, [[960, 0, 48 * 1024, 0.82]]);
+          const [full] = await shrink(item, [[960, 0, 48 * 1024, 0.82]]);
           const url = URL.createObjectURL(full);
           urls.push(url);
           shots.push({ url, full });

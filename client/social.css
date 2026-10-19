@@ -156,6 +156,54 @@ dialog textarea { resize: none; }
   color: var(--in-ink);
 }
 
+/*
+ * The timeline's draft: free text on the page, no field drawn round it. The
+ * words are set twice in one grid cell: by the textarea, transparent, which
+ * keeps the caret, the selection and the keyboard's own handling; and by
+ * .draft-b under it, which colours each ticker that will get a card. Both must
+ * set type identically, or the caret drifts off the letters.
+ */
+.draft {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.draft .draft-b,
+.composer .draft textarea {
+  grid-area: 1 / 1;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  font: 20px/1.35 var(--ff);
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.draft-b {
+  color: var(--in-ink);
+  pointer-events: none;
+}
+
+.draft-b span { color: var(--a); }
+
+.composer .draft textarea {
+  background: none;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--in-ink);
+}
+
+.composer .draft textarea::placeholder { -webkit-text-fill-color: var(--in-ph); }
+/* See-through, so the words under the field still show where they are selected. */
+.composer .draft textarea::selection { background: rgb(26 115 232 / 28%); }
+
+/* A draft's ticker cards, lined up with its words. */
+.composer .coins { margin-left: 52px; }
+
 .compose-links {
   display: flex;
   flex-wrap: wrap;
@@ -388,6 +436,30 @@ dialog textarea { resize: none; }
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * A post's ticker cards, under its pictures and memo; client/coins draws and
+ * styles them. Until that bundle and the prices come, each holds its card's
+ * place as a blank of the same size, so nothing under the post moves.
+ */
+.coins {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.coins > i {
+  display: block;
+  width: min(100%, 360px);
+  height: 58px;
+  border-radius: 16px;
+  background: var(--ch);
+}
+
+/* A ticker a post called out, in the blue it had in the composer. */
+a.cashtag,
+a.cashtag:hover { color: var(--a); }
 
 /* The composer's memo, before it is posted, with a way to take it off. */
 .voice {

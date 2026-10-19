@@ -1,7 +1,6 @@
 /**
- * The Log in dialog as a lazy bundle, for the pages that do not carry it:
- * search and the wallet page fetch this the first time someone presses Log in.
- * Social bundles client/js/login.js directly.
+ * The Log in dialog as a lazy bundle: search, the wallet page and Social all
+ * fetch this the first time someone presses Log in.
  */
 import { open } from "../js/login.js";
 

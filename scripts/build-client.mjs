@@ -239,8 +239,8 @@ const keysOpts = {
 };
 
 /**
- * The Log in dialog, for search and the wallet page: fetched the first time
- * someone presses Log in. Social bundles the same module into social.js.
+ * The Log in dialog, for every page: fetched the first time someone presses
+ * Log in.
  */
 const loginOpts = {
   ...jsOpts,
@@ -344,6 +344,47 @@ const avatarOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "avatar", "main.js")],
   outfile: path.join(outDir, "avatar.js"),
+};
+
+/**
+ * The timeline's composer, fetched by social.js beside the posts for someone
+ * signed in; signed out there is none, so nobody else fetches it.
+ */
+const composeOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "compose", "main.js")],
+  outfile: path.join(outDir, "compose.js"),
+};
+
+/**
+ * The cards under a post that calls out a ticker ($SOL), fetched by social.js
+ * the first time one is on screen. It brings its own rules, as the rail does.
+ */
+const coinsOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "coins", "main.js")],
+  outfile: path.join(outDir, "coins.js"),
+};
+
+/** Friends, fetched by social.js on /social/friends only. */
+const friendsOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "friends", "main.js")],
+  outfile: path.join(outDir, "friends.js"),
+};
+
+/** Notifications, fetched by social.js on /social/notifications only. */
+const notesOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "notes", "main.js")],
+  outfile: path.join(outDir, "notes.js"),
+};
+
+/** Edit profile and its passkey and phrase dialogs, fetched by social.js on /social/edit only. */
+const editOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "edit", "main.js")],
+  outfile: path.join(outDir, "edit.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -571,7 +612,27 @@ async function buildCss(name, ...extra) {
  * this document, not in its bundle: a few hundred bytes of gzip, and no second
  * request before it can paint.
  */
-const SOCIAL_BUNDLES = ["social.js", "chat.js", "pay.js", "rec.js", "rail.js", "ads.js", "avatar.js", "qr.js", "install.js"];
+/**
+ * The bundles social.js fetches, by the data-* attribute on social.html's
+ * <body> that carries each one's fingerprinted URL (see js/lazy.js).
+ */
+const SOCIAL_LAZY = {
+  qr: "qr.js",
+  py: "pay.js",
+  ch: "chat.js",
+  rc: "rec.js",
+  rl: "rail.js",
+  ad: "ads.js",
+  av: "avatar.js",
+  pw: "install.js",
+  lg: "login.js",
+  cp: "compose.js",
+  cc: "coins.js",
+  fr: "friends.js",
+  nt: "notes.js",
+  ed: "edit.js",
+};
+const SOCIAL_BUNDLES = ["social.js", ...Object.values(SOCIAL_LAZY)];
 
 async function buildSocialCss() {
   const words = (text) => text.match(/[A-Za-z_][\w-]*/g) ?? [];
@@ -750,7 +811,7 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
  * wordmark inlined for the same reason it is on the other two documents: the
  * header should not wait on a second request.
  */
-async function buildSocialHtml(css, socialHash, qrHash, payHash, chatHash, recHash, railHash, adsHash, avatarHash, installHash) {
+async function buildSocialHtml(css, hash) {
   let raw = readFileSync(path.join(clientDir, "social.html"), "utf8");
   raw = replaceOnce(
     raw,
@@ -767,58 +828,18 @@ async function buildSocialHtml(css, socialHash, qrHash, payHash, chatHash, recHa
   raw = replaceOnce(
     raw,
     /src="\/social\.js"/,
-    `src="/social.js?v=${socialHash}"`,
+    `src="/social.js?v=${hash("social.js")}"`,
     "social.js src",
   );
   raw = fingerprintOffline(raw);
-  raw = replaceOnce(
-    raw,
-    /data-qr="\/qr\.js"/,
-    `data-qr="/qr.js?v=${qrHash}"`,
-    "social qr.js attribute",
-  );
-  raw = replaceOnce(
-    raw,
-    /data-py="\/pay\.js"/,
-    `data-py="/pay.js?v=${payHash}"`,
-    "social pay.js attribute",
-  );
-  raw = replaceOnce(
-    raw,
-    /data-ch="\/chat\.js"/,
-    `data-ch="/chat.js?v=${chatHash}"`,
-    "social chat.js attribute",
-  );
-  raw = replaceOnce(
-    raw,
-    /data-rc="\/rec\.js"/,
-    `data-rc="/rec.js?v=${recHash}"`,
-    "social rec.js attribute",
-  );
-  raw = replaceOnce(
-    raw,
-    /data-rl="\/rail\.js"/,
-    `data-rl="/rail.js?v=${railHash}"`,
-    "social rail.js attribute",
-  );
-  raw = replaceOnce(
-    raw,
-    /data-ad="\/ads\.js"/,
-    `data-ad="/ads.js?v=${adsHash}"`,
-    "social ads.js attribute",
-  );
-  raw = replaceOnce(
-    raw,
-    /data-av="\/avatar\.js"/,
-    `data-av="/avatar.js?v=${avatarHash}"`,
-    "social avatar.js attribute",
-  );
-  raw = replaceOnce(
-    raw,
-    /data-pw="\/install\.js"/,
-    `data-pw="/install.js?v=${installHash}"`,
-    "social install.js attribute",
-  );
+  for (const [key, file] of Object.entries(SOCIAL_LAZY)) {
+    raw = replaceOnce(
+      raw,
+      new RegExp(`data-${key}="/${file.replace(".", "\\.")}"`),
+      `data-${key}="/${file}?v=${hash(file)}"`,
+      `social ${file} attribute`,
+    );
+  }
   writeFileSync(path.join(outDir, "social.html"), await minifyDoc(raw));
 }
 
@@ -921,7 +942,7 @@ async function buildAssets() {
   copyStatic();
   // CSS and JS first: each document inlines a stylesheet and fingerprints the
   // bundles it names.
-  const [, , , , , , , , , , , , , , , , , css, walletCss] = await Promise.all([
+  const built = await Promise.all([
     esbuild.build(offlineOpts),
     esbuild.build(installOpts),
     esbuild.build(swOpts),
@@ -939,9 +960,15 @@ async function buildAssets() {
     esbuild.build(payOpts),
     esbuild.build(socialOpts),
     esbuild.build(chatOpts),
+    esbuild.build(composeOpts),
+    esbuild.build(coinsOpts),
+    esbuild.build(friendsOpts),
+    esbuild.build(notesOpts),
+    esbuild.build(editOpts),
     buildCss("app.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
+  const [css, walletCss] = built.slice(-2);
   // After every bundle, because each one Social can load is its list of names.
   const socialCss = await buildSocialCss();
 
@@ -955,7 +982,7 @@ async function buildAssets() {
   await Promise.all([
     buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, installHash),
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
-    buildSocialHtml(socialCss, hash("social.js"), qrHash, hash("pay.js"), hash("chat.js"), hash("rec.js"), hash("rail.js"), hash("ads.js"), hash("avatar.js"), installHash),
+    buildSocialHtml(socialCss, hash),
   ]);
   buildLegal();
   precompress();
