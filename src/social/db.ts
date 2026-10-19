@@ -5,6 +5,7 @@ import path from "path";
 import { Pool, type PoolClient, types } from "pg";
 import { type AdDevices, CHAT_PAGE, MAX_CHAT_KEEP, MAX_COMMENTS, MAX_NOTES_KEEP, SocialError, postWait } from "./limits";
 import type { AudioKind } from "./audio";
+import type { Callout } from "./callouts";
 import {
   removeBanner,
   removeChatAudio,
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS posts (
   photos integer NOT NULL DEFAULT 0,
   audio integer NOT NULL DEFAULT 0,
   wave text NOT NULL DEFAULT '',
+  coins jsonb NOT NULL DEFAULT '[]',
   repost text REFERENCES posts(id)
 );
 DROP INDEX IF EXISTS posts_at;
@@ -137,6 +139,8 @@ ALTER TABLE posts ADD COLUMN IF NOT EXISTS photos integer NOT NULL DEFAULT 0;
 -- A voice memo's length in milliseconds (0 when there is none), and its shape.
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS audio integer NOT NULL DEFAULT 0;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS wave text NOT NULL DEFAULT '';
+-- The tickers a post calls out ($SOL), each a mint and its price when the post went up.
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS coins jsonb NOT NULL DEFAULT '[]';
 -- A re-post carries its original's photo count and memo length, so a
 -- timeline filter reads one row. Re-posts from before that are given theirs.
 UPDATE posts r SET photos = o.photos, audio = o.audio FROM posts o
@@ -378,6 +382,8 @@ export interface Card {
   audio: number;
   /** The memo's shape, one base64url character per bar; empty without a memo. */
   wave: string;
+  /** Tickers the text calls out, with their prices at posting. A re-post shows the original's. */
+  coins: Callout[];
 }
 
 export interface CommentRow {
@@ -518,6 +524,7 @@ type CardRow = {
   photos: number;
   audio: number;
   wave: string;
+  coins: Callout[];
 };
 
 function cardFrom(row: CardRow): Card {
@@ -537,6 +544,7 @@ function cardFrom(row: CardRow): Card {
     photos: row.photos,
     audio: row.audio,
     wave: row.wave,
+    coins: row.coins,
   };
 }
 
@@ -547,6 +555,7 @@ function card(from: string): string {
          CASE WHEN p.repost IS NULL THEN p.photos ELSE COALESCE(op.photos, 0) END AS photos,
          CASE WHEN p.repost IS NULL THEN p.audio ELSE COALESCE(op.audio, 0) END AS audio,
          CASE WHEN p.repost IS NULL THEN p.wave ELSE COALESCE(op.wave, '') END AS wave,
+         CASE WHEN p.repost IS NULL THEN p.coins ELSE COALESCE(op.coins, '[]') END AS coins,
          u.avatar_rev,
          op.by_name AS original_by,
          ou.avatar_rev AS original_rev,
@@ -703,6 +712,7 @@ export async function createPost(
   at: number,
   photos: { full: Buffer; small: Buffer }[],
   memo: Memo | null = null,
+  coins: Callout[] = [],
 ): Promise<{ wait: number } | Card> {
   // Files first, row second: a row never points at pictures or a memo that
   // are not on disk, and the row lock is not held across disk writes. A post
@@ -716,7 +726,7 @@ export async function createPost(
   let created: { wait: number } | Card;
   try {
     if (memo) writePostAudio(id, memo);
-    created = await insertPost(id, by, text, at, photos.length, memo);
+    created = await insertPost(id, by, text, at, photos.length, memo, coins);
   } catch (err) {
     unwrite();
     throw err;
@@ -732,6 +742,7 @@ function insertPost(
   at: number,
   photos: number,
   memo: Memo | null,
+  coins: Callout[],
 ): Promise<{ wait: number } | Card> {
   return tx(async (client) => {
     const row = await one<{ last_post: number; avatar_rev: number }>(
@@ -743,14 +754,15 @@ function insertPost(
     const wait = postWait(Number(row.last_post), at);
     if (wait > 0) return { wait };
     await client.query(
-      "INSERT INTO posts (id, by_name, text, at, views, photos, audio, wave) VALUES ($1,$2,$3,$4,0,$5,$6,$7)",
-      [id, by, text, at, photos, memo?.ms ?? 0, memo?.wave ?? ""],
+      "INSERT INTO posts (id, by_name, text, at, views, photos, audio, wave, coins) VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8)",
+      // As JSON text: handed an array, pg would write a Postgres array.
+      [id, by, text, at, photos, memo?.ms ?? 0, memo?.wave ?? "", JSON.stringify(coins)],
     );
     await client.query("UPDATE users SET last_post = $2 WHERE name = $1", [by, at]);
     return {
       id, by, text, at, views: 0, comments: 0, saved: false, reposted: false,
       repost: null, repostBy: null, originalRev: 0, avatarRev: row.avatar_rev,
-      photos, audio: memo?.ms ?? 0, wave: memo?.wave ?? "",
+      photos, audio: memo?.ms ?? 0, wave: memo?.wave ?? "", coins,
     };
   });
 }

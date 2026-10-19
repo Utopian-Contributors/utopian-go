@@ -27,7 +27,9 @@ import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMe
 import { scrub } from "./guard";
 import { AUDIO_BYTES, MAX_AUDIO_MS, SOCIAL_BYTES, TINY_BYTES, adKeyword, adText, adUrl, postWait, username, waitText } from "./limits";
 import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
-import { type AdCreative, type AdOrder, TIMELINE_PAGE, closePool, databaseUrl, ensureSchema, getAd, getUser, payOrder, resetSocial, saveAd } from "./db";
+import { type AdCreative, type AdOrder, TIMELINE_PAGE, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, payOrder, resetSocial, saveAd } from "./db";
+import { MAX_CALLOUTS, calloutsIn, isTicker, resolveTickers } from "./callouts";
+import { apiRouter } from "../routes/api";
 import { adFor, adMarkup, flushAds, reloadAds } from "./ads";
 import { USDC_MINT, decimal, dollars, matchTransfer, orderAmounts, orderCodes, payUrl, transfersIn, type ParsedTx } from "./adPay";
 import { drawAvatar } from "./avatar";
@@ -36,7 +38,7 @@ import { tokenKind } from "../lib/tokens/jupiter";
 import { buildLists, isStable, pageOf } from "../lib/tokens/store";
 import { type RawTx, readTx } from "../lib/history";
 import { stateTags } from "../state";
-import type { TokenKind, TokenRecord } from "../types";
+import type { TokenKind, TokenQuote, TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
 
 const dir = mkdtempSync(path.join(tmpdir(), "social-"));
@@ -2062,5 +2064,132 @@ test("an ad runs once paid: the higher bid first, on search and in timelines, ev
     assert.ok(markup.includes('href="https://a.example.com/&#36;&amp;"'), markup);
   } finally {
     server.close();
+  }
+});
+
+test("a $ticker is called out once, at its price when posted, and never an amount or part of a word", () => {
+  const SOL = "So11111111111111111111111111111111111111112";
+  const listed: Record<string, TokenQuote> = {
+    SOL: { mint: SOL, symbol: "SOL", name: "Wrapped SOL", price: 150.25 },
+    // Another ticker for the same mint, as an alias puts it there.
+    WSOL: { mint: SOL, symbol: "SOL", name: "Wrapped SOL", price: 150.25 },
+    BONK: { mint: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", symbol: "Bonk", name: "Bonk", price: 0.00002113 },
+    GO: { mint: "GoGoGoGoGoGoGoGoGoGoGoGoGoGoGoGoGoGoGoGoGo11", symbol: "GO", name: "Go", price: 2 },
+    WIF: { mint: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", symbol: "WIF", name: "dogwifhat", price: 1.5 },
+    FREE: { mint: "FreeFreeFreeFreeFreeFreeFreeFreeFreeFree1111", symbol: "FREE", name: "No price", price: 0 },
+  };
+  const asked: string[] = [];
+  // What the store's lookupToken does with it: a `$` query, matched case-blind.
+  const quote = (q: string) => {
+    asked.push(q);
+    assert.ok(q.startsWith("$"), "asked as an explicit ticker, so stopwords like $GO get through");
+    return listed[q.slice(1).toUpperCase()] ?? null;
+  };
+  const symbols = (text: string) => calloutsIn(text, quote).map((c) => c.symbol);
+
+  assert.deepEqual(calloutsIn("$SOL to the moon", quote), [{ mint: SOL, symbol: "SOL", price: 150.25, tickers: ["SOL"] }]);
+  assert.deepEqual(symbols("$sol, $SOL's run, and $WSOL too."), ["SOL"], "one card a mint, however it is named");
+  assert.deepEqual(calloutsIn("$sol, $SOL's run, and $WSOL too.", quote)[0].tickers, ["SOL", "WSOL"], "each ticker that came to it, once");
+  assert.deepEqual(symbols("$5 or $100k, US$20, a$SOL, $$SOL, $S"), [], "amounts, words, $$ and one letter are text");
+  assert.deepEqual(symbols("$NOPE $FREE $BONK"), ["Bonk"], "unknown or unpriced is left as text");
+  assert.equal(MAX_CALLOUTS, 3);
+  assert.deepEqual(symbols("$GO $BONK $WIF $SOL"), ["GO", "Bonk", "WIF"], "the first three, in the order named");
+  asked.length = 0;
+  calloutsIn("$GO $BONK $WIF $SOL $NOPE", quote);
+  assert.equal(asked.length, 3, "nothing past the third is looked up");
+  assert.deepEqual(symbols("$ABCDEFGHIJKLM"), [], "longer than a ticker is not one");
+
+  // A draft's preview: the same cards, and which tickers went where, for the composer to colour.
+  const draft = resolveTickers(["go", "NOPE", "Bonk", "WIF", "GO", "SOL"], quote);
+  assert.deepEqual(draft.calls.map((c) => c.symbol), ["GO", "Bonk", "WIF"]);
+  assert.deepEqual(draft.named, { GO: listed.GO.mint, BONK: listed.BONK.mint, WIF: listed.WIF.mint }, "not $NOPE, and nothing past the third card");
+  assert.ok(isTicker("SOL") && isTicker("a1") && !isTicker("1A") && !isTicker("S") && !isTicker("SOL,") && !isTicker("ABCDEFGHIJKLM"));
+});
+
+test("a called-out ticker rides its post to the timeline, the post page, a profile and a re-post", async () => {
+  await useTestDatabase();
+  await ensureSchema();
+  await resetSocial();
+  const app = express();
+  app.set("trust proxy", true);
+  app.use("/api/social", socialRouter);
+  app.use(apiRouter);
+  const server: Server = await new Promise((resolve) => {
+    const listening = createServer(app);
+    listening.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const base = `http://127.0.0.1:${address.port}`;
+  let ip = 0;
+
+  async function join(name: string) {
+    let jar = "";
+    const call = async (method: string, urlPath: string, body?: Record<string, unknown>) => {
+      const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": `10.3.0.${++ip % 250}` };
+      if (jar) headers.Cookie = jar;
+      if (body) headers["Content-Type"] = "application/json";
+      const res = await fetch(base + urlPath, { method, headers, body: body && JSON.stringify(body) });
+      for (const cookie of res.headers.getSetCookie?.() ?? []) jar = cookie.split(";")[0];
+      const text = await res.text();
+      let json: Record<string, any> | null = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = null;
+      }
+      return { status: res.status, json, text };
+    };
+    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1", terms: true })).status, 200);
+    return call;
+  }
+
+  try {
+    const amy = await join("amy");
+    const bob = await join("bob");
+    // A sub-cent price keeps every digit through jsonb and back.
+    const coins = [
+      { mint: "So11111111111111111111111111111111111111112", symbol: "SOL", price: 150.25, tickers: ["SOL"] },
+      { mint: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", symbol: "Bonk", price: 0.00002113, tickers: ["BONK"] },
+    ];
+    const made = await createPost("amy", "$SOL and $BONK", Date.now() - 1000, [], null, coins);
+    assert.ok(!("wait" in made));
+    assert.deepEqual(made.coins, coins);
+    // With no index to look in (tests start none), a ticker is only text.
+    const plain = await bob("POST", "/api/social/post", { text: "$SOL soon" });
+    assert.equal(plain.status, 200, plain.text);
+    assert.deepEqual(plain.json?.post.coins, []);
+
+    const feed = await bob("GET", "/api/social/timeline");
+    const byText = (posts: { text: string; repost: string | null; coins: unknown }[], text: string) =>
+      posts.filter((p) => p.text === text && !p.repost);
+    assert.deepEqual(byText(feed.json?.posts, "$SOL and $BONK")[0]?.coins, coins);
+    assert.deepEqual(byText(feed.json?.posts, "$SOL soon")[0]?.coins, []);
+    assert.deepEqual((await bob("POST", "/api/social/open", { post: made.id })).json?.post.coins, coins);
+    assert.deepEqual((await bob("GET", "/api/social/u/amy")).json?.user.posts[0].coins, coins);
+
+    // A re-post shows the original's tickers, at the original's prices.
+    assert.equal((await bob("POST", "/api/social/repost", { post: made.id })).status, 200);
+    const after = await amy("GET", "/api/social/timeline");
+    const shared = (after.json?.posts as { repost: string | null; coins: unknown }[]).find((p) => p.repost === made.id);
+    assert.deepEqual(shared?.coins, coins);
+
+    // The price now is asked for separately, by mint, from memory.
+    assert.equal((await amy("GET", "/api/quotes")).status, 400);
+    assert.equal((await amy("GET", "/api/quotes?m=not-a-mint")).status, 400);
+    assert.equal((await amy("GET", `/api/quotes?m=${Array(61).fill(coins[0].mint).join(",")}`)).status, 400);
+    const quotes = await amy("GET", `/api/quotes?m=${coins.map((c) => c.mint).join(",")}`);
+    assert.equal(quotes.status, 200, quotes.text);
+    assert.deepEqual(quotes.json, { tokens: [] }, "nothing indexed, so no card");
+
+    // A draft sends its tickers, never its words.
+    assert.equal((await amy("GET", "/api/callouts")).status, 400);
+    assert.equal((await amy("GET", "/api/callouts?t=I%20love%20SOL")).status, 400);
+    assert.equal((await amy("GET", `/api/callouts?t=${Array(21).fill("SOL").join(",")}`)).status, 400);
+    const draft = await amy("GET", "/api/callouts?t=SOL,BONK");
+    assert.equal(draft.status, 200, draft.text);
+    assert.deepEqual(draft.json, { tokens: [], named: {} }, "nothing indexed, so nothing blue");
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 });

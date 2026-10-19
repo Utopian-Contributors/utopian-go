@@ -7,6 +7,7 @@ import { isCheck, unchanged } from "../state";
 import { FRESH_MS, ORDER_OPEN_MS, adsPayable, orderAmounts, orderCodes, payUrl } from "./adPay";
 import { matchesAd, reloadAds, socialAdFor } from "./ads";
 import { audioKind } from "./audio";
+import { calloutsIn } from "./callouts";
 import {
   checkPassword,
   clearSession,
@@ -733,7 +734,9 @@ socialRouter.post(
       checkPostPhoto(photo.small, PHOTO_SMALL_BYTES, PHOTO_SMALL_EDGE);
       checkPostPhoto(photo.full, PHOTO_BYTES, PHOTO_EDGE);
     }
-    const created = await createPost(me.name, text.text, Date.now(), photos, memo);
+    // Each $TICKER's price is taken now, before the row is written, so the
+    // card's "since" starts at the moment the post went up.
+    const created = await createPost(me.name, text.text, Date.now(), photos, memo, calloutsIn(text.text));
     if ("wait" in created) throw new SocialError(429, waitText(created.wait), { wait: created.wait });
     // A post an ad matches is what this person's timeline ads are picked from next.
     if (matchesAd(text.text)) await setAdTopic(me.name, text.text, created.at);

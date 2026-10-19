@@ -2,6 +2,7 @@ import express, { NextFunction, Request, Response, Router } from "express";
 import { fetchBalances, isPubkey } from "../lib/balances";
 import { BadCursor, fetchHistory } from "../lib/history";
 import { fetchHoldings } from "../lib/holdings";
+import { isTicker, resolveTickers } from "../social/callouts";
 import { namesOf } from "../social/db";
 import { BRAVE_MAX_OFFSET, TOKEN_TOP_COUNT } from "../config";
 import { BraveApiError, braveImageSearch, braveSearch } from "../lib/brave";
@@ -17,6 +18,7 @@ import {
   listTokens,
   lookupMints,
   lookupTokens,
+  quoteMints,
   searchTokens,
   topTokens,
 } from "../lib/tokens/store";
@@ -448,6 +450,44 @@ apiRouter.get("/api/tokens", searchLimit, (req: Request, res: Response) => {
   if (!after) page.counts = listCounts();
   res.setHeader("Cache-Control", "public, max-age=60");
   res.json(page);
+});
+
+/** A timeline page names at most 20 posts' three tickers. */
+const MAX_QUOTES = 60;
+
+/**
+ * The prices now of the tickers posts call out (`m`, mints joined by commas),
+ * for their cards: one request per page of posts. Memory only; a stale mint is
+ * refreshed behind the answer, for whoever asks next.
+ */
+apiRouter.get("/api/quotes", searchLimit, (req: Request, res: Response) => {
+  const mints = asString(req.query.m).split(",").filter(isPubkey);
+  if (!mints.length || mints.length > MAX_QUOTES) {
+    res.status(400).json({ error: "Invalid mints." });
+    return;
+  }
+  res.setHeader("Cache-Control", "public, max-age=30");
+  res.json({ tokens: quoteMints(mints) });
+});
+
+/** A 256-character draft names at most this many tickers worth asking about. */
+const MAX_DRAFT_TICKERS = 20;
+
+/**
+ * The composer's preview of a draft's ticker cards (`t`, its tickers joined by
+ * commas, never its words): resolved exactly as posting will resolve them,
+ * with each card's quote now, and the mint each ticker went to, which is what
+ * the composer colours.
+ */
+apiRouter.get("/api/callouts", searchLimit, (req: Request, res: Response) => {
+  const tickers = asString(req.query.t).split(",").filter(isTicker);
+  if (!tickers.length || tickers.length > MAX_DRAFT_TICKERS) {
+    res.status(400).json({ error: "Invalid tickers." });
+    return;
+  }
+  const { calls, named } = resolveTickers(tickers);
+  res.setHeader("Cache-Control", "public, max-age=30");
+  res.json({ tokens: quoteMints(calls.map((c) => c.mint)), named });
 });
 
 /** Every row click on the wallet page is one of these; each mint reaches Jupiter at most every 30 s. */

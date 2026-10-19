@@ -325,6 +325,27 @@ export function lookupMints(mints: string[]): Map<string, TokenRecord> {
   return out;
 }
 
+/**
+ * What the tickers called out in posts trade at now, for the cards under them.
+ *
+ * Unlike lookupMints this refreshes the stale ones, as lookupTokens does: the
+ * card is a claim about the price now, and a timeline names a handful of
+ * mints that every reader shares, so each costs at most one call a minute
+ * however many people are scrolling past it. Mints the index has dropped are
+ * absent, and their cards with them.
+ */
+export function quoteMints(mints: string[]): TopToken[] {
+  const now = Date.now();
+  const out: TopToken[] = [];
+  for (const mint of new Set(mints)) {
+    const rec = index.byMint.get(mint);
+    if (!rec) continue;
+    if (now - rec.checkedAt > TOKEN_PRICE_TTL_MS) refreshPrice(rec);
+    out.push(toTop(rec));
+  }
+  return out;
+}
+
 function toTop(rec: TokenRecord): TopToken {
   return {
     mint: rec.mint,

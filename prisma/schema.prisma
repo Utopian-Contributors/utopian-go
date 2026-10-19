@@ -66,6 +66,8 @@ model Post {
   audio    Int       @default(0)
   /// The memo's shape, one base64url character per bar.
   wave     String    @default("")
+  /// Tickers the text calls out ($SOL): [{mint, symbol, price}], each price as it was when the post went up. A re-post shows its original's.
+  coins    Json      @default("[]")
   repost   String?
   author   User      @relation(fields: [byName], references: [name], onDelete: NoAction, onUpdate: NoAction)
   original Post?     @relation("repost", fields: [repost], references: [id], onDelete: NoAction, onUpdate: NoAction)
