@@ -27,7 +27,7 @@ import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMe
 import { scrub } from "./guard";
 import { AUDIO_BYTES, MAX_AUDIO_MS, SOCIAL_BYTES, TINY_BYTES, adKeyword, adText, adUrl, postWait, username, waitText } from "./limits";
 import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
-import { type AdCreative, type AdOrder, TIMELINE_PAGE, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, payOrder, resetSocial, saveAd } from "./db";
+import { type AdCreative, type AdOrder, TIMELINE_PAGE, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, payOrder, postPayment, resetSocial, saveAd } from "./db";
 import { MAX_CALLOUTS, calloutsIn, isTicker, resolveTickers } from "./callouts";
 import { apiRouter } from "../routes/api";
 import { adFor, adMarkup, flushAds, reloadAds } from "./ads";
@@ -1361,6 +1361,19 @@ test("messenger keeps only ciphertext and refuses stale or foreign keys", async 
     assert.equal(mute.status, 400, "a recording without its box");
     const huge = Buffer.alloc(640 * 1024 + 29);
     assert.equal((await ada("POST", "/api/social/c/bob", pack({ kf: 1, kt: 2, iv: ivText, ct: blank, memo }, [], huge))).status, 400);
+
+    // A $UTCC payment rides the conversation in the clear, with no key on either side.
+    const paid = await postPayment("ada", "bob", { amount: "1500000000", sig: "5ig" }, Date.now());
+    const bobList = await bob("GET", "/api/social/c");
+    const row = bobList.json?.chats.find((c: { with: string }) => c.with === "ada");
+    assert.equal(row.last.id, paid.id, "it is the chat's newest");
+    assert.ok(row.unread > 0, "and unread for whoever was paid");
+    const withPay = await bob("GET", "/api/social/c/ada");
+    assert.deepEqual(withPay.json?.messages.at(-1).pay, { amount: "1500000000", sig: "5ig" });
+    assert.equal(withPay.json?.messages.at(-1).id, paid.id);
+    await postPayment("ada", "eve", { amount: "1", sig: "5ig2" }, Date.now());
+    const eveList = await eve("GET", "/api/social/c");
+    assert.equal(eveList.json?.chats[0].last.pay.amount, "1", "without Messenger turned on");
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }

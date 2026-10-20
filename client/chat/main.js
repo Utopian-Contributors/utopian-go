@@ -22,6 +22,7 @@ import { el } from "../js/dom.js";
 import { B64, clock } from "../js/memo.js";
 import { b64u, needPasskey, register, u8, why } from "../js/passkey.js";
 import { shrink } from "../js/shrink.js";
+import { utccText } from "../js/utcc.js";
 
 const te = new TextEncoder();
 const td = new TextDecoder();
@@ -254,6 +255,8 @@ export function mount(ctx) {
    * A voice memo's length and shape go in `m.voice`.
    */
   async function open(who, m) {
+    // A payment is not sealed: the server wrote it, as the chain shows it.
+    if (m.pay) m.text = "";
     if (m.text !== undefined && m.text !== null) return;
     const { myV, theirV, dir } = ends(who, m);
     const key = myV === mine?.v ? pairKey(who, theirV) : null;
@@ -349,6 +352,7 @@ export function mount(ctx) {
       return el("b", { class: "fresh", text: c.unread === 1 ? "1 new message" : `${c.unread} new messages` });
     }
     const m = c.last;
+    if (m.pay) return el("span", { class: "prev", text: paidText(m) });
     const own = m.from === name ? "You: " : "";
     const text = m.text ? m.text : m.text === null ? (mine ? "Can't be opened on this device" : "Encrypted message") : "";
     return el("span", { class: "prev", text: own + (text || (m.memo ? "Voice memo" : m.photos ? "Photo" : "…")) });
@@ -672,8 +676,29 @@ export function mount(ctx) {
     return player;
   }
 
+  /** "You paid 1,500 $UTCC", or "Paid you" it. */
+  function paidText(m) {
+    return `${m.from === name ? "You paid" : "Paid you"} ${utccText(BigInt(m.pay.amount))} $UTCC`;
+  }
+
+  /**
+   * A $UTCC payment between the two, sent from the app (POST /api/social/send),
+   * as a card of its own in the conversation. It opens the transaction.
+   */
+  function paid(m) {
+    return el(
+      "a",
+      { class: "paid", href: `https://solscan.io/tx/${encodeURIComponent(m.pay.sig)}`, target: "_blank", rel: "noopener", title: "View the transaction" },
+      el("small", { text: m.from === name ? "You paid" : "Paid you" }),
+      el("b", { text: `${utccText(BigInt(m.pay.amount))} $UTCC` }),
+    );
+  }
+
   function bubble(who, m) {
     const own = m.from === name;
+    if (m.pay) {
+      return el("div", { class: own ? "msg mine" : "msg", id: `m-${m.id}`, "data-at": String(m.at), title: new Date(m.at).toLocaleString() }, paid(m));
+    }
     const text =
       m.text === null
         ? el("p", { class: "closed", text: "Sealed to a key this device doesn't have." })
