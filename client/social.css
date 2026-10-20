@@ -449,6 +449,10 @@ dialog textarea { resize: none; }
 
 .gallery { margin: 8px 0 0; }
 
+/* A tap opens the photo larger (client/photos). */
+.gallery img { cursor: zoom-in; }
+.gallery img:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+
 .gallery picture {
   display: block;
   flex: none;

@@ -366,6 +366,16 @@ const coinsOpts = {
   outfile: path.join(outDir, "coins.js"),
 };
 
+/**
+ * A post's photos, large, in a carousel: fetched by social.js the first time
+ * a photo is tapped. It brings its own rules, as the ticker cards do.
+ */
+const photosOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "photos", "main.js")],
+  outfile: path.join(outDir, "photos.js"),
+};
+
 /** Friends, fetched by social.js on /social/friends only. */
 const friendsOpts = {
   ...jsOpts,
@@ -628,6 +638,7 @@ const SOCIAL_LAZY = {
   lg: "login.js",
   cp: "compose.js",
   cc: "coins.js",
+  pv: "photos.js",
   fr: "friends.js",
   nt: "notes.js",
   ed: "edit.js",
@@ -962,6 +973,7 @@ async function buildAssets() {
     esbuild.build(chatOpts),
     esbuild.build(composeOpts),
     esbuild.build(coinsOpts),
+    esbuild.build(photosOpts),
     esbuild.build(friendsOpts),
     esbuild.build(notesOpts),
     esbuild.build(editOpts),
