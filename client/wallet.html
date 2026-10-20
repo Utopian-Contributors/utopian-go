@@ -29,7 +29,7 @@
     <meta name="robots" content="noindex, nofollow" />
     <link rel="stylesheet" href="/wallet.css" />
   </head>
-  <body class="res wl-pg" data-lg="/login.js" data-cn="/connect.js" data-sw="/swap.js" data-qr="/qr.js" data-ks="/keys.js" data-pw="/install.js">
+  <body class="res wl-pg wl-loading" data-lg="/login.js" data-cn="/connect.js" data-sw="/swap.js" data-qr="/qr.js" data-ks="/keys.js" data-pw="/install.js">
     <!-- The search header, as on search and Social: the mark, the field, the
          account control. app.css (built into this page's sheet) lays it out. -->
     <div class="chrome" id="chrome">
@@ -87,11 +87,18 @@
           <div id="wl-hl"></div>
           <p class="wl-n" id="wl-hn" hidden></p>
         </section>
-        <div class="wl-ph" id="wl-ph" hidden></div>
+        <!-- Whose wallet: held open while loading, as a signed-in account shows it
+             (wallet/main.js paintKeys): a name and an address of the usual lengths,
+             so on a phone it wraps as a real one does. -->
+        <div class="wl-ph wl-sk" id="wl-ph" aria-hidden="true">
+          <span class="wl-k">@username</span><span class="wl-ka">GkQe7pWnZbM4vRtYx2HcDfLs9JaUo3KmNwB6iEhTqVgP</span><button class="wl-b" type="button" tabindex="-1">Show recovery phrase</button>
+        </div>
         <section class="wl-pf" aria-labelledby="wl-pf-h">
           <!-- Shipped in its final geometry so the bundle taking over moves
-               nothing. A dash, not a zero: no balance reads as empty before it
-               has been read. -->
+               nothing: a $0.00 total, a line in the chart's box, the range
+               row, the actions and a row each for SOL and UTCC, all
+               shimmering (body.wl-loading, wallet.css) until the first read
+               lands and wallet/main.js paints over them in place. -->
           <div class="wl-tot">
             <!-- History sits on the heading's line, which is as tall as the
                  button whether or not it is shown yet. -->
@@ -99,10 +106,21 @@
               <h2 class="wl-k" id="wl-pf-h">Portfolio</h2>
               <button type="button" class="wl-hb" id="wl-hb" hidden>History</button>
             </div>
-            <strong class="wl-v" id="wl-v">—</strong>
-            <span class="pc-m" id="wl-d" hidden></span>
-            <div class="pc" id="wl-c" hidden></div>
-            <div class="wl-acts" id="wl-acts" hidden>
+            <strong class="wl-v" id="wl-v">$0.00</strong>
+            <span class="pc-m" id="wl-d">+$0.00 · 0.00%<span>past 24h</span></span>
+            <div class="pc" id="wl-c">
+              <svg viewBox="0 0 100 1000" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M0 620 C 12 580, 20 660, 32 600 S 52 470, 64 520 S 86 430, 100 460" />
+              </svg>
+            </div>
+            <!-- The range row's place; wallet/main.js puts its own in. -->
+            <div class="pc-r wl-sk-r" aria-hidden="true">
+              <button type="button" tabindex="-1">1H</button>
+              <button type="button" tabindex="-1" aria-pressed="true">24H</button>
+              <button type="button" tabindex="-1">1W</button>
+              <button type="button" tabindex="-1">1M</button>
+            </div>
+            <div class="wl-acts" id="wl-acts">
               <button type="button" class="wl-a" data-act="receive">Receive</button>
               <button type="button" class="wl-a" data-act="send">Send</button>
               <button type="button" class="wl-a" data-act="swap">Swap</button>
@@ -111,8 +129,21 @@
           <!-- Total, then a line for each kind held (wallet/breakdown.js).
                Hidden until there is a portfolio to break down. -->
           <div class="wl-bk" id="wl-bk" role="group" aria-label="Portfolio by kind" hidden></div>
-          <div id="wl-l"></div>
-          <p class="wl-n" id="wl-n">Reading your wallet…</p>
+          <div id="wl-l">
+            <div class="wl-r wl-own wl-sk" aria-hidden="true">
+              <span class="wl-id"><span class="wl-ic wl-coin">$</span><span class="wl-sym">SOL</span><span class="wl-nm">Solana</span></span>
+              <span class="wl-amt">0</span>
+              <span class="wl-usd">$0.00</span>
+              <span class="wl-act"><span class="wl-t">+</span><span class="wl-t wl-sell">−</span></span>
+            </div>
+            <div class="wl-r wl-own wl-sk" aria-hidden="true">
+              <span class="wl-id"><span class="wl-ic wl-coin">$</span><span class="wl-sym">UTCC</span><span class="wl-nm">Utopian Contributor Coin</span></span>
+              <span class="wl-amt">0</span>
+              <span class="wl-usd">$0.00</span>
+              <span class="wl-act"><span class="wl-t">+</span><span class="wl-t wl-sell">−</span></span>
+            </div>
+          </div>
+          <p class="wl-n" id="wl-n" hidden></p>
           <div id="wl-x"></div>
         </section>
         <section class="wl-top" aria-label="Tokens">

@@ -111,8 +111,16 @@ const ranges = rangeTabs(range, (next) => {
   range = next;
   void reread();
 });
-ranges.hidden = true;
-$("wl-c").after(ranges);
+/**
+ * The first paint (wallet.html) is a $0.00 portfolio in its final geometry,
+ * shimmering, until the first read is painted over it in place: no rows
+ * cleared ahead of it and no "Reading" note, so nothing moves twice.
+ */
+const firstPaint = () => document.body.classList.contains("wl-loading");
+const firstPainted = () => document.body.classList.remove("wl-loading");
+// The real range row in the placeholder's place, the same size, shown while that holds.
+ranges.hidden = !firstPaint();
+document.querySelector(".wl-sk-r")?.replaceWith(ranges);
 
 /**
  * The figure, and the chart: the total's line alone, or with three kinds or
@@ -584,6 +592,9 @@ async function paintKeys() {
       }
     },
   });
+  // The placeholder's marks off, now that it holds the account.
+  keys.classList.remove("wl-sk");
+  keys.removeAttribute("aria-hidden");
   keys.replaceChildren(
     el("span", { class: "wl-k", text: `@${me.name}` }),
     el("span", { class: "wl-ka", text: me.address, title: me.address }),
@@ -605,6 +616,7 @@ function omitted(data) {
 
 function paint(data) {
   reset();
+  firstPainted();
   shown = data;
   breakdown.paint(data);
   paintHead();
@@ -623,6 +635,7 @@ function paint(data) {
 /** Nobody signed in: an offer, not an error. */
 function offer() {
   reset();
+  firstPainted();
   shown = null;
   historyButton.hidden = true;
   paintHead();
@@ -670,8 +683,11 @@ async function refresh() {
   if (!address) return offer();
 
   historyButton.hidden = false;
-  reset();
-  setNote("Reading your wallet…");
+  // The first read paints over the shimmering placeholder; later ones start from clear.
+  if (!firstPaint()) {
+    reset();
+    setNote("Reading your wallet…");
+  }
 
   try {
     // Under the loading bar along the top (client/js/progress.js), as Social's pages load.
@@ -681,6 +697,9 @@ async function refresh() {
   } catch (err) {
     if (id !== run) return;
     reset();
+    firstPainted();
+    portfolio.clear();
+    ranges.hidden = true;
     // A lookup that did not happen must never read as an empty portfolio.
     total.textContent = "—";
     setNote(err?.message || "Could not read this wallet.", "err");
