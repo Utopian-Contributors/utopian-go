@@ -83,7 +83,8 @@ button,
 .adv,
 .go-pill,
 .pa,
-.swx-lnk {
+.swx-lnk,
+#hm-nv a {
   transition:
     background-color 0.16s,
     border-color 0.16s,
@@ -93,12 +94,12 @@ button,
     scale 0.2s var(--spring);
 }
 
-:is(button, .tk-buy, .ac-w, .ac-soc, .adv, .go-pill, .pa, .swx-lnk):active:not(:disabled) {
+:is(button, .tk-buy, .ac-w, .ac-soc, .adv, .go-pill, .pa, .swx-lnk, #hm-nv a):active:not(:disabled) {
   scale: var(--press, 0.96);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :is(button, .tk-buy, .ac-w, .ac-soc, .adv, .go-pill, .pa, .swx-lnk):active:not(:disabled) {
+  :is(button, .tk-buy, .ac-w, .ac-soc, .adv, .go-pill, .pa, .swx-lnk, #hm-nv a):active:not(:disabled) {
     scale: none;
   }
 }

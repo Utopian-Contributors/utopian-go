@@ -67,8 +67,8 @@ body.res .chrome {
  *
  * Pinned to the window here, as a bar along the top, for a page with no row.
  * Results have a row, and pin it to that instead — see body.res #ac. The home
- * page is a column with room in it, and takes the control into the flow under
- * the price strip — see body.home #ac in app.css.
+ * page leaves it out for its own Wallet and Social rows under the price strip
+ * — see body.home #hm-nv in app.css.
  */
 #ac {
   position: fixed;
