@@ -80,7 +80,15 @@
 .pv-x:focus-visible,
 .pv-go:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
-.pv-x { top: max(10px, env(safe-area-inset-top)); right: 10px; }
+/* Solid, not see-through: it reads the same over a photo as over the dark. */
+.pv-x {
+  top: max(10px, env(safe-area-inset-top));
+  right: 10px;
+  background: #fff;
+  color: #111;
+}
+
+.pv-x:hover { background: #e6e6e6; }
 
 .pv-go { top: 50%; translate: 0 -50%; }
 .pv-go:disabled { opacity: 0.3; cursor: default; }
