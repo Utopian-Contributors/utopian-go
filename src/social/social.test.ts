@@ -586,6 +586,14 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(again.status, 429);
     assert.match(String(again.json?.error), /10 min/);
 
+    // When the account may post again is a time, the same on every answer, so
+    // a copy kept and shown again later (src/state.ts) is still right.
+    const posted = (post.json?.post as { at: number }).at;
+    const first = (await call("GET", "/api/social/me")).json?.me as { nextPost: number };
+    assert.equal(first.nextPost, posted + 10 * 60 * 1000);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(((await call("GET", "/api/social/me")).json?.me as { nextPost: number }).nextPost, first.nextPost);
+
     const selfComment = await call("POST", "/api/social/comment", { post: postId, text: "myself" });
     assert.equal(selfComment.status, 200);
 
