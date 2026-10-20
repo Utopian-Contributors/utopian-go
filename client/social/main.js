@@ -336,9 +336,12 @@ function renderSide(person) {
  * card is the ad's link, which the server only stores as https.
  */
 function adPost(ad) {
-  const link = el("span", { class: "sad-l" });
-  link.innerHTML = icon("n-ln", 16);
-  link.append(el("span", {}, el("b", { text: ad.cta }), ` · ${ad.host}`));
+  const link = el(
+    "span",
+    { class: "sad-l" },
+    el("img", { src: "/ic-link.svg", alt: "", width: "16", height: "16" }),
+    el("span", {}, el("b", { text: ad.cta }), ` · ${ad.host}`),
+  );
   return el(
     "a",
     { class: "post sad", href: /^https:\/\//.test(ad.url) ? ad.url : "#", target: "_blank", rel: "noopener sponsored" },
@@ -1139,7 +1142,10 @@ addEventListener(
   { passive: true },
 );
 
-$("in").addEventListener("click", () => openAuth("login"));
+$("in").addEventListener("click", (e) => {
+  e.preventDefault();
+  openAuth("login");
+});
 // Until the server answers, the remembered name points My Profile at the right page.
 if (readName()) $("me").href = `/social/u/${readName()}`;
 // Signed out, My Profile is still there; it asks you to log in. So do Friends,

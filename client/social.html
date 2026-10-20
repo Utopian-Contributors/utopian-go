@@ -55,8 +55,9 @@
         <rect x="6" y="5" width="4" height="14" rx="1.2" fill="currentColor" />
         <rect x="14" y="5" width="4" height="14" rx="1.2" fill="currentColor" />
       </symbol>
-      <!-- The section tabs: the bottom bar on phones, the left column on wider
-           screens. The timeline's filters draw from here too. -->
+      <!-- The timeline's filters, which are buttons and so keep plain line
+           marks. The section tabs themselves show the app's coloured ones
+           (client/ic-*.svg). -->
       <symbol id="n-tl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
         <path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z" />
       </symbol>
@@ -69,21 +70,8 @@
         <circle cx="17" cy="9" r="2.5" />
         <path d="M17 14.2c2.4.3 4 2.2 4 4.8" />
       </symbol>
-      <symbol id="n-ch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
-        <path d="M5 4h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 4V5a1 1 0 0 1 1-1z" />
-      </symbol>
-      <symbol id="n-nt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2H4.5zM10 21h4" />
-      </symbol>
-      <symbol id="n-me" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 20.5c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
-      </symbol>
-      <!-- A sponsored post's link row. -->
-      <symbol id="n-ln" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
-      </symbol>
-      <!-- Advertise: a wand and its sparkles. index.html draws the same one inline. -->
+      <!-- Advertise's wand, for the New ad button (client/ads); index.html draws
+           the same one inline. -->
       <symbol id="n-ad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2.6 19.6L14.6 7.6l1.8 1.8-12 12zM12.5 9.7l1.8 1.8" />
         <path d="M19 2.2l.8 1.8 1.8.8-1.8.8-.8 1.8-.8-1.8-1.8-.8 1.8-.8z" stroke-width="1.4" />
@@ -127,19 +115,19 @@
         <nav id="ac" aria-label="Account">
           <!-- Swapped for Log in while nobody is signed in, as on every page. -->
           <a class="ac-w" href="/wallet" id="aw">Wallet</a>
-          <button type="button" class="ac-w ac-in" id="in" hidden>Log in</button>
+          <a class="ac-w ac-in" href="/wallet" id="in" hidden>Log in</a>
           <a class="ac-b" href="/">Go Search</a>
           <button type="button" class="ac-out" id="out" hidden>Log out</button>
         </nav>
       </header>
       <nav id="tb" aria-label="Social">
-        <a class="tab" href="/social" data-nav="timeline"><svg class="ni" aria-hidden="true"><use href="#n-tl" /></svg><span>Timeline</span></a>
-        <a class="tab" href="/social/friends" data-nav="friends"><svg class="ni" aria-hidden="true"><use href="#n-fr" /></svg><span>Friends</span></a>
-        <a class="tab" href="/social/c" data-nav="chat"><svg class="ni" aria-hidden="true"><use href="#n-ch" /></svg><span>Messenger</span><i id="mbadge" hidden></i></a>
-        <a class="tab" href="/social/notifications" data-nav="notifications"><svg class="ni" aria-hidden="true"><use href="#n-nt" /></svg><span>Notifications</span><i id="badge" hidden></i></a>
-        <a class="tab" href="/social" id="me" data-nav="profile"><svg class="ni" aria-hidden="true"><use href="#n-me" /></svg><span><b class="my">My </b>Profile</span></a>
+        <a class="tab" href="/social" data-nav="timeline"><img class="ni" src="/ic-home.svg" alt="" width="24" height="24" /><span>Timeline</span></a>
+        <a class="tab" href="/social/friends" data-nav="friends"><img class="ni" src="/ic-social.svg" alt="" width="24" height="24" /><span>Friends</span></a>
+        <a class="tab" href="/social/c" data-nav="chat"><img class="ni" src="/ic-chat.svg" alt="" width="24" height="24" /><span>Messenger</span><i id="mbadge" hidden></i></a>
+        <a class="tab" href="/social/notifications" data-nav="notifications"><img class="ni" src="/ic-bell.svg" alt="" width="24" height="24" /><span>Notifications</span><i id="badge" hidden></i></a>
+        <a class="tab" href="/social" id="me" data-nav="profile"><img class="ni" src="/ic-person.svg" alt="" width="24" height="24" /><span><b class="my">My </b>Profile</span></a>
         <!-- Wide screens only; social.css hides it on a phone. -->
-        <a class="tab tab-ad" href="/social/ads" data-nav="ads"><svg class="ni" aria-hidden="true"><use href="#n-ad" /></svg><span>Advertise</span></a>
+        <a class="tab tab-ad" href="/social/ads" data-nav="ads"><img class="ni" src="/ic-wand.svg" alt="" width="24" height="24" /><span>Advertise</span></a>
         <!-- The account's $UTCC, wide screens only. social.js gives it the coin's
              link and logo (client/js/utcc.js has the mint) and shows it once
              there is a figure to put in it. -->

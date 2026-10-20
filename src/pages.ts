@@ -19,7 +19,7 @@ export function esc(value: string): string {
 }
 
 const SOCIAL = '<a class="ac-soc" href="/social" aria-label="Get Social"><span class="ac-soc-t">Get Social</span></a>';
-const LOG_IN = '<button type="button" class="ac-w ac-in">Log in</button>';
+const LOG_IN = '<a class="ac-w ac-in" href="/wallet">Log in</a>';
 
 /** The header's #ac, as mountAccount paints it (index, wallet) or applyMe leaves it (social). */
 export function accountNav(page: Page, signed: boolean): string {
@@ -28,10 +28,10 @@ export function accountNav(page: Page, signed: boolean): string {
     const hide = (hidden: boolean) => (hidden ? " hidden" : "");
     inner =
       `<a class="ac-w" href="/wallet" id="aw"${hide(!signed)}>Wallet</a> ` +
-      `<button type="button" class="ac-w ac-in" id="in"${hide(signed)}>Log in</button> ` +
+      `<a class="ac-w ac-in" href="/wallet" id="in"${hide(signed)}>Log in</a> ` +
       `<a class="ac-b" href="/"${hide(signed)}>Go Search</a> ` +
       `<button type="button" class="ac-out" id="out"${hide(!signed)}>Log out</button>`;
-  } else if (!signed) inner = LOG_IN + SOCIAL;
+  } else if (!signed) inner = page === "index" ? LOG_IN : LOG_IN + SOCIAL;
   else if (page === "wallet") inner = `${SOCIAL}<button type="button" class="ac-out">Log out</button>`;
   else inner = `<a class="ac-w" href="/wallet">Wallet</a>${SOCIAL}`;
   return `<nav id="ac" aria-label="Account">${inner}</nav>`;

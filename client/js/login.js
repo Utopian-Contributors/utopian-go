@@ -31,7 +31,7 @@ const CSS = `
  color:var(--buy-ink);font:500 14px/1 var(--ff);padding:13px 12px;cursor:pointer}
 .lgd-go:hover:not(:disabled){filter:brightness(1.08)}
 .lgd-t{background:none;color:var(--go);border:0;padding:12px 0;font:500 13px/1 var(--ff);cursor:pointer}
-.lgd-t:hover{color:var(--buy)}
+.lgd-t:hover{color:var(--buy-text)}
 .lgd button:disabled{opacity:.55;cursor:default}
 .lgd .lgd-c{display:flex;gap:8px;align-items:flex-start;color:var(--t)}
 .lgd .lgd-c input{width:auto;margin:3px 0 0;flex:none}

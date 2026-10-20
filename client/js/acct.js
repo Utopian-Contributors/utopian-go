@@ -82,10 +82,11 @@ export function logOutButton(done) {
 
 /**
  * @param {HTMLElement} node the page's #ac slot
- * @param {{self?: () => HTMLElement, onLogin?: () => void}} [opts] `self` on the
- *   wallet page, where a Wallet button would only point at the page you are on:
- *   signed in, what it makes follows Get Social instead. `onLogin` runs once the
- *   dialog has signed someone in.
+ * @param {{self?: () => HTMLElement, onLogin?: () => void, loginAlone?: boolean}} [opts]
+ *   `self` on the wallet page, where a Wallet button would only point at the
+ *   page you are on: signed in, what it makes follows Get Social instead.
+ *   `onLogin` runs once the dialog has signed someone in. `loginAlone` on
+ *   search: signed out, Log in is the whole control, with no Get Social.
  */
 export function mountAccount(node, opts = {}) {
   function paint() {
@@ -99,17 +100,21 @@ export function mountAccount(node, opts = {}) {
       node.replaceChildren(social, opts.self());
       return;
     }
-    node.replaceChildren(
-      name
-        ? el("a", { class: "ac-w", href: WALLET_PAGE, text: "Wallet" })
-        : el("button", {
-            class: "ac-w ac-in",
-            type: "button",
-            text: LOGIN,
-            onclick: () => openLogin(opts.onLogin),
-          }),
-      social,
-    );
+    if (name) {
+      node.replaceChildren(el("a", { class: "ac-w", href: WALLET_PAGE, text: "Wallet" }), social);
+      return;
+    }
+    const login = el("a", {
+      class: "ac-w ac-in",
+      href: WALLET_PAGE,
+      text: LOGIN,
+      onclick: (/** @type {Event} */ e) => {
+        e.preventDefault();
+        openLogin(opts.onLogin);
+      },
+    });
+    if (opts.loginAlone) node.replaceChildren(login);
+    else node.replaceChildren(login, social);
   }
 
   onName(paint);

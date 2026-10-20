@@ -30,76 +30,54 @@
   cursor: progress;
 }
 
-/* Wallet: a pill with the mark and the word, on search and Social, on a wash
-   with no edge (base.css) and 36px tall like every control in a header row.
-   The mark is a mask, so it takes the text colour in either theme. */
-.ac-w {
-  --wallet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.3'%3E%3Crect x='1.5' y='4' width='13' height='9.5' rx='1.5'/%3E%3Cpath d='M3 4v-.5A1.5 1.5 0 0 1 4.5 2h7'/%3E%3Ccircle cx='11.3' cy='8.75' r='1' fill='%23000' stroke='none'/%3E%3C/svg%3E");
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 15px 0 12px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--wash);
-  color: var(--t);
-  font: 500 14px/1 var(--ff);
-  text-decoration: none;
-}
-
-.ac-w::before {
-  content: "";
-  width: 16px;
-  height: 16px;
-  flex: none;
-  background: currentColor;
-  -webkit-mask: var(--wallet) center / contain no-repeat;
-  mask: var(--wallet) center / contain no-repeat;
-}
-
-.ac-w:hover {
-  background: var(--wash2);
-  color: var(--t);
-  text-decoration: none;
-}
-
-/* Log in, in the Wallet button's place while nobody is signed in: the same
-   pill, as a button, with a person mark. */
-.ac-in {
-  --wallet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.3'%3E%3Ccircle cx='8' cy='5.5' r='2.7'/%3E%3Cpath d='M2.8 14c.5-2.6 2.6-4.1 5.2-4.1s4.7 1.5 5.2 4.1'/%3E%3C/svg%3E");
-  cursor: pointer;
-}
-
-/* Get Social, signed in or not: a word in the header, its pill appearing only
-   under the pointer. The mark is a mask rather than an <img>, so the header
-   does not grow a second request. */
+/*
+ * Wallet, Log in and Get Social: links, each with its mark — the same leather
+ * wallet, person and pair of people as the rest of the app (client/ic-*.svg),
+ * so in colour in either theme — and a wash only under the pointer. Log in is
+ * a link too: to the wallet page, which offers the sign-in, and the script
+ * opens the dialog in place instead (client/js/acct.js).
+ */
+.ac-w,
 .ac-soc {
-  --friends: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='5' cy='5' r='1.7'/%3E%3Ccircle cx='11' cy='5' r='1.7'/%3E%3Cpath d='M2 13c.4-2 1.7-3 3-3s2.6 1 3 3M8.2 13c.4-2 1.6-3 2.9-3 1.3 0 2.5 1 2.9 3' fill='none' stroke='%23000' stroke-width='1.3'/%3E%3C/svg%3E");
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   height: 36px;
-  padding: 0 13px 0 11px;
+  padding: 0 12px 0 9px;
   border-radius: 999px;
   color: var(--a);
   font: 500 14px/1 var(--ff);
   text-decoration: none;
+  cursor: pointer;
 }
 
+.ac-w::before,
 .ac-soc::before {
   content: "";
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   flex: none;
-  background: currentColor;
-  -webkit-mask: var(--friends) center / contain no-repeat;
-  mask: var(--friends) center / contain no-repeat;
+  background: var(--ic) center / contain no-repeat;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.2));
 }
 
+.ac-w {
+  --ic: url("/ic-wallet.svg");
+}
+
+.ac-in {
+  --ic: url("/ic-person.svg");
+}
+
+.ac-soc {
+  --ic: url("/ic-social.svg");
+}
+
+.ac-w:hover,
 .ac-soc:hover {
   background: var(--wash);
+  color: var(--a);
   text-decoration: none;
 }
 

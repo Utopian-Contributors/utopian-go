@@ -1,13 +1,13 @@
 /* Only what the search sheet does not already draw. The page is body.res.
    Buttons and links use the greens search already has: --go to read,
-   --buy to press. */
+   --buy to press, --buy-text for a press set as text. */
 
 a {
   color: var(--go);
 }
 
 a:hover {
-  color: var(--buy);
+  color: var(--buy-text);
 }
 
 a.tab,
@@ -116,9 +116,9 @@ dialog textarea { resize: none; }
 
 /* The passkey is the second way in, so it is drawn as an outline. */
 #pk {
-  border: 1px solid var(--buy);
+  border: 1px solid var(--buy-text);
   background: none;
-  color: var(--buy);
+  color: var(--buy-text);
 }
 
 #pk:hover {
@@ -680,7 +680,7 @@ a.cashtag:hover { color: var(--a); }
 }
 
 .ghost:hover {
-  color: var(--buy);
+  color: var(--buy-text);
 }
 
 button:disabled { opacity: 0.55; cursor: default; }
@@ -797,8 +797,7 @@ a.sad:hover { display: block; color: var(--t); text-decoration: none; }
 .sad .via { margin-left: 6px; font-size: 13px; }
 .sad-b img { display: block; width: 100%; height: auto; margin-top: 8px; border-radius: 16px; background: var(--ch); }
 .sad-l { display: flex; align-items: baseline; gap: 6px; margin-top: 10px; color: var(--f); font-size: 14px; }
-.sad-l svg { align-self: center; }
-.sad-l svg { flex: none; color: var(--go); }
+.sad-l img { flex: none; align-self: center; }
 .sad-l b { color: var(--go); font-weight: 600; }
 a.sad:hover .sad-l b { text-decoration: underline; }
 
@@ -826,7 +825,7 @@ a.sad:hover .sad-l b { text-decoration: underline; }
 }
 
 .act:disabled { color: var(--f); cursor: default; }
-.act:hover:not(:disabled) { background: var(--wash); color: var(--buy); text-decoration: none; }
+.act:hover:not(:disabled) { background: var(--wash); color: var(--buy-text); text-decoration: none; }
 .act.saved,
 .act.saved:hover { color: var(--f); }
 
@@ -974,14 +973,14 @@ img.pfp {
   --press: 0.97;
 }
 
+/* The app's coloured marks (client/ic-*.svg), standing on the tile. */
 .pa::before {
   content: "";
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   flex: none;
-  background: var(--go);
-  -webkit-mask: var(--ic) center / contain no-repeat;
-  mask: var(--ic) center / contain no-repeat;
+  background: var(--ic) center / contain no-repeat;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.22));
 }
 
 .pa:hover:not(:disabled) {
@@ -997,28 +996,28 @@ img.pfp {
 .pa[data-ic="add"]:disabled { cursor: default; color: var(--m); }
 
 .pay {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2'/%3E%3Ccircle cx='12' cy='12' r='2.5'/%3E%3Cpath d='M6 9.5v5M18 9.5v5'/%3E%3C/svg%3E");
+  --ic: url("/ic-cash.svg");
 }
 
 [data-ic="add"] {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='8' r='3.5'/%3E%3Cpath d='M2.5 20c.6-3.6 3.2-5.6 6.5-5.6s5.9 2 6.5 5.6M19 8v6M16 11h6'/%3E%3C/svg%3E");
+  --ic: url("/ic-add.svg");
 }
 
 [data-ic="add"]:disabled {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='8' r='3.5'/%3E%3Cpath d='M2.5 20c.6-3.6 3.2-5.6 6.5-5.6s5.9 2 6.5 5.6M16 11.5l2 2 4-4.5'/%3E%3C/svg%3E");
+  --ic: url("/ic-friend.svg");
 }
 
 [data-ic="msg"] {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 4V6a1 1 0 0 1 1-1z'/%3E%3C/svg%3E");
+  --ic: url("/ic-chat.svg");
 }
 
-/* The wallet page's swap mark (wallet.css [data-act="swap"]). */
+/* The wallet page's swap mark too (wallet.css [data-act="swap"]). */
 [data-ic="swap"] {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 4v12m0 0-4-4m4 4 4-4M17 20V8m0 0-4 4m4-4 4 4'/%3E%3C/svg%3E");
+  --ic: url("/ic-swap.svg");
 }
 
 [data-ic="edit"] {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4'/%3E%3C/svg%3E");
+  --ic: url("/ic-edit.svg");
 }
 
 .tools { margin: 14px 0; }
@@ -1500,12 +1499,10 @@ a.back.chat-back { display: none; }
 .paid::before {
   content: "";
   grid-row: span 2;
-  width: 28px;
-  height: 28px;
-  background: var(--go);
-  -webkit-mask: var(--ic) center / contain no-repeat;
-  mask: var(--ic) center / contain no-repeat;
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2'/%3E%3Ccircle cx='12' cy='12' r='2.5'/%3E%3Cpath d='M6 9.5v5M18 9.5v5'/%3E%3C/svg%3E");
+  width: 30px;
+  height: 30px;
+  background: url("/ic-cash.svg") center / contain no-repeat;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.22));
 }
 
 .paid small { color: var(--m); font-size: 12px; }

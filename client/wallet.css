@@ -23,8 +23,9 @@
   /* A green to read and a green to press; see the note in app.css. */
   --go: #39a11c;
   --go-ink: #fff;
-  --buy: #167c3c;
-  --buy-ink: #fff;
+  --buy: #3cc316;
+  --buy-ink: #fefefe;
+  --buy-text: #167c3c;
   --dn: #d93025;
   --pn: #fff;
   --hover: #f1f3f4;
@@ -66,6 +67,7 @@
     --go-ink: #202124;
     --buy: #75ffbe;
     --buy-ink: #202124;
+    --buy-text: #75ffbe;
     --dn: #f28b82;
     --pn: #303134;
     --hover: #2c2c2e;
@@ -587,7 +589,7 @@ a:hover {
   display: none;
 }
 
-/* A tile: the mark above the word. The marks are masks, so they take --go in either theme. */
+/* A tile: the mark above the word, in the app's own colours in either theme. */
 .wl-a {
   display: flex;
   flex-direction: column;
@@ -602,13 +604,13 @@ a:hover {
   cursor: pointer;
 }
 
+/* The app's coloured marks (client/ic-*.svg), standing on the tile. */
 .wl-a::before {
   content: "";
-  width: 24px;
-  height: 24px;
-  background: var(--go);
-  -webkit-mask: var(--ic) center / contain no-repeat;
-  mask: var(--ic) center / contain no-repeat;
+  width: 30px;
+  height: 30px;
+  background: var(--ic) center / contain no-repeat;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.22));
 }
 
 .wl-a:hover:not(:disabled) {
@@ -622,17 +624,17 @@ a:hover {
 
 [data-act="receive"],
 .wl-hg.receive {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v12m0 0-5-5m5 5 5-5M5 20h14'/%3E%3C/svg%3E");
+  --ic: url("/ic-receive.svg");
 }
 
 [data-act="send"],
 .wl-hg.send {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20V8m0 0-5 5m5-5 5 5M5 4h14'/%3E%3C/svg%3E");
+  --ic: url("/ic-send.svg");
 }
 
 [data-act="swap"],
 .wl-hg.swap {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 4v12m0 0-4-4m4 4 4-4M17 20V8m0 0-4 4m4-4 4 4'/%3E%3C/svg%3E");
+  --ic: url("/ic-swap.svg");
 }
 
 /* —— History ——
@@ -715,23 +717,17 @@ body.hist .wl-top {
 
 .wl-hg::before {
   content: "";
-  width: 18px;
-  height: 18px;
-  background: var(--go);
-  -webkit-mask: var(--ic) center / contain no-repeat;
-  mask: var(--ic) center / contain no-repeat;
+  width: 22px;
+  height: 22px;
+  background: var(--ic) center / contain no-repeat;
 }
 
 .wl-hg.failed {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7.5v5.5m0 3.5v.01'/%3E%3C/svg%3E");
-}
-
-.wl-hg.failed::before {
-  background: var(--dn);
+  --ic: url("/ic-failed.svg");
 }
 
 .wl-hg.other {
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M5 12h.01M12 12h.01M19 12h.01'/%3E%3C/svg%3E");
+  --ic: url("/ic-more.svg");
 }
 
 .wl-hw {

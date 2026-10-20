@@ -59,7 +59,7 @@ function syncClearButton() {
 // Before anything else on the boot path: it is a localStorage read and two
 // buttons, and the corner of the page it fills is otherwise empty until it
 // runs. Nothing here fetches, and nothing here waits on a search.
-mountAccount($("ac"));
+mountAccount($("ac"), { loginAlone: true });
 paintSaved();
 noZoom();
 mountPwa();

@@ -61,7 +61,7 @@ const MARK = '<meta name="ug-offline" content="';
 const OFFLINE = `<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="color-scheme" content="light dark"><title>Offline</title><style>
-:root{--bg:#fffff6;--f:#70757a;--buy:#188038;--ink:#fff}
+:root{--bg:#fffff6;--f:#70757a;--buy:#3cc316;--ink:#0b2b06}
 @media (prefers-color-scheme:dark){:root{--bg:#282124;--f:#9aa0a6;--buy:#81c995;--ink:#202124}}
 body{display:grid;place-items:center;min-height:100vh;min-height:100dvh;margin:0;padding:24px;
 box-sizing:border-box;background:var(--bg);font:16px/1.5 system-ui,Helvetica,Arial,sans-serif;text-align:center}

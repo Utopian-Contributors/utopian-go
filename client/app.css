@@ -10,17 +10,23 @@
   --a: #1a73e8;
   --go: #39a11c;
   /*
-   * The two greens, and why there are two.
+   * The greens, and why there are three.
    *
    * --go is a green to read: the up arrow, a settled trade, a price that rose.
-   * --buy is a green to press, and it is darker because it carries text — 15px
-   * at 600 needs 4.5:1 against its own fill, which the lighter one does not
-   * give. Each names the ink that goes on it, so a theme can move the fill and
-   * the label together instead of leaving white on top of whatever lands.
+   * --buy is a green to press — every filled button — and it is the wordmark's
+   * own #3CC316 (client/go-wordmark.svg), so the buttons and the mark are one
+   * green. White on it would be 2.3:1, too faint to read, so its ink is a deep
+   * green instead, 6.6:1, the way it turns near-black after dark. Each names
+   * the ink that goes on it, so a theme can move the fill and the label
+   * together instead of leaving white on top of whatever lands.
+   * --buy-text is that same press set as text on the page — a link's hover, an
+   * outlined button's label — where the wordmark green would be as faint as
+   * white is on it. It is the darker green the buttons were before.
    */
   --go-ink: #fff;
-  --buy: #167c3c;
-  --buy-ink: #fff;
+  --buy: #3cc316;
+  --buy-ink: #fefefe;
+  --buy-text: #167c3c;
   --dn: #d93025;
   --ln: #ebebeb;
   --pn: #fff;
@@ -62,18 +68,19 @@
      * and the fireflies in the home page's night forest, and the same #75FFBE
      * the wordmark takes (see .lg-mark). A leaf green is a colour lit from
      * outside; on an unlit page there is nothing to light it, and #34a853 sat
-     * on #202124 like paint in a dark room. This one is the thing giving off the light, which
-     * is the only kind of green a night scene has.
+     * on #202124 like paint in a dark room. This one is the thing giving off
+     * the light, which is the only kind of green a night scene has.
      *
-     * The pair converges here: the fill no longer has to be darkened for white
-     * text because it no longer carries white text. Its ink flips to the page's
-     * own near-black, so the button reads as a lit panel with the label cut out
-     * of it — 13:1, against 5.9:1 for the daylight pair.
+     * All three converge here: as text on this page the green reads as well
+     * as it does on a button, and the button's ink is the page's own
+     * near-black, so it reads as a lit panel with the label cut out of it —
+     * 13:1, against 6.6:1 by day.
      */
     --go: #75ffbe;
     --go-ink: #202124;
     --buy: #75ffbe;
     --buy-ink: #202124;
+    --buy-text: #75ffbe;
     --dn: #f28b82;
     --ln: #3c4043;
     --pn: #303134;
@@ -371,8 +378,8 @@ body.home #ac {
 }
 
 /* Home-only rows: Wallet, Social. Hidden elsewhere for the same reason as the
-   price strip below. A column as wide as the search field, each row a surface
-   of its own (base.css) with the mark, the word and a chevron. */
+   price strip below. A column under the search field, each row a surface of
+   its own (base.css) with the mark, the word and a chevron. */
 #hm-nv {
   display: none;
 }
@@ -382,6 +389,15 @@ body.home #hm-nv {
   flex-direction: column;
   gap: 8px;
   width: 100%;
+}
+
+/* Narrower than the field on a wide screen, where the forest stands either
+   side of the column: the field clears it by 16px, and at the rows' height
+   the leaves reach in further, so a full-width row would brush them. */
+@media (min-width: 901px) {
+  body.home #hm-nv {
+    max-width: 512px;
+  }
 }
 
 body.home #hm-nv a {
@@ -403,10 +419,14 @@ body.home #hm-nv a:hover {
   background: var(--wash2);
 }
 
-body.home #hm-nv svg {
-  width: 22px;
-  height: 22px;
+/* Objects rather than glyphs — a leather wallet, two glossy figures, the
+   app's own marks (client/ic-*.svg) — so they keep their colours in both
+   themes, and sit on the row with a shadow. */
+body.home #hm-nv img {
+  width: 30px;
+  height: 30px;
   flex: none;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.25));
 }
 
 /* The chevron, pushed to the far end. */
