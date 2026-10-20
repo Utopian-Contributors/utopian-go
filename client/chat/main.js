@@ -558,7 +558,7 @@ export function mount(ctx) {
   }
 
   function head(who) {
-    const back = el("a", { class: "back chat-back", href: "/social/c", text: "Chats" });
+    const back = el("a", { class: "back chat-back", href: "/social/c", text: "Back" });
     back.addEventListener("click", (e) => {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
       e.preventDefault();
@@ -568,9 +568,12 @@ export function mount(ctx) {
       "div",
       { class: "chat-head" },
       back,
-      ctx.face(who, peerOf(who).avatarRev),
-      el("a", { class: "who", href: `/social/u/${who}`, text: who }),
-      el("span", { class: "muted", text: "End-to-end encrypted" }),
+      el(
+        "span",
+        { class: "chat-who" },
+        ctx.face(who, peerOf(who).avatarRev),
+        el("a", { class: "who", href: `/social/u/${who}`, text: who }),
+      ),
     );
   }
 
