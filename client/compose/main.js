@@ -64,7 +64,7 @@ function packPost(text, shots, memo) {
 
 /**
  * @param {{
- *   me: () => {name: string, avatarRev: number, wait: number},
+ *   me: () => {name: string, avatarRev: number, nextPost?: number, wait: number},
  *   pull: (path: string, opts?: object) => Promise<any>,
  *   show: () => void,
  *   thumb: (name: string, rev: number) => HTMLElement | null,
@@ -99,7 +99,10 @@ function composer(kit, page = false) {
   const { me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, trimUrl, webLink } = kit;
   const me = who();
   // A deadline rather than a count, so the button wakes when the wait is over.
-  const until = Date.now() + me.wait;
+  // nextPost is a time, right however old the answer it came in; wait was a
+  // count from that answer, wrong once it was kept and shown again.
+  const until = me.nextPost ?? Date.now() + me.wait;
+  const wait = Math.max(0, until - Date.now());
   let busy = 0;
   const area = el("textarea", {
     maxlength: String(MAX_POST),
@@ -130,7 +133,7 @@ function composer(kit, page = false) {
   let voice = null;
   const voiceRow = el("div", { class: "voice", hidden: true });
   const button = el("button", { type: "submit", class: "post-go", text: "Post", disabled: true });
-  const note = el("span", { class: "wait", hidden: me.wait <= 0, text: waitLabel(me.wait) });
+  const note = el("span", { class: "wait", hidden: wait <= 0, text: waitLabel(wait) });
   const count = el("span", { class: "count", "aria-live": "polite" });
 
   function tally() {
@@ -216,11 +219,11 @@ function composer(kit, page = false) {
     });
   }
 
-  if (me.wait > 0) {
+  if (wait > 0) {
     setTimeout(() => {
       note.hidden = true;
       sync();
-    }, me.wait);
+    }, wait);
   }
 
   function paintShots() {

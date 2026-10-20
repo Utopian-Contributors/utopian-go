@@ -104,6 +104,7 @@ import {
   PHOTO_EDGE,
   PHOTO_SMALL_BYTES,
   PHOTO_SMALL_EDGE,
+  POST_EVERY_MS,
   SOCIAL_BYTES,
   SocialError,
   TINY_BYTES,
@@ -215,6 +216,13 @@ export interface PublicMe {
   avatarRev: number;
   /** The passkey's credential id, for Edit profile to show; false with none. Never the key itself (guard.ts). */
   passkey: { id: string } | false;
+  /**
+   * When the account may post again, as a time (0: now). The page counts down
+   * to it on its own clock. A time, not a duration, so it reads the same on
+   * every request: a copy the offline app keeps (src/state.ts) stays right.
+   */
+  nextPost: number;
+  /** The same as a duration from this response. Kept for a page still running the composer from before nextPost; not state. */
   wait: number;
   unseen: number;
   unread: number;
@@ -229,6 +237,7 @@ async function publicMe(user: User | null): Promise<PublicMe | null> {
     loc: user.loc,
     avatarRev: user.avatarRev,
     passkey: user.passkey ? { id: user.passkey.id } : false,
+    nextPost: user.lastPost ? user.lastPost + POST_EVERY_MS : 0,
     wait: postWait(user.lastPost, Date.now()),
     ...(await countUnseen(user.name)),
   };

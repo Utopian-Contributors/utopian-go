@@ -19,7 +19,7 @@ import { UTCC, utccShort, utccText } from "../js/utcc.js";
 
 const main = $("m");
 
-/** @type {null | {name: string, address: string, bio: string, loc: string, avatarRev: number, passkey: false | {id: string}, wait: number, unseen: number}} */
+/** @type {null | {name: string, address: string, bio: string, loc: string, avatarRev: number, passkey: false | {id: string}, nextPost: number, wait: number, unseen: number}} */
 let me = null;
 /** Object URLs of photos in an open composer, freed when the page is redrawn. */
 const drafts = [];
