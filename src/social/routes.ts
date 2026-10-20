@@ -1422,7 +1422,8 @@ socialRouter.get(
     const first = !before && !after;
     res.json({
       me: await publicMe(me),
-      peer: first ? { name: peer.name, avatarRev: peer.avatarRev, keys: await chatKeys(peer.name) } : undefined,
+      // Their address for the composer's Pay, as their profile publishes it.
+      peer: first ? { name: peer.name, avatarRev: peer.avatarRev, address: peer.address, keys: await chatKeys(peer.name) } : undefined,
       messages,
       next,
     });

@@ -825,6 +825,29 @@ export function mount(ctx) {
     add.innerHTML = '<svg width="22" height="22" aria-hidden="true"><use href="#pi"/></svg>';
     const mic = el("button", { type: "button", class: "tool", "aria-label": "Record a voice memo", hidden: !CAN_RECORD });
     mic.innerHTML = '<svg width="22" height="22" aria-hidden="true"><use href="#au"/></svg>';
+    // Pay them $UTCC in the profile's Pay dialog (client/pay). The payment comes back as a card here.
+    const pay = el("button", { type: "button", class: "tool", "aria-label": `Pay ${who}`, title: `Pay ${who}`, hidden: !peerOf(who).address });
+    pay.innerHTML = '<svg width="22" height="22" aria-hidden="true"><use href="#py"/></svg>';
+    pay.addEventListener("click", async () => {
+      pay.disabled = true;
+      try {
+        (await ctx.load("py", "__pay")).open({
+          to: { name: who, address: peerOf(who).address },
+          me: ctx.me(),
+          login: () => ctx.openAuth("login"),
+          // The server has written the payment into this chat by now: fetch it rather than wait for the poll.
+          sent: () => {
+            clearTimeout(timer);
+            poll();
+          },
+        });
+      } catch {
+        note.hidden = false;
+        note.textContent = "Could not open Pay.";
+      } finally {
+        pay.disabled = false;
+      }
+    });
     /** The recorded memo, until it is sent or removed: {blob, ms, wave, url}. */
     let memo = null;
     const voiceRow = el("div", { class: "voice", hidden: true });
@@ -927,7 +950,7 @@ export function mount(ctx) {
       { class: "composer chat-compose" },
       strip,
       voiceRow,
-      el("div", { class: "compose-bar" }, add, mic, file, area, button),
+      el("div", { class: "compose-bar" }, add, mic, pay, file, area, button),
       note,
     );
     form.addEventListener("submit", async (e) => {
@@ -1038,6 +1061,7 @@ export function mount(ctx) {
     if (!info) return;
     const p = peerOf(info.name);
     p.avatarRev = info.avatarRev;
+    p.address = info.address || "";
     for (const k of info.keys) p.keys.set(k.v, k.pub);
     p.cur = info.keys.length ? info.keys[info.keys.length - 1].v : 0;
   }
