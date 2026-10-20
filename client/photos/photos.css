@@ -80,15 +80,19 @@
 .pv-x:focus-visible,
 .pv-go:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
-/* Solid, not see-through: it reads the same over a photo as over the dark. */
+/* Solid, in the app's own background and text colours, whichever the theme. */
 .pv-x {
   top: max(10px, env(safe-area-inset-top));
   right: 10px;
-  background: #fff;
-  color: #111;
+  background: var(--bg);
+  color: var(--t);
 }
 
-.pv-x:hover { background: #e6e6e6; }
+.pv-x:hover { background: var(--bg); filter: brightness(0.94); }
+
+@media (prefers-color-scheme: dark) {
+  .pv-x:hover { filter: brightness(1.25); }
+}
 
 .pv-go { top: 50%; translate: 0 -50%; }
 .pv-go:disabled { opacity: 0.3; cursor: default; }
