@@ -271,13 +271,14 @@ dialog textarea { resize: none; }
  * composer alone, without the header and the tabs.
  */
 @media (max-width: 900px) {
-  body.soc .composer:not(.page) {
+  /* The timeline's composer only: Messenger's message box is a .composer too (.chat-compose), and stays. */
+  body.soc .composer:not(.page, .chat-compose) {
     margin: 0;
     padding: 0;
     border: 0;
   }
 
-  body.soc .composer:not(.page) > :not(.fab) { display: none; }
+  body.soc .composer:not(.page, .chat-compose) > :not(.fab) { display: none; }
 
   body.soc .composer .fab {
     position: fixed;
