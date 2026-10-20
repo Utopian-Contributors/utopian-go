@@ -67,7 +67,7 @@ function round(v: number): number {
 }
 
 /** The record's own day, read back out of its ticks. */
-function daySeries(rec: TokenRecord): PriceSeries | null {
+export function daySeries(rec: TokenRecord): PriceSeries | null {
   const v = decodeTicks(rec);
   if (!v) return null;
   const step = INTERVAL_MS["1_HOUR"];

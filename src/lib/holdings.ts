@@ -81,7 +81,7 @@ const MIN_SERIES_COVERAGE = 0.5;
 const HISTORY_MAX = 16;
 
 /** One priced holding, dust included: what a line is summed from. */
-interface Held {
+export interface Held {
   rec: TokenRecord;
   units: number;
   usd: number;
@@ -291,7 +291,8 @@ export async function fetchHoldings(owner: string, range: ChartRange = "24h"): P
   return { ...book, ...(await lines(held, range)) };
 }
 
-async function readBook(owner: string): Promise<Book> {
+/** What `owner` holds, priced, from the same five-second cache the page's own read fills. */
+export async function readBook(owner: string): Promise<Book> {
   // No RPC configured is a deployment fault, not an empty wallet — the same
   // distinction lib/balances.ts draws, and for the same reason: reporting an
   // empty portfolio would be a confident lie about someone's money.

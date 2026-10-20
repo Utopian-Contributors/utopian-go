@@ -260,7 +260,16 @@ interface RpcReply {
   error?: { message?: string };
 }
 
-async function readPage(owner: string, after: string): Promise<HistoryPage> {
+/**
+ * One call's worth of `owner`'s whole transactions: newest first for the
+ * History list, or oldest first from `since` (epoch ms) for a walk through
+ * the day (lib/entries.ts). `next` asks for the page after; absent on a short
+ * page, which is the last one whatever else came with it.
+ */
+export async function readTransactions(
+  owner: string,
+  opts: { limit: number; order: "asc" | "desc"; after?: string; since?: number },
+): Promise<{ data: RawTx[]; next?: string }> {
   // No RPC is a deployment fault, and an empty history would be a confident lie.
   if (!HELIUS_RPC_URL) throw new Error("HELIUS_RPC_URL is not configured");
 
@@ -276,14 +285,18 @@ async function readPage(owner: string, after: string): Promise<HistoryPage> {
         owner,
         {
           transactionDetails: "full",
-          sortOrder: "desc",
-          limit: PAGE,
+          sortOrder: opts.order,
+          limit: opts.limit,
           encoding: "json",
           maxSupportedTransactionVersion: TX_VERSION,
           // A trade made a moment ago is in the history when the page is opened.
           commitment: "confirmed",
-          filters: { tokenAccounts: "balanceChanged" },
-          ...(after ? { paginationToken: after } : {}),
+          filters: {
+            tokenAccounts: "balanceChanged",
+            // A failure moved nothing, so a walk through the day skips them upstream.
+            ...(opts.since != null ? { blockTime: { gte: Math.floor(opts.since / 1000) }, status: "succeeded" } : {}),
+          },
+          ...(opts.after ? { paginationToken: opts.after } : {}),
         },
       ],
     }),
@@ -300,14 +313,18 @@ async function readPage(owner: string, after: string): Promise<HistoryPage> {
   }
 
   const data = Array.isArray(body.result?.data) ? body.result.data : [];
+  const next = data.length === opts.limit ? body.result?.paginationToken : null;
+  return { data, ...(next ? { next } : {}) };
+}
+
+async function readPage(owner: string, after: string): Promise<HistoryPage> {
+  const { data, next } = await readTransactions(owner, { limit: PAGE, order: "desc", after });
   const hidden = { n: 0 };
   const items: Activity[] = [];
   for (const t of data) {
     const item = readTx(owner, t, hidden);
     if (item) items.push(item);
   }
-  // A short page is the last one, whatever else came with it.
-  const next = data.length === PAGE ? body.result?.paginationToken : null;
   return { items, ...(next ? { after: next } : {}), ...(hidden.n ? { hidden: hidden.n } : {}) };
 }
 

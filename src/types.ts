@@ -428,6 +428,19 @@ export interface HistoryApiResponse extends Partial<HistoryPage> {
   detail?: string;
 }
 
+/**
+ * What each holding on the wallet page cost, on average, across the past 24
+ * hours (lib/entries.ts): USD per whole token, by mint. Held from before the
+ * day, that is the price 24 hours ago; bought today, what was paid. The page
+ * reads each position's day against it. A mint is missing when its day could
+ * not be priced, and every one is on a day too busy to walk.
+ */
+export interface EntriesApiResponse {
+  entries?: Record<string, number>;
+  error?: string;
+  detail?: string;
+}
+
 export interface SearchApiResponse {
   query: string;
   results: WebResult[];

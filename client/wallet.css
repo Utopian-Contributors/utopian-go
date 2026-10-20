@@ -377,7 +377,9 @@ a:hover {
  *
  * A holding's row has four cells (.wl-own): the balance, abbreviated and let
  * down beside the worth, so it reads as that figure's footnote rather than as
- * a column of its own in the path of the one being scanned.
+ * a column of its own in the path of the one being scanned. Under the two,
+ * the holding's day against what it cost, as a token's day sits under its
+ * price in the lists below.
  */
 .wl-r {
   display: grid;
@@ -510,6 +512,25 @@ a:hover {
 
 .wl-own {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
+  row-gap: 0;
+}
+
+/* The name and the buttons stand beside both lines, as in the lists below. */
+.wl-own .wl-id {
+  grid-area: 1 / 1 / 3 / 2;
+}
+
+.wl-own .wl-act {
+  grid-area: 1 / 4 / 3 / 5;
+}
+
+/* The day against the average entry (main.js paintEntry), under the balance
+   and the worth. */
+.wl-own .wl-d {
+  grid-area: 2 / 2 / 3 / 4;
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
 }
 
 /* How much of it, abbreviated (num.js amount); the exact amount on hover.
@@ -1428,7 +1449,7 @@ body.hist .wl-top {
 
 @media (max-width: 620px) {
   .wl-r {
-    gap: 10px;
+    column-gap: 10px;
   }
 
 

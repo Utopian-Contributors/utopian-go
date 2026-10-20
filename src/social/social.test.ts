@@ -37,8 +37,10 @@ import { backdrop, palette } from "./backdrop";
 import { tokenKind } from "../lib/tokens/jupiter";
 import { buildLists, isStable, pageOf } from "../lib/tokens/store";
 import { type RawTx, readTx } from "../lib/history";
+import { averageEntries } from "../lib/entries";
+import { encodeTicks } from "../lib/tokens/ticks";
 import { stateTags } from "../state";
-import type { TokenKind, TokenQuote, TokenRecord } from "../types";
+import type { Activity, TokenKind, TokenQuote, TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
 
 const dir = mkdtempSync(path.join(tmpdir(), "social-"));
@@ -372,6 +374,58 @@ test("history reads each transaction as what it did to the wallet, fee and rent 
   const theirs = read(tx([S, O], [1e9, 0], [1e9 - FEE, 0], [[], []], { err: { InstructionError: [0, "Custom"] } }));
   assert.equal(theirs.a, null);
   assert.equal(theirs.hidden, 0);
+});
+
+test("a position enters at its price a day ago, or at what was paid for it today", () => {
+  const HOUR = 3_600_000;
+  const now = Date.now();
+  const since = now - 24 * HOUR;
+  const tickAt = Math.floor(now / HOUR) * HOUR;
+  const [M, P, Q] = ["Mint", "Plain", "Quiet"].map((n) => `${n}1111111111111111111111111111`);
+  const rec = (mint: string, price: number, change24h?: number, closes?: number[]) => {
+    const day = closes && encodeTicks(closes);
+    return {
+      mint, symbol: mint, name: mint, price, liquidity: 1, verified: true,
+      ...(change24h != null ? { change24h } : {}),
+      ...(day ? { ticks: day.ticks, tickLo: day.lo, tickHi: day.hi, tickAt } : {}),
+    } as TokenRecord;
+  };
+  // SOL flat at $100; M from $1 to $2 across the day; P untouched, half what it was; Q with no history.
+  const sol = rec(SOL_MINT, 100, 0, new Array(24).fill(100));
+  const m = rec(M, 2, 100, Array.from({ length: 24 }, (_, i) => 1 + i / 23));
+  const p = rec(P, 1, -50);
+  const q = rec(Q, 5);
+  const recs = new Map([sol, m, p, q].map((r) => [r.mint, r]));
+  const lookup = (mints: string[]) => new Map(mints.filter((x) => recs.has(x)).map((x) => [x, recs.get(x)!]));
+  const act = (hoursAgo: number, moves: [string, number, number][]): Activity => ({
+    signature: `s${hoursAgo}`,
+    at: now - hoursAgo * HOUR,
+    kind: "swap",
+    moves: moves.map(([mint, amount, decimals]) => ({ mint, symbol: "", decimals, amount: String(amount) })),
+  });
+  const day = [
+    // 1 SOL for 40 M, three hours ago, when 40 M was worth about $74: the $100 paid is what they cost.
+    act(3, [[SOL_MINT, -1e9, 9], [M, 40e6, 6]]),
+    // Half of what was bought sold an hour ago, and 3 Q received with nothing to price it by.
+    act(1, [[M, -20e6, 6]]),
+    act(1, [[Q, 3e6, 6]]),
+  ];
+  const held = [
+    { rec: sol, units: 10 },
+    { rec: m, units: 30 },
+    { rec: p, units: 7 },
+    { rec: q, units: 3 },
+  ];
+  const got = averageEntries(held, day, since, lookup);
+  const near = (a: number | undefined, b: number) => assert.ok(a != null && Math.abs(a / b - 1) < 1e-3, `${a} ≉ ${b}`);
+  // 11 SOL held from before at $100, and the one sold leaves the average where it was.
+  near(got[SOL_MINT], 100);
+  // 10 M from before at $1, 40 bought for $100, a fifth of that sold at the average: $66 for 30.
+  near(got[M], 2.2);
+  // Untouched today: the market's own day.
+  near(got[P], 2);
+  // Nothing knows what Q was worth an hour ago, so it is left out rather than guessed.
+  assert.equal(got[Q], undefined);
 });
 
 test("posting waits ten minutes", () => {

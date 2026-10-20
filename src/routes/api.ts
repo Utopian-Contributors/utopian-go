@@ -1,5 +1,6 @@
 import express, { NextFunction, Request, Response, Router } from "express";
 import { fetchBalances, isPubkey } from "../lib/balances";
+import { fetchEntries } from "../lib/entries";
 import { BadCursor, fetchHistory } from "../lib/history";
 import { fetchHoldings } from "../lib/holdings";
 import { isTicker, resolveTickers } from "../social/callouts";
@@ -24,6 +25,7 @@ import {
 } from "../lib/tokens/store";
 import {
   BalancesApiResponse,
+  EntriesApiResponse,
   HistoryApiResponse,
   HistoryPage,
   HoldingsApiResponse,
@@ -106,6 +108,13 @@ const holdingsLimit = rateLimit({ perMinute: 60, burst: 20 });
  * every three seconds is faster than anyone reads one.
  */
 const historyLimit = rateLimit({ perMinute: 20, burst: 10 });
+
+/**
+ * Entries are asked once per portfolio the wallet page paints with new
+ * balances: a visit, and again after each trade. Each miss reads the day's
+ * history, Helius's heaviest call, so the bucket is History's size again.
+ */
+const entriesLimit = rateLimit({ perMinute: 30, burst: 10 });
 
 /**
  * Route an async handler's rejection to Express instead of into the void.
@@ -419,6 +428,39 @@ apiRouter.post(
       }),
     };
     res.json(body);
+  }),
+);
+
+/**
+ * What each holding cost, on average, across the past 24 hours, for the
+ * wallet page to read each position's day against. POST, and as public, for
+ * the reasons /api/holdings is.
+ */
+apiRouter.post(
+  "/api/entries",
+  entriesLimit,
+  readJson,
+  wrap(async (req: Request, res: Response) => {
+    const owner = asString(req.body?.owner).trim();
+    if (!isPubkey(owner)) {
+      const body: EntriesApiResponse = { error: "Invalid wallet address." };
+      res.status(400).json(body);
+      return;
+    }
+    try {
+      const body: EntriesApiResponse = { entries: await fetchEntries(owner) };
+      res.json(body);
+    } catch (err) {
+      console.warn("[entries] lookup failed:", err);
+      // No entries at all, rather than an empty set the page would take for a day with none.
+      const body: EntriesApiResponse = {
+        error: "Could not read this wallet's day.",
+        ...(process.env.NODE_ENV === "production"
+          ? {}
+          : { detail: err instanceof Error ? err.message : String(err) }),
+      };
+      res.status(502).json(body);
+    }
   }),
 );
 

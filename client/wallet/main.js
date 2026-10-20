@@ -295,9 +295,75 @@ function ident(t) {
   );
 }
 
+/**
+ * Each holding's average entry across the past 24h (/api/entries), by mint:
+ * what its row's day is measured against. Read once per set of balances, so
+ * another range, or a re-read with nothing moved, does not ask again.
+ */
+let entries = new Map();
+/** The balances `entries` were read for, as signature() has them. */
+let entriesFor = "";
+let entriesRun = 0;
+
+/**
+ * A holding's day against what it cost: held from before it, the market's
+ * 24h change; bought today, its move since. Blank, but keeping its line so
+ * nothing moves when it lands, until the entries are read or where there is
+ * none to give.
+ * @param {HTMLElement} node
+ * @param {import('../../src/types').Holding} h
+ */
+function paintEntry(node, h) {
+  const entry = entries.get(h.mint);
+  const units = Number(h.amount) / 10 ** h.decimals;
+  if (!entry || !units) {
+    node.className = "wl-d";
+    node.textContent = "\u00a0";
+    node.removeAttribute("title");
+    return;
+  }
+  const pct = (h.price / entry - 1) * 100;
+  const diff = h.usd - entry * units;
+  const paid = tokenPrice(entry);
+  node.className = `wl-d ${dirOf(pct)}`;
+  node.textContent = `${diff < 0 ? "-" : "+"}${dollars(Math.abs(diff))} · ${percent(Math.abs(pct))}`;
+  node.title = `Against an average entry of ${paid.title ?? paid.text} over the past 24h`;
+}
+
+/** The rows on show, each with its day, once the entries land. */
+function paintEntries() {
+  for (const r of list.querySelectorAll(".wl-own")) {
+    const h = shown?.items?.find((i) => i.mint === /** @type {HTMLElement} */ (r).dataset.mint);
+    const move = /** @type {HTMLElement | null} */ (r.querySelector(".wl-d"));
+    if (h && move) paintEntry(move, h);
+  }
+}
+
+/** POSTed, as the holdings are. A failure leaves the rows without a day, and the next paint asks again. */
+async function readEntries(data) {
+  const id = ++entriesRun;
+  entriesFor = signature(data);
+  try {
+    const res = await fetch("/api/entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ owner: await owner() }),
+    });
+    const body = await res.json().catch(() => null);
+    if (id !== entriesRun) return;
+    if (!res.ok || !body?.entries) throw new Error(body?.error || `entries ${res.status}`);
+    entries = new Map(Object.entries(body.entries));
+    paintEntries();
+  } catch {
+    if (id === entriesRun) entriesFor = "";
+  }
+}
+
 /** @param {import('../../src/types').Holding} h */
 function row(h) {
   const held = amount(h.amount, h.decimals, h.price);
+  const move = el("span", { class: "wl-d" });
+  paintEntry(move, h);
   return el(
     "div",
     { class: `wl-r wl-own${h.mint === chosen ? " on" : ""}`, "data-mint": h.mint },
@@ -309,6 +375,7 @@ function row(h) {
       "aria-label": held.label ? `${held.label} ${h.symbol}` : null,
     }),
     el("span", { class: "wl-usd", text: dollars(h.usd) }),
+    move,
     el("span", { class: "wl-act" }, trade(h, "buy"), trade(h, "sell")),
   );
 }
@@ -618,6 +685,9 @@ function paint(data) {
   reset();
   firstPainted();
   shown = data;
+  // New balances: last read's entries are for what was held then.
+  const moved = signature(data) !== entriesFor;
+  if (moved) entries = new Map();
   breakdown.paint(data);
   paintHead();
   paintTotal();
@@ -628,6 +698,7 @@ function paint(data) {
   }
 
   paintRows();
+  if (moved) void readEntries(data);
   setNote(omitted(data));
   chooseFirst(data.items[0].mint);
 }
@@ -652,6 +723,8 @@ function offer() {
 function switched() {
   // Someone else's history is not the one on show.
   closeHistory();
+  // Nor are someone else's entries, whatever their balances.
+  entriesFor = "";
   window.__ugme = null;
   account = whoami();
   refresh();
