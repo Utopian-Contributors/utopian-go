@@ -30,6 +30,11 @@ function waitLabel(ms) {
   return `You can post again in ${min} min.`;
 }
 
+/** The phone's new-post button (social.css .fab). */
+const PLUS =
+  '<svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" ' +
+  'fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+
 /** A sprite symbol from social.html, as a button's whole face. */
 function icon(id, size) {
   return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${id}"/></svg>`;
@@ -177,8 +182,9 @@ function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, 
     area.value = handed.slice(0, MAX_POST);
     handed = "";
     history.replaceState(history.state, "", location.pathname);
+    // Opened for it: on a phone the composer is a sheet behind the +.
     setTimeout(() => {
-      area.focus();
+      open();
       area.dispatchEvent(new Event("input"));
     });
   }
@@ -289,9 +295,36 @@ function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, 
       if (ready()) form.requestSubmit();
     }
   });
+  /*
+   * On a phone the composer is a sheet of its own (social.css): a round +
+   * over the timeline opens it, Cancel closes it and keeps the draft. Wider
+   * screens show neither, and the form sits above the posts as it always has.
+   */
+  const fab = el("button", { type: "button", class: "fab", "aria-label": "New post" });
+  fab.innerHTML = PLUS;
+  const cancel = el("button", { type: "button", class: "compose-x", text: "Cancel" });
+  /** The sheet stops where the keyboard starts, so the tools ride on top of it. */
+  const fit = () => {
+    form.style.height = form.classList.contains("open") && visualViewport ? `${visualViewport.height}px` : "";
+  };
+  const open = () => {
+    form.classList.add("open");
+    fit();
+    // In the tap itself: a phone raises its keyboard only for focus a person asked for.
+    area.focus();
+  };
+  const close = () => {
+    form.classList.remove("open");
+    fit();
+  };
+  fab.addEventListener("click", open);
+  cancel.addEventListener("click", close);
+  visualViewport?.addEventListener("resize", fit);
   const form = el(
     "form",
-    { class: "composer" },
+    { class: "composer", "aria-label": "New post" },
+    fab,
+    cancel,
     el("div", { class: "compose-top" }, thumb(me.name, me.avatarRev), el("div", { class: "draft" }, shade, area)),
     links,
     strip,
@@ -301,6 +334,9 @@ function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, 
     el("div", { class: "compose-bar" }, add, file, mic, count, button),
     note,
   );
+  form.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && form.classList.contains("open")) close();
+  });
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!ready()) return;
@@ -311,6 +347,7 @@ function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, 
       const text = area.value.trim();
       const body = shots.length || voice ? packPost(text, shots, voice) : JSON.stringify({ text });
       await pull("/api/social/post", { method: "POST", body });
+      close();
       show();
     } catch (cause) {
       note.hidden = false;

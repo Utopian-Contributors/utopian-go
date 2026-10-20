@@ -224,6 +224,102 @@ dialog textarea { resize: none; }
   margin-top: 4px;
 }
 
+/* The phone's sheet: its + and its Cancel, which a wider screen has no use for. */
+.composer .fab,
+.composer .compose-x { display: none; }
+
+/*
+ * On a phone the composer is not over the posts. A round + floats in the
+ * bottom right, clear of the tabs, and opens it as a sheet of its own: Cancel
+ * and Post across the top, the draft under them, and the tools along the
+ * bottom, which the script keeps on top of the keyboard by sizing the sheet
+ * to what the keyboard leaves (client/compose fit()).
+ */
+@media (max-width: 900px) {
+  body.soc .composer:not(.open) {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  body.soc .composer:not(.open) > :not(.fab) { display: none; }
+
+  body.soc .composer .fab {
+    position: fixed;
+    right: 16px;
+    /* The bottom tabs are 65px tall (#tb); 16px above them. */
+    bottom: 81px;
+    z-index: 30;
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--buy);
+    color: var(--buy-ink);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 24%);
+    cursor: pointer;
+    --press: 0.92;
+  }
+
+  body.soc .composer .fab:focus-visible { outline: 2px solid var(--buy); outline-offset: 3px; }
+
+  body.soc .composer.open {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 80;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    margin: 0;
+    padding: 64px var(--gut) 8px;
+    border: 0;
+    background: var(--bg);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  body.soc .composer.open .fab { display: none; }
+
+  body.soc .composer.open .compose-x {
+    position: absolute;
+    top: 14px;
+    left: 8px;
+    display: block;
+    padding: 8px;
+    border: 0;
+    background: none;
+    color: var(--t);
+    font: 400 17px/1 var(--ff);
+    cursor: pointer;
+  }
+
+  body.soc .composer.open .post-go {
+    position: absolute;
+    top: 12px;
+    right: var(--gut);
+  }
+
+  body.soc .composer.open textarea { min-height: 120px; }
+
+  /* The tools at the foot of the sheet, on the keyboard's edge. */
+  body.soc .composer.open .compose-bar {
+    margin: auto calc(-1 * var(--gut)) 0;
+    padding: 8px var(--gut) 0;
+    border-top: 1px solid var(--b);
+  }
+
+  /* The timeline under the sheet stays put. */
+  body:has(.composer.open) { overflow: hidden; }
+}
+
+/* The home-screen app pads the tabs to keep them off the screen's edge; the + clears that too. */
+@media (max-width: 900px) and (display-mode: standalone) {
+  body.soc .composer .fab { bottom: 97px; }
+}
+
 .tool {
   border: 0;
   border-radius: 999px;
