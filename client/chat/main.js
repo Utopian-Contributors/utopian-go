@@ -182,6 +182,27 @@ export function mount(ctx) {
 
   document.body.classList.add("chat");
 
+  /*
+   * A phone's keyboard does not shrink the page: iOS pans the view up over
+   * it, and the chat's header goes off the top. While it is up, the page is
+   * fitted to what the keyboard leaves and moved to where the view went
+   * (social.css body.kb): the header stays at the top, the box on the
+   * keyboard. Measured against the layout's own height, which the keyboard
+   * leaves alone; innerHeight is not to be trusted for it on iOS.
+   */
+  const view = window.visualViewport;
+  const root = document.documentElement;
+  const fitKeyboard = () => {
+    const up = !!view && root.clientHeight - view.height > 120;
+    document.body.classList.toggle("kb", up);
+    if (up) {
+      root.style.setProperty("--vvh", `${view.height}px`);
+      root.style.setProperty("--vvt", `${view.offsetTop}px`);
+    }
+  };
+  view?.addEventListener("resize", fitKeyboard);
+  view?.addEventListener("scroll", fitKeyboard);
+
   function peerOf(who) {
     let p = peers.get(who);
     if (!p) peers.set(who, (p = { keys: new Map(), cur: 0, avatarRev: 0 }));
@@ -1080,7 +1101,11 @@ export function mount(ctx) {
     for (const url of urls.splice(0)) URL.revokeObjectURL(url);
     window.removeEventListener("popstate", onPop);
     document.removeEventListener("visibilitychange", onVisible);
-    document.body.classList.remove("chat", "open");
+    document.body.classList.remove("chat", "open", "kb");
+    view?.removeEventListener("resize", fitKeyboard);
+    view?.removeEventListener("scroll", fitKeyboard);
+    root.style.removeProperty("--vvh");
+    root.style.removeProperty("--vvt");
   };
 }
 

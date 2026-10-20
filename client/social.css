@@ -1587,6 +1587,21 @@ a.back.chat-back { display: none; }
   body.chat.open #sd { display: none; }
   body.chat.open #m { display: flex; }
   .msg { max-width: 85%; }
+
+  /*
+   * The keyboard is up (client/chat sets body.kb): the page is as tall as
+   * what the keyboard leaves and sits where iOS panned the view to, so the
+   * header and the person's name stay at the top and the box on the keyboard.
+   * The tabs step aside meanwhile, as a native chat's do.
+   */
+  body.soc.chat.kb {
+    /* app.css holds every page to at least a screen's height; not this one. */
+    min-height: 0;
+    height: var(--vvh, 100dvh);
+    transform: translateY(var(--vvt, 0px));
+  }
+
+  body.soc.chat.kb #tb { display: none; }
 }
 
 /*
