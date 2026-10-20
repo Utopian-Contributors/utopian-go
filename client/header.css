@@ -215,9 +215,9 @@ body.res .sf {
  * stays the one place that green is written, which is where og-image.mjs
  * reads it from to keep the social card the same colour as the header.
  *
- * The night value is the luminescence out of the dark banner — the mushrooms
- * and the fireflies — rather than a dimmer leaf green, so the mark lifts off
- * #202124 instead of sinking into it.
+ * The night value is the luminescence out of the home page's night forest —
+ * the mushrooms and the fireflies — rather than a dimmer leaf green, so the
+ * mark lifts off #202124 instead of sinking into it.
  */
 @media (prefers-color-scheme: dark) {
   .lg-mark {

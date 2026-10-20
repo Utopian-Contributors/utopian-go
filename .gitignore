@@ -7,3 +7,5 @@ public/
 *.log
 .DS_Store
 video/
+# Generated frames scripts/home-scene.mjs cuts the home scene from; only its output is kept.
+assets/jungle-*.png

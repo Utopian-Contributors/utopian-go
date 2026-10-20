@@ -612,7 +612,7 @@ async function buildCss(name, ...extra) {
  * Social reuses the results layout — header, tabs, the two columns, the
  * panel, the footer — so it builds on app.css rather than keeping a copy that
  * would drift. Most of app.css is search's own (results, token card, images,
- * lightbox, the home banner), and inlining it would put about 3KB of gzip on
+ * lightbox, the home forest), and inlining it would put about 3KB of gzip on
  * every social load for rules that cannot match. Pruning against what the
  * page actually writes keeps the one source and drops the dead weight. It
  * runs after every bundle the page can load is built, since those bundles are

@@ -59,10 +59,10 @@
     --a: #8ab4f8;
     /*
      * Both greens go bioluminescent after dark — the light off the mushrooms
-     * and the fireflies in the night banner, and the same #75FFBE the wordmark
-     * takes (see .lg-mark). A leaf green is a colour lit from outside; on an
-     * unlit page there is nothing to light it, and #34a853 sat on #202124 like
-     * paint in a dark room. This one is the thing giving off the light, which
+     * and the fireflies in the home page's night forest, and the same #75FFBE
+     * the wordmark takes (see .lg-mark). A leaf green is a colour lit from
+     * outside; on an unlit page there is nothing to light it, and #34a853 sat
+     * on #202124 like paint in a dark room. This one is the thing giving off the light, which
      * is the only kind of green a night scene has.
      *
      * The pair converges here: the fill no longer has to be darkened for white
@@ -199,7 +199,7 @@ body.home #hd {
  * one stack of about the same width rather than a small logo above a wide box.
  * That is the ceiling on this number: past ~159px the mark would start being
  * squeezed by max-width, and `object-fit: contain` would letterbox it inside
- * an anchor the banner is positioned against — see below.
+ * its anchor.
  *
  * Desktop only. The phone rule further down keeps its 56px; 528px has nowhere
  * to go on a 390px screen.
@@ -210,51 +210,145 @@ body.home .lg-mark {
 }
 
 /*
- * And on the home page it carries the banner.
+ * The forest around the column.
  *
- * "Utopian" in the mark is a bar rather than a word — one <rect> in the SVG,
- * standing on the cap line and baseline the glyphs used to sit on. This lays
- * the scene over exactly that rect, so the mark reads as [jungle] GO without
- * the SVG, or anything that measures it, having to change: the insets are the
- * rect's own coordinates (x 0.78 → 36.17, y 3.43 → 12) as shares of the 55×15
- * viewBox, and since the mark is drawn at its intrinsic ratio — a height and
- * `width: auto` — the anchor's box and that viewBox are the same box.
+ * The page keeps its own background down a column in the middle and the
+ * rainforest is everything either side of it: a waterfall into the river on
+ * the left, the treehouse and the frog on the right. The frame comes with its
+ * column cut out (scripts/home-scene.mjs), and its leaves reach into the
+ * column's edge on their own.
  *
- * The rect stays underneath, which is what holds the slot while the image is
- * in flight and what is still there if it never arrives.
+ * It is drawn at the window's height, so it is always the whole scene, canopy
+ * to river, and split down its middle into two fixed boxes, one a side, so the
+ * two halves can move apart. They do so only as far as they must: just enough
+ * that across the band the contents sit in — measured by the script, and in
+ * the frame's own units here, shares of its height in vh — the art stays out
+ * of a 616px column, the contents' 584px and 16px either side. Anywhere else
+ * the leaves still hang over it. On a window wide enough for the whole frame
+ * and that column, each half pins to its own edge of the window instead and
+ * the column only gets wider; on a narrower one, it is the outer edges of the
+ * scene that go.
  *
- * Home only, deliberately. In the results header the mark is 40px tall, and a
- * rainforest rendered 94px wide beside the search field is a smudge; there it
- * stays a bar. It is the home page's 144px mark that earns the scene: the slot
- * is 340px wide there, which is enough of it to see.
+ *   --w        the frame's width
+ *   --split    where it is cut in two, its middle
+ *   --reach-l  the furthest the left art reaches into the column, in the band
+ *   --reach-r  the furthest the right art does, from the other side
+ *
+ * Behind everything the page draws, and never a target. Only the matching
+ * rule's file is fetched, so the page pays for one frame and not four.
  */
-body.home .lg {
-  position: relative;
+@media (min-width: 901px) {
+  body.home {
+    --w: 177.68vh;
+    --split: 88.84vh;
+    --reach-l: 63.44vh;
+    --reach-r: 116.47vh;
+    /* The frame's column, centred on the page's, and how far each half moves
+       out to make it 616px wide where it is narrower. */
+    --mid: calc((var(--reach-l) + var(--reach-r)) / 2);
+    --gap: max(0px, (616px - (var(--reach-r) - var(--reach-l))) / 2);
+    /* Where each half's frame starts: centred and moved out, or pinned to the
+       window's edge if that is further out still. */
+    --x-l: min(0px, 50vw - var(--mid) - var(--gap));
+    --x-r: max(50vw - var(--mid) + var(--gap), 100vw - var(--w));
+  }
+
+  body.home::before,
+  body.home::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    z-index: -1;
+    height: 100vh;
+    background: url("/home-light.webp") no-repeat;
+    background-size: auto 100%;
+    pointer-events: none;
+  }
+
+  body.home::before {
+    left: 0;
+    width: calc(var(--x-l) + var(--split));
+    background-position: var(--x-l) top;
+  }
+
+  body.home::after {
+    left: calc(var(--x-r) + var(--split));
+    right: 0;
+    background-position: calc(var(--split) * -1) top;
+  }
 }
 
-body.home .lg::after {
-  content: "";
-  position: absolute;
-  /* top | right | bottom | left — the rect, as fractions of the viewBox. */
-  inset: 22.8667% 34.2364% 20% 1.4182%;
-  background: url("/banner-light.webp") 0 0 / 100% 100% no-repeat;
+@media (min-width: 901px) and (prefers-color-scheme: dark) {
+  body.home {
+    --w: 177.58vh;
+    --split: 88.74vh;
+    --reach-l: 65.67vh;
+    --reach-r: 116.58vh;
+  }
+
+  body.home::before,
+  body.home::after {
+    background-image: url("/home-dark.webp");
+  }
 }
 
 /*
- * Night in the same clearing.
+ * A phone has no room beside its column, so its frame is a band of canopy
+ * over the wordmark and a band of river under the footer, the page between
+ * them. One file holds both with the space between them empty; each box shows
+ * its own end of it, at the size that makes the canopy as deep as the room
+ * above the wordmark (at most 140px), and aligned to the right, where the
+ * treehouse and the frog are.
  *
- * A background rather than an <img> with two sources precisely so this works:
- * only the matching rule's URL is ever fetched, so the page pays for one
- * banner and not both. Neither is on the document's critical path — the shell
- * paints off the first flight with the bar in place and the scene lands on top
- * of it — which is what lets these be 22–33 KB apiece. They are kept at the
- * originals' own 787px, a little over 2× the 340px the slot is drawn at its
- * widest, so a 2× screen has all of it and a 3× one is close. The originals
- * themselves live in assets/, out of the way of the build's static copy.
+ *   --tall  the frame's height over its canopy's depth: how tall to draw it
+ *   --foot  its river band's height over the canopy's depth: how tall a box
+ *
+ * Pinned to the page rather than the window, so the river is under the
+ * footer however far down that is, and the padding stands the footer on it.
  */
-@media (prefers-color-scheme: dark) {
-  body.home .lg::after {
-    background-image: url("/banner-dark.webp");
+@media (max-width: 900px) {
+  body.home {
+    --top: min(140px, 18vh - 8px);
+    --tall: 2.832;
+    --foot: 0.957;
+    position: relative;
+    padding-bottom: calc(var(--top) * var(--foot));
+  }
+
+  body.home::before,
+  body.home::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: -1;
+    background: url("/home-phone-light.webp") no-repeat;
+    background-size: auto calc(var(--top) * var(--tall));
+    pointer-events: none;
+  }
+
+  body.home::before {
+    top: 0;
+    height: var(--top);
+    background-position: right top;
+  }
+
+  body.home::after {
+    bottom: 0;
+    height: calc(var(--top) * var(--foot));
+    background-position: right bottom;
+  }
+}
+
+@media (max-width: 900px) and (prefers-color-scheme: dark) {
+  body.home {
+    --tall: 2.643;
+    --foot: 1.033;
+  }
+
+  body.home::before,
+  body.home::after {
+    background-image: url("/home-phone-dark.webp");
   }
 }
 
