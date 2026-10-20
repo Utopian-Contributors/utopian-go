@@ -1039,10 +1039,11 @@ export function mount(ctx) {
       main.replaceChildren(head(who), lockPanel());
       return;
     }
-    main.replaceChildren(head(who), el("p", { class: "muted pad", text: "…" }));
+    // Under the loading bar (client/js/progress.js), not a placeholder.
+    main.replaceChildren(head(who));
     let data;
     try {
-      data = await ctx.pull(`/api/social/c/${who}`);
+      data = await ctx.progress.during(ctx.pull(`/api/social/c/${who}`));
     } catch (cause) {
       if (g === gen) main.replaceChildren(head(who), el("p", { class: "err pad", text: cause.message }));
       return;
@@ -1129,9 +1130,9 @@ export function mount(ctx) {
       list,
     );
     ctx.useSide(true);
-    main.replaceChildren(el("p", { class: "muted pad", text: "…" }));
+    main.replaceChildren();
     try {
-      const [first] = await Promise.all([ctx.pull("/api/social/c"), loadStatus()]);
+      const [first] = await ctx.progress.during(Promise.all([ctx.pull("/api/social/c"), loadStatus()]));
       await take(first.chats);
       listNext = first.next || null;
     } catch (cause) {

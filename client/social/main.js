@@ -13,7 +13,9 @@ import { $, el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { B64, clock } from "../js/memo.js";
 import { noZoom } from "../js/device.js";
+import * as progress from "../js/progress.js";
 import { readName, writeName } from "../js/me.js";
+import { openSwap, swapUrl } from "../js/swap.js";
 import { mountPwa } from "../js/pwa.js";
 import { UTCC, utccShort, utccText } from "../js/utcc.js";
 
@@ -210,6 +212,7 @@ function photo(name, rev) {
  */
 function payButton(person) {
   if (!person.address) return null;
+  if (me?.name === person.name) return swapButton();
   const button = el("button", {
     type: "button",
     class: "pa pay",
@@ -226,6 +229,38 @@ function payButton(person) {
         });
       } catch {
         button.textContent = "Could not open Pay";
+      } finally {
+        button.disabled = false;
+      }
+    },
+  });
+  return button;
+}
+
+/**
+ * Your own profile has no one to pay: Swap instead, which opens the trade
+ * dialog on UTCC, bought with SOL ("Trade UTCC"), the wallet page's Swap. The
+ * dialog is the swap bundle, fetched on the first press.
+ */
+function swapButton() {
+  const button = el("button", {
+    type: "button",
+    class: "pa",
+    "data-ic": "swap",
+    text: "Swap",
+    onclick: async () => {
+      button.disabled = true;
+      try {
+        await openSwap({
+          ...UTCC,
+          fallback: swapUrl(UTCC.mint),
+          mode: "buy",
+          // Not yet confirmed when it closes, and /api/balances keeps an answer for 5 s.
+          onClose: (sent) => sent && setTimeout(() => showBalance(true), 6000),
+        });
+      } catch {
+        // The bundle would not load; Jupiter's own page is the floor.
+        location.href = swapUrl(UTCC.mint);
       } finally {
         button.disabled = false;
       }
@@ -933,6 +968,8 @@ const kit = {
   renderSide,
   load,
   drafts,
+  /** The loading bar (client/js/progress.js), for a bundle's own loads: start() returns its finish. */
+  progress,
 };
 
 async function show() {
@@ -948,7 +985,9 @@ async function show() {
   document.body.classList.toggle("tl", here.page === "timeline" || here.page === "post");
   document.body.classList.toggle("ads", here.page === "ads");
   document.body.classList.toggle("newpost", here.page === "new");
-  main.replaceChildren(el("p", { class: "muted", text: "…" }));
+  // The loading bar along the top while the page loads, not a placeholder in it.
+  main.replaceChildren();
+  const loaded = progress.start();
   try {
     if (here.page === "timeline") {
       // Remembered as signed in, the composer comes beside the posts, so they paint together.
@@ -984,6 +1023,7 @@ async function show() {
     else renderSide(me);
     main.replaceChildren(el("p", { class: "err", text: cause.message }));
   }
+  loaded();
   // After the load, not before: whether My Profile is lit depends on who `me` turned out to be.
   markNav();
 }
@@ -1009,28 +1049,6 @@ const PULL = 80;
 let pullFrom = -1;
 let pulled = 0;
 let refreshing = false;
-/** @type {HTMLElement | null} */
-let bar = null;
-
-/** How the bar gets to its width: with the finger, creeping while the posts load, or quickly to the end. */
-const EASE = { pull: "none", load: "width 6s cubic-bezier(0.1, 0.7, 0.2, 1)", done: "width 0.25s ease-out" };
-
-function setBar(width, how) {
-  if (!bar) document.body.append((bar = el("div", { class: "ptr" })));
-  bar.style.transition = EASE[how];
-  bar.style.opacity = "1";
-  bar.style.width = `${width}%`;
-}
-
-function dropBar(delay) {
-  const gone = bar;
-  bar = null;
-  setTimeout(() => {
-    gone.style.transition = "opacity 0.3s";
-    gone.style.opacity = "0";
-    setTimeout(() => gone.remove(), 300);
-  }, delay);
-}
 
 const atTop = () => (pageBox()?.scrollTop ?? scrollY) <= 0;
 
@@ -1049,7 +1067,7 @@ addEventListener(
     if (pullFrom < 0) return;
     pulled = e.touches[0].clientY - pullFrom;
     // Up to a third of the way while pulling; the rest is the load's.
-    if (pulled > 8 && atTop()) setBar((Math.min(pulled, PULL) / PULL) * 33, "pull");
+    if (pulled > 8 && atTop()) progress.pull((Math.min(pulled, PULL) / PULL) * 33);
   },
   { passive: true },
 );
@@ -1057,14 +1075,11 @@ addEventListener(
 addEventListener("touchend", async () => {
   if (pullFrom < 0) return;
   pullFrom = -1;
-  if (!bar) return;
-  if (pulled < PULL) return dropBar(0);
+  if (pulled <= 8) return;
+  if (pulled < PULL) return progress.cancel();
   refreshing = true;
-  // Read before the bar moves, so the creep starts from where the pull left it.
-  void bar.offsetWidth;
-  setBar(90, "load");
   try {
-    const data = await pull(`/api/social/timeline?${feedQuery()}`);
+    const data = await progress.during(pull(`/api/social/timeline?${feedQuery()}`));
     if (route().page === "timeline") {
       stopMore();
       renderTimeline(data);
@@ -1072,8 +1087,6 @@ addEventListener("touchend", async () => {
   } catch {
     // Offline or failed: client/offline says so; the posts on screen stay.
   }
-  setBar(100, "done");
-  dropBar(250);
   refreshing = false;
 });
 
