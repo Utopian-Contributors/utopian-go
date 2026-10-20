@@ -1436,3 +1436,46 @@ body.hist .wl-top {
     font-size: 32px;
   }
 }
+
+/*
+ * The first paint, shimmering until the first read lands (wallet.html,
+ * body.wl-loading): the $0.00 total, the line, the range row, the actions and
+ * the SOL and UTCC rows, in their final geometry. A mask sweeps across each,
+ * so text, line and tile all take the same sheen in either theme.
+ */
+body.wl-loading .wl-v,
+body.wl-loading #wl-d,
+body.wl-loading #wl-c,
+body.wl-loading .wl-pf .pc-r,
+body.wl-loading .wl-acts,
+body.wl-loading .wl-sk {
+  -webkit-mask: linear-gradient(100deg, #000 35%, rgb(0 0 0 / 35%) 50%, #000 65%) 100% 0 / 300% 100%;
+  mask: linear-gradient(100deg, #000 35%, rgb(0 0 0 / 35%) 50%, #000 65%) 100% 0 / 300% 100%;
+  animation: wl-shimmer 1.4s linear infinite;
+  pointer-events: none;
+}
+
+/* The placeholder's figures read as unknown, not as a balance of nothing. */
+body.wl-loading .wl-v,
+body.wl-loading #wl-d,
+body.wl-loading .wl-sk { color: var(--f); }
+
+@keyframes wl-shimmer {
+  to {
+    -webkit-mask-position: 0 0;
+    mask-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.wl-loading .wl-v,
+  body.wl-loading #wl-c,
+  body.wl-loading .wl-pf .pc-r,
+  body.wl-loading .wl-acts,
+  body.wl-loading .wl-sk {
+    animation: none;
+    -webkit-mask: none;
+    mask: none;
+    opacity: 0.55;
+  }
+}
