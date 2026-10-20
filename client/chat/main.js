@@ -154,6 +154,20 @@ async function prf(challenge, id) {
  * }} ctx
  * @returns {() => void} stops polling and frees what the page made
  */
+/**
+ * How long ago, in words, for the labels between messages: "just now",
+ * "5 mins ago", "1 hour ago", "2 days ago". Messages that read the same sit
+ * under one label.
+ */
+function when(at) {
+  const s = Math.max(0, (Date.now() - at) / 1000);
+  const n = (v, unit) => `${v} ${unit}${v === 1 ? "" : "s"} ago`;
+  if (s < 60) return "just now";
+  if (s < 3600) return n(Math.floor(s / 60), "min");
+  if (s < 86400) return n(Math.floor(s / 3600), "hour");
+  return n(Math.floor(s / 86400), "day");
+}
+
 export function mount(ctx) {
   const { main, side } = ctx;
   const name = ctx.me()?.name || "";
@@ -564,8 +578,25 @@ export function mount(ctx) {
   function pics(who, m) {
     if (!m.photos) return null;
     const row = el("div", { class: "pics" });
+    /** The message's photos larger, in the timeline's carousel (client/photos), from the one tapped. */
+    const view = (img) => {
+      const open = [...row.querySelectorAll("img")].filter((i) => i.src && !i.classList.contains("gone"));
+      if (!open.includes(img)) return;
+      ctx.load("pv", "__photos").then((pv) => pv.open(open.map((i) => i.src), open.indexOf(img)), () => {});
+    };
     for (let i = 0; i < m.photos; i++) {
-      const img = el("img", { alt: "Photo", decoding: "async" });
+      const img = el("img", { alt: "Photo, opens larger", decoding: "async", tabindex: "0", role: "button" });
+      // As on the timeline: a tap leaves no focus (so no ring when the viewer closes), Enter does.
+      img.addEventListener("mousedown", (e) => e.preventDefault());
+      img.addEventListener("click", () => {
+        img.blur();
+        view(img);
+      });
+      img.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        view(img);
+      });
       row.append(img);
       if (m.urls?.[i]) {
         img.src = m.urls[i];
@@ -646,15 +677,41 @@ export function mount(ctx) {
         : m.text
           ? el("p", {}, ctx.linkedText(m.text))
           : null;
+    // Its time is in the label over its group (regroup); the exact time on hover.
     return el(
       "div",
-      { class: own ? "msg mine" : "msg", id: `m-${m.id}` },
+      { class: own ? "msg mine" : "msg", id: `m-${m.id}`, "data-at": String(m.at), title: new Date(m.at).toLocaleString() },
       pics(who, m),
       voice(who, m),
       text,
-      el("time", { text: ctx.ago(m.at), datetime: new Date(m.at).toISOString(), title: new Date(m.at).toLocaleString() }),
     );
   }
+
+  /**
+   * The time labels: one over each run of messages that read the same, "5
+   * mins ago" over all of them. Laid out again whenever messages come, and
+   * every minute, since what was "just now" is soon "1 min ago".
+   */
+  function regroup() {
+    if (!box) return;
+    for (const old of box.querySelectorAll(".when")) old.remove();
+    let last = "";
+    for (const msg of box.querySelectorAll(".msg")) {
+      const at = Number(msg.dataset.at);
+      const label = when(at);
+      if (label === last) continue;
+      last = label;
+      const stamp = new Date(at);
+      msg.before(
+        el("div", { class: "when" }, el("time", { text: label, datetime: stamp.toISOString(), title: stamp.toLocaleString() })),
+      );
+    }
+  }
+  const relabel = setInterval(() => {
+    const stick = nearBottom();
+    regroup();
+    if (stick) toBottom();
+  }, 60_000);
 
   function nearBottom() {
     return !box || box.scrollHeight - box.scrollTop - box.clientHeight < 80;
@@ -691,6 +748,7 @@ export function mount(ctx) {
       sentinel.after(...data.messages.map((m) => bubble(peer, m)));
       older = data.next || null;
       if (!older) sentinel.remove();
+      regroup();
       box.scrollTop = top + (box.scrollHeight - height);
       armOlder(g);
     } catch (cause) {
@@ -719,6 +777,7 @@ export function mount(ctx) {
       box.append(bubble(peer, m));
       newest = { at: m.at, id: m.id };
     }
+    regroup();
     if (stick) toBottom();
   }
 
@@ -1002,6 +1061,7 @@ export function mount(ctx) {
       box.append(bubble(who, m));
       newest = { at: m.at, id: m.id };
     }
+    regroup();
     const foot = peerOf(who).cur
       ? composer(who)
       : el("p", { class: "muted chat-off", text: `${who} hasn't turned on Messenger yet. They need a passkey to receive encrypted messages.` });
@@ -1096,6 +1156,7 @@ export function mount(ctx) {
     stopped = true;
     gen++;
     clearTimeout(timer);
+    clearInterval(relabel);
     clearTimeout(findWait);
     for (const io of observers.splice(0)) io.disconnect();
     for (const url of urls.splice(0)) URL.revokeObjectURL(url);
