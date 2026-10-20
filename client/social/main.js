@@ -49,15 +49,18 @@ function route() {
   return { page: m[1] || "timeline" };
 }
 
+/** The header's buttons, signed in or out. The server drew them already (src/pages.ts); this keeps them right. */
+function paintAccount(signed) {
+  $("out").hidden = $("aw").hidden = !signed;
+  $("in").hidden = document.querySelector("#ac .ac-b").hidden = signed;
+}
+
 function applyMe(next) {
   me = next;
   const link = $("me");
   const badge = $("badge");
-  const search = document.querySelector("#ac .ac-b");
   // My Profile always shows, so the tab bar never reflows once the session is known.
-  $("out").hidden = $("aw").hidden = !me;
-  $("in").hidden = !!me;
-  if (search) search.hidden = !!me;
+  paintAccount(!!me);
   const unread = $("mbadge");
   badge.hidden = !(me?.unseen > 0);
   unread.hidden = !(me?.unread > 0);
@@ -302,8 +305,11 @@ function renderSide(person) {
         : openAuth("login"),
   });
   if (person.friend) added();
+  // The card came with the page (src/pages.ts): keep its picture, so it is not drawn twice.
+  const pic = photo(person.name, person.avatarRev);
+  const had = $("side").querySelector("img.pfp");
   const bits = [
-    photo(person.name, person.avatarRev),
+    had && pic && had.getAttribute("src") === pic.getAttribute("src") ? had : pic,
     el(
       "div",
       { class: "name" },
@@ -1166,7 +1172,9 @@ if (route().page === "saved") {
   shown.saved = true;
   history.replaceState(null, "", "/social");
 }
-applyMe(null);
+// Not applyMe(null): the header came signed in or out with the page, and the
+// remembered name agrees with it. Only a copy kept offline can be behind.
+paintAccount(!!readName());
 show();
 noZoom();
 mountPwa();

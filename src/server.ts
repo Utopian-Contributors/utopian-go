@@ -19,8 +19,10 @@ import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
 import { apiRouter } from "./routes/api";
 import { startAdPayments } from "./social/adPay";
 import { adFor, flushAds, startAds } from "./social/ads";
-import { ensureSchema } from "./social/db";
+import { readSession } from "./social/auth";
+import { addedBy, ensureSchema, getUser } from "./social/db";
 import { sendAvatar, sendBanner, sendPostAudio, sendPostPhoto, socialRouter } from "./social/routes";
+import { ACCOUNT_NAV, accountNav, profileCard, renderPage } from "./pages";
 import { isCheck, sameState, stateTag, stateTags } from "./state";
 
 const app = express();
@@ -30,15 +32,11 @@ const indexPath = path.join(publicDir, "index.html");
 /**
  * The wallet page's canonical URL, and the file behind it.
  *
- * Extensionless, so it reads as a page rather than as a download, and mapped
- * onto the built file by a rewrite rather than by a handler of its own. That
- * rewrite happens before the precompressed-sibling middleware below, so the
- * page is served straight out of the build's quality-11 brotli — no template,
- * no per-request compression, and no in-memory copy for this process to hold.
- *
- * It can be a plain file precisely because the server does not know whose
- * wallet it is: there is no cookie and no session, the address lives in the
- * browser, and every figure on the page is fetched by the bundle afterwards.
+ * Extensionless, so it reads as a page rather than as a download. The file
+ * is held in memory twice, signed in and signed out (sendDoc): the header's
+ * account buttons are the one thing on it that depends on who is asking, and
+ * the session cookie says so. Everything else, address and figures, is the
+ * browser's and fetched by the bundle afterwards.
  */
 const WALLET_PATH = "/wallet";
 const WALLET_FILE = "/wallet.html";
@@ -179,16 +177,22 @@ type Variant = "home" | "res";
  * A given variant only changes when the price strip does — at most once per
  * price TTL — so compressing per request would spend CPU rederiving identical
  * bytes. Keyed on the rendered HTML itself, so a price move replaces the entry
- * with no invalidation hook in the token store. One slot per variant, so
+ * with no invalidation hook in the token store. One slot per variant and
+ * signed in or out (the account buttons, src/pages.ts), so
  * alternating home and results traffic doesn't evict on every request.
  *
  * Results pages carry the query in the markup, so only the home variant is
  * cacheable across requests; `res` still saves the repeat hit on one query.
  */
 const encodedShell: Record<
-  Variant,
+  `${Variant}:${boolean}`,
   { html: string; br?: Buffer; gzip?: Buffer }
-> = { home: { html: "" }, res: { html: "" } };
+> = {
+  "home:false": { html: "" },
+  "home:true": { html: "" },
+  "res:false": { html: "" },
+  "res:true": { html: "" },
+};
 
 /**
  * Is this encoding acceptable to the client? Handles the `q=0` form, which
@@ -247,17 +251,56 @@ function encode(raw: Buffer, enc: "br" | "gzip", quality: number): Buffer {
 
 function shellBody(
   variant: Variant,
+  signed: boolean,
   html: string,
   enc: "br" | "gzip" | null,
 ): string | Buffer {
   if (!enc) return html;
-  let entry = encodedShell[variant];
-  if (entry.html !== html) entry = encodedShell[variant] = { html };
+  const slot = `${variant}:${signed}` as const;
+  let entry = encodedShell[slot];
+  if (entry.html !== html) entry = encodedShell[slot] = { html };
   const cached = entry[enc];
   if (cached) return cached;
   const out = encode(Buffer.from(html, "utf8"), enc, QUALITY[variant]);
   entry[enc] = out;
   return out;
+}
+
+/** The documents served whole (wallet, Social), compressed once per rendering. */
+const encodedDocs = new Map<string, { html: string; br?: Buffer; gzip?: Buffer }>();
+
+/**
+ * A rendered document: tagged by its bytes, 304 when the client has them.
+ * `key` caches the compressed copy, for the renderings everyone gets; a
+ * profile's is its own, compressed per request at the results page's ratio.
+ *
+ * Private: the bytes depend on the session cookie, so no shared cache may
+ * hand one person's header to another.
+ */
+function sendDoc(req: express.Request, res: express.Response, html: string, key: string | null) {
+  res.setHeader("Cache-Control", "private, no-cache");
+  const tag = stateTag(html);
+  res.setHeader("ETag", tag);
+  if (sameState(req, tag)) {
+    res.status(304).end();
+    return;
+  }
+  const enc = negotiate(req);
+  res.setHeader("Vary", "Accept-Encoding");
+  res.type("html");
+  if (!enc) {
+    res.send(html);
+    return;
+  }
+  res.setHeader("Content-Encoding", enc);
+  if (!key) {
+    res.send(encode(Buffer.from(html, "utf8"), enc, QUALITY.res));
+    return;
+  }
+  let entry = encodedDocs.get(key);
+  if (entry?.html !== html) encodedDocs.set(key, (entry = { html }));
+  entry[enc] ??= encode(Buffer.from(html, "utf8"), enc, QUALITY.home);
+  res.send(entry[enc]);
 }
 
 function loadShell() {
@@ -302,7 +345,28 @@ function loadShell() {
   }
 }
 
+/**
+ * The wallet and Social documents, each rendered signed in and signed out:
+ * the header's account buttons, from the session cookie (src/pages.ts).
+ * Held like the shell, re-read when the build replaces them.
+ */
+const docs: Partial<Record<"wallet" | "social", Record<"in" | "out", string>>> = {};
+
+function loadDocs() {
+  for (const page of ["wallet", "social"] as const) {
+    try {
+      const raw = readFileSync(path.join(publicDir, `${page}.html`), "utf8");
+      docs[page] = { in: renderPage(page, raw, true), out: renderPage(page, raw, false) };
+    } catch (err) {
+      // Not built yet: the static file answers, account buttons drawn by its script.
+      console.warn(`[docs] ${page}.html load failed — serving the file as built:`, err);
+      delete docs[page];
+    }
+  }
+}
+
 loadShell();
+loadDocs();
 try {
   // Picks up client rebuilds in dev without polling on the request path.
   //
@@ -319,9 +383,9 @@ try {
   // read, and those events land once the document is fully in place — which is
   // exactly the moment a read that lost the race would now succeed.
   watch(publicDir, { persistent: false }, (_event, filename) => {
-    if (!filename || path.basename(String(filename)).startsWith("index.html")) {
-      loadShell();
-    }
+    const base = filename ? path.basename(String(filename)) : "";
+    if (!base || base.startsWith("index.html")) loadShell();
+    if (!base || base.startsWith("wallet.html") || base.startsWith("social.html")) loadDocs();
   });
 } catch {
   // Watch is best-effort — a missing directory just means we fall back.
@@ -425,7 +489,13 @@ app.get(WALLET_FILE, (req, res) => {
   res.redirect(308, `${WALLET_PATH}${qs}`);
 });
 
-app.get(WALLET_PATH, (req, _res, next) => {
+app.get(WALLET_PATH, (req, res, next) => {
+  const doc = docs.wallet;
+  if (doc) {
+    const signed = !!readSession(req);
+    sendDoc(req, res, doc[signed ? "in" : "out"], `wallet:${signed}`);
+    return;
+  }
   // express.static and the precompressed lookup both read the path off
   // req.url, so pointing it at the built file is all this takes.
   req.url = WALLET_FILE + req.originalUrl.slice(req.path.length);
@@ -433,13 +503,14 @@ app.get(WALLET_PATH, (req, _res, next) => {
 });
 
 /**
- * Social is one static document, same as the wallet page.
+ * Social is one document, same as the wallet page.
  *
- * Timeline, friends and a profile are the same file. The script reads the
- * path, and who is logged in lives in a cookie, so the HTML never varies and
- * can be handed out precompressed. Avatars and post pictures are the
- * exception: they are bytes on disk, and they have to be answered before the
- * rewrite below turns every other /social URL into that document.
+ * Timeline, friends and a profile are the same file, the header's account
+ * buttons rendered from the session cookie. A profile also gets its card,
+ * picture and name and action tiles, so they paint with the page rather than
+ * after two round trips (renderSocial). Avatars and post pictures are bytes
+ * on disk, and they have to be answered before the handler below turns every
+ * other /social URL into that document.
  */
 app.get("/social.html", (req, res) => {
   const qs = req.originalUrl.slice(req.path.length);
@@ -462,14 +533,57 @@ app.get("/social/i/:id/:n", sendPostPhoto);
 app.get("/social/v/:id", sendPostAudio);
 app.get("/social/b/:id", sendBanner);
 
-app.use((req, _res, next) => {
+app.use((req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD") return next();
   const p = req.path;
   if (p !== "/social" && !p.startsWith("/social/")) return next();
   if (/^\/social\/[abtiv]\//.test(p)) return next();
+  if (docs.social) {
+    renderSocial(req, res, docs.social).catch(next);
+    return;
+  }
   req.url = "/social.html" + req.originalUrl.slice(p.length);
   next();
 });
+
+/** The profile a /social URL shows, if it is one: client/social/main.js route(). */
+const PROFILE_PATH = /^\/social\/u\/([a-z0-9_]{3,16})\/?$/;
+
+/** Slot in social.html the profile card is rendered into. */
+const SIDE_SLOT = '<div class="pn" id="side"></div>';
+
+async function renderSocial(req: express.Request, res: express.Response, doc: Record<"in" | "out", string>) {
+  const session = readSession(req);
+  const html = doc[session ? "in" : "out"];
+  const name = req.path.match(PROFILE_PATH)?.[1];
+  if (!name) {
+    sendDoc(req, res, html, `social:${!!session}`);
+    return;
+  }
+  let card = "";
+  try {
+    const user = await getUser(name);
+    if (user) {
+      // Your own card only off a session still current, as the API would say.
+      const own = session?.name === user.name && session.epoch === user.epoch;
+      const friend = !own && !!session && (await addedBy(session.name, session.epoch, user.name));
+      card = profileCard(user, own, friend);
+    }
+  } catch (err) {
+    // Without the database the page still paints; its script says what went wrong.
+    console.warn("[social] profile card:", err);
+  }
+  if (!card) {
+    sendDoc(req, res, html, `social:${!!session}`);
+    return;
+  }
+  sendDoc(
+    req,
+    res,
+    html.replace('<body class="res soc"', '<body class="res soc profile"').replace(SIDE_SLOT, () => `<div class="pn" id="side">${card}</div>`),
+    null,
+  );
+}
 
 // Negotiated compression for everything generated per request (API JSON).
 // Static assets are served precompressed below, and the shell brings its own.
@@ -569,7 +683,8 @@ function sendIndex(
   res: express.Response,
   next: express.NextFunction,
 ) {
-  res.setHeader("Cache-Control", "no-cache");
+  // Private: the account buttons are this visitor's (src/pages.ts).
+  res.setHeader("Cache-Control", "private, no-cache");
 
   if (!shell) {
     res.sendFile(indexPath, (err) => {
@@ -595,8 +710,10 @@ function sendIndex(
   // client-side transition that never asks the server for fresh markup.
   // The strip carries the quote tokens' USD prices as well as its own cells —
   // the buy dialog converts with them, and they are already here.
+  // The account buttons as its script will draw them, off the session cookie.
+  const signed = !!readSession(req);
   let html = replaceSlot(
-    variant === "res" ? resShell : shell,
+    (variant === "res" ? resShell : shell).replace(ACCOUNT_NAV, () => accountNav("index", signed)),
     TICKER_SLOT,
     `<div id="hm-tk"${renderFundPrices()}>${renderHomeTicker()}</div>`,
   );
@@ -622,7 +739,7 @@ function sendIndex(
   if (enc) res.setHeader("Content-Encoding", enc);
   // no-cache means revalidate, not don't-store: an unchanged strip answers 304
   // off the ETag and the inlined stylesheet costs a repeat visitor nothing.
-  res.type("html").send(shellBody(variant, html, enc));
+  res.type("html").send(shellBody(variant, signed, html, enc));
 }
 
 app.get("/", (req, res, next) => sendIndex(req, res, next));
