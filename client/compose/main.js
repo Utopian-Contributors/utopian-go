@@ -74,7 +74,29 @@ function packPost(text, shots, memo) {
  *   LINK: RegExp, trimUrl: (raw: string) => string, webLink: (url: string) => HTMLElement | null,
  * }} kit `drafts` takes the composer's object URLs, which social.js frees on the next redraw
  */
-function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, trimUrl, webLink }) {
+/** The draft so far, kept for the tab, so Cancel, or the + on another page, loses nothing. */
+const DRAFT = "ug.draft";
+function keepDraft(text) {
+  try {
+    if (text) sessionStorage.setItem(DRAFT, text);
+    else sessionStorage.removeItem(DRAFT);
+  } catch {
+    // No storage: a draft lasts as long as its page, as it always did.
+  }
+}
+function keptDraft() {
+  try {
+    return sessionStorage.getItem(DRAFT) || "";
+  } catch {
+    return "";
+  }
+}
+
+/** A phone: the composer is a page of its own (/social/new) behind a + on the timeline. */
+const PHONE = matchMedia("(max-width: 900px)");
+
+function composer(kit, page = false) {
+  const { me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, trimUrl, webLink } = kit;
   const me = who();
   // A deadline rather than a count, so the button wakes when the wait is over.
   const until = Date.now() + me.wait;
@@ -179,13 +201,18 @@ function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, 
   }
 
   if (handed) {
-    area.value = handed.slice(0, MAX_POST);
+    keepDraft(handed.slice(0, MAX_POST));
     handed = "";
     history.replaceState(history.state, "", location.pathname);
-    // Opened for it: on a phone the composer is a sheet behind the +.
+    // On a phone the composer is its own page: the draft is waiting there.
+    if (PHONE.matches && !page) location.replace("/social/new");
+  }
+  const kept = keptDraft();
+  if (kept) {
+    area.value = kept;
     setTimeout(() => {
-      open();
       area.dispatchEvent(new Event("input"));
+      if (page) area.focus();
     });
   }
 
@@ -279,6 +306,7 @@ function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, 
     sync();
   });
   area.addEventListener("input", () => {
+    keepDraft(area.value);
     area.style.height = "auto";
     area.style.height = `${area.scrollHeight}px`;
     tally();
@@ -296,33 +324,30 @@ function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, 
     }
   });
   /*
-   * On a phone the composer is a sheet of its own (social.css): a round +
-   * over the timeline opens it, Cancel closes it and keeps the draft. Wider
-   * screens show neither, and the form sits above the posts as it always has.
+   * On a phone the composer is a page of its own, /social/new: a round + over
+   * the timeline opens it, Cancel goes back. Opened in the tap itself rather
+   * than by loading the page, since a phone raises its keyboard only for a
+   * focus the tap asked for. Wider screens show neither, and the form sits
+   * above the posts as it always has.
    */
-  const fab = el("button", { type: "button", class: "fab", "aria-label": "New post" });
+  const fab = el("a", { class: "fab", href: "/social/new", "aria-label": "New post" });
   fab.innerHTML = PLUS;
-  const cancel = el("button", { type: "button", class: "compose-x", text: "Cancel" });
-  /** The sheet stops where the keyboard starts, so the tools ride on top of it. */
-  const fit = () => {
-    form.style.height = form.classList.contains("open") && visualViewport ? `${visualViewport.height}px` : "";
+  fab.addEventListener("click", (e) => {
+    e.preventDefault();
+    history.pushState({ ugNew: 1 }, "", "/social/new");
+    openPage(kit).querySelector("textarea").focus();
+  });
+  const cancel = el("a", { class: "compose-x", href: "/social", text: "Cancel" });
+  // Back where the + was, when that is where this came from.
+  const leave = (e) => {
+    if (!history.state?.ugNew) return location.replace("/social");
+    e?.preventDefault();
+    history.back();
   };
-  const open = () => {
-    form.classList.add("open");
-    fit();
-    // In the tap itself: a phone raises its keyboard only for focus a person asked for.
-    area.focus();
-  };
-  const close = () => {
-    form.classList.remove("open");
-    fit();
-  };
-  fab.addEventListener("click", open);
-  cancel.addEventListener("click", close);
-  visualViewport?.addEventListener("resize", fit);
+  cancel.addEventListener("click", leave);
   const form = el(
     "form",
-    { class: "composer", "aria-label": "New post" },
+    { class: page ? "composer page" : "composer", "aria-label": "New post" },
     fab,
     cancel,
     el("div", { class: "compose-top" }, thumb(me.name, me.avatarRev), el("div", { class: "draft" }, shade, area)),
@@ -334,9 +359,7 @@ function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, 
     el("div", { class: "compose-bar" }, add, file, mic, count, button),
     note,
   );
-  form.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && form.classList.contains("open")) close();
-  });
+  if (page) form.addEventListener("keydown", (e) => e.key === "Escape" && leave(e));
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!ready()) return;
@@ -347,8 +370,10 @@ function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, 
       const text = area.value.trim();
       const body = shots.length || voice ? packPost(text, shots, voice) : JSON.stringify({ text });
       await pull("/api/social/post", { method: "POST", body });
-      close();
-      show();
+      keepDraft("");
+      // From its own page, back to the timeline, which shows the post.
+      if (page) leave();
+      else show();
     } catch (cause) {
       note.hidden = false;
       note.textContent = cause.message;
@@ -360,4 +385,13 @@ function composer({ me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, 
   return form;
 }
 
-window.__compose = { composer };
+/** /social/new: the composer as the page, with nothing under it. */
+function openPage(kit) {
+  document.body.classList.add("newpost");
+  const form = composer(kit, true);
+  kit.main.replaceChildren(form);
+  scrollTo(0, 0);
+  return form;
+}
+
+window.__compose = { composer, openPage };

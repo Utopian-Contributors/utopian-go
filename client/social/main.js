@@ -38,7 +38,7 @@ function route() {
   const m = location.pathname
     .replace(/\/+$/, "")
     .match(
-      /^\/social(?:\/(saved|friends|notifications|edit|c)|\/p\/([A-Za-z0-9_-]{1,32})|\/u\/([a-z0-9_]{3,16})|\/c\/[a-z0-9_]{3,16})?$/,
+      /^\/social(?:\/(saved|friends|notifications|edit|c|new)|\/p\/([A-Za-z0-9_-]{1,32})|\/u\/([a-z0-9_]{3,16})|\/c\/[a-z0-9_]{3,16})?$/,
     );
   if (!m) return { page: "missing" };
   if (m[1] === "c" || location.pathname.startsWith("/social/c/")) return { page: "chat" };
@@ -930,6 +930,7 @@ async function show() {
   document.body.classList.toggle("profile", here.page === "profile");
   document.body.classList.toggle("tl", here.page === "timeline" || here.page === "post");
   document.body.classList.toggle("ads", here.page === "ads");
+  document.body.classList.toggle("newpost", here.page === "new");
   main.replaceChildren(el("p", { class: "muted", text: "…" }));
   try {
     if (here.page === "timeline") {
@@ -948,6 +949,12 @@ async function show() {
     else if (here.page === "profile")
       renderProfile(await pull(`/api/social/u/${here.name}`));
     else if (here.page === "post") await renderPostPage(here.id);
+    else if (here.page === "new") {
+      // The composer as a page of its own (client/compose), a phone's +.
+      if (!me) await pull("/api/social/me");
+      if (!me) throw new Error("Log in to post.");
+      (await load("cp", "__compose")).openPage(kit);
+    }
     else if (here.page === "chat") await renderChat();
     else if (here.page === "ads") await renderAds(here.id);
     else {
@@ -972,6 +979,86 @@ new MutationObserver(() => {
   document.body.classList.toggle("deep", !!main.querySelector(".back"));
 }).observe(main, { childList: true, subtree: true });
 $("bk").addEventListener("click", () => main.querySelector(".back")?.click());
+
+// The + opens /social/new in place (client/compose); Back, or Cancel, comes home to the timeline.
+addEventListener("popstate", show);
+
+/*
+ * Pull to refresh, on the timeline: drawn down from the top, the posts load
+ * again under a 2px bar along the top of the screen. The bar follows the pull,
+ * creeps on while the timeline loads, fills when it has, and goes.
+ */
+const PULL = 80;
+let pullFrom = -1;
+let pulled = 0;
+let refreshing = false;
+/** @type {HTMLElement | null} */
+let bar = null;
+
+/** How the bar gets to its width: with the finger, creeping while the posts load, or quickly to the end. */
+const EASE = { pull: "none", load: "width 6s cubic-bezier(0.1, 0.7, 0.2, 1)", done: "width 0.25s ease-out" };
+
+function setBar(width, how) {
+  if (!bar) document.body.append((bar = el("div", { class: "ptr" })));
+  bar.style.transition = EASE[how];
+  bar.style.opacity = "1";
+  bar.style.width = `${width}%`;
+}
+
+function dropBar(delay) {
+  const gone = bar;
+  bar = null;
+  setTimeout(() => {
+    gone.style.transition = "opacity 0.3s";
+    gone.style.opacity = "0";
+    setTimeout(() => gone.remove(), 300);
+  }, delay);
+}
+
+const atTop = () => (pageBox()?.scrollTop ?? scrollY) <= 0;
+
+addEventListener(
+  "touchstart",
+  (e) => {
+    pulled = 0;
+    pullFrom = !refreshing && e.touches.length === 1 && route().page === "timeline" && atTop() ? e.touches[0].clientY : -1;
+  },
+  { passive: true },
+);
+
+addEventListener(
+  "touchmove",
+  (e) => {
+    if (pullFrom < 0) return;
+    pulled = e.touches[0].clientY - pullFrom;
+    // Up to a third of the way while pulling; the rest is the load's.
+    if (pulled > 8 && atTop()) setBar((Math.min(pulled, PULL) / PULL) * 33, "pull");
+  },
+  { passive: true },
+);
+
+addEventListener("touchend", async () => {
+  if (pullFrom < 0) return;
+  pullFrom = -1;
+  if (!bar) return;
+  if (pulled < PULL) return dropBar(0);
+  refreshing = true;
+  // Read before the bar moves, so the creep starts from where the pull left it.
+  void bar.offsetWidth;
+  setBar(90, "load");
+  try {
+    const data = await pull(`/api/social/timeline?${feedQuery()}`);
+    if (route().page === "timeline") {
+      stopMore();
+      renderTimeline(data);
+    }
+  } catch {
+    // Offline or failed: client/offline says so; the posts on screen stay.
+  }
+  setBar(100, "done");
+  dropBar(250);
+  refreshing = false;
+});
 
 /*
  * The feed is the page's one scroll box, so a wheel anywhere on the page moves
