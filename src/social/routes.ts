@@ -1,6 +1,6 @@
 import { createPublicKey, randomBytes } from "crypto";
 import express, { NextFunction, Request, Response, Router } from "express";
-import { ADS_PAY_TO, SITE_URL, TERMS_VERSION } from "../config";
+import { ADS_PAY_TO, SITE_URL, TERMS_VERSION, UTCC_MINT } from "../config";
 import { rateLimit } from "../lib/rateLimit";
 import { railAssets } from "../lib/tokens/store";
 import { isCheck, unchanged } from "../state";
@@ -52,9 +52,11 @@ import {
   insertUser,
   openOrders,
   markSeen,
+  namesOf,
   notesFor,
   openPost,
   orderOf,
+  postPayment,
   postsBy,
   receiptCount,
   receiptsOf,
@@ -1178,7 +1180,18 @@ socialRouter.post(
       );
     }
     await assertPasskey(req, me, "send");
-    res.json(await sendFor(me.address, openForServer(me.keyBox), { to, mint, amount: BigInt(amount) }));
+    const sent = await sendFor(me.address, openForServer(me.keyBox), { to, mint, amount: BigInt(amount) });
+    // $UTCC to another account is a payment between people: it goes in their chat.
+    // The coins have moved by now, so a chat that cannot be written to only says so.
+    if (mint === UTCC_MINT) {
+      try {
+        const [name] = (await namesOf([req.body.to])).values();
+        if (name && name !== me.name) await postPayment(me.name, name, { amount, sig: sent.signature }, Date.now());
+      } catch (err) {
+        console.error("[social] payment message:", err);
+      }
+    }
+    res.json(sent);
   }),
 );
 

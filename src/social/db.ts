@@ -196,6 +196,9 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 -- A voice memo's length and shape, sealed; empty when the message has none.
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS memo text NOT NULL DEFAULT '';
+-- A $UTCC payment between the two, as the server sent it: {"amount","sig"}, in
+-- the clear, since the chain already shows it. Such a row has no sealed part.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS pay text NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS messages_pair ON messages (pair, at DESC, id DESC);
 -- One row per person per conversation: the sidebar, newest first.
 CREATE TABLE IF NOT EXISTS chats (
@@ -1077,6 +1080,8 @@ export interface Message {
   photos: number;
   /** A voice memo's length and shape, sealed (IV, then AES-GCM); "" without one. The recording is a file. */
   memo: string;
+  /** A $UTCC payment from `from` to the other: base units and its transaction. Nothing is sealed on one. */
+  pay?: { amount: string; sig: string };
 }
 
 export interface Chat {
@@ -1098,9 +1103,10 @@ type MessageRow = {
   ct: string;
   photos: number;
   memo: string;
+  pay: string;
 };
 
-const MESSAGE_COLS = "m.id, m.from_name, m.at, m.kf, m.kt, m.iv, m.ct, m.photos, m.memo";
+const MESSAGE_COLS = "m.id, m.from_name, m.at, m.kf, m.kt, m.iv, m.ct, m.photos, m.memo, m.pay";
 
 function messageFrom(row: MessageRow): Message {
   return {
@@ -1113,6 +1119,7 @@ function messageFrom(row: MessageRow): Message {
     ct: row.ct,
     photos: row.photos,
     memo: row.memo,
+    ...(row.pay ? { pay: JSON.parse(row.pay) as { amount: string; sig: string } } : {}),
   };
 }
 
@@ -1157,6 +1164,47 @@ export async function addChatKey(
 }
 
 /**
+ * Write a message, move both sidebars to it, and drop what is past
+ * MAX_CHAT_KEEP in the conversation. Hands back what was dropped, whose files go.
+ */
+async function putMessage(client: PoolClient, to: string, m: Message): Promise<{ id: string; photos: number; audio: boolean }[]> {
+  const pair = pairOf(m.from, to);
+  await client.query(
+    `INSERT INTO messages (id, pair, from_name, to_name, at, kf, kt, iv, ct, photos, memo, pay)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [m.id, pair, m.from, to, m.at, m.kf, m.kt, m.iv, m.ct, m.photos, m.memo, m.pay ? JSON.stringify(m.pay) : ""],
+  );
+  await client.query(
+    `INSERT INTO chats (owner, peer, at, last, unread) VALUES ($1,$2,$3,$4,0), ($2,$1,$3,$4,1)
+     ON CONFLICT (owner, peer) DO UPDATE SET at = EXCLUDED.at, last = EXCLUDED.last,
+       unread = chats.unread + EXCLUDED.unread`,
+    [m.from, to, m.at, m.id],
+  );
+  const dropped = await client.query<{ id: string; photos: number; audio: boolean }>(
+    `DELETE FROM messages WHERE pair = $1 AND (at, id) < (
+       SELECT at, id FROM messages WHERE pair = $1 ORDER BY at DESC, id DESC OFFSET $2 LIMIT 1
+     ) RETURNING id, photos, memo <> '' AS audio`,
+    [pair, MAX_CHAT_KEEP - 1],
+  );
+  return dropped.rows;
+}
+
+/**
+ * A $UTCC payment one account sent another, in their conversation, as the
+ * server sent it (routes /send). Needs no Messenger key on either side: it
+ * is not sealed, the chain already shows it.
+ */
+export async function postPayment(from: string, to: string, pay: { amount: string; sig: string }, at: number): Promise<Message> {
+  const message: Message = { id: newId(), from, at, kf: 0, kt: 0, iv: "", ct: "", photos: 0, memo: "", pay };
+  const dropped = await tx((client) => putMessage(client, to, message));
+  for (const gone of dropped) {
+    removeChatPhotos(gone.id, gone.photos);
+    if (gone.audio) removeChatAudio(gone.id);
+  }
+  return message;
+}
+
+/**
  * One message, and both sidebars.
  *
  * The versions have to be the newest on both sides: a message sealed to a
@@ -1190,31 +1238,8 @@ export async function sendMessage(
       );
       const current = new Map(keys.rows.map((row) => [row.name, row.v]));
       if (current.get(from) !== sealed.kf || current.get(to) !== sealed.kt) return { stale: true as const };
-      const pair = pairOf(from, to);
-      await client.query(
-        `INSERT INTO messages (id, pair, from_name, to_name, at, kf, kt, iv, ct, photos, memo)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-        [id, pair, from, to, at, sealed.kf, sealed.kt, sealed.iv, sealed.ct, photos.length, sealed.memo],
-      );
-      await client.query(
-        `INSERT INTO chats (owner, peer, at, last, unread) VALUES ($1,$2,$3,$4,0), ($2,$1,$3,$4,1)
-         ON CONFLICT (owner, peer) DO UPDATE SET at = EXCLUDED.at, last = EXCLUDED.last,
-           unread = chats.unread + EXCLUDED.unread`,
-        [from, to, at, id],
-      );
-      const dropped = await client.query<{ id: string; photos: number; audio: boolean }>(
-        `DELETE FROM messages WHERE pair = $1 AND (at, id) < (
-           SELECT at, id FROM messages WHERE pair = $1 ORDER BY at DESC, id DESC OFFSET $2 LIMIT 1
-         ) RETURNING id, photos, memo <> '' AS audio`,
-        [pair, MAX_CHAT_KEEP - 1],
-      );
-      return {
-        message: {
-          id, from, at, kf: sealed.kf, kt: sealed.kt, iv: sealed.iv, ct: sealed.ct,
-          photos: photos.length, memo: sealed.memo,
-        },
-        dropped: dropped.rows,
-      };
+      const message = { id, from, at, kf: sealed.kf, kt: sealed.kt, iv: sealed.iv, ct: sealed.ct, photos: photos.length, memo: sealed.memo };
+      return { message, dropped: await putMessage(client, to, message) };
     });
   } catch (err) {
     unwrite();
