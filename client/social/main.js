@@ -432,15 +432,26 @@ function gallery(post) {
   if (!n) return null;
   const id = post.repost || post.id;
   const row = el("div", { class: "gallery", role: "group", "aria-label": "Photos" });
+  // The large copies, for the carousel a tap opens (client/photos).
+  const full = [];
   for (let i = 0; i < n; i++) {
-    row.append(
-      el(
-        "picture",
-        {},
-        el("source", { media: "(max-width: 900px)", srcset: `/social/i/${id}/${i}?m=1` }),
-        el("img", { src: `/social/i/${id}/${i}`, alt: "Photo", loading: "lazy", decoding: "async" }),
-      ),
-    );
+    full.push(`/social/i/${id}/${i}`);
+    const img = el("img", {
+      src: full[i],
+      alt: n > 1 ? `Photo ${i + 1} of ${n}, opens larger` : "Photo, opens larger",
+      loading: "lazy",
+      decoding: "async",
+      tabindex: "0",
+      role: "button",
+    });
+    const view = () => load("pv", "__photos").then((pv) => pv.open(full, i), () => {});
+    img.addEventListener("click", view);
+    img.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      view();
+    });
+    row.append(el("picture", {}, el("source", { media: "(max-width: 900px)", srcset: `${full[i]}?m=1` }), img));
   }
   row.addEventListener("click", (event) => event.stopPropagation());
   return row;
