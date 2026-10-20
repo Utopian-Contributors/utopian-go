@@ -1442,6 +1442,15 @@ a.crow.on {
 
 .chat-head .who { font-weight: 600; }
 .chat-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+/* The Back pill's height, whatever the photo's shape: a portrait is narrower, never taller, so the head never grows. */
+.chat-who .mini {
+  flex: none;
+  width: auto;
+  height: 36px;
+  max-width: 48px;
+  object-fit: cover;
+}
 /* A wide screen has the list beside the conversation and no use for this;
    a phone shows it, on the head's own line (below). Spelled to outrank a.back. */
 a.back.chat-back { display: none; }
