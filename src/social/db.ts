@@ -1697,3 +1697,16 @@ export async function sweepAds(before: number): Promise<void> {
   );
   for (const row of rows) if (row.banner) removeBanner(row.id);
 }
+
+/**
+ * Whether `owner` has added `friend`, asked by a page render off a cookie no
+ * route has checked: only a session still current (its epoch) gets an answer.
+ */
+export async function addedBy(owner: string, epoch: number, friend: string): Promise<boolean> {
+  const row = await one<{ yes: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM friends f JOIN users u ON u.name = f.owner
+       WHERE f.owner = $1 AND u.epoch = $2 AND f.friend = $3) AS yes`,
+    [owner, epoch, friend],
+  );
+  return !!row?.yes;
+}

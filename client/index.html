@@ -79,13 +79,9 @@
         <!-- Filled server-side with live prices; empty until then. -->
         <div id="hm-tk"></div>
 
-        <!-- The account control. Ships empty and is filled by app.js from
-             localStorage, because the server has no idea who is looking: there
-             is no cookie and no session, which is the point. Shipping a
-             "Login" here instead would paint the wrong answer for everyone who
-             is already logged in, and an empty box costs nothing to correct.
-             Home holds its row open at the buttons' height and results take it
-             out of flow, so it shifts nothing whichever way it resolves. -->
+        <!-- The account control. The server renders it from the session cookie
+             (src/pages.ts), Wallet or Log in, so it paints with the page; app.js
+             then draws the same buttons from localStorage and keeps them right. -->
         <nav id="ac" aria-label="Account"></nav>
       </header>
 
