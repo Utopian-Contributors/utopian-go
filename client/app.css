@@ -268,49 +268,62 @@ body.home #st {
 }
 
 /*
- * Home has no header row, so the control comes back into the column, under the
- * price strip, and at a size worth pressing. It ships empty and app.js fills
- * it, so the row is held open at the buttons' height from first paint:
- * filling it moves nothing, and the column is centred with it already there.
+ * Home has no header row, and the rows under the price strip (#hm-nv) already
+ * go to the wallet and to Social, so the control is left out here. The wallet
+ * page offers the sign-in to anyone who arrives there signed out.
  */
 body.home #ac {
-  position: static;
-  /* header.css's 50 is for the fixed bar. Static isn't enough to drop it: #ac
-     is a flex item of #hd here, and a flex item honours z-index anyway, which
-     put these buttons over the install panel (25) on a short screen. */
-  z-index: auto;
-  justify-content: center;
-  gap: 12px;
-  width: auto;
-  height: 42px;
-  margin: 0;
-  padding: 0;
+  display: none;
 }
 
-/* Both the same pill, so the pair reads as one row of buttons: each on a
-   wash of its own, with no edge (base.css). */
-body.home #ac .ac-w,
-body.home #ac .ac-soc {
-  gap: 7px;
-  height: 42px;
-  margin: 0;
-  padding: 0 18px 0 15px;
-  border: 0;
-  border-radius: 999px;
+/* Home-only rows: Wallet, Social. Hidden elsewhere for the same reason as the
+   price strip below. A column as wide as the search field, each row a surface
+   of its own (base.css) with the mark, the word and a chevron. */
+#hm-nv {
+  display: none;
+}
+
+body.home #hm-nv {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+body.home #hm-nv a {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 0 18px 0 16px;
+  border-radius: 14px;
   background: var(--wash);
-  font-size: 15px;
-}
-
-body.home #ac .ac-w::before,
-body.home #ac .ac-soc::before {
-  width: 18px;
-  height: 18px;
-}
-
-body.home #ac .ac-w:hover,
-body.home #ac .ac-soc:hover {
-  background: var(--wash2);
+  color: var(--t);
+  font: 500 16px/1.2 var(--ff);
   text-decoration: none;
+  /* A wide target: the pills' 0.96 would shrink it by a visible stride. */
+  --press: 0.98;
+}
+
+body.home #hm-nv a:hover {
+  background: var(--wash2);
+}
+
+body.home #hm-nv svg {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+/* The chevron, pushed to the far end. */
+body.home #hm-nv a::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border: solid var(--f);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(-45deg);
 }
 
 /* Home-only price strip. Hidden by default so it never becomes a flex item in
