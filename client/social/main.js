@@ -445,7 +445,13 @@ function gallery(post) {
       role: "button",
     });
     const view = () => load("pv", "__photos").then((pv) => pv.open(full, i), () => {});
-    img.addEventListener("click", view);
+    // A tap or a click leaves no focus on the photo, so closing the viewer
+    // hands it back to nothing and no ring is drawn; Enter keeps it, ring and all.
+    img.addEventListener("mousedown", (e) => e.preventDefault());
+    img.addEventListener("click", () => {
+      img.blur();
+      view();
+    });
     img.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" && e.key !== " ") return;
       e.preventDefault();
