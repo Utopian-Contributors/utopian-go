@@ -10,12 +10,17 @@
   margin: 0;
   padding: 0;
   border: 0;
+  /* Edge to edge: none of the rounding social.css gives its dialogs. */
+  border-radius: 0;
   background: rgb(0 0 0 / 92%);
   color: #fff;
   overflow: hidden;
 }
 
 .pv::backdrop { background: transparent; }
+
+/* It takes the focus itself when it opens, so the x is not ringed before anyone tabs to it. */
+.pv:focus { outline: none; }
 
 .pv-row {
   display: flex;

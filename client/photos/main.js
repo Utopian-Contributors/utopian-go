@@ -45,7 +45,7 @@ function open(srcs, at) {
   const next = el("button", { type: "button", class: "pv-go pv-next", "aria-label": "Next photo", hidden: !many });
   next.innerHTML = svg("M9 5l7 7-7 7");
   const count = el("div", { class: "pv-n", "aria-live": "polite", hidden: !many });
-  const box = el("dialog", { class: "pv", "aria-label": "Photos" }, row, prev, next, count, x);
+  const box = el("dialog", { class: "pv", "aria-label": "Photos", tabindex: "-1" }, row, prev, next, count, x);
 
   let index = at;
   const paint = () => {
@@ -101,7 +101,9 @@ function open(srcs, at) {
   document.body.append(box);
   box.showModal();
   go(at, false);
-  x.focus({ preventScroll: true });
+  // The dialog, not its x: a ring around the x before anyone has tabbed to it
+  // reads as a border. Escape, the arrows and Tab all work from here.
+  box.focus({ preventScroll: true });
 }
 
 window.__photos = { open };
