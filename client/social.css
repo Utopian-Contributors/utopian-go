@@ -314,25 +314,6 @@ dialog textarea { resize: none; }
   body.soc .composer .fab { bottom: 97px; }
 }
 
-/*
- * Pull to refresh's bar (social.js): 2px along the top, a green that runs
- * across it while the timeline loads. The script sets its width.
- */
-.ptr {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 90;
-  width: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--go), var(--buy), var(--go)) 0 0 / 200% 100%;
-  animation: ptr-run 1s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes ptr-run { to { background-position: -200% 0; } }
-
-@media (prefers-reduced-motion: reduce) { .ptr { animation: none; } }
 
 .tool {
   border: 0;
@@ -1029,6 +1010,11 @@ img.pfp {
 
 [data-ic="msg"] {
   --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 4V6a1 1 0 0 1 1-1z'/%3E%3C/svg%3E");
+}
+
+/* The wallet page's swap mark (wallet.css [data-act="swap"]). */
+[data-ic="swap"] {
+  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 4v12m0 0-4-4m4 4 4-4M17 20V8m0 0-4 4m4-4 4 4'/%3E%3C/svg%3E");
 }
 
 [data-ic="edit"] {

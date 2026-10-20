@@ -11,7 +11,9 @@ import { LOGIN, logOutButton, mountAccount, openLogin } from "../js/acct.js";
 import { noZoom } from "../js/device.js";
 import { load } from "../js/lazy.js";
 import { account as whoami } from "../js/me.js";
+import { during } from "../js/progress.js";
 import { mountPwa } from "../js/pwa.js";
+import { UTCC } from "../js/utcc.js";
 import { amount, dollars, percent, tokenPrice } from "../js/num.js";
 import { onSession, readSession } from "../js/session.js";
 import { openSwap, swapUrl } from "../js/swap.js";
@@ -546,7 +548,8 @@ async function paintActions() {
       button.disabled = true;
       try {
         const act = button.dataset.act;
-        if (act === "swap") await openTrade(known.get(chosen) ?? { mint: SOL, symbol: "SOL", decimals: 9 }, "buy");
+        // Swap is UTCC's, from SOL: "Trade UTCC". Any other token trades from its own row.
+        if (act === "swap") await openTrade(UTCC, "buy");
         else if (act === "receive") (await dialogs()).receive(me);
         else (await dialogs()).send(me, shown?.items ?? [], () => void settle());
       } catch {
@@ -557,8 +560,6 @@ async function paintActions() {
     });
   }
 }
-
-const SOL = "So11111111111111111111111111111111111111112";
 
 /** Only a Social account has a phrase here; a connected wallet keeps its own. */
 async function paintKeys() {
@@ -673,7 +674,8 @@ async function refresh() {
   setNote("Reading your wallet…");
 
   try {
-    const data = await readHoldings(address);
+    // Under the loading bar along the top (client/js/progress.js), as Social's pages load.
+    const data = await during(readHoldings(address));
     if (id !== run) return;
     paint(data);
   } catch (err) {

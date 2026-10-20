@@ -102,3 +102,30 @@ button,
     scale: none;
   }
 }
+
+/*
+ * The loading bar (client/js/progress.js): 2px along the top, a green that
+ * runs across it. The script sets its width. .boot is the page's own, drawn
+ * before any script has run: it creeps by itself until a script takes it.
+ */
+.ptr {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 90;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--go), var(--buy), var(--go)) 0 0 / 200% 100%;
+  animation: ptr-run 1s linear infinite;
+  pointer-events: none;
+}
+
+.ptr.boot { animation: ptr-run 1s linear infinite, ptr-creep 6s cubic-bezier(0.1, 0.7, 0.2, 1) forwards; }
+
+@keyframes ptr-run { to { background-position: -200% 0; } }
+@keyframes ptr-creep { to { width: 90%; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ptr { animation: none; }
+  .ptr.boot { animation: none; width: 60%; }
+}

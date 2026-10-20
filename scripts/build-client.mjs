@@ -639,6 +639,7 @@ const SOCIAL_LAZY = {
   cp: "compose.js",
   cc: "coins.js",
   pv: "photos.js",
+  sw: "swap.js",
   fr: "friends.js",
   nt: "notes.js",
   ed: "edit.js",
