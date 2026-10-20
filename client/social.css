@@ -1441,9 +1441,9 @@ a.crow.on {
 }
 
 .chat-head .who { font-weight: 600; }
-.chat-head .muted { margin-left: auto; font-size: 12px; }
-/* Never drawn. A wide screen has the list beside the conversation, and on a
-   phone the header's Back clicks this link. Spelled to outrank a.back. */
+.chat-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* A wide screen has the list beside the conversation and no use for this;
+   a phone shows it, on the head's own line (below). Spelled to outrank a.back. */
 a.back.chat-back { display: none; }
 .pad { padding: 12px 0; }
 
@@ -1592,6 +1592,24 @@ a.back.chat-back { display: none; }
   body.chat.open #sd { display: none; }
   body.chat.open #m { display: flex; }
   .msg { max-width: 85%; }
+
+  /*
+   * One line for the conversation's head: Back at the left, the person's
+   * picture and name in the middle. The head's own Back stands in for the
+   * header's, as a post's bar does; the outer columns match, so the middle
+   * is the screen's middle.
+   */
+  body.soc.chat.open:has(#m .chat-head) .hb { display: none; }
+
+  body.soc .chat-head {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    padding-block: 10px;
+  }
+
+  /* Through #m, to outrank the phone rule above that hides #m's Back links for the header's. */
+  body.soc #m .chat-head a.back.chat-back { display: inline-flex; justify-self: start; }
+  body.soc .chat-who { grid-column: 2; }
 
   /*
    * The keyboard is up (client/chat sets body.kb): the page is as tall as
