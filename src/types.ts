@@ -370,6 +370,47 @@ export interface Holdings {
   dust?: number;
   /** Mints the token index carries no price for — almost always airdrop spam. */
   unpriced?: number;
+  /** Those mints and how much of each, the first fifty, so the page can name what it can. */
+  unknown?: UnknownHolding[];
+}
+
+/** A held token the index carries no price for. */
+export interface UnknownHolding {
+  mint: string;
+  /** Base units, as Holding's. */
+  amount: string;
+  decimals: number;
+}
+
+/**
+ * What the chain says about a mint the index does not carry (lib/tokens/asset.ts).
+ * Every field is its creator's own say-so, and any may be missing.
+ */
+export interface TokenAsset {
+  mint: string;
+  name?: string;
+  symbol?: string;
+  description?: string;
+  /** https, for the browser to fetch itself: never synced to /icon/. */
+  image?: string;
+  website?: string;
+  /** Where the off-chain metadata lives. */
+  uri?: string;
+  decimals?: number;
+  /** Base units. */
+  supply?: string;
+  program?: "Token" | "Token-2022";
+  mintAuthority?: string;
+  freezeAuthority?: string;
+  updateAuthority?: string;
+  /** Whether the update authority can still change the name, symbol and image. */
+  mutable?: boolean;
+}
+
+export interface AssetsApiResponse {
+  assets?: TokenAsset[];
+  error?: string;
+  detail?: string;
 }
 
 export interface HoldingsApiResponse extends Partial<Holdings> {

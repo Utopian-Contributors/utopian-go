@@ -156,6 +156,7 @@ POST /api/balances {owner, mint?} → BalancesApiResponse
 POST /api/holdings {owner, range?} → HoldingsApiResponse  range: 1h, 24h (default), 1w, 1m
 POST /api/history {owner, after?} → HistoryApiResponse   20 transactions a page, newest first
 POST /api/entries {owner}         → EntriesApiResponse   each holding's average entry across the past 24h
+POST /api/assets {mints}          → AssetsApiResponse    up to 50 unindexed mints: Helius getAssetBatch, cached 10 min
 GET  /api/tokens/top              → {tokens: TopToken[]}   30 verified mints by 24h volume
 GET  /api/tokens?c=&after=        → TokenPage              one list, 30 a page, by cursor; counts on page 1
 GET  /api/tokens?q=               → {tokens: TopToken[]}   the whole index: mint, symbol, name
@@ -181,6 +182,13 @@ scroller of its own. `Holding`, `TopToken` and History's `ActivityMove` carry `i
 when a thumbnail is served at `/icon/<mint>`. A History swap shows the token it traded,
 taking SOL as the side every trade starts from: its logo with a green + when bought, a red −
 when sold.
+
+A token the index does not carry is unidentified. The portfolio counts them in its "Not
+shown" note (`unpriced`, with the first 50 as `unknown`), and History names one by its
+mint's ends; either opens a dialog (client/keys/main.js) with the amount and whatever
+`POST /api/assets` finds: name, symbol, supply, authorities, description, links. Its logo is
+loaded by the browser from the creator's own URL, with no referrer, and never synced to
+`/icon/`.
 
 Every indexed token is one **kind**, read off Jupiter's tags at the hourly rebuild
 (`tokenKind`, `src/lib/tokens/jupiter.ts`), first match winning: Stablecoins (`stable`,
