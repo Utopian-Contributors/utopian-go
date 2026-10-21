@@ -1430,13 +1430,6 @@ body.hist .wl-top {
     padding-right: 12px;
   }
 
-  /* No lane of its own, so its rows are as wide as the market list's; theirs
-     is the inset the thumb passes over. */
-  #wl-l {
-    max-height: 30vh;
-    overflow-y: auto;
-  }
-
   .wl-top {
     margin-top: 20px;
   }
