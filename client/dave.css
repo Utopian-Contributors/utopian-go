@@ -1,15 +1,13 @@
 /*
- * Dave's page: the robot and his name, the conversation, and the field along
- * the bottom of the column. Bubbles are the app's own surfaces (--ch, --wash);
- * the green is the wordmark's, as on every action that goes.
+ * Dave's page (dave.html), after base.css and app.css for the palette and the
+ * body; the build inlines all three, pruned to what this page names.
+ *
+ * A chat, as Messenger is: the page is one screen high and does not scroll.
+ * The header on top, the field at the very bottom, and only the conversation
+ * between them scrolls. A column down the middle on a wide screen.
  */
-/*
- * A chat, as Messenger is: #m stops scrolling and Dave fills it, the header
- * on top, the field on the bottom, and only the conversation between them
- * scrolls. However long the chat, the field never leaves the screen.
- */
-body.soc.dave #m { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
-.dv { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 12px; max-width: 680px; padding-top: 12px; box-sizing: border-box; }
+body { height: 100dvh; min-height: 0; overflow: hidden; display: flex; justify-content: center; }
+.dv { flex: 1 1 auto; min-width: 0; max-width: 720px; display: flex; flex-direction: column; gap: 12px; padding: max(10px, env(safe-area-inset-top)) 16px 0; box-sizing: border-box; }
 .dv-hd, .dv-f { flex: none; }
 
 /* The menu, Dave in the middle (the robot and his name, a line under them), New chat. */
@@ -17,10 +15,9 @@ body.soc.dave #m { display: flex; flex-direction: column; overflow: hidden; padd
 .dv-id { text-align: center; min-width: 0; }
 .dv-nm { display: inline-flex; align-items: center; gap: 7px; }
 .dv-nm img { flex: none; filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3)); }
-.dv-nm h2 { margin: 0; font-size: 18px; line-height: 1.2; }
+.dv-nm h1 { margin: 0; font-size: 18px; line-height: 1.2; }
+.dv-id p, .dv-mu, .dv-open small, .dv-none { color: var(--f); }
 .dv-id p { margin: 1px 0 0; font-size: 13px; }
-.dv-hd > .dv-id:only-child { grid-column: 2; }
-.dv-login { align-self: center; padding: 11px 22px; font-size: 15px; }
 .dv-ib { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--t); font: 400 24px/1 var(--ff); cursor: pointer; }
 
 /* The menu of chats: a panel from the left over a veil. */
@@ -28,8 +25,7 @@ body.soc.dave #m { display: flex; flex-direction: column; overflow: hidden; padd
 .dv-veil { position: absolute; inset: 0; background: rgb(0 0 0 / 0.4); animation: dv-fade 0.18s ease-out; }
 .dv-panel { position: absolute; inset: 0 auto 0 0; width: min(320px, 84vw); display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); background: var(--bg); box-shadow: 4px 0 24px rgb(0 0 0 / 0.25); animation: dv-in 0.2s ease-out; }
 .dv-ph { display: flex; align-items: center; justify-content: space-between; padding-left: 8px; }
-.dv-ph h3 { margin: 0; font-size: 18px; }
-.dv-start { padding: 11px 14px; font-size: 14px; }
+.dv-ph h2 { margin: 0; font-size: 18px; }
 .dv-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
 .dv-list li { display: flex; align-items: center; border-radius: 12px; }
 .dv-list li.on { background: var(--wash); }
@@ -38,7 +34,8 @@ body.soc.dave #m { display: flex; flex-direction: column; overflow: hidden; padd
 .dv-open small { font-size: 12px; }
 .dv-del { flex: none; width: 32px; height: 32px; margin-right: 4px; border: 0; border-radius: 50%; background: none; color: var(--f); font: 20px/1 var(--ff); cursor: pointer; }
 .dv-none { padding: 10px; font-size: 14px; }
-.dv-back { padding: 8px 10px; font-size: 14px; color: var(--m); text-decoration: none; }
+.dv-out { display: flex; gap: 18px; padding: 8px 10px; font-size: 14px; }
+.dv-out a { color: var(--m); text-decoration: none; }
 @keyframes dv-in { from { transform: translateX(-100%); } }
 @keyframes dv-fade { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .dv-panel, .dv-veil { animation: none; } }
@@ -48,21 +45,24 @@ body.soc.dave #m { display: flex; flex-direction: column; overflow: hidden; padd
 
 .dv-m { max-width: 86%; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
 .dv-m p { margin: 0; white-space: pre-wrap; }
+.dv-m a { color: var(--l); }
 .dv-a { align-self: flex-start; background: var(--ch); color: var(--t); border-bottom-left-radius: 6px; }
 .dv-u { align-self: flex-end; background: var(--go); color: var(--go-ink); border-bottom-right-radius: 6px; }
 .dv-u a { color: inherit; }
-.dv-m.err { align-self: flex-start; background: none; padding-left: 0; }
+.dv-err { color: var(--dn); }
+.dv-m.dv-err { align-self: flex-start; padding-left: 0; }
 
 .dv-src { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ln); font-size: 13px; }
 .dv-src a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .dv-tr { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 12px 14px; border-radius: 14px; background: var(--pn); border: 1px solid var(--ln); min-width: min(260px, 70vw); }
 .dv-row { display: flex; justify-content: space-between; gap: 16px; font-size: 14px; }
-.dv-ok { align-self: stretch; margin-top: 6px; padding: 11px 14px; font-size: 14px; text-align: center; text-decoration: none; }
-a.dv-ok:hover { text-decoration: none; }
+.dv-ok { display: block; margin-top: 6px; padding: 11px 14px; border: 0; border-radius: 999px; background: var(--buy); color: var(--buy-ink); font: 500 14px/1 var(--ff); text-align: center; text-decoration: none; cursor: pointer; }
+.dv-ok:disabled { opacity: 0.6; cursor: default; }
+.dv-start { margin: 0; }
 .dv-note { margin: 0; font-size: 13px; }
 .dv-note:empty { display: none; }
-.dv-note.ok { color: var(--buy-text); }
+.dv-note.dv-done { color: var(--buy-text); }
 
 .dv-wait { display: flex; gap: 5px; padding: 14px 16px; }
 .dv-wait i { width: 7px; height: 7px; border-radius: 50%; background: var(--f); animation: dv-dot 1.2s infinite ease-in-out; }
@@ -81,20 +81,17 @@ a.dv-ok:hover { text-decoration: none; }
 .dv-go:disabled { opacity: 0.5; cursor: default; }
 
 /*
- * The keyboard is up (main.js sets body.kb): the page is as tall as what the
- * keyboard leaves and sits where iOS panned the view to, so Dave's header
- * stays at the top and the field on the keyboard, as in Messenger.
+ * The keyboard is up (dave/main.js sets body.kb): the page is as tall as what
+ * the keyboard leaves and sits where iOS panned the view to, so the header
+ * stays at the top and the field on the keyboard.
  */
-@media (max-width: 900px) {
-  /* The field is the bottom of the page: the tabs give way, and the menu has a way back. */
-  body.soc.dave #tb { display: none; }
-  body.soc.dave.kb { min-height: 0; height: var(--vvh, 100dvh); transform: translateY(var(--vvt, 0px)); }
-  body.soc.dave.kb .dv-f { margin-bottom: 8px; }
-}
+body.kb { height: var(--vvh, 100dvh); transform: translateY(var(--vvt, 0px)); }
+body.kb .dv-f { margin-bottom: 8px; }
 
 /* Hover only where there is a pointer to hover with: a tap on a phone would leave it lit. */
 @media (hover: hover) {
   .dv-ib:hover, .dv-ideas button:hover { background: var(--hover); }
   .dv-list li:hover { background: var(--wash); }
   .dv-del:hover { background: var(--hover); color: var(--dn); }
+  .dv-ok:hover:not(:disabled) { filter: brightness(1.08); }
 }

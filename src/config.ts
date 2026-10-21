@@ -313,7 +313,7 @@ export const TERMS_VERSION = "2026-09-27";
 export const ADS_PAY_TO = process.env.ADS_PAY_TO || "";
 
 /**
- * Dave, the chat agent on /social/dave (src/social/dave.ts). Unset, Dave
+ * Dave, the chat agent on /dave (src/social/dave.ts). Unset, Dave
  * answers that he is offline and nothing is sent to Anthropic.
  */
 export const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
