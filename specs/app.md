@@ -193,13 +193,14 @@ loaded by the browser from the creator's own URL, with no referrer, and never sy
 Every indexed token is one **kind**, read off Jupiter's tags at the hourly rebuild
 (`tokenKind`, `src/lib/tokens/jupiter.ts`), first match winning: Stablecoins (`stable`,
 `yb`), Stocks (`stocks`, `xstocks`, `equities`, and pre-IPO shares), RWAs (`rwa`,
-`commodities`), Majors (`major`, and a verified wrapper of BTC, ETH or SOL), DeFi (`lst`,
+`commodities`), Majors (`major`, a verified wrapper of BTC, ETH or SOL, and $UTCC), DeFi (`lst`,
 `yield`, `defi`, `infra`), Memes (`meme`), else Other. The wallet page lists **Trending** (the
 busiest 5% of verified tokens traded today, stablecoins left out before the cut,
 `TOKEN_TRENDING_SHARE`), then Stocks, Memes, RWAs, Majors and DeFi, each all of its kind,
-busiest first. Every list is built once per rebuild and served a page at a time by a
-`volume_mint` cursor, which stays put across a rebuild where an offset would not. Infinite
-scroll asks for the next page a screen ahead.
+busiest first. A pinned mint Jupiter has not verified ($UTCC) is on its kind's list too, but
+never Trending or the top 30. Every list is built once per rebuild and served a page at a
+time by a `volume_mint` cursor, which stays put across a rebuild where an offset would not.
+Infinite scroll asks for the next page a screen ahead.
 
 With three kinds or more, `/api/holdings` adds `slices`: the total by kind, each with its own
 series over the range asked for, and the portfolio chart draws them all on one axis beside the
