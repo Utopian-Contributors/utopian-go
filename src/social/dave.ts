@@ -1,5 +1,5 @@
 /**
- * Dave, the chat agent on /social/dave.
+ * Dave, the chat agent on /dave.
  *
  * A short tool loop on Claude: he can search the web (Brave, the same key
  * search uses), read the signed-in account's wallet, and propose a trade.
@@ -7,15 +7,16 @@
  * only the person's passkey turns it into a swap (/dave/trade in routes.ts,
  * then swapFor, which re-quotes and refuses anything below what was shown).
  *
- * Nothing is stored: the page sends the conversation each time, and the tool
- * steps of one reply live only for that request.
+ * Chats are kept in dave_chats (db.ts): the page sends a question and which
+ * chat it belongs to, and the history Dave reads comes from there, never from
+ * the page. The tool steps of one reply live only for that request.
  */
 import { ANTHROPIC_API_KEY, DAVE_MODEL, JUP_FEE_BPS, JUP_SWAP_ENDPOINT } from "../config";
 import { braveSearch } from "../lib/brave";
 import { readBook } from "../lib/holdings";
 import { JupiterBusy, jupFetch } from "../lib/jupiterGate";
 import { lookupMints, searchTokens } from "../lib/tokens/store";
-import type { User } from "./db";
+import type { DaveTurn, User } from "./db";
 import { base58Decode } from "./keys";
 import { SocialError } from "./limits";
 import { solanaPubkey } from "./pay";
@@ -23,9 +24,10 @@ import { SOL_MINT, mintInfo } from "./send";
 import { feeAccount } from "./swap";
 
 const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
-/** Turns of conversation the page may send, and characters in each. */
+/** Turns of a chat Dave reads back, characters in a question, and turns a chat keeps. */
 export const DAVE_TURNS = 16;
 export const DAVE_CHARS = 1500;
+export const DAVE_KEEP = 200;
 /** Model calls in one reply: tool rounds, then one last answer without tools. */
 const MAX_STEPS = 5;
 /** What Dave proposes trading with, by default: the trade dialog's own 1%. */
@@ -228,18 +230,34 @@ async function proposeTrade(input: Record<string, unknown>): Promise<Proposal> {
   };
 }
 
-/** The conversation the page sent, trimmed to what Dave reads. Null if it ends anywhere but a question. */
-export function readTurns(raw: unknown): Turn[] | null {
-  if (!Array.isArray(raw)) return null;
-  const turns: Turn[] = [];
-  for (const item of raw.slice(-DAVE_TURNS)) {
-    const role = item?.role === "assistant" ? "assistant" : item?.role === "user" ? "user" : null;
-    const text = typeof item?.text === "string" ? item.text.trim().slice(0, DAVE_CHARS) : "";
-    if (!role || !text) continue;
-    turns.push({ role, text });
-  }
+/** A question as the page sent it, trimmed; null if there is none. */
+export function readQuestion(raw: unknown): string | null {
+  const text = typeof raw === "string" ? raw.trim().slice(0, DAVE_CHARS) : "";
+  return text || null;
+}
+
+/** A chat's name: its first question, shortened. */
+export function titleOf(question: string): string {
+  const line = question.replace(/\s+/g, " ");
+  return line.length > 60 ? `${line.slice(0, 57)}…` : line;
+}
+
+/**
+ * What Dave reads of a stored chat: its last turns, each a role and its text,
+ * with a trade he prepared said in words, and whether it was confirmed.
+ */
+export function forModel(stored: DaveTurn[]): Turn[] {
+  const turns: Turn[] = stored.slice(-DAVE_TURNS).map((t) => {
+    let text = String(t.text ?? "");
+    const p = t.trade as Proposal | undefined;
+    if (p?.sell && p.buy) {
+      const done = typeof t.done === "string" ? `Confirmed: ${t.done}` : "Not confirmed.";
+      text += `\n[Prepared trade: sell ${p.sell.amount} ${p.sell.symbol} for about ${p.buy.amount} ${p.buy.symbol}. ${done}]`;
+    }
+    return { role: t.role === "assistant" ? "assistant" : "user", text: text.slice(-DAVE_CHARS * 3) || "…" };
+  });
   while (turns[0]?.role === "assistant") turns.shift();
-  return turns.length && turns[turns.length - 1].role === "user" ? turns : null;
+  return turns;
 }
 
 /** Dave's answer to the last question in `turns`, with any trade he prepared. */
