@@ -1,54 +1,28 @@
 /**
  * Dave — lazy-loaded by social.js on /social/dave, exposed as `window.__dave`.
  *
- * A chat with the agent in src/social/dave.ts. Chats are kept on this device
- * (localStorage, per account), listed in the menu, and each goes to the
- * server whole with every question; the server keeps none of them. When Dave prepares a trade it comes
- * back as a card, and the passkey is what turns that card into a swap.
+ * A chat with the agent in src/social/dave.ts. Chats are kept on the server,
+ * per account, so they follow the person to any device; the menu lists them.
+ * The page sends each question and which chat it is in, and draws what comes
+ * back. When Dave prepares a trade it comes back as a card, and the passkey
+ * is what turns that card into a swap.
  */
 import { el } from "../js/dom.js";
 import { assertion, why } from "../js/passkey.js";
 import { injectStyles } from "../js/ui.js";
 import CSS from "./dave.css";
 
-/** Matches DAVE_TURNS and DAVE_CHARS in src/social/dave.ts. */
-const TURNS = 16;
+/** Matches DAVE_CHARS and DAVE_KEEP in src/social/dave.ts. */
 const CHARS = 1500;
-/** Chats kept, and turns kept of each. */
-const CHATS = 30;
-const KEEP_TURNS = 40;
+const KEEP = 200;
 
 const HELLO = "Hi, I'm Dave. I can search the web, look at your wallet, prepare a trade for you to confirm with your passkey, or just chat.";
 const IDEAS = ["What's new in Solana today?", "What's in my wallet?", "Buy $5 of BONK with SOL"];
 
 /**
  * @typedef {{role: "user" | "assistant", text: string, trade?: any, sources?: {title: string, url: string}[], done?: string}} Turn
- * @typedef {{id: string, at: number, turns: Turn[]}} Chat
+ * @typedef {{id: string, title: string, at: number}} Head
  */
-
-/** This account's chats on this device, newest first. Empty where storage is refused. */
-function readChats(key) {
-  try {
-    const list = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(list) ? list.filter((c) => c && Array.isArray(c.turns)) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeChats(key, list) {
-  try {
-    localStorage.setItem(key, JSON.stringify(list.slice(0, CHATS).map((c) => ({ ...c, turns: c.turns.slice(-KEEP_TURNS) }))));
-  } catch {
-    // Private mode, or full: the chats last as long as the page.
-  }
-}
-
-/** A chat's name in the menu: its first question. */
-function titleOf(chat) {
-  const first = chat.turns.find((t) => t.role === "user")?.text || "New chat";
-  return first.length > 60 ? `${first.slice(0, 57)}…` : first;
-}
 
 const MENU_SVG =
   '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
@@ -77,16 +51,6 @@ function linked(text) {
 
 /** A decimal string with thousands separators. */
 const num = (text) => Number(text).toLocaleString("en-US", { maximumFractionDigits: 6 });
-
-/** What the model reads back of a turn: a trade card is said in words. */
-function spoken(t) {
-  let text = t.text;
-  if (t.trade) {
-    const p = t.trade;
-    text += `\n[Prepared trade: sell ${p.sell.amount} ${p.sell.symbol} for about ${p.buy.amount} ${p.buy.symbol}. ${t.done ? `Confirmed: ${t.done}` : "Not confirmed yet."}]`;
-  }
-  return { role: t.role, text: text.slice(-CHARS) };
-}
 
 /*
  * A phone's keyboard does not shrink the page: iOS pans the view up over it,
@@ -140,43 +104,48 @@ function mount(kit) {
   const form = el("form", { class: "dv-f" }, input, go);
   const menu = iconButton("dv-ib", "Chats", MENU_SVG);
   const fresh = iconButton("dv-ib", "New chat", NEW_SVG);
-  const key = `dave:chats:${me.name}`;
   let busy = false;
-  let chats = readChats(key);
-  /** The open chat. A new one joins the list with its first question. */
-  let chat = chats[0] ?? { id: "", at: 0, turns: [] };
+  /** @type {Head[]} The menu, newest first. */
+  let chats = [];
+  /** The open chat; a new one has no id until its first answer. */
+  let chat = { id: "", turns: /** @type {Turn[]} */ ([]) };
   let turns = chat.turns;
 
-  function keep() {
-    if (!chat.id) {
-      if (!turns.length) return;
-      chat.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    }
-    chat.at = Date.now();
-    chats = [chat, ...readChats(key).filter((c) => c.id !== chat.id)];
-    writeChats(key, chats);
-  }
-
-  function open(next) {
+  /** Open a chat: a new one, or one of the menu's, read from the server. */
+  async function open(head) {
     if (busy) return;
-    chat = next;
-    turns = chat.turns;
-    paint();
+    if (!head) {
+      chat = { id: "", turns: [] };
+      turns = chat.turns;
+      paint();
+      return;
+    }
+    busy = true;
+    try {
+      const { chat: found } = await kit.pull(`/api/social/dave/chats/${encodeURIComponent(head.id)}`);
+      chat = { id: found.id, turns: found.turns };
+      turns = chat.turns;
+      paint();
+    } catch (cause) {
+      log.replaceChildren(el("p", { class: "err dv-m", text: cause.message }));
+    } finally {
+      busy = false;
+    }
   }
 
-  function bubble(t) {
+  function bubble(t, index) {
     const box = el("div", { class: `dv-m dv-${t.role === "user" ? "u" : "a"}` }, el("p", {}, ...linked(t.text)));
     if (t.sources?.length) {
       box.append(
         el("div", { class: "dv-src" }, ...t.sources.slice(0, 3).map((s) => el("a", { href: s.url, target: "_blank", rel: "noopener nofollow", text: s.title || s.url }))),
       );
     }
-    if (t.trade) box.append(card(t));
+    if (t.trade) box.append(card(t, index));
     return box;
   }
 
   /** A prepared trade, and the passkey button that makes it happen. */
-  function card(t) {
+  function card(t, index) {
     const p = t.trade;
     const note = el("p", { class: "dv-note" });
     const ok = el("button", { type: "button", class: "go-pill dv-ok", text: "Confirm with passkey" });
@@ -203,16 +172,9 @@ function mount(kit) {
       try {
         const proof = await assertion(await send("/api/social/dave/trade/options"));
         ok.textContent = "Trading…";
-        const sent = await send("/api/social/dave/trade", {
-          inputMint: p.inputMint,
-          outputMint: p.outputMint,
-          amount: p.amount,
-          quotedOut: p.quotedOut,
-          slippageBps: p.slippageBps,
-          ...proof,
-        });
+        // Which trade, not what: the server reads it back from the chat.
+        const sent = await send("/api/social/dave/trade", { chat: chat.id, index, ...proof });
         t.done = sent.signature;
-        keep();
         finished(box, sent.signature, !sent.confirmed);
       } catch (cause) {
         ok.disabled = false;
@@ -236,7 +198,7 @@ function mount(kit) {
   }
 
   function paint() {
-    log.replaceChildren(bubble({ role: "assistant", text: HELLO }), ...turns.map(bubble));
+    log.replaceChildren(bubble({ role: "assistant", text: HELLO }, -1), ...turns.map((t, i) => bubble(t, i)));
     if (!turns.length) {
       log.append(el("div", { class: "dv-ideas" }, ...IDEAS.map((idea) => el("button", { type: "button", text: idea, onclick: () => ask(idea) }))));
     }
@@ -250,29 +212,30 @@ function mount(kit) {
     go.disabled = true;
     input.value = "";
     size();
-    turns.push({ role: "user", text });
-    keep();
-    paint();
+    log.querySelector(".dv-ideas")?.remove();
+    log.append(bubble({ role: "user", text }, -1));
     const thinking = el("div", { class: "dv-m dv-a dv-wait", "aria-label": "Dave is thinking" }, el("i"), el("i"), el("i"));
     log.append(thinking);
     log.scrollTop = log.scrollHeight;
+    const asked = chat;
     try {
-      const reply = await send("/api/social/dave", { turns: turns.slice(-TURNS).map(spoken) });
-      turns.push({ role: "assistant", text: reply.text, trade: reply.trade, sources: reply.sources });
+      const reply = await send("/api/social/dave", { chat: asked.id, text });
+      asked.id = reply.chat.id;
+      asked.turns.push(...reply.turns);
+      // As the server trims, so a trade's place in the chat is the same on both sides.
+      if (asked.turns.length > KEEP) asked.turns.splice(0, asked.turns.length - KEEP);
+      chats = [reply.chat, ...chats.filter((c) => c.id !== reply.chat.id)];
     } catch (cause) {
-      // Not kept as Dave's turn: the question stays, to be asked again.
+      // Not kept by the server either: the question stays in the field, to ask again.
       thinking.replaceWith(el("p", { class: "err dv-m", text: cause.message }));
-      turns.pop();
-      keep();
+      if (!input.value) input.value = text;
+      size();
+      return;
+    } finally {
       busy = false;
       go.disabled = false;
-      input.value = text;
-      return;
     }
-    keep();
-    busy = false;
-    go.disabled = false;
-    paint();
+    if (asked === chat) paint();
   }
 
   /** The field grows with what is typed, up to a few lines. */
@@ -293,7 +256,7 @@ function mount(kit) {
     ask(input.value);
   });
   fresh.addEventListener("click", () => {
-    open({ id: "", at: 0, turns: [] });
+    open(null);
     input.focus();
   });
 
@@ -308,21 +271,24 @@ function mount(kit) {
     };
     const onKey = (e) => e.key === "Escape" && close();
     const draw = () => {
-      chats = readChats(key);
       list.replaceChildren(
         ...chats.map((c) => {
           const row = el(
             "li",
             { class: c.id === chat.id ? "on" : "" },
-            el("button", { type: "button", class: "dv-open", onclick: () => (open(c), close()) }, el("span", { text: titleOf(c) }), el("small", { class: "muted", text: kit.ago(c.at) })),
+            el("button", { type: "button", class: "dv-open", onclick: () => (close(), open(c)) }, el("span", { text: c.title }), el("small", { class: "muted", text: kit.ago(c.at) })),
             el("button", {
               type: "button",
               class: "dv-del",
-              "aria-label": `Delete “${titleOf(c)}”`,
+              "aria-label": `Delete “${c.title}”`,
               text: "×",
-              onclick: () => {
-                writeChats(key, readChats(key).filter((x) => x.id !== c.id));
-                if (c.id === chat.id) open(readChats(key)[0] ?? { id: "", at: 0, turns: [] });
+              onclick: async () => {
+                try {
+                  chats = (await kit.pull(`/api/social/dave/chats/${encodeURIComponent(c.id)}`, { method: "DELETE" })).chats;
+                } catch {
+                  return;
+                }
+                if (c.id === chat.id) open(null);
                 draw();
               },
             }),
@@ -342,6 +308,11 @@ function mount(kit) {
     );
     const sheet = el("div", { class: "dv-sheet" }, el("div", { class: "dv-veil", onclick: close }), panel);
     draw();
+    // The list as the server has it now: another device may have added to it.
+    kit.pull("/api/social/dave/chats").then((data) => {
+      chats = data.chats;
+      if (sheet.isConnected) draw();
+    }, () => {});
     document.body.append(sheet);
     document.addEventListener("keydown", onKey);
     panel.querySelector(".dv-start").focus();
@@ -357,6 +328,11 @@ function mount(kit) {
     ),
   );
   paint();
+  // The latest chat, as on any device the person last used.
+  kit.pull("/api/social/dave/chats").then((data) => {
+    chats = data.chats;
+    if (chats[0] && !chat.id && !turns.length && !busy) open(chats[0]);
+  }, () => {});
 }
 
 window.__dave = { mount };

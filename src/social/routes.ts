@@ -74,7 +74,12 @@ import {
   timeline,
   toggleSave,
   updateProfile,
-  userByPasskey
+  userByPasskey,
+  appendDave,
+  confirmDaveTrade,
+  daveChat,
+  daveChats,
+  deleteDaveChat,
 } from "./db";
 import { currentUser, guardJson, loadAccount, requireAuth, requireUser } from "./guard";
 import { jpegSize } from "./jpeg";
@@ -125,7 +130,7 @@ import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
 import { avatarFile, bannerFile, chatAudioFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
-import { daveReply, readTurns } from "./dave";
+import { DAVE_KEEP, type Proposal, daveReply, forModel, readQuestion, titleOf } from "./dave";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
 
 /**
@@ -1091,14 +1096,14 @@ socialRouter.post(
 );
 
 /** A swap request's pair, amount, slippage and reviewed output, checked; see swap.ts. */
-function swapParams(req: Request, me: User) {
-  const input = typeof req.body?.inputMint === "string" ? req.body.inputMint : "";
-  const output = typeof req.body?.outputMint === "string" ? req.body.outputMint : "";
-  const amount = typeof req.body?.amount === "string" ? req.body.amount : "";
-  const slippageBps = Number(req.body?.slippageBps ?? 100);
+function swapParams(body: Record<string, unknown> | undefined, me: User) {
+  const input = typeof body?.inputMint === "string" ? body.inputMint : "";
+  const output = typeof body?.outputMint === "string" ? body.outputMint : "";
+  const amount = typeof body?.amount === "string" ? body.amount : "";
+  const slippageBps = Number(body?.slippageBps ?? 100);
   // The output the person reviewed. The server re-quotes, and refuses to
   // trade below this less the slippage rather than at whatever it finds.
-  const quotedOut = typeof req.body?.quotedOut === "string" ? req.body.quotedOut : "";
+  const quotedOut = typeof body?.quotedOut === "string" ? body.quotedOut : "";
   if (!solanaPubkey(input) || !solanaPubkey(output) || input === output) {
     throw new SocialError(400, "Pick two different tokens.");
   }
@@ -1125,7 +1130,7 @@ socialRouter.post(
   wrap(async (req, res) => {
     assertSameOrigin(req);
     const me = requireUser(res);
-    const trade = swapParams(req, me);
+    const trade = swapParams(req.body, me);
     res.json(await swapFor(me.address, openForServer(me.keyBox!), trade));
   }),
 );
@@ -1133,7 +1138,48 @@ socialRouter.post(
 /** Dave's model calls cost money, so each account gets a few a minute. */
 const daveLimit = rateLimit({ perMinute: 10, burst: 5 });
 
-/** Dave, the chat agent (dave.ts). The page sends the conversation; nothing is stored. */
+/** A chat id as the page names one: the 16 base64url characters /dave makes. */
+const DAVE_ID = /^[A-Za-z0-9_-]{16,32}$/;
+
+/** This account's chats with Dave, newest first: the menu. */
+socialRouter.get(
+  "/dave/chats",
+  requireAuth,
+  readLimit,
+  wrap(async (_req, res) => {
+    res.json({ chats: await daveChats(requireUser(res).name) });
+  }),
+);
+
+socialRouter.get(
+  "/dave/chats/:id",
+  requireAuth,
+  readLimit,
+  wrap(async (req, res) => {
+    const chat = DAVE_ID.test(req.params.id) ? await daveChat(requireUser(res).name, req.params.id) : null;
+    if (!chat) throw new SocialError(404, "That chat is gone.");
+    res.json({ chat });
+  }),
+);
+
+socialRouter.delete(
+  "/dave/chats/:id",
+  requireAuth,
+  writeLimit,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    if (DAVE_ID.test(req.params.id)) await deleteDaveChat(me.name, req.params.id);
+    res.json({ chats: await daveChats(me.name) });
+  }),
+);
+
+/**
+ * A question for Dave (dave.ts), in a chat of this account's or a new one.
+ * What he reads of the conversation is the stored chat, not anything the page
+ * sends. The question is kept only with its answer: one that failed is not
+ * in the chat, and can be asked again.
+ */
 socialRouter.post(
   "/dave",
   requireAuth,
@@ -1142,9 +1188,21 @@ socialRouter.post(
   wrap(async (req, res) => {
     assertSameOrigin(req);
     const me = requireUser(res);
-    const turns = readTurns(req.body?.turns);
-    if (!turns) throw new SocialError(400, "Ask Dave something.");
-    res.json(await daveReply(me, turns));
+    const text = readQuestion(req.body?.text);
+    if (!text) throw new SocialError(400, "Ask Dave something.");
+    const id = typeof req.body?.chat === "string" && req.body.chat ? req.body.chat : "";
+    const found = id ? (DAVE_ID.test(id) ? await daveChat(me.name, id) : null) : null;
+    if (id && !found) throw new SocialError(404, "That chat is gone.");
+    const question = { role: "user" as const, text, at: Date.now() };
+    const reply = await daveReply(me, forModel([...(found?.turns ?? []), question]));
+    const answer = { role: "assistant" as const, ...reply, at: Date.now() };
+    const head = await appendDave(
+      me.name,
+      found ? { id: found.id, title: found.title, fresh: false } : { id: randomBytes(12).toString("base64url"), title: titleOf(text), fresh: true },
+      [question, answer],
+      DAVE_KEEP,
+    );
+    res.json({ chat: head, turns: [question, answer] });
   }),
 );
 
@@ -1175,9 +1233,22 @@ socialRouter.post(
   wrap(async (req, res) => {
     assertSameOrigin(req);
     const me = requireUser(res);
-    const trade = swapParams(req, me);
+    // The trade is the one Dave prepared in this chat, read back from it: the
+    // page says which, not what.
+    const id = typeof req.body?.chat === "string" ? req.body.chat : "";
+    const index = Number(req.body?.index);
+    const chat = DAVE_ID.test(id) ? await daveChat(me.name, id) : null;
+    const turn = chat && Number.isInteger(index) ? chat.turns[index] : undefined;
+    const proposal = turn?.role === "assistant" ? (turn.trade as Proposal | undefined) : undefined;
+    if (!chat || !proposal) throw new SocialError(404, "That trade is gone.");
+    if (typeof turn!.done === "string") throw new SocialError(409, "That trade was already confirmed.");
+    const trade = swapParams({ ...proposal }, me);
     await assertPasskey(req, me, "trade");
-    res.json(await swapFor(me.address, openForServer(me.keyBox!), trade));
+    const sent = await swapFor(me.address, openForServer(me.keyBox!), trade);
+    await confirmDaveTrade(me.name, chat.id, index, sent.signature).catch((err: unknown) => {
+      console.error("[dave] confirm:", err);
+    });
+    res.json(sent);
   }),
 );
 

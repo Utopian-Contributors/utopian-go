@@ -27,7 +27,7 @@ import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMe
 import { scrub } from "./guard";
 import { AUDIO_BYTES, MAX_AUDIO_MS, SOCIAL_BYTES, TINY_BYTES, adKeyword, adText, adUrl, postWait, username, waitText } from "./limits";
 import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
-import { type AdCreative, type AdOrder, TIMELINE_PAGE, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, payOrder, postPayment, resetSocial, saveAd } from "./db";
+import { type AdCreative, type AdOrder, TIMELINE_PAGE, appendDave, confirmDaveTrade, daveChat, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, payOrder, postPayment, resetSocial, saveAd } from "./db";
 import { MAX_CALLOUTS, calloutsIn, isTicker, resolveTickers } from "./callouts";
 import { apiRouter } from "../routes/api";
 import { adFor, adMarkup, flushAds, reloadAds } from "./ads";
@@ -42,7 +42,7 @@ import { encodeTicks } from "../lib/tokens/ticks";
 import { stateTags } from "../state";
 import type { Activity, TokenKind, TokenQuote, TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
-import { DAVE_CHARS, DAVE_TURNS, fromBase, readTurns, toBase } from "./dave";
+import { DAVE_CHARS, DAVE_TURNS, forModel, fromBase, readQuestion, titleOf, toBase } from "./dave";
 
 const dir = mkdtempSync(path.join(tmpdir(), "social-"));
 process.env.SOCIAL_DIR = dir;
@@ -2270,7 +2270,7 @@ test("a called-out ticker rides its post to the timeline, the post page, a profi
   }
 });
 
-test("Dave reads amounts exactly and only answers a conversation that ends in a question", () => {
+test("Dave reads amounts exactly, trims a question, and reads a stored chat back", () => {
   assert.equal(toBase(0.1, 9), 100_000_000n);
   assert.equal(toBase(5, 6), 5_000_000n);
   assert.equal(toBase(0.000001, 6), 1n);
@@ -2281,17 +2281,88 @@ test("Dave reads amounts exactly and only answers a conversation that ends in a 
   assert.equal(fromBase(5_000_000n, 6), "5");
   assert.equal(fromBase(1n, 0), "1");
 
-  assert.equal(readTurns("hi"), null);
-  assert.equal(readTurns([]), null);
-  assert.equal(readTurns([{ role: "user", text: "hi" }, { role: "assistant", text: "hello" }]), null);
-  assert.deepEqual(readTurns([{ role: "assistant", text: "hello" }, { role: "system", text: "x" }, { role: "user", text: " hi " }]), [
-    { role: "user", text: "hi" },
-  ]);
-  const long = Array.from({ length: DAVE_TURNS + 4 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: "x".repeat(DAVE_CHARS + 9) }));
-  long.push({ role: "user", text: "last" });
-  const read = readTurns(long)!;
+  assert.equal(readQuestion(""), null);
+  assert.equal(readQuestion(42), null);
+  assert.equal(readQuestion("  hi  "), "hi");
+  assert.equal(readQuestion("x".repeat(DAVE_CHARS + 9))!.length, DAVE_CHARS);
+  assert.equal(titleOf("what\nis   new"), "what is new");
+  assert.ok(titleOf("y".repeat(100)).length <= 60);
+
+  // What Dave reads back: the last turns, starting at a question, a trade said in words.
+  const stored = Array.from({ length: DAVE_TURNS + 3 }, (_, i) => ({ role: i % 2 ? ("assistant" as const) : ("user" as const), text: `t${i}` }));
+  const read = forModel(stored);
   assert.ok(read.length <= DAVE_TURNS);
   assert.equal(read[0].role, "user");
-  assert.equal(read.at(-1)!.text, "last");
-  assert.ok(read.every((t) => t.text.length <= DAVE_CHARS));
+  assert.equal(read.at(-1)!.text, `t${DAVE_TURNS + 2}`);
+  const trade = { sell: { symbol: "SOL", amount: "0.1" }, buy: { symbol: "USDC", amount: "15" } };
+  const said = forModel([{ role: "user", text: "buy" }, { role: "assistant", text: "Here.", trade, done: "SIG" }]);
+  assert.match(said[1].text, /sell 0\.1 SOL for about 15 USDC\. Confirmed: SIG/);
+});
+
+test("chats with Dave are kept per account: listed, read, trimmed, confirmed and deleted, never anyone else's", async () => {
+  await useTestDatabase();
+  await ensureSchema();
+  await resetSocial();
+  const app = express();
+  app.set("trust proxy", true);
+  app.use("/api/social", socialRouter);
+  const server: Server = await new Promise((resolve) => {
+    const listening = createServer(app);
+    listening.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const base = `http://127.0.0.1:${address.port}`;
+  let ip = 0;
+  async function join(name: string) {
+    let jar = "";
+    const call = async (method: string, urlPath: string, body?: Record<string, unknown>) => {
+      const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": `10.4.0.${++ip % 250}` };
+      if (jar) headers.Cookie = jar;
+      if (body) headers["Content-Type"] = "application/json";
+      const res = await fetch(base + urlPath, { method, headers, body: body && JSON.stringify(body) });
+      for (const cookie of res.headers.getSetCookie?.() ?? []) jar = cookie.split(";")[0];
+      return { status: res.status, json: (await res.json().catch(() => null)) as Record<string, any> | null };
+    };
+    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1", terms: true })).status, 200);
+    return call;
+  }
+  try {
+    const ann = await join("ann");
+    const bob = await join("bob");
+    assert.deepEqual((await ann("GET", "/api/social/dave/chats")).json?.chats, []);
+
+    // No key on this box: Dave is offline, and the question is not kept.
+    const offline = await ann("POST", "/api/social/dave", { text: "hello" });
+    assert.equal(offline.status, 503);
+    assert.deepEqual((await ann("GET", "/api/social/dave/chats")).json?.chats, []);
+    assert.equal((await ann("POST", "/api/social/dave", { text: "  " })).status, 400);
+    assert.equal((await ann("POST", "/api/social/dave", { text: "hi", chat: "nosuchchat_000000" })).status, 404);
+
+    const id = "chatAAAAAAAAAAAA";
+    const turn = (role: "user" | "assistant", text: string) => ({ role, text });
+    await appendDave("ann", { id, title: "first", fresh: true }, [turn("user", "q1"), turn("assistant", "a1")], 4);
+    await appendDave("ann", { id, title: "first", fresh: false }, [turn("user", "q2"), turn("assistant", "a2")], 4);
+    await appendDave("ann", { id, title: "first", fresh: false }, [turn("user", "q3"), { ...turn("assistant", "a3"), trade: { sell: {}, buy: {} } }], 4);
+    const kept = (await daveChat("ann", id))!;
+    assert.deepEqual(kept.turns.map((t) => t.text), ["q2", "a2", "q3", "a3"], "the oldest go past the limit");
+    await confirmDaveTrade("ann", id, 3, "SIG");
+    assert.equal((await daveChat("ann", id))!.turns[3].done, "SIG");
+
+    const listed = (await ann("GET", "/api/social/dave/chats")).json?.chats;
+    assert.deepEqual(listed.map((c: { id: string; title: string }) => [c.id, c.title]), [[id, "first"]]);
+    assert.equal((await ann("GET", `/api/social/dave/chats/${id}`)).json?.chat.turns.length, 4);
+    assert.equal((await bob("GET", `/api/social/dave/chats/${id}`)).status, 404, "someone else's chat");
+    assert.deepEqual((await bob("GET", "/api/social/dave/chats")).json?.chats, []);
+    assert.equal((await bob("POST", "/api/social/dave/trade", { chat: id, index: 3 })).status, 404, "nor its trades");
+    assert.equal((await ann("POST", "/api/social/dave/trade", { chat: id, index: 3 })).status, 409, "a confirmed trade is not traded again");
+    assert.equal((await ann("POST", "/api/social/dave/trade", { chat: id, index: 2 })).status, 404, "a question is no trade");
+
+    assert.deepEqual((await bob("DELETE", `/api/social/dave/chats/${id}`)).json?.chats, []);
+    assert.ok(await daveChat("ann", id), "bob cannot delete ann's chat");
+    assert.deepEqual((await ann("DELETE", `/api/social/dave/chats/${id}`)).json?.chats, []);
+    assert.equal(await daveChat("ann", id), null);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
