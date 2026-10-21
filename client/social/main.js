@@ -1001,6 +1001,8 @@ async function show() {
   document.body.classList.toggle("profile", here.page === "profile");
   document.body.classList.toggle("tl", here.page === "timeline" || here.page === "post");
   document.body.classList.toggle("ads", here.page === "ads");
+  // Dave's bundle sets these on its page (client/dave); any other page drops them.
+  if (here.page !== "dave") document.body.classList.remove("dave", "kb");
   document.body.classList.toggle("newpost", here.page === "new");
   // The loading bar along the top while the page loads, not a placeholder in it.
   main.replaceChildren();

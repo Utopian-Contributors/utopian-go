@@ -61,8 +61,31 @@ function spoken(t) {
   return { role: t.role, text: text.slice(-CHARS) };
 }
 
+/*
+ * A phone's keyboard does not shrink the page: iOS pans the view up over it,
+ * and the header goes off the top. While it is up, the page is fitted to what
+ * the keyboard leaves and moved to where the view went (dave.css body.kb), as
+ * Messenger does. Only on this page: social.js drops body.dave on leaving.
+ */
+const view = window.visualViewport;
+const root = document.documentElement;
+function fitKeyboard() {
+  if (!document.body.classList.contains("dave")) return;
+  const up = !!view && root.clientHeight - view.height > 120;
+  document.body.classList.toggle("kb", up);
+  if (up) {
+    root.style.setProperty("--vvh", `${view.height}px`);
+    root.style.setProperty("--vvt", `${view.offsetTop}px`);
+  }
+  const log = document.querySelector(".dv-log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+view?.addEventListener("resize", fitKeyboard);
+view?.addEventListener("scroll", fitKeyboard);
+
 function mount(kit) {
   injectStyles("dv-css", CSS);
+  document.body.classList.add("dave");
   const { main, send } = kit;
   kit.useSide(false);
   const me = kit.me();
@@ -158,7 +181,7 @@ function mount(kit) {
       log.append(el("div", { class: "dv-ideas" }, ...IDEAS.map((idea) => el("button", { type: "button", text: idea, onclick: () => ask(idea) }))));
     }
     fresh.hidden = !turns.length;
-    log.lastElementChild?.scrollIntoView({ block: "end" });
+    log.scrollTop = log.scrollHeight;
   }
 
   async function ask(text) {
@@ -173,7 +196,7 @@ function mount(kit) {
     paint();
     const thinking = el("div", { class: "dv-m dv-a dv-wait", "aria-label": "Dave is thinking" }, el("i"), el("i"), el("i"));
     log.append(thinking);
-    thinking.scrollIntoView({ block: "end" });
+    log.scrollTop = log.scrollHeight;
     try {
       const reply = await send("/api/social/dave", { turns: turns.slice(-TURNS).map(spoken) });
       turns.push({ role: "assistant", text: reply.text, trade: reply.trade, sources: reply.sources });
