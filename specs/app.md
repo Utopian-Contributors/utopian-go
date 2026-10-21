@@ -176,8 +176,10 @@ refresh.
 The wallet page reads the signed-in account's address, or a wallet connected in the trade
 dialog when nobody is signed in. On a desktop it fills the viewport exactly: the left half
 scrolls as one column, with the token list's name, list buttons and search pinned over its
-rows, and the page itself never scrolls. `Holding` and `TopToken` carry `icon: true` when a
-thumbnail is served at `/icon/<mint>`.
+rows, and the page itself never scrolls. `Holding`, `TopToken` and History's `ActivityMove`
+carry `icon: true` when a thumbnail is served at `/icon/<mint>`. A History swap shows the
+token it traded, taking SOL as the side every trade starts from: its logo with a green +
+when bought, a red − when sold.
 
 Every indexed token is one **kind**, read off Jupiter's tags at the hourly rebuild
 (`tokenKind`, `src/lib/tokens/jupiter.ts`), first match winning: Stablecoins (`stable`,

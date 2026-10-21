@@ -388,6 +388,8 @@ export interface ActivityMove {
   amount: string;
   /** Today's price, for how many places the amount is worth showing. Never a value at the time. */
   price?: number;
+  /** A thumbnail is served at /icon/<mint>. */
+  icon?: true;
 }
 
 /**

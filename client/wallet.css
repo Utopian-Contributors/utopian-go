@@ -730,6 +730,54 @@ body.hist .wl-top {
   --ic: url("/ic-more.svg");
 }
 
+/* A swap: the token it traded, filling the disc, badged at the corner. */
+.wl-hg.tok {
+  position: relative;
+  background: none;
+}
+
+.wl-hg.tok::before {
+  content: none;
+}
+
+.wl-hg.tok .wl-ic {
+  width: 34px;
+  height: 34px;
+}
+
+.wl-hg.tok .wl-coin {
+  padding-bottom: 2px;
+  font-size: 18px;
+}
+
+/* + bought, − sold. White on a fixed green and red in either theme: the dark
+   theme's mint would swallow white. The ring cuts the badge from the logo in
+   the row's own colour. Both glyphs sit low in their line box, and the bottom
+   padding lifts them to the disc's optical centre. */
+.wl-hpm {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding-bottom: 2px;
+  border-radius: 50%;
+  background: #39a11c;
+  box-shadow: 0 0 0 2px var(--bg);
+  color: #fff;
+  font: 700 14px/1 var(--ff);
+}
+
+.wl-hpm.out {
+  background: #d93025;
+}
+
+.wl-hr:hover .wl-hpm {
+  box-shadow: 0 0 0 2px var(--hover);
+}
+
 .wl-hw {
   display: grid;
   min-width: 0;
