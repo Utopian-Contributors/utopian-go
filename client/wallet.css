@@ -730,6 +730,54 @@ body.hist .wl-top {
   --ic: url("/ic-more.svg");
 }
 
+/* A swap: the token it traded, filling the disc, badged at the corner. */
+.wl-hg.tok {
+  position: relative;
+  background: none;
+}
+
+.wl-hg.tok::before {
+  content: none;
+}
+
+.wl-hg.tok .wl-ic {
+  width: 34px;
+  height: 34px;
+}
+
+.wl-hg.tok .wl-coin {
+  padding-bottom: 2px;
+  font-size: 18px;
+}
+
+/* + bought, − sold. White on a fixed green and red in either theme: the dark
+   theme's mint would swallow white. The ring cuts the badge from the logo in
+   the row's own colour. Both glyphs sit low in their line box, and the bottom
+   padding lifts them to the disc's optical centre. */
+.wl-hpm {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding-bottom: 2px;
+  border-radius: 50%;
+  background: #39a11c;
+  box-shadow: 0 0 0 2px var(--bg);
+  color: #fff;
+  font: 700 14px/1 var(--ff);
+}
+
+.wl-hpm.out {
+  background: #d93025;
+}
+
+.wl-hr:hover .wl-hpm {
+  box-shadow: 0 0 0 2px var(--hover);
+}
+
 .wl-hw {
   display: grid;
   min-width: 0;
@@ -1303,6 +1351,97 @@ body.hist .wl-top {
   display: none;
 }
 
+/* A token we do not list (keys/main.js tokens): one card each, a rule between. */
+.ks-tk {
+  padding: 14px 0 2px;
+  border-top: 1px solid var(--b);
+}
+
+.ks-th {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Its creator's own logo, drawn as it comes, as the lists draw theirs. */
+.ks-ti {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.ks-ti.wl-coin {
+  padding-bottom: 2px;
+  font-size: 20px;
+}
+
+.ks-tt {
+  display: grid;
+  min-width: 0;
+}
+
+.ks-tt strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ks-tq {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ks-tq.up {
+  color: var(--go);
+}
+
+/* Field names in a narrow column, values beside them; an address wraps anywhere. */
+.ks-dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+.ks-dl dt {
+  color: var(--f);
+}
+
+.ks-dl dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ks-tl {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+/* Text that opens a token we do not list: the portfolio's note, a History row. */
+.wl-unk {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.wl-unk:hover {
+  text-decoration-style: solid;
+}
+
+.wl-unk:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* —— States and asides —— */
 
 .wl-n {
@@ -1380,13 +1519,6 @@ body.hist .wl-top {
   .wl-main {
     scrollbar-gutter: stable;
     padding-right: 12px;
-  }
-
-  /* No lane of its own, so its rows are as wide as the market list's; theirs
-     is the inset the thumb passes over. */
-  #wl-l {
-    max-height: 30vh;
-    overflow-y: auto;
   }
 
   .wl-top {

@@ -3,7 +3,7 @@ import {
   TOKEN_PRICE_TIMEOUT_MS,
   TOKEN_TICKS_COUNT,
 } from "../config";
-import { ChartRange, Holding, Holdings, PortfolioSlice, PriceSeries, TokenKind, TokenRecord } from "../types";
+import { ChartRange, Holding, Holdings, PortfolioSlice, PriceSeries, TokenKind, TokenRecord, UnknownHolding } from "../types";
 import { countOf, priceSeries, stepOf } from "./tokens/history";
 import { hasIcon } from "./tokens/icons";
 import { kindOf, lookupMints } from "./tokens/store";
@@ -211,7 +211,11 @@ interface Book {
   more?: number;
   dust?: number;
   unpriced?: number;
+  unknown?: UnknownHolding[];
 }
+
+/** Unpriced mints named by the page; past this a wallet is a spam magnet, and the count says the rest. */
+const MAX_UNKNOWN = 50;
 
 const cache = new Map<string, { at: number; value: Book }>();
 const inFlight = new Map<string, Promise<Book>>();
@@ -381,6 +385,11 @@ async function lookup(owner: string): Promise<Book> {
   const held: Held[] = [];
   let total = 0;
   let unpriced = 0;
+  const unknown: UnknownHolding[] = [];
+  const unprice = (mint: string, amount: bigint, decimals: number) => {
+    unpriced += 1;
+    if (unknown.length < MAX_UNKNOWN) unknown.push({ mint, amount: amount.toString(), decimals });
+  };
   let dust = 0;
 
   for (const [mint, { amount, decimals }] of totals) {
@@ -390,7 +399,7 @@ async function lookup(owner: string): Promise<Book> {
     // what falls out here is overwhelmingly airdropped spam — counted, so the
     // page can say a number rather than silently showing a short list.
     if (!rec || !Number.isFinite(rec.price) || rec.price <= 0) {
-      unpriced += 1;
+      unprice(mint, amount, decimals);
       continue;
     }
 
@@ -400,7 +409,7 @@ async function lookup(owner: string): Promise<Book> {
     const units = toUnits(amount, scale);
     const usd = units * rec.price;
     if (!Number.isFinite(usd)) {
-      unpriced += 1;
+      unprice(mint, amount, scale);
       continue;
     }
 
@@ -437,7 +446,7 @@ async function lookup(owner: string): Promise<Book> {
     held,
     ...(items.length > shown.length ? { more: items.length - shown.length } : {}),
     ...(dust ? { dust } : {}),
-    ...(unpriced ? { unpriced } : {}),
+    ...(unpriced ? { unpriced, unknown } : {}),
   };
 
   const now = Date.now();

@@ -65,10 +65,12 @@ function signature(data) {
   ].join("|");
 }
 
+/** @param {string | (string | Node)[]} text */
 function setNote(text, kind) {
-  note.textContent = text || "";
+  const parts = [].concat(text || []);
+  note.replaceChildren(...parts);
   note.className = `wl-n${kind ? ` ${kind}` : ""}`;
-  note.hidden = !text;
+  note.hidden = !parts.length;
 }
 
 /** Everything below the total, cleared before each render. */
@@ -670,15 +672,39 @@ async function paintKeys() {
   keys.hidden = false;
 }
 
-/** What the page left out, said plainly, so a filtered list does not read as everything. */
+/**
+ * What the page left out, said plainly, so a filtered list does not read as
+ * everything. The tokens with no price open what the chain says about them.
+ */
 function omitted(data) {
   const parts = [];
   if (data.more) parts.push(`${data.more} smaller holding${data.more > 1 ? "s" : ""}`);
   if (data.dust) parts.push(`${data.dust} worth under a cent`);
   if (data.unpriced) {
-    parts.push(`${data.unpriced} token${data.unpriced > 1 ? "s" : ""} we hold no price for`);
+    const what = `${data.unpriced} token${data.unpriced > 1 ? "s" : ""} we hold no price for`;
+    const list = data.unknown ?? [];
+    parts.push(
+      list.length
+        ? el("button", {
+            class: "wl-unk",
+            type: "button",
+            text: what,
+            onclick: () => openTokens(list, { total: data.unpriced }),
+          })
+        : what,
+    );
   }
-  return parts.length ? `Not shown: ${parts.join(", ")}.` : "";
+  if (!parts.length) return "";
+  return ["Not shown: ", ...parts.flatMap((p, i) => (i ? [", ", p] : [p])), "."];
+}
+
+/** Tokens we do not list, in the dialogs bundle (keys/main.js). */
+async function openTokens(list, opts) {
+  try {
+    (await load("ks", "__keys")).tokens(list, opts);
+  } catch {
+    setNote("Could not open the token details.", "err");
+  }
 }
 
 function paint(data) {

@@ -8,11 +8,15 @@
  * time, which nothing here knows; today's price would put a figure on it that
  * was never true.
  */
+import { coinIcon } from "../js/coin.js";
 import { $, el } from "../js/dom.js";
+import { load } from "../js/lazy.js";
 import { amount } from "../js/num.js";
 
 const list = $("wl-hl");
 const note = $("wl-hn");
+
+const SOL_MINT = "So11111111111111111111111111111111111111112";
 
 const TITLES = { send: "Sent", receive: "Received", swap: "Swapped", failed: "Failed", other: "Transaction" };
 
@@ -26,17 +30,35 @@ function symbolOf(m) {
   return m.symbol || short(m.mint);
 }
 
-/** A change, so it always says which way: + in, − out. */
+/**
+ * A change, so it always says which way: + in, − out. A token we do not list
+ * opens what the chain says about it. A control inside the row's link, so it
+ * keeps its click to itself.
+ */
 function move(/** @type {import('../../src/types').ActivityMove} */ m) {
   const out = m.amount.startsWith("-");
   const sign = out ? "−" : "+";
   const a = amount(m.amount, m.decimals, m.price);
   const bare = (/** @type {string} */ s) => s.replace(/^-/, "");
-  return el("span", {
-    class: out ? null : "up",
+  const span = el("span", {
+    class: [out ? null : "up", m.symbol ? null : "wl-unk"].filter(Boolean).join(" ") || null,
     text: `${sign}${bare(a.text)} ${symbolOf(m)}`,
-    title: `${sign}${bare(a.title ?? a.text)} ${m.symbol || m.mint}`,
+    title: m.symbol ? `${sign}${bare(a.title ?? a.text)} ${m.symbol}` : "What is this token?",
   });
+  if (m.symbol) return span;
+  const open = (/** @type {Event} */ e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    load("ks", "__keys").then(
+      (k) => k.tokens([{ mint: m.mint, amount: m.amount, decimals: m.decimals }], { signed: true }),
+      () => {},
+    );
+  };
+  span.setAttribute("role", "button");
+  span.tabIndex = 0;
+  span.addEventListener("click", open);
+  span.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && open(e));
+  return span;
 }
 
 const start = (/** @type {Date} */ d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -65,12 +87,37 @@ function line(a) {
   return parts.join(" · ");
 }
 
+/**
+ * What a swap was for. SOL is where every trade starts and ends, so it is the
+ * other side: what came in, or failing that what went out. Two tokens neither
+ * of them SOL read the same way, by what came in.
+ * @param {import('../../src/types').Activity} a
+ */
+function traded(a) {
+  if (a.kind !== "swap") return null;
+  const other = a.moves.filter((m) => m.mint !== SOL_MINT);
+  return other.find((m) => !m.amount.startsWith("-")) ?? other[0] ?? null;
+}
+
+/** A swap shows the token it traded, marked + bought or − sold; anything else, the tiles' mark. */
+function glyph(/** @type {import('../../src/types').Activity} */ a) {
+  const m = traded(a);
+  if (!m) return el("span", { class: `wl-hg ${a.kind}`, "aria-hidden": "true" });
+  const out = m.amount.startsWith("-");
+  return el(
+    "span",
+    { class: "wl-hg tok", "aria-hidden": "true" },
+    coinIcon(m, 34, "wl-ic", "wl-coin"),
+    el("span", { class: `wl-hpm${out ? " out" : ""}`, text: out ? "−" : "+" }),
+  );
+}
+
 /** @param {import('../../src/types').Activity} a */
 function row(a) {
   return el(
     "a",
     { class: "wl-hr", href: `https://solscan.io/tx/${a.signature}`, target: "_blank", rel: "noopener" },
-    el("span", { class: `wl-hg ${a.kind}`, "aria-hidden": "true" }),
+    glyph(a),
     el(
       "span",
       { class: "wl-hw" },

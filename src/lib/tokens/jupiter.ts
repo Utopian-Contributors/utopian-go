@@ -3,6 +3,7 @@ import {
   TOKEN_INDEX_TIMEOUT_MS,
   TOKEN_MIN_LIQUIDITY_USD,
   TOKEN_PINNED_MINTS,
+  UTCC_MINT,
 } from "../../config";
 import { jupFetch } from "../jupiterGate";
 import { JupToken, TokenKind, TokenRecord } from "../../types";
@@ -147,7 +148,8 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
   const aliases = isEquity
     ? equityAliases(symbol, name || symbol)
     : [wrappedAlias(name || symbol)].filter((a): a is string => !!a);
-  const kind = tokenKind(t.tags ?? [], aliases, verified);
+  // This site's own coin is one of its majors, whatever Jupiter tags it.
+  const kind = mint === UTCC_MINT ? "majors" : tokenKind(t.tags ?? [], aliases, verified);
 
   return {
     mint,

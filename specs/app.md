@@ -156,6 +156,7 @@ POST /api/balances {owner, mint?} → BalancesApiResponse
 POST /api/holdings {owner, range?} → HoldingsApiResponse  range: 1h, 24h (default), 1w, 1m
 POST /api/history {owner, after?} → HistoryApiResponse   20 transactions a page, newest first
 POST /api/entries {owner}         → EntriesApiResponse   each holding's average entry across the past 24h
+POST /api/assets {mints}          → AssetsApiResponse    up to 50 unindexed mints: Helius getAssetBatch, cached 10 min
 GET  /api/tokens/top              → {tokens: TopToken[]}   30 verified mints by 24h volume
 GET  /api/tokens?c=&after=        → TokenPage              one list, 30 a page, by cursor; counts on page 1
 GET  /api/tokens?q=               → {tokens: TopToken[]}   the whole index: mint, symbol, name
@@ -176,19 +177,30 @@ refresh.
 The wallet page reads the signed-in account's address, or a wallet connected in the trade
 dialog when nobody is signed in. On a desktop it fills the viewport exactly: the left half
 scrolls as one column, with the token list's name, list buttons and search pinned over its
-rows, and the page itself never scrolls. `Holding` and `TopToken` carry `icon: true` when a
-thumbnail is served at `/icon/<mint>`.
+rows, and the page itself never scrolls. The holdings list runs to its full length, with no
+scroller of its own. `Holding`, `TopToken` and History's `ActivityMove` carry `icon: true`
+when a thumbnail is served at `/icon/<mint>`. A History swap shows the token it traded,
+taking SOL as the side every trade starts from: its logo with a green + when bought, a red −
+when sold.
+
+A token the index does not carry is unidentified. The portfolio counts them in its "Not
+shown" note (`unpriced`, with the first 50 as `unknown`), and History names one by its
+mint's ends; either opens a dialog (client/keys/main.js) with the amount and whatever
+`POST /api/assets` finds: name, symbol, supply, authorities, description, links. Its logo is
+loaded by the browser from the creator's own URL, with no referrer, and never synced to
+`/icon/`.
 
 Every indexed token is one **kind**, read off Jupiter's tags at the hourly rebuild
 (`tokenKind`, `src/lib/tokens/jupiter.ts`), first match winning: Stablecoins (`stable`,
 `yb`), Stocks (`stocks`, `xstocks`, `equities`, and pre-IPO shares), RWAs (`rwa`,
-`commodities`), Majors (`major`, and a verified wrapper of BTC, ETH or SOL), DeFi (`lst`,
+`commodities`), Majors (`major`, a verified wrapper of BTC, ETH or SOL, and $UTCC), DeFi (`lst`,
 `yield`, `defi`, `infra`), Memes (`meme`), else Other. The wallet page lists **Trending** (the
 busiest 5% of verified tokens traded today, stablecoins left out before the cut,
 `TOKEN_TRENDING_SHARE`), then Stocks, Memes, RWAs, Majors and DeFi, each all of its kind,
-busiest first. Every list is built once per rebuild and served a page at a time by a
-`volume_mint` cursor, which stays put across a rebuild where an offset would not. Infinite
-scroll asks for the next page a screen ahead.
+busiest first. A pinned mint Jupiter has not verified ($UTCC) is on its kind's list too, but
+never Trending or the top 30. Every list is built once per rebuild and served a page at a
+time by a `volume_mint` cursor, which stays put across a rebuild where an offset would not.
+Infinite scroll asks for the next page a screen ahead.
 
 With three kinds or more, `/api/holdings` adds `slices`: the total by kind, each with its own
 series over the range asked for, and the portfolio chart draws them all on one axis beside the

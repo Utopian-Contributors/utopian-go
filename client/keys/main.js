@@ -1,10 +1,12 @@
 /**
- * The wallet page's account dialogs: recovery phrase, receive, send. One lazy
- * bundle, fetched the first time any of them is opened.
+ * The wallet page's dialogs: recovery phrase, receive, send, and what a token
+ * we do not list says about itself. One lazy bundle, fetched the first time
+ * any of them is opened.
  */
 import { el } from "../js/dom.js";
 import { dismissible } from "../js/sheet.js";
 import { load } from "../js/lazy.js";
+import { amount } from "../js/num.js";
 import { b64u, needPasskey, u8, why } from "../js/passkey.js";
 import { confirmSend } from "../js/sendconfirm.js";
 import { dialog } from "../js/ui.js";
@@ -292,4 +294,134 @@ function transfer(me, holdings, onSent) {
   body.append(holdings.length ? form : el("p", { class: "ks-n", text: "This wallet holds nothing to send yet." }), err);
 }
 
-window.__keys = { open: phrase, receive, send: transfer };
+/** The mint's two ends, enough to tell a row of them apart, as History shows them. */
+function short(address) {
+  return `${address.slice(0, 4)}…${address.slice(-4)}`;
+}
+
+/** An authority's address, or None: a token with none can never be minted more of, or frozen. */
+function authority(asset, key) {
+  const a = asset[key];
+  if (a) return el("span", { class: "ks-mono", text: a });
+  // No token_info at all is no answer, not an answer of none.
+  return asset.decimals == null ? null : "None";
+}
+
+function link(href, text) {
+  return el("a", { href, text, target: "_blank", rel: "noopener noreferrer nofollow" });
+}
+
+/**
+ * The token's logo from wherever its creator put it, fetched by the browser
+ * directly: a mint we do not list never goes through /icon/. No referrer, so
+ * the host learns an address asked and nothing of this page.
+ */
+function logo(asset) {
+  const coin = () => el("span", { class: "ks-ti wl-coin", text: "$", "aria-hidden": "true" });
+  if (!asset?.image) return coin();
+  const img = el("img", {
+    class: "ks-ti",
+    src: asset.image,
+    alt: "",
+    width: "40",
+    height: "40",
+    referrerpolicy: "no-referrer",
+    decoding: "async",
+  });
+  img.addEventListener("error", () => img.replaceWith(coin()), { once: true });
+  return img;
+}
+
+/**
+ * One token: the amount, then every field the chain had for it.
+ * @param {{mint: string, amount: string, decimals: number}} held
+ * @param {import('../../src/types').TokenAsset | null} asset null while it is read, or when it could not be
+ * @param {boolean} signed a transaction's change, which says + as well as −
+ */
+function tokenCard(held, asset, signed) {
+  const a = asset ?? { mint: held.mint };
+  const out = held.amount.startsWith("-");
+  const units = held.amount.replace(/^-/, "");
+  const sign = out ? "−" : signed ? "+" : "";
+  const qty = `${sign}${amount(units, held.decimals).title ?? "0"} ${a.symbol || "tokens"}`;
+  const supply = a.supply && a.decimals != null ? amount(a.supply, a.decimals).title : null;
+  const rows = [
+    ["Mint", el("span", { class: "ks-mono", text: held.mint })],
+    ["Decimals", a.decimals != null ? String(a.decimals) : null],
+    ["Supply", supply],
+    ["Program", a.program ?? null],
+    ["Mint authority", authority(a, "mintAuthority")],
+    ["Freeze authority", authority(a, "freezeAuthority")],
+    ["Update authority", a.updateAuthority ? el("span", { class: "ks-mono", text: a.updateAuthority }) : null],
+    ["Metadata", a.mutable == null ? null : a.mutable ? "Can still be changed" : "Fixed"],
+    ["Description", a.description ?? null],
+    ["Website", a.website ? link(a.website, a.website) : null],
+    ["Metadata file", a.uri ? link(a.uri, a.uri) : null],
+  ].filter(([, v]) => v != null);
+
+  return el(
+    "section",
+    { class: "ks-tk" },
+    el(
+      "div",
+      { class: "ks-th" },
+      logo(asset),
+      el(
+        "div",
+        { class: "ks-tt" },
+        el("strong", { text: a.name || a.symbol || short(held.mint) }),
+        el("span", { class: `ks-tq${out ? "" : signed ? " up" : ""}`, text: qty }),
+      ),
+    ),
+    el("dl", { class: "ks-dl" }, ...rows.flatMap(([k, v]) => [el("dt", { text: k }), el("dd", {}, v)])),
+    el("p", { class: "ks-tl" }, link(`https://solscan.io/token/${held.mint}`, "View on Solscan")),
+  );
+}
+
+/**
+ * Tokens the index does not carry: how much, and what the chain says of each.
+ * Opened from the portfolio's "no price for" note with everything it named,
+ * or from one History row's unnamed token with that row's change.
+ *
+ * @param {{mint: string, amount: string, decimals: number}[]} list
+ * @param {{total?: number, signed?: boolean}} [opts] `total` when the list is the first of more
+ */
+function tokens(list, { total = list.length, signed = false } = {}) {
+  const many = list.length > 1;
+  const cards = el("div", { class: "ks-tks" }, ...list.map((h) => tokenCard(h, null, signed)));
+  const status = el("p", { class: "ks-n", text: `Reading what the chain says about ${many ? "them" : "it"}…` });
+  const err = el("p", { class: "ks-err", role: "alert" });
+  modal(
+    many ? "Unidentified tokens" : "Unidentified token",
+    el("p", {
+      class: "ks-n",
+      text: many
+        ? "We don't list these, so they have no price here. Anything below is what their creators say about them: anyone can make a token and send it to any wallet."
+        : "We don't list this, so it has no price here. Anything below is what its creator says about it: anyone can make a token and send it to any wallet.",
+    }),
+    status,
+    cards,
+    total > list.length ? el("p", { class: "ks-n", text: `And ${total - list.length} more not shown.` }) : null,
+    err,
+  );
+
+  void (async () => {
+    try {
+      const res = await fetch("/api/assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ mints: [...new Set(list.map((h) => h.mint))] }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.assets) throw new Error(data?.error || "");
+      const byMint = new Map(data.assets.map((a) => [a.mint, a]));
+      cards.replaceChildren(...list.map((h) => tokenCard(h, byMint.get(h.mint) ?? null, signed)));
+      status.remove();
+    } catch (e) {
+      status.remove();
+      err.textContent = (e instanceof Error && e.message) || `Could not read what the chain says about ${many ? "them" : "it"}.`;
+    }
+  })();
+}
+
+window.__keys = { open: phrase, receive, send: transfer, tokens };

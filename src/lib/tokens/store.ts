@@ -3,6 +3,7 @@ import path from "path";
 import {
   TOKEN_INDEX_FILE,
   TOKEN_INDEX_INTERVAL_MS,
+  TOKEN_PINNED_MINTS,
   TOKEN_PRICE_TTL_MS,
   TOKEN_TRENDING_SHARE,
 } from "../../config";
@@ -77,7 +78,7 @@ function adopt(list: TokenRecord[]): void {
   records = list;
   index = buildIndex(list);
   ranked = list.filter((r) => r.verified && (r.volume24h ?? 0) > 0).sort(byVolume);
-  lists = buildLists(ranked);
+  lists = buildLists(ranked, list.filter((r) => TOKEN_PINNED_MINTS.has(r.mint) && !r.verified));
   updatedAt = Date.now();
 }
 
@@ -401,13 +402,19 @@ export function isTokenList(key: string): key is TokenList {
  * The lists, from a ranking already in order. Built once per rebuild, so a
  * request only ever slices. Trending is the busiest twentieth of everything
  * that is not a stablecoin, whatever its kind; each other list is one kind, all of
- * it, busiest first.
+ * it, busiest first. `pinned` are mints named by hand that Jupiter has not
+ * verified, $UTCC: on their kind's list at their place by volume, though
+ * never Trending, which is the market's verdict rather than ours.
  */
-export function buildLists(order: readonly TokenRecord[]): Map<TokenList, TokenRecord[]> {
+export function buildLists(
+  order: readonly TokenRecord[],
+  pinned: readonly TokenRecord[] = [],
+): Map<TokenList, TokenRecord[]> {
   const out = new Map<TokenList, TokenRecord[]>(TOKEN_LISTS.map((key) => [key, []]));
   const traded = order.filter((rec) => !isStable(rec));
   out.set("trending", traded.slice(0, Math.ceil(traded.length * TOKEN_TRENDING_SHARE)));
-  for (const rec of traded) {
+  const extra = pinned.filter((rec) => !isStable(rec));
+  for (const rec of extra.length ? [...traded, ...extra].sort(byVolume) : traded) {
     const kind = kindOf(rec);
     // Stablecoins are already out, and the unsorted rest has no list.
     if (isTokenList(kind)) out.get(kind)!.push(rec);

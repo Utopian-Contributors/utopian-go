@@ -1,5 +1,6 @@
 import { HELIUS_RPC_URL, TX_VERSION, UTCC_MINT } from "../config";
 import { Activity, ActivityMove, HistoryPage, TokenRecord } from "../types";
+import { hasIcon } from "./tokens/icons";
 import { lookupMints } from "./tokens/store";
 
 /**
@@ -195,6 +196,7 @@ export function readTx(
       decimals,
       amount: amount.toString(),
       ...(price ? { price } : {}),
+      ...(hasIcon(mint) ? { icon: true as const } : {}),
     });
   }
 

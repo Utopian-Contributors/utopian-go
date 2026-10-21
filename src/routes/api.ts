@@ -11,6 +11,7 @@ import { DEFAULT_LANG, isLanguage } from "../lib/lang";
 import { asString } from "../lib/query";
 import { rateLimit } from "../lib/rateLimit";
 import { isSignature, signatureStatus } from "../lib/txStatus";
+import { MAX_ASSETS, fetchAssets } from "../lib/tokens/asset";
 import { tokenDetail } from "../lib/tokens/detail";
 import { isChartRange, priceSeries } from "../lib/tokens/history";
 import {
@@ -24,6 +25,7 @@ import {
   topTokens,
 } from "../lib/tokens/store";
 import {
+  AssetsApiResponse,
   BalancesApiResponse,
   EntriesApiResponse,
   HistoryApiResponse,
@@ -51,16 +53,24 @@ export const apiRouter = Router();
  */
 const jsonBody = express.json({ limit: "1kb" });
 
+/** /api/assets's list of mints: fifty addresses are about 2.5 KB. */
+const listBody = express.json({ limit: "4kb" });
+
 /** Parse a JSON body, answering 400 rather than falling through to a stack trace. */
-function readJson(req: Request, res: Response, next: NextFunction) {
-  jsonBody(req, res, (err?: unknown) => {
-    if (err) {
-      res.status(400).json({ error: "Malformed request." });
-      return;
-    }
-    next();
-  });
+function parseWith(parser: typeof jsonBody) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    parser(req, res, (err?: unknown) => {
+      if (err) {
+        res.status(400).json({ error: "Malformed request." });
+        return;
+      }
+      next();
+    });
+  };
 }
+
+const readJson = parseWith(jsonBody);
+const readList = parseWith(listBody);
 
 /**
  * Every limit here is per *egress IP*, not per person.
@@ -115,6 +125,12 @@ const historyLimit = rateLimit({ perMinute: 20, burst: 10 });
  * history, Helius's heaviest call, so the bucket is History's size again.
  */
 const entriesLimit = rateLimit({ perMinute: 30, burst: 10 });
+
+/**
+ * Asked when someone opens a token the index does not carry, one batch per
+ * opening; the cache absorbs a reopen. Each miss is one Helius call.
+ */
+const assetsLimit = rateLimit({ perMinute: 30, burst: 10 });
 
 /**
  * Route an async handler's rejection to Express instead of into the void.
@@ -455,6 +471,39 @@ apiRouter.post(
       // No entries at all, rather than an empty set the page would take for a day with none.
       const body: EntriesApiResponse = {
         error: "Could not read this wallet's day.",
+        ...(process.env.NODE_ENV === "production"
+          ? {}
+          : { detail: err instanceof Error ? err.message : String(err) }),
+      };
+      res.status(502).json(body);
+    }
+  }),
+);
+
+/**
+ * What the chain says about mints the index does not carry: the wallet page's
+ * unidentified tokens. POST, though nothing here is private on its own: the
+ * set of spam one wallet was sent is enough to pick that wallet out.
+ */
+apiRouter.post(
+  "/api/assets",
+  assetsLimit,
+  readList,
+  wrap(async (req: Request, res: Response) => {
+    const raw: unknown = req.body?.mints;
+    const mints = Array.isArray(raw) ? [...new Set(raw.map(asString))] : [];
+    if (!mints.length || mints.length > MAX_ASSETS || !mints.every(isPubkey)) {
+      const body: AssetsApiResponse = { error: "Invalid token list." };
+      res.status(400).json(body);
+      return;
+    }
+    try {
+      const body: AssetsApiResponse = { assets: await fetchAssets(mints) };
+      res.json(body);
+    } catch (err) {
+      console.warn("[assets] lookup failed:", err);
+      const body: AssetsApiResponse = {
+        error: "Could not read these tokens.",
         ...(process.env.NODE_ENV === "production"
           ? {}
           : { detail: err instanceof Error ? err.message : String(err) }),
