@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- No zoom on phones: the field is 16px, so iOS has no reason to. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Dave</title>
+    <link rel="icon" href="/ic-dave.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="UtopianGO" />
+    <meta name="application-name" content="UtopianGO" />
+    <meta name="theme-color" content="#fffff6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#282124" media="(prefers-color-scheme: dark)" />
+    <!-- One person's conversations: nothing for an index or a card. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="stylesheet" href="/dave.css" />
+  </head>
+  <!-- Dave's own shell, nothing of search's or Social's: this document, its
+       sheet inlined, and dave.js, together under 14 KB on the wire (see
+       scripts/build-client.mjs). The header and the field are here, so the
+       page paints whole before the script arrives; dave.js fills the rest. -->
+  <body data-lg="/login.js">
+    <main class="dv" id="dv">
+      <header class="dv-hd">
+        <button type="button" class="dv-ib" id="dv-menu" aria-label="Chats" title="Chats">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+        </button>
+        <div class="dv-id">
+          <div class="dv-nm">
+            <img src="/ic-dave.svg" alt="" width="24" height="24" />
+            <h1>Dave</h1>
+          </div>
+          <p id="dv-line">Search, trade, or just chat.</p>
+        </div>
+        <button type="button" class="dv-ib" id="dv-new" aria-label="New chat" title="New chat">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" /><path d="M17.6 3.6a2 2 0 0 1 2.8 2.8L12 14.8l-3.6.8.8-3.6z" /></svg>
+        </button>
+      </header>
+      <div class="dv-log" id="dv-log" role="log" aria-live="polite">
+        <div class="dv-m dv-a"><p>Hi, I'm Dave. I can search the web, look at your wallet, prepare a trade for you to confirm with your passkey, or just chat.</p></div>
+      </div>
+      <form class="dv-f" id="dv-f">
+        <textarea class="dv-in" id="dv-in" rows="1" maxlength="1500" placeholder="Message Dave" enterkeyhint="send" aria-label="Message Dave"></textarea>
+        <button type="submit" class="dv-go" id="dv-go" aria-label="Send">↑</button>
+      </form>
+    </main>
+    <script src="/dave.js" defer></script>
+  </body>
+</html>

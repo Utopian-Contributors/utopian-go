@@ -5,7 +5,7 @@
  * Everything the timeline does not draw on its first paint is a bundle of its
  * own, fetched by the page that needs it and handed this file's helpers
  * (`kit`) so it carries no copies: the composer, the ticker cards, Friends,
- * Notifications, Edit profile, Messenger, Advertise, Dave, the rail, Pay, and the
+ * Notifications, Edit profile, Messenger, Advertise, the rail, Pay, and the
  * Log in dialog.
  */
 import { logOut } from "../js/acct.js";
@@ -37,7 +37,6 @@ function ago(at) {
 function route() {
   const ad = location.pathname.match(/^\/social\/ads(?:\/(new|[A-Za-z0-9_-]{1,32}))?\/?$/);
   if (ad) return { page: "ads", id: ad[1] || "" };
-  if (/^\/social\/dave\/?$/.test(location.pathname)) return { page: "dave" };
   const m = location.pathname
     .replace(/\/+$/, "")
     .match(
@@ -97,7 +96,6 @@ function markNav() {
     chat: "Messenger",
     notifications: "Notifications",
     ads: "Advertise",
-    dave: "Dave",
   };
   document.title = `${titles[page] || name || "Social"} | Social`;
 }
@@ -944,12 +942,6 @@ async function renderAds(id) {
   (await load("ad", "__ads")).mount({ ...kit, id });
 }
 
-/** Dave, the chat agent, is its own bundle (client/dave). */
-async function renderDave() {
-  if (!me) await pull("/api/social/me").catch(() => {});
-  (await load("dv", "__dave")).mount(kit);
-}
-
 /** Stops the open Messenger, which polls while it is on screen. */
 let leaveChat = null;
 
@@ -1001,8 +993,6 @@ async function show() {
   document.body.classList.toggle("profile", here.page === "profile");
   document.body.classList.toggle("tl", here.page === "timeline" || here.page === "post");
   document.body.classList.toggle("ads", here.page === "ads");
-  // Dave's bundle sets these on its page (client/dave); any other page drops them.
-  if (here.page !== "dave") document.body.classList.remove("dave", "kb");
   document.body.classList.toggle("newpost", here.page === "new");
   // The loading bar along the top while the page loads, not a placeholder in it.
   main.replaceChildren();
@@ -1032,7 +1022,6 @@ async function show() {
     }
     else if (here.page === "chat") await renderChat();
     else if (here.page === "ads") await renderAds(here.id);
-    else if (here.page === "dave") await renderDave();
     else {
       renderSide(me);
       main.replaceChildren(el("p", { text: "Not found." }));

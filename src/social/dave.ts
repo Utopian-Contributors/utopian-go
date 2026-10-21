@@ -1,5 +1,5 @@
 /**
- * Dave, the chat agent on /social/dave.
+ * Dave, the chat agent on /dave.
  *
  * A short tool loop on Claude: he can search the web (Brave, the same key
  * search uses), read the signed-in account's wallet, and propose a trade.
