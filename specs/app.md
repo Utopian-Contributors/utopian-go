@@ -679,8 +679,8 @@ back into view. Phones neither show it nor ask for it.
   | Images | `loading="lazy"`, `decoding="async"` |
 
 - Branding is limited to the wordmark, one green (`--go #39a11c`, `--buy #167c3c`),
-  pill-shaped primary buttons, and the search field — and, on the home page only, the
-  pixel-art rainforest framing its column, day and night (frames in `assets/jungle-*`,
+  pill-shaped primary buttons, and the search field — and, on the desktop home page only,
+  the pixel-art rainforest framing its column, day and night (frames in `assets/jungle-*`,
   cut by `scripts/home-scene.mjs`, `npm run build:scene`).
 
 **One design language across the super app**

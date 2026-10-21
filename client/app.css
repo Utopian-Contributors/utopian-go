@@ -242,7 +242,8 @@ body.home .lg-mark {
  *   --reach-r  the furthest the right art does, from the other side
  *
  * Behind everything the page draws, and never a target. Only the matching
- * rule's file is fetched, so the page pays for one frame and not four.
+ * rule's file is fetched, so the page pays for one frame and not two. Desktop
+ * only: a phone has no room beside its column, so it gets no forest.
  */
 @media (min-width: 901px) {
   body.home {
@@ -296,66 +297,6 @@ body.home .lg-mark {
   body.home::before,
   body.home::after {
     background-image: url("/home-dark.webp");
-  }
-}
-
-/*
- * A phone has no room beside its column, so its frame is a band of canopy
- * over the wordmark and a band of river under the footer, the page between
- * them. One file holds both with the space between them empty; each box shows
- * its own end of it, at the size that makes the canopy as deep as the room
- * above the wordmark (at most 140px), and aligned to the right, where the
- * treehouse and the frog are.
- *
- *   --tall  the frame's height over its canopy's depth: how tall to draw it
- *   --foot  its river band's height over the canopy's depth: how tall a box
- *
- * Pinned to the page rather than the window, so the river is under the
- * footer however far down that is, and the padding stands the footer on it.
- */
-@media (max-width: 900px) {
-  body.home {
-    --top: min(140px, 18vh - 8px);
-    --tall: 2.832;
-    --foot: 0.957;
-    position: relative;
-    padding-bottom: calc(var(--top) * var(--foot));
-  }
-
-  body.home::before,
-  body.home::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    z-index: -1;
-    background: url("/home-phone-light.webp") no-repeat;
-    background-size: auto calc(var(--top) * var(--tall));
-    pointer-events: none;
-  }
-
-  body.home::before {
-    top: 0;
-    height: var(--top);
-    background-position: right top;
-  }
-
-  body.home::after {
-    bottom: 0;
-    height: calc(var(--top) * var(--foot));
-    background-position: right bottom;
-  }
-}
-
-@media (max-width: 900px) and (prefers-color-scheme: dark) {
-  body.home {
-    --tall: 2.643;
-    --foot: 1.033;
-  }
-
-  body.home::before,
-  body.home::after {
-    background-image: url("/home-phone-dark.webp");
   }
 }
 

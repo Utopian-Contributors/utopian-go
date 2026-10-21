@@ -1,18 +1,15 @@
 #!/usr/bin/env node
 /**
  * The home page's rainforest: client/home-{light,dark}.webp for wide screens
- * and client/home-phone-{light,dark}.webp for phones, made from generated
- * frames dropped into assets/ under these names. They are 2 MB or so apiece
+ * (phones get none), made from generated frames dropped into assets/ under
+ * these names. They are 2 MB or so apiece
  * and the page never loads them, so they are not checked in (.gitignore) —
  * only what this makes from them is:
  *
  *   jungle-wide-light.png   day, wide: the jungle either side of an empty
  *                           column, cut out to transparency
- *   jungle-phone-light.png  day, phone: canopy above and river below an empty
- *                           band, cut out the same way
  *   jungle-wide-dark.png    night, wide, with the empty column drawn in as a
  *                           checkerboard rather than transparent
- *   jungle-phone-dark.png   night, phone, cut out like the day frames
  *
  * Run by hand (`npm run build:scene`), not on every client build — the same
  * arrangement as og-image.mjs and app-icons.mjs. The output is checked in;
@@ -244,22 +241,6 @@ function column({ rgba, W, H }) {
   return { W, H, split: mid, left, right };
 }
 
-/** How far a phone frame's canopy hangs down, and its river bank rises up. */
-function bands({ rgba, W, H }) {
-  const a = (x, y) => rgba[(y * W + x) * 4 + 3];
-  let canopy = 0;
-  let bank = H;
-  for (let x = 0; x < W; x++) {
-    let y = 0;
-    while (y < H && a(x, y)) y++;
-    canopy = Math.max(canopy, y);
-    let z = H - 1;
-    while (z >= 0 && a(x, z)) z--;
-    bank = Math.min(bank, z + 1);
-  }
-  return { W, H, canopy, bank };
-}
-
 async function save(frame, name) {
   const w = Math.round(frame.W * SCALE);
   const h = Math.round(frame.H * SCALE);
@@ -277,19 +258,14 @@ const vh = (px, H) => `${((px / H) * 100).toFixed(2)}vh`;
 const frames = {
   light: {
     wide: await cutOut(path.join(assets, "jungle-wide-light.png")),
-    phone: await cutOut(path.join(assets, "jungle-phone-light.png")),
   },
   dark: {
     wide: await keyOut(path.join(assets, "jungle-wide-dark.png")),
-    phone: await cutOut(path.join(assets, "jungle-phone-dark.png")),
   },
 };
 
-for (const [theme, { wide, phone }] of Object.entries(frames)) {
+for (const [theme, { wide }] of Object.entries(frames)) {
   await save(wide, `home-${theme}.webp`);
-  await save(phone, `home-phone-${theme}.webp`);
   const c = column(wide);
   console.log(`  --w: ${vh(c.W, c.H)}; --split: ${vh(c.split, c.H)}; --reach-l: ${vh(c.left, c.H)}; --reach-r: ${vh(c.right, c.H)};`);
-  const b = bands(phone);
-  console.log(`  phone: height ${b.H}, canopy to row ${b.canopy}, bank from row ${b.bank}`);
 }
