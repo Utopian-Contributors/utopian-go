@@ -1,9 +1,9 @@
 /**
  * Dave — lazy-loaded by social.js on /social/dave, exposed as `window.__dave`.
  *
- * A chat with the agent in src/social/dave.ts. The conversation lives here,
- * for as long as the tab does, and goes to the server whole with each
- * question; the server keeps none of it. When Dave prepares a trade it comes
+ * A chat with the agent in src/social/dave.ts. Chats are kept on this device
+ * (localStorage, per account), listed in the menu, and each goes to the
+ * server whole with every question; the server keeps none of them. When Dave prepares a trade it comes
  * back as a card, and the passkey is what turns that card into a swap.
  */
 import { el } from "../js/dom.js";
@@ -14,25 +14,52 @@ import CSS from "./dave.css";
 /** Matches DAVE_TURNS and DAVE_CHARS in src/social/dave.ts. */
 const TURNS = 16;
 const CHARS = 1500;
-const KEPT = "dave:v1";
+/** Chats kept, and turns kept of each. */
+const CHATS = 30;
+const KEEP_TURNS = 40;
 
 const HELLO = "Hi, I'm Dave. I can search the web, look at your wallet, prepare a trade for you to confirm with your passkey, or just chat.";
 const IDEAS = ["What's new in Solana today?", "What's in my wallet?", "Buy $5 of BONK with SOL"];
 
-/** @type {{role: "user" | "assistant", text: string, trade?: any, sources?: {title: string, url: string}[], done?: string}[]} */
-let turns = [];
-try {
-  turns = JSON.parse(sessionStorage.getItem(KEPT) || "[]");
-} catch {
-  turns = [];
+/**
+ * @typedef {{role: "user" | "assistant", text: string, trade?: any, sources?: {title: string, url: string}[], done?: string}} Turn
+ * @typedef {{id: string, at: number, turns: Turn[]}} Chat
+ */
+
+/** This account's chats on this device, newest first. Empty where storage is refused. */
+function readChats(key) {
+  try {
+    const list = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(list) ? list.filter((c) => c && Array.isArray(c.turns)) : [];
+  } catch {
+    return [];
+  }
 }
 
-function keep() {
+function writeChats(key, list) {
   try {
-    sessionStorage.setItem(KEPT, JSON.stringify(turns.slice(-40)));
+    localStorage.setItem(key, JSON.stringify(list.slice(0, CHATS).map((c) => ({ ...c, turns: c.turns.slice(-KEEP_TURNS) }))));
   } catch {
-    // Private mode: the chat lasts as long as the page.
+    // Private mode, or full: the chats last as long as the page.
   }
+}
+
+/** A chat's name in the menu: its first question. */
+function titleOf(chat) {
+  const first = chat.turns.find((t) => t.role === "user")?.text || "New chat";
+  return first.length > 60 ? `${first.slice(0, 57)}…` : first;
+}
+
+const MENU_SVG =
+  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
+const NEW_SVG =
+  '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M17.6 3.6a2 2 0 0 1 2.8 2.8L12 14.8l-3.6.8.8-3.6z"/></svg>';
+
+/** A button drawn with an inline icon. */
+function iconButton(cls, label, svg) {
+  const button = el("button", { type: "button", class: cls, "aria-label": label, title: label });
+  button.innerHTML = svg;
+  return button;
 }
 
 /** Text with its web addresses as links. */
@@ -83,6 +110,16 @@ function fitKeyboard() {
 view?.addEventListener("resize", fitKeyboard);
 view?.addEventListener("scroll", fitKeyboard);
 
+/** The header's middle: the robot and his name on one line, a line about him under it. */
+function identity(line) {
+  return el(
+    "div",
+    { class: "dv-id" },
+    el("div", { class: "dv-nm" }, el("img", { src: "/ic-dave.svg", alt: "", width: "24", height: "24" }), el("h2", { text: "Dave" })),
+    el("p", { class: "muted", text: line }),
+  );
+}
+
 function mount(kit) {
   injectStyles("dv-css", CSS);
   document.body.classList.add("dave");
@@ -91,8 +128,8 @@ function mount(kit) {
   const me = kit.me();
   if (!me) {
     main.replaceChildren(
-      el("div", { class: "dv-hd" }, el("img", { src: "/ic-dave.svg", alt: "", width: "44", height: "44" }), el("div", {}, el("h2", { text: "Dave" }), el("p", { class: "muted", text: "Log in to chat with Dave." }))),
-      el("button", { type: "button", class: "go-pill", text: "Log in", onclick: () => kit.openAuth("login") }),
+      el("section", { class: "dv" }, el("div", { class: "dv-hd" }, identity("Log in to chat with Dave.")),
+        el("button", { type: "button", class: "go-pill dv-login", text: "Log in", onclick: () => kit.openAuth("login") })),
     );
     return;
   }
@@ -101,8 +138,31 @@ function mount(kit) {
   const input = el("textarea", { class: "dv-in", rows: "1", maxlength: String(CHARS), placeholder: "Message Dave", enterkeyhint: "send", "aria-label": "Message Dave" });
   const go = el("button", { type: "submit", class: "dv-go", "aria-label": "Send", text: "↑" });
   const form = el("form", { class: "dv-f" }, input, go);
-  const fresh = el("button", { type: "button", class: "dv-new", text: "New chat" });
+  const menu = iconButton("dv-ib", "Chats", MENU_SVG);
+  const fresh = iconButton("dv-ib", "New chat", NEW_SVG);
+  const key = `dave:chats:${me.name}`;
   let busy = false;
+  let chats = readChats(key);
+  /** The open chat. A new one joins the list with its first question. */
+  let chat = chats[0] ?? { id: "", at: 0, turns: [] };
+  let turns = chat.turns;
+
+  function keep() {
+    if (!chat.id) {
+      if (!turns.length) return;
+      chat.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    }
+    chat.at = Date.now();
+    chats = [chat, ...readChats(key).filter((c) => c.id !== chat.id)];
+    writeChats(key, chats);
+  }
+
+  function open(next) {
+    if (busy) return;
+    chat = next;
+    turns = chat.turns;
+    paint();
+  }
 
   function bubble(t) {
     const box = el("div", { class: `dv-m dv-${t.role === "user" ? "u" : "a"}` }, el("p", {}, ...linked(t.text)));
@@ -180,7 +240,6 @@ function mount(kit) {
     if (!turns.length) {
       log.append(el("div", { class: "dv-ideas" }, ...IDEAS.map((idea) => el("button", { type: "button", text: idea, onclick: () => ask(idea) }))));
     }
-    fresh.hidden = !turns.length;
     log.scrollTop = log.scrollHeight;
   }
 
@@ -234,17 +293,65 @@ function mount(kit) {
     ask(input.value);
   });
   fresh.addEventListener("click", () => {
-    turns = [];
-    keep();
-    paint();
+    open({ id: "", at: 0, turns: [] });
     input.focus();
+  });
+
+  /** The menu: every chat on this device, newest first, to open or delete. */
+  menu.addEventListener("click", () => {
+    const opener = document.activeElement;
+    const list = el("ul", { class: "dv-list" });
+    const close = () => {
+      document.removeEventListener("keydown", onKey);
+      sheet.remove();
+      /** @type {HTMLElement} */ (opener)?.focus?.();
+    };
+    const onKey = (e) => e.key === "Escape" && close();
+    const draw = () => {
+      chats = readChats(key);
+      list.replaceChildren(
+        ...chats.map((c) => {
+          const row = el(
+            "li",
+            { class: c.id === chat.id ? "on" : "" },
+            el("button", { type: "button", class: "dv-open", onclick: () => (open(c), close()) }, el("span", { text: titleOf(c) }), el("small", { class: "muted", text: kit.ago(c.at) })),
+            el("button", {
+              type: "button",
+              class: "dv-del",
+              "aria-label": `Delete “${titleOf(c)}”`,
+              text: "×",
+              onclick: () => {
+                writeChats(key, readChats(key).filter((x) => x.id !== c.id));
+                if (c.id === chat.id) open(readChats(key)[0] ?? { id: "", at: 0, turns: [] });
+                draw();
+              },
+            }),
+          );
+          return row;
+        }),
+      );
+      if (!chats.length) list.append(el("li", { class: "muted dv-none", text: "No chats yet." }));
+    };
+    const panel = el(
+      "nav",
+      { class: "dv-panel", "aria-label": "Chats with Dave" },
+      el("div", { class: "dv-ph" }, el("h3", { text: "Chats" }), el("button", { type: "button", class: "dv-ib", "aria-label": "Close", text: "×", onclick: close })),
+      el("button", { type: "button", class: "go-pill dv-start", text: "New chat", onclick: () => (fresh.click(), close()) }),
+      list,
+      el("a", { class: "dv-back", href: "/social", text: "← Back to Social" }),
+    );
+    const sheet = el("div", { class: "dv-sheet" }, el("div", { class: "dv-veil", onclick: close }), panel);
+    draw();
+    document.body.append(sheet);
+    document.addEventListener("keydown", onKey);
+    panel.querySelector(".dv-start").focus();
   });
 
   main.replaceChildren(
     el(
       "section",
       { class: "dv" },
-      el("div", { class: "dv-hd" }, el("img", { src: "/ic-dave.svg", alt: "", width: "44", height: "44" }), el("div", {}, el("h2", { text: "Dave" }), el("p", { class: "muted", text: "Search, trade, or just chat." })), fresh),
+      el("div", { class: "dv-hd" }, menu, identity("Search, trade, or just chat."), fresh),
       log,
       form,
     ),
