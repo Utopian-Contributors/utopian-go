@@ -125,6 +125,7 @@ import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
 import { avatarFile, bannerFile, chatAudioFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
+import { daveReply, readTurns } from "./dave";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
 
 /**
@@ -139,7 +140,7 @@ import { verifyAssertion, verifyRegistration } from "./webauthn";
  */
 
 interface Challenge {
-  kind: "login" | "add" | "phrase" | "chat" | "send";
+  kind: "login" | "add" | "phrase" | "chat" | "send" | "trade";
   name: string;
   exp: number;
 }
@@ -1089,6 +1090,29 @@ socialRouter.post(
   }),
 );
 
+/** A swap request's pair, amount, slippage and reviewed output, checked; see swap.ts. */
+function swapParams(req: Request, me: User) {
+  const input = typeof req.body?.inputMint === "string" ? req.body.inputMint : "";
+  const output = typeof req.body?.outputMint === "string" ? req.body.outputMint : "";
+  const amount = typeof req.body?.amount === "string" ? req.body.amount : "";
+  const slippageBps = Number(req.body?.slippageBps ?? 100);
+  // The output the person reviewed. The server re-quotes, and refuses to
+  // trade below this less the slippage rather than at whatever it finds.
+  const quotedOut = typeof req.body?.quotedOut === "string" ? req.body.quotedOut : "";
+  if (!solanaPubkey(input) || !solanaPubkey(output) || input === output) {
+    throw new SocialError(400, "Pick two different tokens.");
+  }
+  if (!/^\d{1,20}$/.test(amount) || BigInt(amount) <= 0n) throw new SocialError(400, "Enter an amount.");
+  if (!/^\d{1,30}$/.test(quotedOut) || BigInt(quotedOut) <= 0n) throw new SocialError(400, "Review the trade first.");
+  if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > MAX_SLIPPAGE_BPS) {
+    throw new SocialError(400, "Slippage is out of range.");
+  }
+  if (!me.keyBox) {
+    throw new SocialError(409, "Log in with your password once to trade from this account.", { setup: true });
+  }
+  return { input, output, amount, slippageBps, quotedOut: BigInt(quotedOut) };
+}
+
 /**
  * Swap from the account's own wallet. The server quotes, signs and sends; see
  * swap.ts for what a caller can and cannot choose.
@@ -1101,31 +1125,59 @@ socialRouter.post(
   wrap(async (req, res) => {
     assertSameOrigin(req);
     const me = requireUser(res);
-    const input = typeof req.body?.inputMint === "string" ? req.body.inputMint : "";
-    const output = typeof req.body?.outputMint === "string" ? req.body.outputMint : "";
-    const amount = typeof req.body?.amount === "string" ? req.body.amount : "";
-    const slippageBps = Number(req.body?.slippageBps ?? 100);
-    // The output the person reviewed. The server re-quotes, and refuses to
-    // trade below this less the slippage rather than at whatever it finds.
-    const quotedOut = typeof req.body?.quotedOut === "string" ? req.body.quotedOut : "";
-    if (!solanaPubkey(input) || !solanaPubkey(output) || input === output) {
-      throw new SocialError(400, "Pick two different tokens.");
-    }
-    if (!/^\d{1,20}$/.test(amount) || BigInt(amount) <= 0n) throw new SocialError(400, "Enter an amount.");
-    if (!/^\d{1,30}$/.test(quotedOut) || BigInt(quotedOut) <= 0n) throw new SocialError(400, "Review the trade first.");
-    if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > MAX_SLIPPAGE_BPS) {
-      throw new SocialError(400, "Slippage is out of range.");
-    }
-    if (!me.keyBox) {
-      throw new SocialError(409, "Log in with your password once to trade from this account.", { setup: true });
-    }
-    res.json(await swapFor(me.address, openForServer(me.keyBox), {
-        input,
-        output,
-        amount,
-        slippageBps,
-        quotedOut: BigInt(quotedOut),
-      }),);
+    const trade = swapParams(req, me);
+    res.json(await swapFor(me.address, openForServer(me.keyBox!), trade));
+  }),
+);
+
+/** Dave's model calls cost money, so each account gets a few a minute. */
+const daveLimit = rateLimit({ perMinute: 10, burst: 5 });
+
+/** Dave, the chat agent (dave.ts). The page sends the conversation; nothing is stored. */
+socialRouter.post(
+  "/dave",
+  requireAuth,
+  daveLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const turns = readTurns(req.body?.turns);
+    if (!turns) throw new SocialError(400, "Ask Dave something.");
+    res.json(await daveReply(me, turns));
+  }),
+);
+
+socialRouter.post(
+  "/dave/trade/options",
+  requireAuth,
+  loginLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    if (!me.passkey) throw new SocialError(400, "Add a passkey to trade with Dave.", { passkey: false });
+    const challenge = issue("trade", me.name);
+    res.json({ challenge: challenge.toString("base64url"), id: me.passkey.id });
+  }),
+);
+
+/**
+ * A trade Dave prepared, confirmed with the passkey. Unlike the trade dialog,
+ * the person did not fill the form in themselves, so the passkey is what says
+ * they saw it and meant it. The swap itself is /swap's, checks and all.
+ */
+socialRouter.post(
+  "/dave/trade",
+  requireAuth,
+  payLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const trade = swapParams(req, me);
+    await assertPasskey(req, me, "trade");
+    res.json(await swapFor(me.address, openForServer(me.keyBox!), trade));
   }),
 );
 

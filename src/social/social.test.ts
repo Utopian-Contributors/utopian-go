@@ -42,6 +42,7 @@ import { encodeTicks } from "../lib/tokens/ticks";
 import { stateTags } from "../state";
 import type { Activity, TokenKind, TokenQuote, TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
+import { DAVE_CHARS, DAVE_TURNS, fromBase, readTurns, toBase } from "./dave";
 
 const dir = mkdtempSync(path.join(tmpdir(), "social-"));
 process.env.SOCIAL_DIR = dir;
@@ -2267,4 +2268,30 @@ test("a called-out ticker rides its post to the timeline, the post page, a profi
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
+});
+
+test("Dave reads amounts exactly and only answers a conversation that ends in a question", () => {
+  assert.equal(toBase(0.1, 9), 100_000_000n);
+  assert.equal(toBase(5, 6), 5_000_000n);
+  assert.equal(toBase(0.000001, 6), 1n);
+  assert.equal(toBase(1.23456789, 2), 123n);
+  assert.equal(toBase(-1, 9), 0n);
+  assert.equal(toBase(Number.NaN, 9), 0n);
+  assert.equal(fromBase(100_000_000n, 9), "0.1");
+  assert.equal(fromBase(5_000_000n, 6), "5");
+  assert.equal(fromBase(1n, 0), "1");
+
+  assert.equal(readTurns("hi"), null);
+  assert.equal(readTurns([]), null);
+  assert.equal(readTurns([{ role: "user", text: "hi" }, { role: "assistant", text: "hello" }]), null);
+  assert.deepEqual(readTurns([{ role: "assistant", text: "hello" }, { role: "system", text: "x" }, { role: "user", text: " hi " }]), [
+    { role: "user", text: "hi" },
+  ]);
+  const long = Array.from({ length: DAVE_TURNS + 4 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: "x".repeat(DAVE_CHARS + 9) }));
+  long.push({ role: "user", text: "last" });
+  const read = readTurns(long)!;
+  assert.ok(read.length <= DAVE_TURNS);
+  assert.equal(read[0].role, "user");
+  assert.equal(read.at(-1)!.text, "last");
+  assert.ok(read.every((t) => t.text.length <= DAVE_CHARS));
 });
