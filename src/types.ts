@@ -384,27 +384,17 @@ export interface UnknownHolding {
 
 /**
  * What the chain says about a mint the index does not carry (lib/tokens/asset.ts).
- * Every field is its creator's own say-so, and any may be missing.
+ * The name and logo are its creator's own say-so, and any field may be missing.
  */
 export interface TokenAsset {
   mint: string;
   name?: string;
   symbol?: string;
-  description?: string;
   /** https, for the browser to fetch itself: never synced to /icon/. */
   image?: string;
-  website?: string;
-  /** Where the off-chain metadata lives. */
-  uri?: string;
   decimals?: number;
   /** Base units. */
   supply?: string;
-  program?: "Token" | "Token-2022";
-  mintAuthority?: string;
-  freezeAuthority?: string;
-  updateAuthority?: string;
-  /** Whether the update authority can still change the name, symbol and image. */
-  mutable?: boolean;
 }
 
 export interface AssetsApiResponse {

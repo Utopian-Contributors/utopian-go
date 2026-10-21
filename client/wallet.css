@@ -1397,10 +1397,11 @@ body.hist .wl-top {
   color: var(--go);
 }
 
-/* Field names in a narrow column, values beside them; an address wraps anywhere. */
+/* Field names in a narrow column, one width in every card so the values line
+   up down the dialog; an address wraps anywhere. */
 .ks-dl {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 4em minmax(0, 1fr);
   gap: 6px 14px;
   margin: 12px 0 0;
   font-size: 13px;

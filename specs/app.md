@@ -185,10 +185,9 @@ when sold.
 
 A token the index does not carry is unidentified. The portfolio counts them in its "Not
 shown" note (`unpriced`, with the first 50 as `unknown`), and History names one by its
-mint's ends; either opens a dialog (client/keys/main.js) with the amount and whatever
-`POST /api/assets` finds: name, symbol, supply, authorities, description, links. Its logo is
-loaded by the browser from the creator's own URL, with no referrer, and never synced to
-`/icon/`.
+mint's ends; either opens a dialog (client/keys/main.js) with each one's amount, mint and
+supply, named by what `POST /api/assets` finds. Its logo is loaded by the browser from the
+creator's own URL, with no referrer, and never synced to `/icon/`.
 
 Every indexed token is one **kind**, read off Jupiter's tags at the hourly rebuild
 (`tokenKind`, `src/lib/tokens/jupiter.ts`), first match winning: Stablecoins (`stable`,

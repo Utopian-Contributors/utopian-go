@@ -3,14 +3,14 @@ import { TokenAsset } from "../../types";
 
 /**
  * What the chain says about a mint the token index does not carry: the wallet
- * page's answer to "what is this token I hold?". One Helius `getAssetBatch`
- * call for a list of them.
+ * page's answer to "what is this token I hold?". Its name, logo and supply,
+ * from one Helius `getAssetBatch` call for a list of them.
  *
- * Every field is the creator's own say-so, and these are mostly airdropped
- * spam, so each is cut to size and a link is kept only when it is https. The
- * image is passed on as its own URL for the browser to fetch, not synced into
- * /icon/ the way an indexed token's is: nothing about a mint we do not list
- * should be stored or served from here.
+ * The name and logo are the creator's own say-so, and these are mostly
+ * airdropped spam, so the name is cut to size and the logo kept only when it
+ * is https. It is passed on as its own URL for the browser to fetch, not
+ * synced into /icon/ the way an indexed token's is: nothing about a mint we do
+ * not list should be stored or served from here.
  */
 
 /** Mints per call: the most a holdings page names (lib/holdings.ts). */
@@ -23,26 +23,14 @@ const MAX_CACHED = 2_000;
 const IPFS_GATEWAY = "https://ipfs.io/ipfs/";
 const ARWEAVE = "https://arweave.net/";
 
-const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PNnBxHDp7DRBQkUa";
-
 interface RawAsset {
   id?: string;
   content?: {
-    json_uri?: string;
-    metadata?: { name?: string; symbol?: string; description?: string };
-    links?: { image?: string; external_url?: string };
+    metadata?: { name?: string; symbol?: string };
+    links?: { image?: string };
   };
-  authorities?: { address?: string; scopes?: string[] }[];
-  mutable?: boolean;
-  token_info?: {
-    symbol?: string;
-    supply?: number;
-    decimals?: number;
-    token_program?: string;
-    mint_authority?: string;
-    freeze_authority?: string;
-  };
-  mint_extensions?: { metadata?: { name?: string; symbol?: string; uri?: string } };
+  token_info?: { symbol?: string; supply?: number; decimals?: number };
+  mint_extensions?: { metadata?: { name?: string; symbol?: string } };
 }
 
 interface RpcReply {
@@ -72,10 +60,6 @@ function link(v: unknown): string | undefined {
   }
 }
 
-function address(v: unknown): string | undefined {
-  return typeof v === "string" && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v) ? v : undefined;
-}
-
 function readAsset(mint: string, a: RawAsset | null | undefined): TokenAsset {
   const meta = a?.content?.metadata;
   const ext = a?.mint_extensions?.metadata;
@@ -86,18 +70,10 @@ function readAsset(mint: string, a: RawAsset | null | undefined): TokenAsset {
     mint,
     name: text(meta?.name || ext?.name, 64),
     symbol: text(meta?.symbol || info?.symbol || ext?.symbol, 16),
-    description: text(meta?.description, 400),
     image: link(a?.content?.links?.image),
-    website: link(a?.content?.links?.external_url),
-    uri: link(a?.content?.json_uri || ext?.uri),
     decimals: typeof decimals === "number" && Number.isInteger(decimals) && decimals >= 0 ? decimals : undefined,
     // A JSON number, so past 2^53 it is already rounded; near enough to read.
     supply: typeof supply === "number" && Number.isFinite(supply) && supply >= 0 ? BigInt(Math.trunc(supply)).toString() : undefined,
-    program: info?.token_program === TOKEN_2022_PROGRAM ? "Token-2022" : info?.token_program ? "Token" : undefined,
-    mintAuthority: address(info?.mint_authority),
-    freezeAuthority: address(info?.freeze_authority),
-    updateAuthority: address(a?.authorities?.find((x) => x.scopes?.includes("full"))?.address),
-    mutable: typeof a?.mutable === "boolean" ? a.mutable : undefined,
   };
   for (const key of Object.keys(out) as (keyof TokenAsset)[]) if (out[key] === undefined) delete out[key];
   return out;

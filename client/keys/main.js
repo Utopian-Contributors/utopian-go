@@ -299,14 +299,6 @@ function short(address) {
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
 }
 
-/** An authority's address, or None: a token with none can never be minted more of, or frozen. */
-function authority(asset, key) {
-  const a = asset[key];
-  if (a) return el("span", { class: "ks-mono", text: a });
-  // No token_info at all is no answer, not an answer of none.
-  return asset.decimals == null ? null : "None";
-}
-
 function link(href, text) {
   return el("a", { href, text, target: "_blank", rel: "noopener noreferrer nofollow" });
 }
@@ -333,7 +325,7 @@ function logo(asset) {
 }
 
 /**
- * One token: the amount, then every field the chain had for it.
+ * One token: the amount, its mint, and its supply once the chain has said.
  * @param {{mint: string, amount: string, decimals: number}} held
  * @param {import('../../src/types').TokenAsset | null} asset null while it is read, or when it could not be
  * @param {boolean} signed a transaction's change, which says + as well as −
@@ -343,20 +335,12 @@ function tokenCard(held, asset, signed) {
   const out = held.amount.startsWith("-");
   const units = held.amount.replace(/^-/, "");
   const sign = out ? "−" : signed ? "+" : "";
-  const qty = `${sign}${amount(units, held.decimals).title ?? "0"} ${a.symbol || "tokens"}`;
+  const whole = amount(units, held.decimals).title ?? "0";
+  const qty = `${sign}${whole} ${a.symbol || (whole === "1" ? "token" : "tokens")}`;
   const supply = a.supply && a.decimals != null ? amount(a.supply, a.decimals).title : null;
   const rows = [
     ["Mint", el("span", { class: "ks-mono", text: held.mint })],
-    ["Decimals", a.decimals != null ? String(a.decimals) : null],
     ["Supply", supply],
-    ["Program", a.program ?? null],
-    ["Mint authority", authority(a, "mintAuthority")],
-    ["Freeze authority", authority(a, "freezeAuthority")],
-    ["Update authority", a.updateAuthority ? el("span", { class: "ks-mono", text: a.updateAuthority }) : null],
-    ["Metadata", a.mutable == null ? null : a.mutable ? "Can still be changed" : "Fixed"],
-    ["Description", a.description ?? null],
-    ["Website", a.website ? link(a.website, a.website) : null],
-    ["Metadata file", a.uri ? link(a.uri, a.uri) : null],
   ].filter(([, v]) => v != null);
 
   return el(
@@ -379,7 +363,7 @@ function tokenCard(held, asset, signed) {
 }
 
 /**
- * Tokens the index does not carry: how much, and what the chain says of each.
+ * Tokens the index does not carry: how much of each, its mint and its supply.
  * Opened from the portfolio's "no price for" note with everything it named,
  * or from one History row's unnamed token with that row's change.
  *
@@ -395,9 +379,7 @@ function tokens(list, { total = list.length, signed = false } = {}) {
     many ? "Unidentified tokens" : "Unidentified token",
     el("p", {
       class: "ks-n",
-      text: many
-        ? "We don't list these, so they have no price here. Anything below is what their creators say about them: anyone can make a token and send it to any wallet."
-        : "We don't list this, so it has no price here. Anything below is what its creator says about it: anyone can make a token and send it to any wallet.",
+      text: many ? "We don't list these so they have no price here." : "We don't list this so it has no price here.",
     }),
     status,
     cards,
