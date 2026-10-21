@@ -369,6 +369,11 @@ export async function swapFor(
     outputMint: p.output,
     amount: p.amount,
     slippageBps: String(p.slippageBps),
+    // Jupiter's V1 route takes a single token program, so a fee account on a
+    // pair with a Token-2022 side (every tokenized stock) fails on chain with
+    // 6014, IncorrectTokenProgramID. V2 names a program per side and still
+    // pays the fee into the same SOL or USDC account, both directions.
+    instructionVersion: "V2",
   });
   if (fee) q.set("platformFeeBps", String(JUP_FEE_BPS));
   const quote = await jupiter(`${JUP_SWAP_ENDPOINT}/quote?${q}`, { headers: { Accept: "application/json" } });

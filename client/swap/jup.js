@@ -65,6 +65,9 @@ export async function quote(p) {
     outputMint: p.output,
     amount: p.amount,
     slippageBps: String(p.slippageBps),
+    // V1's single token program fails a fee-carrying trade with a Token-2022
+    // side, such as a tokenized stock — see swapFor on the server.
+    instructionVersion: "V2",
   });
   // Only ask for a fee when there is an account to receive it — Jupiter rejects
   // the pair where one is present without the other.
