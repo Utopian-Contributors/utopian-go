@@ -517,6 +517,12 @@ app.get("/social.html", (req, res) => {
   res.redirect(308, `/social${qs}`);
 });
 
+/** Dave, the chat agent, is a Social page; this is the short address for it. */
+app.get("/dave", (req, res) => {
+  const qs = req.originalUrl.slice(req.path.length);
+  res.redirect(302, `/social/dave${qs}`);
+});
+
 app.get("/icon/:mint", (req, res) => {
   const file = iconFile(req.params.mint);
   if (!file) {
