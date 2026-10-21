@@ -95,9 +95,6 @@ const AD_RESERVE = 600;
  */
 const FLIGHT = INIT_WINDOW - HEADER_RESERVE;
 
-/** What Dave's page may weigh in all, document and script, gzip bytes. */
-const DAVE_MAX = 14 * 1024;
-
 /**
  * The pages, each with the document that must paint off the first flight and
  * the bundles that ride the second one. Budgets are gzip bytes.
@@ -116,13 +113,6 @@ const PAGES = [
     name: "Wallet",
     doc: { file: "wallet.html", gzip: FLIGHT },
     parallel: [{ file: "wallet.js", gzip: FLIGHT }],
-  },
-  {
-    name: "Dave",
-    // The whole page, document and script together, under 14 KB: Dave's
-    // shell is meant to be the smallest thing on the site. See DAVE_MAX.
-    doc: { file: "dave.html", gzip: DAVE_MAX },
-    parallel: [{ file: "dave.js", gzip: DAVE_MAX }],
   },
   {
     name: "Social",
@@ -171,7 +161,7 @@ const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
  * public/ waiting for something to serve it by mistake. The wallet page has no
  * per-request content at all, so for it the file *is* the response.
  */
-const PRECOMPRESS_HTML = ["wallet.html", "social.html", "dave.html"];
+const PRECOMPRESS_HTML = ["wallet.html", "social.html"];
 
 const watch = process.argv.includes("--watch");
 
@@ -405,13 +395,6 @@ const editOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "edit", "main.js")],
   outfile: path.join(outDir, "edit.js"),
-};
-
-/** Dave's page (dave.html), its only script. */
-const daveOpts = {
-  ...jsOpts,
-  entryPoints: [path.join(clientDir, "dave", "main.js")],
-  outfile: path.join(outDir, "dave.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -872,25 +855,6 @@ async function buildSocialHtml(css, hash) {
   writeFileSync(path.join(outDir, "social.html"), await minifyDoc(raw));
 }
 
-/**
- * Dave's document: base.css, app.css and dave.css inlined and pruned to the
- * names this page and its script use, the bundles fingerprinted. Built the
- * way Social's is, and held to DAVE_MAX with dave.js beside it.
- */
-async function buildDaveHtml(hash) {
-  let raw = readFileSync(path.join(clientDir, "dave.html"), "utf8");
-  const words = (text) => text.match(/[A-Za-z_][\w-]*/g) ?? [];
-  const names = new Set([...words(readFileSync(path.join(outDir, "dave.js"), "utf8")), ...words(raw)]);
-  const css = await minifyCss(
-    ["base.css", "app.css", "dave.css"].map((name) => readFileSync(path.join(clientDir, name), "utf8")).join(""),
-    names,
-  );
-  raw = replaceOnce(raw, /<link rel="stylesheet" href="\/dave\.css"\s*\/?>/, `<style>${css}</style>`, "dave stylesheet link");
-  raw = replaceOnce(raw, /src="\/dave\.js"/, `src="/dave.js?v=${hash("dave.js")}"`, "dave.js src");
-  raw = replaceOnce(raw, /data-lg="\/login\.js"/, `data-lg="/login.js?v=${hash("login.js")}"`, "dave login.js attribute");
-  writeFileSync(path.join(outDir, "dave.html"), await minifyDoc(raw));
-}
-
 /** Typeset the legal documents into public/ as PDFs. */
 function buildLegal() {
   for (const doc of LEGAL) {
@@ -970,11 +934,6 @@ function reportSize() {
     const p = path.join(outDir, file);
     if (existsSync(p)) check(file, gzip(readFileSync(p)).length, max);
   }
-  // Dave's page is held to its budget in all, not file by file.
-  const dave = ["dave.html", "dave.js"].map((file) => path.join(outDir, file));
-  if (dave.every((p) => existsSync(p))) {
-    check("dave.html + dave.js", dave.reduce((n, p) => n + gzip(readFileSync(p)).length, 0), DAVE_MAX);
-  }
   // Already compressed: a PDF goes on the wire as it is.
   for (const file of legalFiles()) {
     check(file, readFileSync(path.join(outDir, file)).length, LEGAL_MAX);
@@ -1019,7 +978,6 @@ async function buildAssets() {
     esbuild.build(friendsOpts),
     esbuild.build(notesOpts),
     esbuild.build(editOpts),
-    esbuild.build(daveOpts),
     buildCss("app.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
@@ -1038,7 +996,6 @@ async function buildAssets() {
     buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, installHash),
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
     buildSocialHtml(socialCss, hash),
-    buildDaveHtml(hash),
   ]);
   buildLegal();
   precompress();

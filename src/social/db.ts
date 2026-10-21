@@ -281,18 +281,6 @@ ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS received bigint;
 ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS payer text;
 ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS matched text;
 CREATE INDEX IF NOT EXISTS ad_orders_open ON ad_orders (at) WHERE paid_at IS NULL;
--- Chats with Dave (dave.ts): each a list of turns, a question and its answer
--- appended together. A trade Dave prepared rides its turn, and the signature
--- that confirmed it is written onto the same turn.
-CREATE TABLE IF NOT EXISTS dave_chats (
-  id text PRIMARY KEY,
-  owner text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
-  title text NOT NULL,
-  turns jsonb NOT NULL DEFAULT '[]',
-  created bigint NOT NULL,
-  at bigint NOT NULL
-);
-CREATE INDEX IF NOT EXISTS dave_chats_owner_at ON dave_chats (owner, at DESC);
 `;
 
 let ready: Promise<void> | null = null;
@@ -1746,77 +1734,4 @@ export async function addedBy(owner: string, epoch: number, friend: string): Pro
     [owner, epoch, friend],
   );
   return !!row?.yes;
-}
-
-/** A chat with Dave, as its menu lists it. */
-export interface DaveChatHead {
-  id: string;
-  title: string;
-  at: number;
-}
-
-/** One turn of a chat with Dave; see dave.ts for what rides on one. */
-export type DaveTurn = Record<string, unknown> & { role: "user" | "assistant"; text: string };
-
-/** This account's chats with Dave, newest first. */
-export async function daveChats(owner: string, limit = 50): Promise<DaveChatHead[]> {
-  const rows = await many<{ id: string; title: string; at: string }>(
-    "SELECT id, title, at FROM dave_chats WHERE owner = $1 ORDER BY at DESC LIMIT $2",
-    [owner, limit],
-  );
-  return rows.map((r) => ({ id: r.id, title: r.title, at: Number(r.at) }));
-}
-
-/** One of this account's chats, turns and all; null for anyone else's. */
-export async function daveChat(owner: string, id: string): Promise<(DaveChatHead & { turns: DaveTurn[] }) | null> {
-  const row = await one<{ id: string; title: string; at: string; turns: DaveTurn[] }>(
-    "SELECT id, title, at, turns FROM dave_chats WHERE owner = $1 AND id = $2",
-    [owner, id],
-  );
-  return row && { id: row.id, title: row.title, at: Number(row.at), turns: row.turns };
-}
-
-/**
- * Turns onto the end of a chat, or a new chat of them. Appended in the
- * database, so two answers landing together both stay; past `keep` turns the
- * oldest go.
- */
-export async function appendDave(
-  owner: string,
-  chat: { id: string; title: string; fresh: boolean },
-  turns: DaveTurn[],
-  keep: number,
-): Promise<DaveChatHead> {
-  const at = Date.now();
-  const json = JSON.stringify(turns);
-  if (chat.fresh) {
-    await db().query(
-      "INSERT INTO dave_chats (id, owner, title, turns, created, at) VALUES ($1, $2, $3, $4::jsonb, $5, $5)",
-      [chat.id, owner, chat.title, json, at],
-    );
-  } else {
-    const res = await db().query(
-      `UPDATE dave_chats SET at = $3,
-         turns = (SELECT COALESCE(jsonb_agg(t ORDER BY i), '[]'::jsonb)
-                  FROM jsonb_array_elements(turns || $4::jsonb) WITH ORDINALITY AS e(t, i)
-                  WHERE i > jsonb_array_length(turns || $4::jsonb) - $5)
-       WHERE owner = $1 AND id = $2`,
-      [owner, chat.id, at, json, keep],
-    );
-    if (!res.rowCount) throw new Error("no such chat");
-  }
-  return { id: chat.id, title: chat.title, at };
-}
-
-/** Write the signature that confirmed a turn's trade onto that turn. */
-export async function confirmDaveTrade(owner: string, id: string, index: number, signature: string): Promise<void> {
-  await db().query(
-    "UPDATE dave_chats SET turns = jsonb_set(turns, ARRAY[$3::text, 'done'], to_jsonb($4::text)) WHERE owner = $1 AND id = $2",
-    [owner, id, String(index), signature],
-  );
-}
-
-export async function deleteDaveChat(owner: string, id: string): Promise<boolean> {
-  const res = await db().query("DELETE FROM dave_chats WHERE owner = $1 AND id = $2", [owner, id]);
-  return !!res.rowCount;
 }

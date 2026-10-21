@@ -74,12 +74,7 @@ import {
   timeline,
   toggleSave,
   updateProfile,
-  userByPasskey,
-  appendDave,
-  confirmDaveTrade,
-  daveChat,
-  daveChats,
-  deleteDaveChat,
+  userByPasskey
 } from "./db";
 import { currentUser, guardJson, loadAccount, requireAuth, requireUser } from "./guard";
 import { jpegSize } from "./jpeg";
@@ -130,7 +125,6 @@ import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
 import { avatarFile, bannerFile, chatAudioFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
-import { DAVE_KEEP, type Proposal, daveReply, forModel, readQuestion, titleOf } from "./dave";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
 
 /**
@@ -145,7 +139,7 @@ import { verifyAssertion, verifyRegistration } from "./webauthn";
  */
 
 interface Challenge {
-  kind: "login" | "add" | "phrase" | "chat" | "send" | "trade";
+  kind: "login" | "add" | "phrase" | "chat" | "send";
   name: string;
   exp: number;
 }
@@ -1095,29 +1089,6 @@ socialRouter.post(
   }),
 );
 
-/** A swap request's pair, amount, slippage and reviewed output, checked; see swap.ts. */
-function swapParams(body: Record<string, unknown> | undefined, me: User) {
-  const input = typeof body?.inputMint === "string" ? body.inputMint : "";
-  const output = typeof body?.outputMint === "string" ? body.outputMint : "";
-  const amount = typeof body?.amount === "string" ? body.amount : "";
-  const slippageBps = Number(body?.slippageBps ?? 100);
-  // The output the person reviewed. The server re-quotes, and refuses to
-  // trade below this less the slippage rather than at whatever it finds.
-  const quotedOut = typeof body?.quotedOut === "string" ? body.quotedOut : "";
-  if (!solanaPubkey(input) || !solanaPubkey(output) || input === output) {
-    throw new SocialError(400, "Pick two different tokens.");
-  }
-  if (!/^\d{1,20}$/.test(amount) || BigInt(amount) <= 0n) throw new SocialError(400, "Enter an amount.");
-  if (!/^\d{1,30}$/.test(quotedOut) || BigInt(quotedOut) <= 0n) throw new SocialError(400, "Review the trade first.");
-  if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > MAX_SLIPPAGE_BPS) {
-    throw new SocialError(400, "Slippage is out of range.");
-  }
-  if (!me.keyBox) {
-    throw new SocialError(409, "Log in with your password once to trade from this account.", { setup: true });
-  }
-  return { input, output, amount, slippageBps, quotedOut: BigInt(quotedOut) };
-}
-
 /**
  * Swap from the account's own wallet. The server quotes, signs and sends; see
  * swap.ts for what a caller can and cannot choose.
@@ -1130,125 +1101,31 @@ socialRouter.post(
   wrap(async (req, res) => {
     assertSameOrigin(req);
     const me = requireUser(res);
-    const trade = swapParams(req.body, me);
-    res.json(await swapFor(me.address, openForServer(me.keyBox!), trade));
-  }),
-);
-
-/** Dave's model calls cost money, so each account gets a few a minute. */
-const daveLimit = rateLimit({ perMinute: 10, burst: 5 });
-
-/** A chat id as the page names one: the 16 base64url characters /dave makes. */
-const DAVE_ID = /^[A-Za-z0-9_-]{16,32}$/;
-
-/** This account's chats with Dave, newest first: the menu. */
-socialRouter.get(
-  "/dave/chats",
-  requireAuth,
-  readLimit,
-  wrap(async (_req, res) => {
-    res.json({ chats: await daveChats(requireUser(res).name) });
-  }),
-);
-
-socialRouter.get(
-  "/dave/chats/:id",
-  requireAuth,
-  readLimit,
-  wrap(async (req, res) => {
-    const chat = DAVE_ID.test(req.params.id) ? await daveChat(requireUser(res).name, req.params.id) : null;
-    if (!chat) throw new SocialError(404, "That chat is gone.");
-    res.json({ chat });
-  }),
-);
-
-socialRouter.delete(
-  "/dave/chats/:id",
-  requireAuth,
-  writeLimit,
-  wrap(async (req, res) => {
-    assertSameOrigin(req);
-    const me = requireUser(res);
-    if (DAVE_ID.test(req.params.id)) await deleteDaveChat(me.name, req.params.id);
-    res.json({ chats: await daveChats(me.name) });
-  }),
-);
-
-/**
- * A question for Dave (dave.ts), in a chat of this account's or a new one.
- * What he reads of the conversation is the stored chat, not anything the page
- * sends. The question is kept only with its answer: one that failed is not
- * in the chat, and can be asked again.
- */
-socialRouter.post(
-  "/dave",
-  requireAuth,
-  daveLimit,
-  readJson,
-  wrap(async (req, res) => {
-    assertSameOrigin(req);
-    const me = requireUser(res);
-    const text = readQuestion(req.body?.text);
-    if (!text) throw new SocialError(400, "Ask Dave something.");
-    const id = typeof req.body?.chat === "string" && req.body.chat ? req.body.chat : "";
-    const found = id ? (DAVE_ID.test(id) ? await daveChat(me.name, id) : null) : null;
-    if (id && !found) throw new SocialError(404, "That chat is gone.");
-    const question = { role: "user" as const, text, at: Date.now() };
-    const reply = await daveReply(me, forModel([...(found?.turns ?? []), question]));
-    const answer = { role: "assistant" as const, ...reply, at: Date.now() };
-    const head = await appendDave(
-      me.name,
-      found ? { id: found.id, title: found.title, fresh: false } : { id: randomBytes(12).toString("base64url"), title: titleOf(text), fresh: true },
-      [question, answer],
-      DAVE_KEEP,
-    );
-    res.json({ chat: head, turns: [question, answer] });
-  }),
-);
-
-socialRouter.post(
-  "/dave/trade/options",
-  requireAuth,
-  loginLimit,
-  readJson,
-  wrap(async (req, res) => {
-    assertSameOrigin(req);
-    const me = requireUser(res);
-    if (!me.passkey) throw new SocialError(400, "Add a passkey to trade with Dave.", { passkey: false });
-    const challenge = issue("trade", me.name);
-    res.json({ challenge: challenge.toString("base64url"), id: me.passkey.id });
-  }),
-);
-
-/**
- * A trade Dave prepared, confirmed with the passkey. Unlike the trade dialog,
- * the person did not fill the form in themselves, so the passkey is what says
- * they saw it and meant it. The swap itself is /swap's, checks and all.
- */
-socialRouter.post(
-  "/dave/trade",
-  requireAuth,
-  payLimit,
-  readJson,
-  wrap(async (req, res) => {
-    assertSameOrigin(req);
-    const me = requireUser(res);
-    // The trade is the one Dave prepared in this chat, read back from it: the
-    // page says which, not what.
-    const id = typeof req.body?.chat === "string" ? req.body.chat : "";
-    const index = Number(req.body?.index);
-    const chat = DAVE_ID.test(id) ? await daveChat(me.name, id) : null;
-    const turn = chat && Number.isInteger(index) ? chat.turns[index] : undefined;
-    const proposal = turn?.role === "assistant" ? (turn.trade as Proposal | undefined) : undefined;
-    if (!chat || !proposal) throw new SocialError(404, "That trade is gone.");
-    if (typeof turn!.done === "string") throw new SocialError(409, "That trade was already confirmed.");
-    const trade = swapParams({ ...proposal }, me);
-    await assertPasskey(req, me, "trade");
-    const sent = await swapFor(me.address, openForServer(me.keyBox!), trade);
-    await confirmDaveTrade(me.name, chat.id, index, sent.signature).catch((err: unknown) => {
-      console.error("[dave] confirm:", err);
-    });
-    res.json(sent);
+    const input = typeof req.body?.inputMint === "string" ? req.body.inputMint : "";
+    const output = typeof req.body?.outputMint === "string" ? req.body.outputMint : "";
+    const amount = typeof req.body?.amount === "string" ? req.body.amount : "";
+    const slippageBps = Number(req.body?.slippageBps ?? 100);
+    // The output the person reviewed. The server re-quotes, and refuses to
+    // trade below this less the slippage rather than at whatever it finds.
+    const quotedOut = typeof req.body?.quotedOut === "string" ? req.body.quotedOut : "";
+    if (!solanaPubkey(input) || !solanaPubkey(output) || input === output) {
+      throw new SocialError(400, "Pick two different tokens.");
+    }
+    if (!/^\d{1,20}$/.test(amount) || BigInt(amount) <= 0n) throw new SocialError(400, "Enter an amount.");
+    if (!/^\d{1,30}$/.test(quotedOut) || BigInt(quotedOut) <= 0n) throw new SocialError(400, "Review the trade first.");
+    if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > MAX_SLIPPAGE_BPS) {
+      throw new SocialError(400, "Slippage is out of range.");
+    }
+    if (!me.keyBox) {
+      throw new SocialError(409, "Log in with your password once to trade from this account.", { setup: true });
+    }
+    res.json(await swapFor(me.address, openForServer(me.keyBox), {
+        input,
+        output,
+        amount,
+        slippageBps,
+        quotedOut: BigInt(quotedOut),
+      }),);
   }),
 );
 

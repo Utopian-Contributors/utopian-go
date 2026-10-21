@@ -190,7 +190,7 @@ async function jupiter(url: string, init?: RequestInit): Promise<Record<string, 
 }
 
 /** The referral account that collects the fee: the SOL one if SOL is on either side, else USDC's. */
-export function feeAccount(input: string, output: string): string {
+function feeAccount(input: string, output: string): string {
   if (JUP_FEE_BPS <= 0) return "";
   if (input === SOL_MINT || output === SOL_MINT) return JUP_FEE_ACCOUNT_SOL;
   if (input === USDC_MINT || output === USDC_MINT) return JUP_FEE_ACCOUNT_USDC;

@@ -503,23 +503,6 @@ app.get(WALLET_PATH, (req, res, next) => {
 });
 
 /**
- * Dave's page: a plain file like the wallet's, at one extensionless address.
- * It was a Social page once, so that address still leads here.
- */
-const DAVE_PATH = "/dave";
-const DAVE_FILE = "/dave.html";
-
-app.get([DAVE_FILE, "/social/dave"], (req, res) => {
-  const qs = req.originalUrl.slice(req.path.length);
-  res.redirect(308, `${DAVE_PATH}${qs}`);
-});
-
-app.get(DAVE_PATH, (req, _res, next) => {
-  req.url = DAVE_FILE + req.originalUrl.slice(req.path.length);
-  next();
-});
-
-/**
  * Social is one document, same as the wallet page.
  *
  * Timeline, friends and a profile are the same file, the header's account
@@ -679,7 +662,7 @@ app.use(
       // `wallet.html`. Matching the bare name alone silently missed every
       // compressed response — which is every real one.
       const name = path.basename(filePath).replace(/\.(br|gz)$/, "");
-      if (name === "index.html" || name === "wallet.html" || name === "social.html" || name === "dave.html") {
+      if (name === "index.html" || name === "wallet.html" || name === "social.html") {
         res.setHeader("Cache-Control", "no-cache");
       }
       // The service worker and the manifest keep one URL across deploys, so
