@@ -397,6 +397,13 @@ const editOpts = {
   outfile: path.join(outDir, "edit.js"),
 };
 
+/** Dave, the chat agent, fetched by social.js on /social/dave only. */
+const daveOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "dave", "main.js")],
+  outfile: path.join(outDir, "dave.js"),
+};
+
 /** Social's own bundle. It shares nothing with search or the wallet page. */
 const socialOpts = {
   ...jsOpts,
@@ -643,6 +650,7 @@ const SOCIAL_LAZY = {
   fr: "friends.js",
   nt: "notes.js",
   ed: "edit.js",
+  dv: "dave.js",
 };
 const SOCIAL_BUNDLES = ["social.js", ...Object.values(SOCIAL_LAZY)];
 
@@ -978,6 +986,7 @@ async function buildAssets() {
     esbuild.build(friendsOpts),
     esbuild.build(notesOpts),
     esbuild.build(editOpts),
+    esbuild.build(daveOpts),
     buildCss("app.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
