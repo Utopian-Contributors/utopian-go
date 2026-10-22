@@ -1564,13 +1564,15 @@ a.back.chat-back { display: none; }
   border-bottom: 0;
 }
 
-.chat-compose .compose-bar { align-items: flex-end; margin-top: 0; }
+/* The message across the full width, its tools and Send on a row under it. */
+.chat-compose .compose-bar { margin-top: 8px; }
 .chat-compose .shots,
 .chat-compose .voice { margin: 0 0 8px; }
 
 .chat-compose textarea {
-  flex: 1 1 auto;
-  min-width: 0;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
   min-height: 0;
   max-height: 160px;
   padding: 8px 12px;
@@ -1581,7 +1583,7 @@ a.back.chat-back { display: none; }
   overflow-y: auto;
 }
 
-.chat-compose .post-go { margin-left: 4px; }
+.chat-compose .post-go { margin-left: auto; }
 .chat-off { flex: none; padding: 12px 0; border-top: 1px solid var(--b); }
 
 .lock { max-width: 44ch; padding: 20px 0; }

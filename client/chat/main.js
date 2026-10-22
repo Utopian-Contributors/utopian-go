@@ -950,7 +950,8 @@ export function mount(ctx) {
       { class: "composer chat-compose" },
       strip,
       voiceRow,
-      el("div", { class: "compose-bar" }, add, mic, pay, file, area, button),
+      area,
+      el("div", { class: "compose-bar" }, add, mic, pay, file, button),
       note,
     );
     form.addEventListener("submit", async (e) => {
