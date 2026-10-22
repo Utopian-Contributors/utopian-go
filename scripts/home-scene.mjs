@@ -31,7 +31,7 @@
  *   left in the squares.
  */
 import sharp from "sharp";
-import { writeFileSync } from "fs";
+import { existsSync, writeFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -133,7 +133,17 @@ async function cutOut(file) {
   return { rgba: settle(data, 4, W, H, solid, opaque), W, H };
 }
 
-/** A frame with the transparency drawn in as a checkerboard: keyed out, hard edge. */
+/**
+ * A frame with the transparency drawn in as a checkerboard: keyed out, hard
+ * edge. The generator draws the squares light grey or near-black depending on
+ * the picture, so their two shades are read off the frame's middle column,
+ * which is all checkerboard, and everything is keyed against those.
+ *
+ * Near-black squares sit against a night scene whose own shadows are nearly
+ * as dark, so there the key leans on what the squares are that the shadows
+ * are not: colourless, and in a pattern of two shades. A shadow has a tint of
+ * the leaf it is under, and a patch of it is one shade, not two.
+ */
 async function keyOut(file) {
   const { data, info } = await sharp(file).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const W = info.width;
@@ -142,7 +152,27 @@ async function keyOut(file) {
   const lo = (p) => Math.min(data[p * 3], data[p * 3 + 1], data[p * 3 + 2]);
   const hi = (p) => Math.max(data[p * 3], data[p * 3 + 1], data[p * 3 + 2]);
   const grey = (p, min, spread) => lo(p) >= min && hi(p) - lo(p) <= spread;
-  const square = (p) => grey(p, 150, 30);
+
+  // The squares' two shades, off the middle column.
+  let dimmest = 255;
+  let brightest = 0;
+  for (let y = 0; y < H; y++) {
+    const p = y * W + (W >> 1);
+    dimmest = Math.min(dimmest, lo(p));
+    brightest = Math.max(brightest, hi(p));
+  }
+  const dark = brightest < 128;
+  const midShade = (dimmest + brightest) / 2;
+  const lum = (p) => (data[p * 3] + data[p * 3 + 1] + data[p * 3 + 2]) / 3;
+  const shades = [[], []];
+  for (let y = 0; y < H; y++) {
+    const v = lum(y * W + (W >> 1));
+    shades[v > midShade ? 1 : 0].push(v);
+  }
+  const median = (vs) => vs.sort((x, y) => x - y)[vs.length >> 1] ?? midShade;
+  const [darkShade, lightShade] = shades.map(median);
+  const square = dark ? (p) => hi(p) <= brightest + 4 && hi(p) - lo(p) <= 5 : (p) => grey(p, 150, 30);
+  const blend = dark ? (p) => hi(p) <= brightest + 16 && hi(p) - lo(p) <= 10 : (p) => grey(p, 95, 48);
   const bg = new Uint8Array(N);
 
   // The checkerboard connected to the empty middle.
@@ -156,8 +186,31 @@ async function keyOut(file) {
   }
   flood(W, H, seeds, (n) => !bg[n] && square(n), (n) => (bg[n] = 1));
 
-  // Pockets of it the foliage closes off: a patch of light grey too big to be
-  // a highlight.
+  // Pockets of it the foliage closes off: a patch too big to be a highlight.
+  // Where the squares are dark, a patch of shadow can be that big too, so it
+  // also has to look like squares: both of the squares' own shades, each in
+  // solid blocks — next to almost every pixel is another of its own shade —
+  // where a shadow's flicker pixel to pixel, as the gaps in a thatched roof
+  // do, and the gaps between a railing's planks are blacker and browner.
+  const lighter = (p) => lum(p) > midShade;
+  const checkered = (patch) => {
+    const inPatch = new Set(patch);
+    const light = patch.filter(lighter);
+    const unlit = patch.filter((p) => !lighter(p));
+    if (Math.min(light.length, unlit.length) < patch.length * 0.15) return false;
+    const mean = (ps) => ps.reduce((t, p) => t + lum(p), 0) / ps.length;
+    if (Math.abs(mean(light) - lightShade) > 2.5 || Math.abs(mean(unlit) - darkShade) > 2.5) return false;
+    let pairs = 0;
+    let alike = 0;
+    for (const p of patch) {
+      for (const n of [p + 1, p + W]) {
+        if (!inPatch.has(n)) continue;
+        pairs++;
+        if (lighter(p) === lighter(n)) alike++;
+      }
+    }
+    return pairs > 0 && alike / pairs >= 0.9;
+  };
   const seen = new Uint8Array(N);
   for (let s = 0; s < N; s++) {
     if (bg[s] || seen[s] || !square(s)) continue;
@@ -167,10 +220,12 @@ async function keyOut(file) {
       seen[n] = 1;
       patch.push(n);
     });
-    if (patch.length >= 40) for (const p of patch) bg[p] = 1;
+    if (patch.length < 40) continue;
+    if (dark && !checkered(patch)) continue;
+    for (const p of patch) bg[p] = 1;
   }
 
-  // The grey blend along the art's edge, and grey specks just inside it.
+  // The blend along the art's edge, and specks of square just inside it.
   const near = (p, r) => {
     const x = p % W;
     const y = (p / W) | 0;
@@ -185,14 +240,17 @@ async function keyOut(file) {
   };
   for (let pass = 0; pass < 2; pass++) {
     const edge = [];
-    for (let p = 0; p < N; p++) if (!bg[p] && grey(p, 95, 48) && near(p, 1)) edge.push(p);
+    for (let p = 0; p < N; p++) if (!bg[p] && blend(p) && near(p, 1)) edge.push(p);
     for (const p of edge) bg[p] = 1;
   }
-  const specks = [];
-  for (let p = 0; p < N; p++) if (!bg[p] && grey(p, 150, 40) && near(p, 2)) specks.push(p);
-  for (const p of specks) bg[p] = 1;
+  if (!dark) {
+    const specks = [];
+    for (let p = 0; p < N; p++) if (!bg[p] && grey(p, 150, 40) && near(p, 2)) specks.push(p);
+    for (const p of specks) bg[p] = 1;
+  }
 
-  // Ghosts: grey islands in the middle, attached to no edge of the frame.
+  // Ghosts: colourless islands in the middle, attached to no edge of the
+  // frame — faint shapes the generator left in the squares.
   const comp = new Uint8Array(N);
   for (let s = 0; s < N; s++) {
     if (bg[s] || comp[s]) continue;
@@ -208,7 +266,9 @@ async function keyOut(file) {
       return x === 0 || y === 0 || x === W - 1 || y === H - 1;
     });
     const spread = island.reduce((a, p) => a + hi(p) - lo(p), 0) / island.length;
-    if (!framed && island.length < 1500 && spread < 40) for (const p of island) bg[p] = 1;
+    const shade = island.reduce((a, p) => a + hi(p), 0) / island.length;
+    const ghost = dark ? spread < 8 && shade <= brightest + 10 : spread < 40;
+    if (!framed && island.length < 1500 && ghost) for (const p of island) bg[p] = 1;
   }
 
   const solid = new Uint8Array(N);
@@ -255,16 +315,23 @@ async function save(frame, name) {
 /** A length in the frame's pixels as app.css spells it: a share of its height, in vh. */
 const vh = (px, H) => `${((px / H) * 100).toFixed(2)}vh`;
 
-const frames = {
-  light: {
-    wide: await cutOut(path.join(assets, "jungle-wide-light.png")),
-  },
-  dark: {
-    wide: await keyOut(path.join(assets, "jungle-wide-dark.png")),
-  },
+/**
+ * Each theme's frame, if its source is in assets/. A theme whose source is not
+ * there is left as it is — the sources are not checked in, so changing one
+ * frame should not need the other on hand.
+ */
+const SOURCES = {
+  light: { file: "jungle-wide-light.png", cut: cutOut },
+  dark: { file: "jungle-wide-dark.png", cut: keyOut },
 };
 
-for (const [theme, { wide }] of Object.entries(frames)) {
+for (const [theme, { file, cut }] of Object.entries(SOURCES)) {
+  const src = path.join(assets, file);
+  if (!existsSync(src)) {
+    console.log(`home-${theme}.webp         kept: no assets/${file}`);
+    continue;
+  }
+  const wide = await cut(src);
   await save(wide, `home-${theme}.webp`);
   const c = column(wide);
   console.log(`  --w: ${vh(c.W, c.H)}; --split: ${vh(c.split, c.H)}; --reach-l: ${vh(c.left, c.H)}; --reach-r: ${vh(c.right, c.H)};`);

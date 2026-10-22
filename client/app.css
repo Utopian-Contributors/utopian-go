@@ -290,8 +290,8 @@ body.home .lg-mark {
   body.home {
     --w: 177.58vh;
     --split: 88.74vh;
-    --reach-l: 65.67vh;
-    --reach-r: 116.58vh;
+    --reach-l: 63.97vh;
+    --reach-r: 116.05vh;
   }
 
   body.home::before,
