@@ -65,6 +65,7 @@ interface TokenBalance {
 }
 
 export interface RawTx {
+  slot?: number;
   blockTime?: number | null;
   transaction?: { signatures?: string[]; message?: { accountKeys?: string[] } };
   meta?: {
@@ -263,14 +264,20 @@ interface RpcReply {
 }
 
 /**
- * One call's worth of `owner`'s whole transactions: newest first for the
- * History list, or oldest first from `since` (epoch ms) for a walk through
- * the day (lib/entries.ts). `next` asks for the page after; absent on a short
+ * One call's worth of `owner`'s whole transactions: for the History list, or
+ * successes only, within `slots`, for a walk back through what each holding
+ * cost (lib/entries.ts). `next` asks for the page after; absent on a short
  * page, which is the last one whatever else came with it.
  */
 export async function readTransactions(
   owner: string,
-  opts: { limit: number; order: "asc" | "desc"; after?: string; since?: number },
+  opts: {
+    limit: number;
+    order: "asc" | "desc";
+    after?: string;
+    succeeded?: boolean;
+    slots?: { gt?: number; lte?: number };
+  },
 ): Promise<{ data: RawTx[]; next?: string }> {
   // No RPC is a deployment fault, and an empty history would be a confident lie.
   if (!HELIUS_RPC_URL) throw new Error("HELIUS_RPC_URL is not configured");
@@ -295,8 +302,9 @@ export async function readTransactions(
           commitment: "confirmed",
           filters: {
             tokenAccounts: "balanceChanged",
-            // A failure moved nothing, so a walk through the day skips them upstream.
-            ...(opts.since != null ? { blockTime: { gte: Math.floor(opts.since / 1000) }, status: "succeeded" } : {}),
+            // A failure moved nothing, so a walk through what was paid skips them upstream.
+            ...(opts.succeeded ? { status: "succeeded" } : {}),
+            ...(opts.slots ? { slot: opts.slots } : {}),
           },
           ...(opts.after ? { paginationToken: opts.after } : {}),
         },

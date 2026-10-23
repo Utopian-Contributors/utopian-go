@@ -118,7 +118,7 @@ GET /                         search home
 GET /?q=<query>&lang=<code>   results; tabs: Web, Images
 GET /?q=<sym>&buy=<mint>      results with the buy dialog open (wallet in-app browsers, QR hand-off)
 GET /search?q=                302 → /?q=
-GET /wallet                   left: holdings (each with its balance, abbreviated, and its day
+GET /wallet                   left: holdings (each with its balance, abbreviated, and its profit
                               against its average entry), their line
                               over 1H/24H/1W/1M (a line per kind beside it, with three kinds or
                               more), History, Receive/Send/Swap, the token lists + search
@@ -155,7 +155,7 @@ GET  /api/images?q&lang          → Brave image results
 POST /api/balances {owner, mint?} → BalancesApiResponse
 POST /api/holdings {owner, range?} → HoldingsApiResponse  range: 1h, 24h (default), 1w, 1m
 POST /api/history {owner, after?} → HistoryApiResponse   20 transactions a page, newest first
-POST /api/entries {owner}         → EntriesApiResponse   each holding's average entry across the past 24h
+POST /api/entries {owner, basis?} → EntriesApiResponse   each holding's average entry: what was paid for it
 POST /api/assets {mints}          → AssetsApiResponse    up to 50 unindexed mints: Helius getAssetBatch, cached 10 min
 GET  /api/tokens/top              → {tokens: TopToken[]}   30 verified mints by 24h volume
 GET  /api/tokens?c=&after=        → TokenPage              one list, 30 a page, by cursor; counts on page 1
@@ -223,18 +223,32 @@ dollars, since nothing knows the price at the time. A transaction the wallet did
 left out, and counted, when it moved under a cent or only tokens the index does not carry:
 airdrop spam and address poisoning. The other end shows as `@name` when it is an account here.
 
-Under each holding's worth is its day against its **average entry** across the past 24 hours,
-in dollars and percent (`POST /api/entries`, `src/lib/entries.ts`), the entry itself on hover.
-Held from before the day, a token entered at its price 24 hours ago (from Jupiter's 24h change),
-so a position untouched today reads exactly as the market's day. Bought today, it entered at what
-was paid: the other side of the swap, priced at the hour it happened off that token's hourly
-ticks, unless the two sides are worth more than twice apart (not a trade but a deposit or a mint),
-when each token takes its own price. Received, at the price it arrived at. A sale or a send takes
-out the average, so what is left keeps its entry. The day is read oldest first from
-`getTransactionsForAddress` filtered to the day and to successes, 100 at a time; past 300 in a day
-no entry is given rather than one walked from part of it, and a mint whose day cannot be priced is
-left without one. The page asks once per set of balances, after the holdings have painted, and
-each row holds the line's height empty until the answer lands, so nothing moves. Nothing is stored.
+Under each holding's worth is its profit, the price now against its **average entry**, in
+dollars and percent (`POST /api/entries`, `src/lib/entries.ts`), the entry itself on hover.
+A token entered at what was paid for it, however long ago: the other side of the swap, priced at
+the hour it happened, unless the two sides are worth more than twice apart (not a trade but a
+deposit or a mint), when each token takes its own price. A token bought with nothing to price it
+by, as one too new for the chart API is, cost what was paid. Received, at the price it arrived
+at. A sale or a send takes out the average, so what is left keeps its entry, and a position sold
+down to nothing starts again at its next buy. The first time, the wallet's past is read newest
+first from `getTransactionsForAddress` filtered to successes and to slots up to the one the
+balances were read at, 100 at a time, only until every holding is traced back to the last time it
+was empty; a holding not traced within 1,000 transactions is given no entry rather than one walked
+from part of its past. Prices inside the day come off each token's hourly ticks; older ones off
+Jupiter's chart API, hourly across the last 2,000 hours and daily before that, one call per token
+(16 not already held per ask), held and shared by every wallet since a past price does not change.
+A mint whose past cannot be priced is left without an entry.
+
+What the walk leaves, the **basis** (each priced position's units and cost at that slot, the
+holdings given up on, and the signatures counted in the last 150 slots), goes back with the answer.
+The page keeps both in localStorage (`ug.entries`, one wallet at a time): while the balances are
+the same it asks nothing; after they move it sends the basis back, and only the transactions since
+are read, one call, those last 150 slots again in case the index had been behind. A basis whose
+token units no longer add up with what came since, or that does not account for a holding, is
+dropped for a full walk. An answer `settled: false` (a price not asked for yet, or a holding the
+history does not add up for) is used for a minute before asking again. The page asks after the
+holdings have painted, and each row holds the line's height empty until the answer lands, so
+nothing moves. Nothing about the wallet is stored on the server.
 
 The portfolio's chart and the chosen token's are one height (170px), so the halves line up.
 

@@ -60,6 +60,7 @@ export const INTERVAL_MS = {
   "1_MINUTE": 60_000,
   "1_HOUR": 3_600_000,
   "4_HOUR": 14_400_000,
+  "1_DAY": 86_400_000,
 } as const;
 
 export type Interval = keyof typeof INTERVAL_MS;
@@ -124,7 +125,8 @@ export interface Candle {
 }
 
 /**
- * Up to `count` candles of `interval`, oldest first, ending now.
+ * Up to `count` candles of `interval`, oldest first, ending at `to` (epoch
+ * ms; now unless a past price is being asked for).
  *
  * Throws when the API fails or throttles: an empty answer means the token has
  * no trades, and the two must not look alike to a cache. A person waiting is
@@ -136,6 +138,7 @@ export async function fetchCandles(
   interval: Interval,
   count: number,
   urgent = false,
+  to = Date.now(),
 ): Promise<Candle[]> {
   for (let attempt = 0; ; attempt += 1) {
     await pace(urgent);
@@ -144,7 +147,7 @@ export async function fetchCandles(
       `${JUP_CHART_ENDPOINT}/${encodeURIComponent(mint)}` +
       `?interval=${interval}` +
       `&candles=${count}` +
-      `&to=${encodeURIComponent(new Date().toISOString())}`;
+      `&to=${encodeURIComponent(new Date(to).toISOString())}`;
 
     const res = await fetch(url, {
       headers: { Accept: "application/json" },

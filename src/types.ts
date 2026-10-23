@@ -462,14 +462,34 @@ export interface HistoryApiResponse extends Partial<HistoryPage> {
 }
 
 /**
- * What each holding on the wallet page cost, on average, across the past 24
- * hours (lib/entries.ts): USD per whole token, by mint. Held from before the
- * day, that is the price 24 hours ago; bought today, what was paid. The page
- * reads each position's day against it. A mint is missing when its day could
- * not be priced, and every one is on a day too busy to walk.
+ * What a wallet's entries were worked out from (lib/entries.ts), kept by the
+ * wallet page in its own browser and handed back with the next ask, so what
+ * came before is not read off the chain again: every transaction up to
+ * `slot`, as the positions it left.
+ */
+export interface EntriesBasis {
+  /** The slot the balances were read at. */
+  slot: number;
+  /** Each priced holding as it stood then: units, and what they cost in USD. */
+  lots: Record<string, [number, number]>;
+  /** Holdings with no entry that asking again would not give: begun before any walk reaches, or never priced. */
+  far?: string[];
+  /** Transactions counted from the last stretch before `slot`, which the next ask reads again in case the index was behind. */
+  recent?: string[];
+}
+
+/**
+ * What each holding on the wallet page cost, on average (lib/entries.ts): USD
+ * per whole token, by mint, from what was paid for it whenever it was bought.
+ * The page reads each position's profit against it. A mint is missing when
+ * its past could not be priced, or reaches back further than is walked.
+ * `settled` when nothing is missing for a reason that may pass, so the page
+ * may keep the answer for as long as the balances stay as they are.
  */
 export interface EntriesApiResponse {
   entries?: Record<string, number>;
+  basis?: EntriesBasis;
+  settled?: boolean;
   error?: string;
   detail?: string;
 }

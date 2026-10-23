@@ -298,9 +298,10 @@ function ident(t) {
 }
 
 /**
- * Each holding's average entry across the past 24h (/api/entries), by mint:
- * what its row's day is measured against. Read once per set of balances, so
- * another range, or a re-read with nothing moved, does not ask again.
+ * Each holding's average entry (/api/entries), by mint: what was paid for it,
+ * and what its row's profit is measured against. Read once per set of
+ * balances, so another range, or a re-read with nothing moved, does not ask
+ * again, and kept across loads (KEPT below).
  */
 let entries = new Map();
 /** The balances `entries` were read for, as signature() has them. */
@@ -308,10 +309,9 @@ let entriesFor = "";
 let entriesRun = 0;
 
 /**
- * A holding's day against what it cost: held from before it, the market's
- * 24h change; bought today, its move since. Blank, but keeping its line so
- * nothing moves when it lands, until the entries are read or where there is
- * none to give.
+ * A holding's profit: its price now against what was paid for it. Blank, but
+ * keeping its line so nothing moves when it lands, until the entries are read
+ * or where there is none to give.
  * @param {HTMLElement} node
  * @param {import('../../src/types').Holding} h
  */
@@ -329,10 +329,10 @@ function paintEntry(node, h) {
   const paid = tokenPrice(entry);
   node.className = `wl-d ${dirOf(pct)}`;
   node.textContent = `${diff < 0 ? "-" : "+"}${dollars(Math.abs(diff))} · ${percent(Math.abs(pct))}`;
-  node.title = `Against an average entry of ${paid.title ?? paid.text} over the past 24h`;
+  node.title = `Against an average entry of ${paid.title ?? paid.text}`;
 }
 
-/** The rows on show, each with its day, once the entries land. */
+/** The rows on show, each with its profit, once the entries land. */
 function paintEntries() {
   for (const r of list.querySelectorAll(".wl-own")) {
     const h = shown?.items?.find((i) => i.mint === /** @type {HTMLElement} */ (r).dataset.mint);
@@ -341,20 +341,69 @@ function paintEntries() {
   }
 }
 
-/** POSTed, as the holdings are. A failure leaves the rows without a day, and the next paint asks again. */
+/**
+ * The last answer, kept in this browser: the entries for one set of
+ * balances, and the basis the next is worked out from (src/lib/entries.ts).
+ * A load with nothing moved asks nothing, and one after a trade has only the
+ * trade read off the chain. One wallet's at a time; another's replaces it.
+ */
+const KEPT = "ug.entries";
+
+/**
+ * How long an answer that may yet change is used before asking again: about
+ * as long as the index takes to catch up with a trade, or the chart API to
+ * have room again. One that cannot change is used until the balances move.
+ */
+const UNSETTLED_MS = 60_000;
+
+/** What was kept for `who`. localStorage throws where it is unavailable, as lang.js says. */
+function recall(who) {
+  try {
+    const kept = JSON.parse(localStorage.getItem(KEPT) || "null");
+    return kept?.owner === who ? kept : null;
+  } catch {
+    return null;
+  }
+}
+
+function keep(value) {
+  try {
+    localStorage.setItem(KEPT, JSON.stringify(value));
+  } catch {
+    // Not kept: the next load asks from scratch.
+  }
+}
+
+/** POSTed, as the holdings are. A failure leaves the rows without a profit, and the next paint asks again. */
 async function readEntries(data) {
   const id = ++entriesRun;
-  entriesFor = signature(data);
+  const sig = signature(data);
+  entriesFor = sig;
   try {
+    const who = await owner();
+    const kept = recall(who);
+    if (id !== entriesRun) return;
+    if (kept?.for === sig && kept.entries && (kept.until == null || Date.now() < kept.until)) {
+      entries = new Map(Object.entries(kept.entries));
+      paintEntries();
+      return;
+    }
     const res = await fetch("/api/entries", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ owner: await owner() }),
+      body: JSON.stringify({ owner: who, ...(kept?.basis ? { basis: kept.basis } : {}) }),
     });
     const body = await res.json().catch(() => null);
     if (id !== entriesRun) return;
     if (!res.ok || !body?.entries) throw new Error(body?.error || `entries ${res.status}`);
     entries = new Map(Object.entries(body.entries));
+    keep({
+      owner: who,
+      for: sig,
+      ...(body.settled ? {} : { until: Date.now() + UNSETTLED_MS }),
+      entries: body.entries,
+      basis: body.basis ?? kept?.basis,
+    });
     paintEntries();
   } catch {
     if (id === entriesRun) entriesFor = "";

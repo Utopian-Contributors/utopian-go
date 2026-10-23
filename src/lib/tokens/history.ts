@@ -83,6 +83,101 @@ async function fetchSeries(mint: string, range: Exclude<ChartRange, "24h">): Pro
   return closes.length < 2 ? null : { at, step, v: closes.map(round) };
 }
 
+/** Hourly candles one call brings back: about twelve weeks. */
+const PAST_HOURS = 2_000;
+/** Daily ones before those, which reach back past anything held here. */
+const PAST_DAYS = 2_000;
+/**
+ * Mints whose past is held. A series is up to a few thousand numbers, so
+ * this is a fraction of the chart cache's bound.
+ */
+const PAST_MAX_CACHED = 500;
+
+/**
+ * A price newer than a held past is read off its last point for this long,
+ * rather than the whole past asked for again: the case of a token the index
+ * carries no day for, traded within the hour.
+ */
+const PAST_FRESH_MS = 10 * 60_000;
+
+/** A mint's past as fetched: asked back to `from`, at `to`; `failed` when the last ask was refused. */
+interface Past {
+  from: number;
+  to: number;
+  failed?: number;
+  series: PriceSeries[];
+}
+
+const past = new Map<string, Past>();
+const pastInFlight = new Map<string, Promise<PriceSeries[] | null>>();
+
+function rememberPast(mint: string, entry: Past): void {
+  past.delete(mint);
+  past.set(mint, entry);
+  if (past.size > PAST_MAX_CACHED) past.delete(past.keys().next().value!);
+}
+
+/** Candles of `interval` onto the clock from `from` up to `to`, `max` at most. */
+async function pastOn(mint: string, interval: Interval, from: number, to: number, max: number): Promise<PriceSeries | null> {
+  const step = INTERVAL_MS[interval];
+  const count = Math.min(max, Math.ceil((to - from) / step) + 2);
+  const { at, closes } = onClock(await fetchCandles(mint, interval, count, true, to), step, count, to);
+  return closes.length ? { at, step, v: closes.map(round) } : null;
+}
+
+async function fetchPast(mint: string, from: number): Promise<PriceSeries[]> {
+  const now = Date.now();
+  const hourly = await pastOn(mint, "1_HOUR", from, now, PAST_HOURS);
+  const reach = now - PAST_HOURS * INTERVAL_MS["1_HOUR"];
+  const daily = from < reach ? await pastOn(mint, "1_DAY", from, reach, PAST_DAYS) : null;
+  return [hourly, daily].filter((s): s is PriceSeries => s != null);
+}
+
+/**
+ * A token's price from `from` up to `to`, for what a wallet paid for it
+ * (lib/entries.ts): hourly across the last twelve weeks, finest first, and
+ * daily before that when `from` reaches further. A past that has happened
+ * does not change, so an answer is kept for as long as it reaches far enough
+ * back and there is room, and shared by every wallet that traded the token.
+ *
+ * Empty when there is no history that far. Null when the chart API could not
+ * be asked, or `budget`, the tokens one wallet may still have fetched, has
+ * run out: an answer that may yet come, where empty is one that will not. A
+ * token already held, or on its way, costs nothing from it.
+ */
+export async function pastSeries(
+  mint: string,
+  from: number,
+  to: number,
+  budget?: { left: number },
+): Promise<PriceSeries[] | null> {
+  const now = Date.now();
+  const hit = past.get(mint);
+  if (hit && hit.from <= from && (hit.to >= to || now - hit.to < PAST_FRESH_MS)) return hit.series;
+  if (hit?.failed && now - hit.failed < RETRY_MS) return null;
+  let task = pastInFlight.get(mint);
+  if (!task) {
+    if (budget && budget.left-- <= 0) return null;
+    // Never less far back than already held, so wallets that traded the
+    // same token at different times do not take turns pushing each other out.
+    const back = Math.min(from, hit?.from ?? from);
+    task = fetchPast(mint, back)
+      .then((series) => {
+        rememberPast(mint, { from: back, to: now, series });
+        return series;
+      })
+      .catch((err: unknown) => {
+        if (!(err instanceof ChartsBusy)) console.warn(`[charts] past failed for ${mint}:`, err);
+        const prior = past.get(mint);
+        rememberPast(mint, { from: prior?.from ?? Infinity, to: prior?.to ?? 0, failed: Date.now(), series: prior?.series ?? [] });
+        return null;
+      })
+      .finally(() => pastInFlight.delete(mint));
+    pastInFlight.set(mint, task);
+  }
+  return task;
+}
+
 /**
  * The record's price across `range`, or null when it has too little history
  * for one, or the chart API could not be asked. A failure never replaces an

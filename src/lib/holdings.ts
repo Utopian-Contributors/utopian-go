@@ -208,6 +208,12 @@ interface Book {
   items: Holding[];
   total: number;
   held: Held[];
+  /**
+   * The slot the balances were read at, the earliest of the three answers:
+   * a walk through the wallet's past stops here (lib/entries.ts), so it
+   * counts nothing the balances do not show yet.
+   */
+  slot?: number;
   more?: number;
   dust?: number;
   unpriced?: number;
@@ -291,7 +297,7 @@ function toUnits(amount: bigint, decimals: number): number {
 
 /** What `owner` holds, and its line across `range`. */
 export async function fetchHoldings(owner: string, range: ChartRange = "24h"): Promise<Holdings> {
-  const { held, ...book } = await readBook(owner);
+  const { held, slot, ...book } = await readBook(owner);
   return { ...book, ...(await lines(held, range)) };
 }
 
@@ -351,6 +357,8 @@ async function lookup(owner: string): Promise<Book> {
   const body = (await res.json()) as RpcReply[];
   const replies = Array.isArray(body) ? body : [];
   const byId = new Map(replies.map((r) => [r.id, r]));
+  const slots = [1, 2, 3].map((id) => Number((byId.get(id)?.result as { context?: { slot?: unknown } } | undefined)?.context?.slot));
+  const slot = slots.every((n) => Number.isInteger(n) && n > 0) ? Math.min(...slots) : undefined;
 
   const totals = new Map<string, { amount: bigint; decimals: number }>();
   collect(byId.get(2)?.result, totals);
@@ -444,6 +452,7 @@ async function lookup(owner: string): Promise<Book> {
     items: shown,
     total,
     held,
+    ...(slot ? { slot } : {}),
     ...(items.length > shown.length ? { more: items.length - shown.length } : {}),
     ...(dust ? { dust } : {}),
     ...(unpriced ? { unpriced, unknown } : {}),

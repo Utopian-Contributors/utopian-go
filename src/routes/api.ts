@@ -1,6 +1,6 @@
 import express, { NextFunction, Request, Response, Router } from "express";
 import { fetchBalances, isPubkey } from "../lib/balances";
-import { fetchEntries } from "../lib/entries";
+import { fetchEntries, readBasis } from "../lib/entries";
 import { BadCursor, fetchHistory } from "../lib/history";
 import { fetchHoldings } from "../lib/holdings";
 import { isTicker, resolveTickers } from "../social/callouts";
@@ -56,6 +56,9 @@ const jsonBody = express.json({ limit: "1kb" });
 /** /api/assets's list of mints: fifty addresses are about 2.5 KB. */
 const listBody = express.json({ limit: "4kb" });
 
+/** /api/entries's basis: a position for each of fifty holdings, under 4 KB, and the mints given up on. */
+const basisBody = express.json({ limit: "8kb" });
+
 /** Parse a JSON body, answering 400 rather than falling through to a stack trace. */
 function parseWith(parser: typeof jsonBody) {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -71,6 +74,7 @@ function parseWith(parser: typeof jsonBody) {
 
 const readJson = parseWith(jsonBody);
 const readList = parseWith(listBody);
+const readBasisBody = parseWith(basisBody);
 
 /**
  * Every limit here is per *egress IP*, not per person.
@@ -448,14 +452,15 @@ apiRouter.post(
 );
 
 /**
- * What each holding cost, on average, across the past 24 hours, for the
- * wallet page to read each position's day against. POST, and as public, for
- * the reasons /api/holdings is.
+ * What each holding cost, on average, for the wallet page to read each
+ * position's profit against, worked on from the basis the page kept from its
+ * last ask when it sends one. POST, and as public, for the reasons
+ * /api/holdings is.
  */
 apiRouter.post(
   "/api/entries",
   entriesLimit,
-  readJson,
+  readBasisBody,
   wrap(async (req: Request, res: Response) => {
     const owner = asString(req.body?.owner).trim();
     if (!isPubkey(owner)) {
@@ -464,13 +469,14 @@ apiRouter.post(
       return;
     }
     try {
-      const body: EntriesApiResponse = { entries: await fetchEntries(owner) };
+      // A basis that is not one is a walk from scratch, not a refusal.
+      const body: EntriesApiResponse = await fetchEntries(owner, readBasis(req.body?.basis));
       res.json(body);
     } catch (err) {
       console.warn("[entries] lookup failed:", err);
-      // No entries at all, rather than an empty set the page would take for a day with none.
+      // No entries at all, rather than an empty set the page would take for a wallet with none.
       const body: EntriesApiResponse = {
-        error: "Could not read this wallet's day.",
+        error: "Could not read what this wallet paid.",
         ...(process.env.NODE_ENV === "production"
           ? {}
           : { detail: err instanceof Error ? err.message : String(err) }),

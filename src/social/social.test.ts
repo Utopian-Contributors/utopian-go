@@ -37,10 +37,10 @@ import { backdrop, palette } from "./backdrop";
 import { tokenKind } from "../lib/tokens/jupiter";
 import { buildLists, isStable, pageOf } from "../lib/tokens/store";
 import { type RawTx, readTx } from "../lib/history";
-import { averageEntries } from "../lib/entries";
+import { averageEntries, follows } from "../lib/entries";
 import { encodeTicks } from "../lib/tokens/ticks";
 import { stateTags } from "../state";
-import type { Activity, TokenKind, TokenQuote, TokenRecord } from "../types";
+import type { Activity, PriceSeries, TokenKind, TokenQuote, TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
 
 const dir = mkdtempSync(path.join(tmpdir(), "social-"));
@@ -376,56 +376,121 @@ test("history reads each transaction as what it did to the wallet, fee and rent 
   assert.equal(theirs.hidden, 0);
 });
 
-test("a position enters at its price a day ago, or at what was paid for it today", () => {
+test("a position enters at what was paid for it, however long ago", async () => {
   const HOUR = 3_600_000;
+  const DAY = 24 * HOUR;
   const now = Date.now();
-  const since = now - 24 * HOUR;
   const tickAt = Math.floor(now / HOUR) * HOUR;
-  const [M, P, Q] = ["Mint", "Plain", "Quiet"].map((n) => `${n}1111111111111111111111111111`);
-  const rec = (mint: string, price: number, change24h?: number, closes?: number[]) => {
+  const [M, N, P, Q, R, U] = ["Mint", "Next", "Plain", "Quick", "Rare", "Usd"].map((n) => `${n}1111111111111111111111111111`);
+  const rec = (mint: string, price: number, closes?: number[]) => {
     const day = closes && encodeTicks(closes);
     return {
       mint, symbol: mint, name: mint, price, liquidity: 1, verified: true,
-      ...(change24h != null ? { change24h } : {}),
       ...(day ? { ticks: day.ticks, tickLo: day.lo, tickHi: day.hi, tickAt } : {}),
     } as TokenRecord;
   };
-  // SOL flat at $100; M from $1 to $2 across the day; P untouched, half what it was; Q with no history.
-  const sol = rec(SOL_MINT, 100, 0, new Array(24).fill(100));
-  const m = rec(M, 2, 100, Array.from({ length: 24 }, (_, i) => 1 + i / 23));
-  const p = rec(P, 1, -50);
-  const q = rec(Q, 5);
-  const recs = new Map([sol, m, p, q].map((r) => [r.mint, r]));
+  // SOL flat at $100 today; M from $1 to $2 across the day; Q, R and U with no day of their own.
+  const sol = rec(SOL_MINT, 100, new Array(24).fill(100));
+  const m = rec(M, 2, Array.from({ length: 24 }, (_, i) => 1 + i / 23));
+  const n = rec(N, 4, new Array(24).fill(4));
+  const p = rec(P, 1, new Array(24).fill(1));
+  const q = rec(Q, 0.02);
+  const r = rec(R, 5);
+  const u = rec(U, 1);
+  const recs = new Map([sol, m, n, p, q, r, u].map((x) => [x.mint, x]));
   const lookup = (mints: string[]) => new Map(mints.filter((x) => recs.has(x)).map((x) => [x, recs.get(x)!]));
-  const act = (hoursAgo: number, moves: [string, number, number][]): Activity => ({
-    signature: `s${hoursAgo}`,
-    at: now - hoursAgo * HOUR,
+  // Before today, from the chart API: SOL at $80 until twenty days ago, $90 until a week ago,
+  // then $95; M at $2; N at $1 until a week ago, then $3; U at $1. Q is too new for it, R unknown.
+  const hourly = (f: (daysAgo: number) => number): PriceSeries[] => [
+    { at: tickAt, step: HOUR, v: Array.from({ length: 2000 }, (_, i) => f((now - (tickAt - (1999 - i) * HOUR)) / DAY)) },
+  ];
+  const pasts: Record<string, PriceSeries[]> = {
+    [SOL_MINT]: hourly((d) => (d > 20 ? 80 : d > 7 ? 90 : 95)),
+    [M]: hourly(() => 2),
+    [N]: hourly((d) => (d > 7 ? 1 : 3)),
+    [P]: hourly(() => 1),
+    [U]: hourly(() => 1),
+  };
+  const asked: string[] = [];
+  const older = async (mint: string) => {
+    asked.push(mint);
+    return pasts[mint] ?? [];
+  };
+  const act = (daysAgo: number, moves: [string, number, number][]): Activity => ({
+    signature: `s${daysAgo}`,
+    at: now - daysAgo * DAY,
     kind: "swap",
     moves: moves.map(([mint, amount, decimals]) => ({ mint, symbol: "", decimals, amount: String(amount) })),
   });
-  const day = [
-    // 1 SOL for 40 M, three hours ago, when 40 M was worth about $74: the $100 paid is what they cost.
-    act(3, [[SOL_MINT, -1e9, 9], [M, 40e6, 6]]),
-    // Half of what was bought sold an hour ago, and 3 Q received with nothing to price it by.
-    act(1, [[M, -20e6, 6]]),
-    act(1, [[Q, 3e6, 6]]),
+  const past = [
+    // 10 SOL arrive when SOL was $80.
+    act(30, [[SOL_MINT, 10e9, 9]]),
+    // 10 N for $10, all sold, then 10 more for $30: only the position held now counts.
+    act(25, [[U, -10e6, 6], [N, 10e6, 6]]),
+    act(15, [[N, -10e6, 6], [U, 12e6, 6]]),
+    // 1 SOL ($90) for 50 M ($100): the $90 paid is what they cost.
+    act(10, [[SOL_MINT, -1e9, 9], [M, 50e6, 6]]),
+    // Half of them for 0.5 SOL, which cost the $50 of M given for it.
+    act(5, [[M, -25e6, 6], [SOL_MINT, 0.5e9, 9]]),
+    // 0.1 SOL ($9.50) for 1000 Q, which nothing else can price.
+    act(2, [[SOL_MINT, -0.1e9, 9], [Q, 1000e6, 6]]),
+    act(2, [[U, -30e6, 6], [N, 10e6, 6]]),
+    // 5 of the P held from before anything here reaches.
+    act(1.5, [[P, -5e6, 6], [U, 5e6, 6]]),
+    // 1 SOL for 40 M three hours ago, priced off today's ticks.
+    act(3 / 24, [[SOL_MINT, -1e9, 9], [M, 40e6, 6]]),
+    // 3 R received an hour ago, with nothing to price them by.
+    act(1 / 24, [[R, 3e6, 6]]),
   ];
   const held = [
-    { rec: sol, units: 10 },
-    { rec: m, units: 30 },
+    { rec: sol, units: 8.4 },
+    { rec: m, units: 65 },
+    { rec: n, units: 10 },
     { rec: p, units: 7 },
-    { rec: q, units: 3 },
+    { rec: q, units: 1000 },
+    { rec: r, units: 3 },
   ];
-  const got = averageEntries(held, day, since, lookup);
   const near = (a: number | undefined, b: number) => assert.ok(a != null && Math.abs(a / b - 1) < 1e-3, `${a} ≉ ${b}`);
-  // 11 SOL held from before at $100, and the one sold leaves the average where it was.
-  near(got[SOL_MINT], 100);
-  // 10 M from before at $1, 40 bought for $100, a fifth of that sold at the average: $66 for 30.
-  near(got[M], 2.2);
-  // Untouched today: the market's own day.
-  near(got[P], 2);
-  // Nothing knows what Q was worth an hour ago, so it is left out rather than guessed.
-  assert.equal(got[Q], undefined);
+  // Read as far as a walk goes, which stops short of where P began.
+  const got = await averageEntries(held, past, { lookup, older, cut: true });
+  // 10 at $80, 1 out at the average, 0.5 in for $50; the sales since leave the average where it was.
+  near(got.entries[SOL_MINT], 770 / 9.5);
+  // 50 for $90, half sold at the average, 40 for $100: $145 for 65.
+  near(got.entries[M], 145 / 65);
+  // Bought again after it was sold out: the second buy's price alone.
+  near(got.entries[N], 3);
+  // What was paid, though the chart API has nothing for Q.
+  near(got.entries[Q], 0.0095);
+  // Nothing here reaches where P began, and nothing knows what R was worth: given up on, not guessed.
+  assert.equal(got.entries[P], undefined);
+  assert.equal(got.entries[R], undefined);
+  assert.deepEqual(got.far.sort(), [P, R].sort());
+  assert.ok(got.settled);
+  // Only for what today's ticks cannot price, once each.
+  assert.equal(asked.length, new Set(asked).size);
+  assert.ok(!asked.includes(P));
+
+  // Read to the wallet's first transaction and still short of P: the index is behind, not P given up on.
+  const behind = await averageEntries(held, past, { lookup, older });
+  assert.ok(!behind.settled);
+  assert.deepEqual(behind.far, [R]);
+
+  // A trade since, worked on from the basis alone, comes out as a walk through everything would,
+  // and asks the chart API nothing: today is priced off the ticks.
+  const trade = act(0.5 / 24, [[SOL_MINT, -1e9, 9], [M, 30e6, 6]]);
+  const later = held.map((h) => (h.rec === sol ? { rec: sol, units: 7.4 } : h.rec === m ? { rec: m, units: 95 } : h));
+  asked.length = 0;
+  const step = await averageEntries(later, [trade], { lookup, older, seed: got.lots, cut: true });
+  assert.equal(asked.length, 0);
+  const whole = await averageEntries(later, [...past, trade], { lookup, older, cut: true });
+  for (const mint of [SOL_MINT, M, N, Q]) near(step.entries[mint], whole.entries[mint]!);
+  assert.deepEqual(step.far.sort(), whole.far.sort());
+
+  // The basis adds up with what came since; not with a token's units off, nor without a holding it never knew.
+  const basis = { slot: 1, lots: got.lots, far: got.far };
+  assert.ok(follows(later, basis, [trade]));
+  assert.ok(!follows(later, { ...basis, lots: { ...got.lots, [N]: [12, 36] } }, [trade]));
+  assert.ok(!follows(later, { slot: 1, lots: {} }, [trade]));
 });
 
 test("posting waits ten minutes", () => {
