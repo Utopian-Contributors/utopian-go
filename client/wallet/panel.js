@@ -78,9 +78,8 @@ function stats(w) {
 /**
  * @param {HTMLElement} box
  * @param {(t: any) => HTMLElement} buy the page's buy button for a token
- * @param {HTMLElement} [title] the header's slot beside Back, named on phones
  */
-export function mountPanel(box, buy, title) {
+export function mountPanel(box, buy) {
   let run = 0;
   let current = "";
 
@@ -112,13 +111,10 @@ export function mountPanel(box, buy, title) {
       el("a", { href: d.links[key], target: "_blank", rel: "noopener noreferrer nofollow", text: label }),
     );
     const sol = d.priceSol == null ? null : tokenPrice(d.priceSol);
-    const name = () =>
-      el("div", { class: "tp-t" }, el("strong", { text: d.symbol }), el("span", { class: "wl-nm", text: d.name }));
 
-    // On a phone the name moves up beside Back and Buy drops under the line,
-    // where the thumb is once the price has been read (wallet.css). One of
-    // each pair is ever shown, so neither is read out twice.
-    title?.replaceChildren(icon(d, 28), name());
+    // On a phone Buy drops under the line, where the thumb is once the price
+    // has been read (wallet.css). One of the two is ever shown, so it is not
+    // read out twice.
 
     box.replaceChildren(
       ...[
@@ -126,7 +122,7 @@ export function mountPanel(box, buy, title) {
           "div",
           { class: "tp-h" },
           icon(d, 32),
-          name(),
+          el("div", { class: "tp-t" }, el("strong", { text: d.symbol }), el("span", { class: "wl-nm", text: d.name })),
           buy(d),
         ),
         links.length ? el("div", { class: "tp-lk" }, ...links) : null,
@@ -171,7 +167,6 @@ export function mountPanel(box, buy, title) {
     } catch (err) {
       if (id !== run) return;
       current = "";
-      if (!quiet) title?.replaceChildren();
       if (!quiet) box.replaceChildren(el("p", { class: "wl-n err", text: err.message || "Could not load this token." }));
     } finally {
       if (id === run) box.removeAttribute("aria-busy");

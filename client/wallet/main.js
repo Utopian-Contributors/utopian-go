@@ -221,7 +221,7 @@ const select = mountPanel(side, (t) => {
   // A linked token may be on neither list, and Swap opens on what the panel shows.
   if (!known.has(t.mint)) known.set(t.mint, t);
   return trade(t, "buy", true);
-}, $("bk-t"));
+});
 let chosen = "";
 
 function choose(mint, scroll) {
