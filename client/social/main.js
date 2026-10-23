@@ -52,7 +52,7 @@ function route() {
 /** The header's buttons, signed in or out. The server drew them already (src/pages.ts); this keeps them right. */
 function paintAccount(signed) {
   $("out").hidden = $("aw").hidden = !signed;
-  $("in").hidden = document.querySelector("#ac .ac-b").hidden = signed;
+  $("in").hidden = signed;
 }
 
 function applyMe(next) {

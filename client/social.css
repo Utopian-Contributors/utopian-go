@@ -22,10 +22,6 @@ a.tab.on:hover {
   border-bottom-color: var(--go);
 }
 
-#ac .ac-b {
-  color: var(--go);
-}
-
 body.res #ac {
   display: flex;
   align-items: center;

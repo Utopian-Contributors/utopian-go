@@ -79,7 +79,7 @@ Every page wears the same header as search: the wordmark, the search field, and 
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet
 mark and the word) and then the username, which opens My Profile. Signed out, the Wallet
 pill is a **Log in** pill (a person mark) that opens the login dialog in place, followed by
-**Get Social** (on Social itself, Go Search). Social remembers the name in `localStorage`
+**Get Social** (except on Social itself). Social remembers the name in `localStorage`
 (`ug.me`), so search paints it without a request. Log in is always the Social account; the
 trade dialog connects a browser wallet only for visitors without one.
 

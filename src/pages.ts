@@ -4,7 +4,7 @@
  *
  * The session cookie is readable here (readSession, no database), so the
  * header's account buttons come out right on the first paint: Wallet or Log
- * in, Log out or Go Search. Each is the exact markup the page's script draws
+ * in, and Log out. Each is the exact markup the page's script draws
  * (client/js/acct.js mountAccount, social's applyMe), so taking over moves
  * nothing. A profile's card comes out with its actions the same way, from the
  * row its script would fetch (client/social/main.js renderSide).
@@ -29,7 +29,6 @@ export function accountNav(page: Page, signed: boolean): string {
     inner =
       `<a class="ac-w" href="/wallet" id="aw"${hide(!signed)}>Wallet</a> ` +
       `<a class="ac-w ac-in" href="/wallet" id="in"${hide(signed)}>Log in</a> ` +
-      `<a class="ac-b" href="/"${hide(signed)}>Go Search</a> ` +
       `<button type="button" class="ac-out" id="out"${hide(!signed)}>Log out</button>`;
   } else if (!signed) inner = page === "index" ? LOG_IN : LOG_IN + SOCIAL;
   else if (page === "wallet") inner = `${SOCIAL}<button type="button" class="ac-out">Log out</button>`;

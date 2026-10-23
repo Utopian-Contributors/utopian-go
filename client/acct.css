@@ -12,24 +12,6 @@
   font-size: 13px;
 }
 
-.ac-b {
-  border: 0;
-  background: none;
-  padding: 0;
-  font: 500 13px/1.2 var(--ff);
-  color: var(--a);
-  cursor: pointer;
-}
-
-.ac-b:hover:not(:disabled) {
-  text-decoration: underline;
-}
-
-.ac-b:disabled {
-  color: var(--f);
-  cursor: progress;
-}
-
 /*
  * Wallet, Log in and Get Social: links, each with its mark — the same leather
  * wallet, person and pair of people as the rest of the app (client/ic-*.svg),
