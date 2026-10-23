@@ -999,6 +999,66 @@ body.hist .wl-top {
   color: var(--buy-ink);
 }
 
+/*
+ * Phones: the name beside the header's Back, centred on the row, and Buy
+ * under the line rather than across from the name. On wider screens the
+ * panel's own head keeps both, and these two stay hidden.
+ */
+.hb-t,
+.tp-bm {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .tp-h {
+    display: none;
+  }
+
+  .tp-bm {
+    display: block;
+    margin-top: 16px;
+  }
+
+  .tp-bm .tp-buy {
+    width: 100%;
+  }
+
+  /* Over the Back row of the stacked header (header.css), out of flow so the
+     row is as tall as it was. Inset past Back on both sides so the name
+     centres on the screen and never runs under it. */
+  body.deep .hb-t:not(:empty) {
+    position: absolute;
+    left: var(--pad);
+    right: var(--pad);
+    bottom: var(--hd-pb);
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding-inline: 100px;
+    pointer-events: none;
+  }
+
+  .hb-t .wl-ic {
+    width: 28px;
+    height: 28px;
+  }
+
+  .hb-t .wl-coin {
+    font-size: 15px;
+  }
+
+  .hb-t .tp-t {
+    flex: 0 1 auto;
+    line-height: 1.2;
+  }
+
+  .hb-t .tp-t strong {
+    font-size: 15px;
+  }
+}
+
 .tp-lk {
   display: flex;
   flex-wrap: wrap;
