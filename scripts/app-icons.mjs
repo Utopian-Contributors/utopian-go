@@ -26,6 +26,11 @@
  *   apple-touch-icon.png        the maskable drawing at 180. iOS fills any
  *                               transparency with black and rounds the corners
  *                               itself, so it needs the full-bleed version too.
+ *   ic-wallet.png, ic-social.png
+ *                               the wallet and social pages' tab icons, for
+ *                               browsers that take no SVG icon: each page's own
+ *                               drawing from ic-*.svg, as it is, at the 64 the
+ *                               pages declare.
  */
 import sharp from "sharp";
 import { readFileSync, writeFileSync } from "fs";
@@ -108,6 +113,11 @@ const ICONS = [
   ["icon-maskable.png", fullBleed(512)],
   ["apple-touch-icon.png", fullBleed(180)],
 ];
+
+for (const name of ["ic-wallet", "ic-social"]) {
+  const svg = readFileSync(path.join(clientDir, `${name}.svg`), "utf8");
+  ICONS.push([`${name}.png`, svg.replace("<svg ", '<svg width="64" height="64" ')]);
+}
 
 for (const [name, svg] of ICONS) {
   // Drawn at its final size rather than scaled: the SVG carries width and
