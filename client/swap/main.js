@@ -20,7 +20,7 @@ import { livePrice } from "../js/price.js";
 import { account } from "../js/me.js";
 import { onSession, readSession, shortAddr } from "../js/session.js";
 import { dialog } from "../js/ui.js";
-import { restore, settled, signAndSend } from "../js/wallet.js";
+import { connect, restore, settled, signAndSend } from "../js/wallet.js";
 import { build, quote, toBase58 } from "./jup.js";
 import { injectFormStyles } from "./ui.js";
 
