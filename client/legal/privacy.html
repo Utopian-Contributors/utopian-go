@@ -258,7 +258,7 @@
   <li>your username, which is permanent;</li>
   <li>
     your password, only as a salted scrypt hash from which it cannot be read
-    back;
+    back, itself encrypted under a server key kept outside our database;
   </li>
   <li>
     if you add a passkey, its public credential (never its private half, which
@@ -297,11 +297,12 @@
 <p>
   <b>9.8. Your account&rsquo;s wallet is custodial.</b> Each account comes with a
   Solana wallet whose keys are held by Utopian Contributors LLC. Its recovery
-  phrase is stored encrypted twice: once under your password, so that you can
-  view it, and once under a server key kept outside our database, so that our
-  server can sign the transactions you ask for. Our API never returns a private
-  key, and returns the phrase only to you, after you enter your password or
-  use your passkey. The wallet&rsquo;s address is public. We read its
+  phrase is stored encrypted twice: once under your password, with that copy
+  encrypted again under a server key kept outside our database, and once under
+  that server key alone, so that our server can sign the transactions you ask
+  for. Neither copy can be opened from a copy of our database. Our API never
+  returns a private key, and returns the phrase only to you, after you enter
+  your password or use your passkey. The wallet&rsquo;s address is public. We read its
   balances from the Solana blockchain via Helius. When you trade or send from
   it, our server builds the transaction, with Jupiter for a swap, and submits
   it to Solana. Jupiter and Helius then see your wallet address and our

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, webcrypto } from "crypto";
+import { createCipheriv, createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, scryptSync, sign, verify, webcrypto } from "crypto";
 import express from "express";
 import { mkdtempSync, readdirSync, rmSync } from "fs";
 import { createServer, type Server } from "http";
@@ -7,7 +7,7 @@ import { tmpdir } from "os";
 import path from "path";
 import { Client } from "pg";
 import test, { after } from "node:test";
-import { checkPassword, newPassword, openPhrase, sealPhrase, stale } from "./auth";
+import { checkPassword, newPassword, openPhrase, pepperHash, sealPhrase, stale, wrapPhraseCt } from "./auth";
 import { TERMS_VERSION, UTCC_MINT } from "../config";
 import { audioKind } from "./audio";
 import { jpegSize } from "./jpeg";
@@ -117,6 +117,46 @@ test("a hash from before the cost went up still verifies, and reads as stale", a
   const hash = scryptSync("correct horse", Buffer.from(salt, "base64url"), 32, { N: 2 ** 14, r: 8, p: 1 });
   assert.equal(await checkPassword("correct horse", salt, hash.toString("base64url")), true);
   assert.equal(stale(salt), true);
+});
+
+test("a password hash is kept under the pepper, and one from before it still checks", async () => {
+  const pass = await newPassword("correct horse");
+  assert.match(pass.hash, /^peppered\./, "sealed, so a copy of the database has nothing to guess against");
+  assert.equal(await checkPassword("correct horse", pass.salt, pass.hash), true);
+  assert.equal(await checkPassword("nope", pass.salt, pass.hash), false);
+  // As every hash was before the pepper: the scrypt output, bare.
+  const salt = `2.${Buffer.alloc(16, 9).toString("base64url")}`;
+  const bare = scryptSync("correct horse", Buffer.alloc(16, 9), 32, { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString("base64url");
+  assert.equal(await checkPassword("correct horse", salt, bare), true);
+  const sealed = pepperHash(bare);
+  assert.match(sealed, /^peppered\./);
+  assert.notEqual(sealed.includes(bare), true, "the hash is not in what is stored");
+  assert.equal(pepperHash(sealed), sealed, "sealed once, however often asked");
+  assert.equal(await checkPassword("correct horse", salt, sealed), true);
+  assert.equal(await checkPassword("nope", salt, sealed), false);
+  // A stored hash the pepper does not open is a key gone wrong, said out loud, not a wrong password.
+  const [iv, tag, ct] = sealed.slice("peppered.".length).split(".");
+  const tampered = `peppered.${iv}.${tag}.${ct[0] === "A" ? "B" : "A"}${ct.slice(1)}`;
+  await assert.rejects(checkPassword("correct horse", salt, tampered));
+});
+
+test("the password box is sealed again under WALLET_KEY, and one sealed before that still opens", async () => {
+  const box = await sealPhrase(ABANDON, "password1");
+  assert.match(box.ct, /^wrapped\./);
+  assert.equal(await openPhrase(box, "password1"), ABANDON);
+  await assert.rejects(openPhrase(box, "password2"));
+  // Under the password alone, as rows from before were written.
+  const salt = randomBytes(16);
+  const key = scryptSync("password1", salt, 32, { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const ct = Buffer.concat([cipher.update(ABANDON, "utf8"), cipher.final()]);
+  const old = { salt: `2.${salt.toString("base64url")}`, iv: iv.toString("base64url"), tag: cipher.getAuthTag().toString("base64url"), ct: ct.toString("base64url") };
+  assert.equal(await openPhrase(old, "password1"), ABANDON);
+  const sealed = { ...old, ct: wrapPhraseCt(old.ct) };
+  assert.match(sealed.ct, /^wrapped\./);
+  assert.equal(wrapPhraseCt(sealed.ct), sealed.ct, "sealed once, however often asked");
+  assert.equal(await openPhrase(sealed, "password1"), ABANDON);
 });
 
 test("a typed phrase is forgiven its case and spacing, not a wrong word", () => {

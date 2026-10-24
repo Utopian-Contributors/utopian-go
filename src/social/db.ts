@@ -1,4 +1,4 @@
-import type { KeyBox } from "./auth";
+import { type KeyBox, pepperHash, wrapPhraseCt } from "./auth";
 import { randomBytes } from "crypto";
 import { readFileSync } from "fs";
 import path from "path";
@@ -294,12 +294,36 @@ let ready: Promise<void> | null = null;
 export function ensureSchema(): Promise<void> {
   ready ??= db()
     .query(SCHEMA)
-    .then(() => undefined)
+    .then(() => sealAtRest())
     .catch((err) => {
       ready = null;
       throw err;
     });
   return ready;
+}
+
+/**
+ * Seal every row written before sealing was done on writing: each password
+ * box again under WALLET_KEY (wrapPhraseCt in auth.ts), and each password
+ * hash under PASSWORD_PEPPER (pepperHash). Neither needs anyone's password:
+ * what is sealed is the value as it stands. A failure is said and not fatal;
+ * the rows it missed still open and check, and the next boot tries them again.
+ */
+async function sealAtRest(): Promise<void> {
+  try {
+    const rows = await many<{ name: string; pass_hash: string; phrase_ct: string }>(
+      "SELECT name, pass_hash, phrase_ct FROM users WHERE phrase_ct NOT LIKE 'wrapped.%' OR pass_hash NOT LIKE 'peppered.%'",
+    );
+    for (const row of rows) {
+      await db().query(
+        "UPDATE users SET pass_hash = $2, phrase_ct = $3 WHERE name = $1 AND pass_hash = $4 AND phrase_ct = $5",
+        [row.name, pepperHash(row.pass_hash), wrapPhraseCt(row.phrase_ct), row.pass_hash, row.phrase_ct],
+      );
+    }
+    if (rows.length) console.log(`[social] sealed ${rows.length} accounts' password hashes and boxes at rest`);
+  } catch (err) {
+    console.error("[social] sealing password hashes and boxes at rest:", err);
+  }
 }
 
 /** Tests start from an empty social database. Avatars on disk are separate. */

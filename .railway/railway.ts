@@ -14,7 +14,7 @@ export default defineRailway(() => {
     domains: ["utopiango.com"],
     networking: { privateNetworkEndpoint: "glistening-adventure" },
     volumeMounts: { "/app/data": dataVolume },
-    env: { BRAVE_API_KEY: preserve(), DATABASE_URL: preserve(), HELIUS_RPC_URL: preserve(), JUP_FEE_ACCOUNT: preserve(), JUP_FEE_ACCOUNT_USDC: preserve(), JUP_FEE_BPS: preserve(), JUP_REFERAL_ACCOUNT: preserve(), WALLET_KEY: preserve() },
+    env: { BRAVE_API_KEY: preserve(), DATABASE_URL: preserve(), HELIUS_RPC_URL: preserve(), JUP_FEE_ACCOUNT: preserve(), JUP_FEE_ACCOUNT_USDC: preserve(), JUP_FEE_BPS: preserve(), JUP_REFERAL_ACCOUNT: preserve(), PASSWORD_PEPPER: preserve(), WALLET_KEY: preserve() },
   });
 
   return project("glistening-adventure", {

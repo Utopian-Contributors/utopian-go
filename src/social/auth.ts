@@ -63,15 +63,64 @@ export function stale(salt: string): boolean {
   return !salt.startsWith(`${CURRENT}.`);
 }
 
-export async function newPassword(password: string): Promise<{ salt: string; hash: string }> {
-  const salt = freshSalt();
-  return { salt, hash: (await derive(password, salt)).toString("base64url") };
+/**
+ * The password hash as stored is sealed under the pepper, PASSWORD_PEPPER.
+ *
+ * A salted scrypt hash on its own is something to guess passwords against
+ * offline, given a copy of the database: a weak password falls to a list.
+ * Sealed, the hash says nothing about a guess without a key that never enters
+ * Postgres. `peppered.` marks it; a hash without it is from before, still
+ * checks, and is sealed at the next boot (sealAtRest in db.ts).
+ */
+const PEPPERED = "peppered.";
+
+export function pepperHash(hash: string): string {
+  return sealedAs(PEPPERED, pepperKey, hash);
 }
 
+export async function newPassword(password: string): Promise<{ salt: string; hash: string }> {
+  const salt = freshSalt();
+  return { salt, hash: pepperHash((await derive(password, salt)).toString("base64url")) };
+}
+
+/** Throws, rather than answering no, when the pepper does not open the hash: that is a key gone wrong, not a wrong password. */
 export async function checkPassword(password: string, salt: string, hash: string): Promise<boolean> {
   const got = await derive(password, salt);
-  const expect = Buffer.from(hash, "base64url");
+  const expect = Buffer.from(openedAs(PEPPERED, pepperKey, hash), "base64url");
   return got.length === expect.length && timingSafeEqual(got, expect);
+}
+
+/**
+ * The password box's ciphertext is sealed again under WALLET_KEY.
+ *
+ * Under the password alone, a copy of the database is something to guess
+ * passwords against offline: the GCM tag says when a guess is right, and the
+ * phrase it opens is the wallet. Sealed again, a guess has nothing to be
+ * checked against without the key that never enters Postgres. `wrapped.`
+ * marks the outer box; a ciphertext without it is from before, and still opens.
+ */
+const WRAPPED = "wrapped.";
+
+export function wrapPhraseCt(ct: string): string {
+  return sealedAs(WRAPPED, walletKey, ct);
+}
+
+function unwrapPhraseCt(ct: string): string {
+  return openedAs(WRAPPED, walletKey, ct);
+}
+
+/** `text` sealed under `key`, as one string marked `prefix`. Already marked, it is left as it is. */
+function sealedAs(prefix: string, key: () => Buffer, text: string): string {
+  if (text.startsWith(prefix)) return text;
+  const box = sealWith(key(), text);
+  return `${prefix}${box.iv}.${box.tag}.${box.ct}`;
+}
+
+/** The inverse of sealedAs. Unmarked text is from before sealing, and is handed back as it is. */
+function openedAs(prefix: string, key: () => Buffer, text: string): string {
+  if (!text.startsWith(prefix)) return text;
+  const [iv, tag, ct] = text.slice(prefix.length).split(".");
+  return openWith(key(), { iv, tag, ct });
 }
 
 export async function sealPhrase(phrase: string, password: string): Promise<PhraseBox> {
@@ -84,7 +133,7 @@ export async function sealPhrase(phrase: string, password: string): Promise<Phra
     salt,
     iv: iv.toString("base64url"),
     tag: cipher.getAuthTag().toString("base64url"),
-    ct: ct.toString("base64url"),
+    ct: wrapPhraseCt(ct.toString("base64url")),
   };
 }
 
@@ -94,7 +143,7 @@ export async function openPhrase(box: PhraseBox, password: string): Promise<stri
   const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(box.iv, "base64url"));
   decipher.setAuthTag(Buffer.from(box.tag, "base64url"));
   return Buffer.concat([
-    decipher.update(Buffer.from(box.ct, "base64url")),
+    decipher.update(Buffer.from(unwrapPhraseCt(box.ct), "base64url")),
     decipher.final(),
   ]).toString("utf8");
 }
@@ -105,36 +154,53 @@ export interface KeyBox {
   ct: string;
 }
 
-let walletKeyCache: Buffer | null = null;
+const keyCache = new Map<string, Buffer>();
 
 /**
- * The key that seals each account's server copy of its phrase. It lives in the
- * environment, never in Postgres, so a copy of the database opens nothing.
+ * A 32-byte key, base64url, from the environment and never from Postgres, so
+ * a copy of the database opens nothing sealed under it. Production refuses to
+ * go on without it. Elsewhere one is made once and kept in the social data dir.
  */
-function walletKey(): Buffer {
-  if (walletKeyCache) return walletKeyCache;
-  const raw = process.env.WALLET_KEY;
+function envKey(name: "WALLET_KEY" | "PASSWORD_PEPPER", file: string): Buffer {
+  const held = keyCache.get(name);
+  if (held) return held;
+  const raw = process.env[name];
+  let key: Buffer;
   if (raw) {
-    const key = Buffer.from(raw, "base64url");
-    if (key.length !== 32) throw new Error("WALLET_KEY must be 32 bytes, base64url");
-    walletKeyCache = key;
-    return key;
+    key = Buffer.from(raw, "base64url");
+    if (key.length !== 32) throw new Error(`${name} must be 32 bytes, base64url`);
+  } else {
+    if (process.env.NODE_ENV === "production") throw new Error(`${name} is not set`);
+    const at = path.join(socialDir(), file);
+    if (existsSync(at)) key = readFileSync(at);
+    else {
+      key = randomBytes(32);
+      mkdirSync(socialDir(), { recursive: true });
+      writeFileSync(at, key, { mode: 0o600 });
+    }
   }
-  if (process.env.NODE_ENV === "production") throw new Error("WALLET_KEY is not set");
-  const file = path.join(socialDir(), "wallet-key");
-  if (existsSync(file)) walletKeyCache = readFileSync(file);
-  else {
-    walletKeyCache = randomBytes(32);
-    mkdirSync(socialDir(), { recursive: true });
-    writeFileSync(file, walletKeyCache, { mode: 0o600 });
-  }
-  return walletKeyCache;
+  keyCache.set(name, key);
+  return key;
 }
 
-export function sealForServer(phrase: string): KeyBox {
+/** The key that seals each account's server copy of its phrase, and the password box around the other. */
+function walletKey(): Buffer {
+  return envKey("WALLET_KEY", "wallet-key");
+}
+
+/**
+ * The pepper every password hash is sealed under. A key of its own rather
+ * than one derived from WALLET_KEY, so that each can be kept, and lost,
+ * without the other.
+ */
+function pepperKey(): Buffer {
+  return envKey("PASSWORD_PEPPER", "password-pepper");
+}
+
+function sealWith(key: Buffer, text: string): KeyBox {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", walletKey(), iv);
-  const ct = Buffer.concat([cipher.update(phrase, "utf8"), cipher.final()]);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const ct = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
   return {
     iv: iv.toString("base64url"),
     tag: cipher.getAuthTag().toString("base64url"),
@@ -142,13 +208,21 @@ export function sealForServer(phrase: string): KeyBox {
   };
 }
 
-export function openForServer(box: KeyBox): string {
-  const decipher = createDecipheriv("aes-256-gcm", walletKey(), Buffer.from(box.iv, "base64url"));
+function openWith(key: Buffer, box: KeyBox): string {
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(box.iv, "base64url"));
   decipher.setAuthTag(Buffer.from(box.tag, "base64url"));
   return Buffer.concat([
     decipher.update(Buffer.from(box.ct, "base64url")),
     decipher.final(),
   ]).toString("utf8");
+}
+
+export function sealForServer(phrase: string): KeyBox {
+  return sealWith(walletKey(), phrase);
+}
+
+export function openForServer(box: KeyBox): string {
+  return openWith(walletKey(), box);
 }
 
 /**

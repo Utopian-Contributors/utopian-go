@@ -801,6 +801,13 @@ const server = app.listen(PORT, () => {
   if (!HELIUS_RPC_URL) {
     console.log("Set HELIUS_RPC_URL env var for live token price refresh.");
   }
+  // Social's two keys (src/social/auth.ts). Outside production a missing one
+  // is made and kept on disk; in production nothing stands in for it.
+  if (process.env.NODE_ENV === "production") {
+    for (const key of ["WALLET_KEY", "PASSWORD_PEPPER"]) {
+      if (!process.env[key]) console.error(`[social] ${key} is not set: no account can sign up or log in by password until it is.`);
+    }
+  }
   const sides = [
     JUP_FEE_ACCOUNT_SOL && "SOL",
     JUP_FEE_ACCOUNT_USDC && "USDC",
