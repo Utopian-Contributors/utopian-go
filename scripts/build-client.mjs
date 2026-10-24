@@ -462,11 +462,12 @@ function withoutNulls(value) {
  * @returns {Promise<string>}
  */
 async function minifyCss(source, names) {
+  const css = fingerprintUrls(source);
   try {
     const { transform } = await import("lightningcss");
     const { code } = transform({
       filename: "app.css",
-      code: Buffer.from(source),
+      code: Buffer.from(css),
       minify: true,
       targets: {
         chrome: 90 << 16,
@@ -480,7 +481,7 @@ async function minifyCss(source, names) {
     // Fallback if lightningcss native binary is unavailable. Said out loud,
     // because the fallback cannot prune and the page would silently grow.
     console.warn(`[css] lightningcss failed, using esbuild: ${err.message}`);
-    const result = await esbuild.transform(source, {
+    const result = await esbuild.transform(css, {
       loader: "css",
       minify: true,
       target: ["chrome90", "firefox90", "safari14"],
@@ -492,6 +493,24 @@ async function minifyCss(source, names) {
 /** Short content hash for cache-busting query params. */
 function contentHash(buf) {
   return createHash("sha256").update(buf).digest("hex").slice(0, 8);
+}
+
+/**
+ * Every url() in a stylesheet that names a file copyStatic ships, with that
+ * file's ?v= content hash.
+ *
+ * Images are served for a week and Cloudflare holds them as long, on the
+ * promise that a deploy changes the query string they are asked for by. A
+ * url() with the bare name broke it: a new home-dark.webp under the old name
+ * went on being served as the old frame for days after it shipped. Anything
+ * not in client/ (a route, say) is left as written.
+ */
+function fingerprintUrls(source) {
+  return source.replace(/url\((["']?)\/([\w.-]+)\1\)/g, (match, quote, name) => {
+    const file = path.join(clientDir, name);
+    if (!existsSync(file)) return match;
+    return `url(${quote}/${name}?v=${contentHash(readFileSync(file))}${quote})`;
+  });
 }
 
 /**
