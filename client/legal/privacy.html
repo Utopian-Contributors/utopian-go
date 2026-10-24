@@ -343,7 +343,13 @@
 <p>
   <b>9.12. What we keep, and deleting it.</b> We keep your account data for as
   long as the account exists. To limit abuse, our server counts requests per IP
-  address in memory, and does not write those counts anywhere. There is not yet
+  address in memory, and does not write those counts anywhere. So that an ad
+  is charged once for each person who sees it rather than once for each page
+  load, our server also keeps, in memory for up to 30 minutes, a one-way hash
+  of your IP address and browser headers (or your username, when you are
+  signed in) next to the ads you were shown. The hash is made under a key that
+  changes every day, is never written anywhere, and cannot be turned back into
+  your address. There is not yet
   a button to delete an account. To delete yours, or any post or comment, email
   the address in section 8. We will ask you to prove you control the account,
   then delete it and everything listed in 9.5 and 9.7. We cannot recall copies of public content

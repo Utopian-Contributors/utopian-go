@@ -2009,7 +2009,7 @@ test("a transfer names its order by reference, by memo, or by its exact amount",
   assert.match(payUrl(first, "usdc"), /amount=2\.500042&spl-token=EPjF/);
 });
 
-test("an ad runs once paid: the higher bid first, on search and in timelines, every impression charged, until its budget is spent", async () => {
+test("an ad runs once paid: the higher bid first, on search and in timelines, each viewer charged once, until its budget is spent", async () => {
   await useTestDatabase();
   await ensureSchema();
   await resetSocial();
@@ -2054,8 +2054,10 @@ test("an ad runs once paid: the higher bid first, on search and in timelines, ev
     return Buffer.concat([head, text, lens, ...banner]);
   };
   const creative: AdCreative = { cta: "Try it", url: "https://rpc.example.com/", title: "Fast RPC", body: "Low latency.", devices: "all", bid: 1 };
-  const visit = (who: string, agent = "Mozilla/5.0 (Macintosh)") =>
-    ({ ip: who, get: (name: string) => ({ "user-agent": agent })[name.toLowerCase() as "user-agent"] }) as unknown as express.Request;
+  const visit = (who: string, agent = "Mozilla/5.0 (Macintosh)", extra: Record<string, string> = {}) => {
+    const headers: Record<string, string> = { "user-agent": agent, ...extra };
+    return { ip: who, get: (name: string) => headers[name.toLowerCase()] } as unknown as express.Request;
+  };
   const save = (owner: string, id: string | null, over: Partial<AdCreative>, plan: { keyword: string; cents: number }[], keywords = plan.map((p) => p.keyword)) =>
     saveAd({
       id,
@@ -2145,10 +2147,10 @@ test("an ad runs once paid: the higher bid first, on search and in timelines, ev
     assert.equal(adFor(visit("1.1.1.6", "Googlebot/2.1"), "solana"), "", "no ads for crawlers");
     assert.ok(!adFor(visit("1.1.1.7"), "solana").includes("<img"), "search is words only");
 
-    // Search put Dear on three pages, the same address twice: three impressions at 2¢.
+    // Search put Dear on three pages, the same viewer twice: two impressions at 2¢.
     await flushAds();
     let ad = await getAd(dear);
-    assert.deepEqual(ad?.keywords, [{ keyword: "solana", budget: 100, spent: 6, shown: 3, social: 0 }]);
+    assert.deepEqual(ad?.keywords, [{ keyword: "solana", budget: 100, spent: 4, shown: 2, social: 0 }]);
 
     // Social: what someone last posted about that an ad matched picks their timeline's ad.
     assert.equal((await cat("GET", "/api/social/timeline")).json.ad, null, "nothing posted yet");
@@ -2172,17 +2174,27 @@ test("an ad runs once paid: the higher bid first, on search and in timelines, ev
     // Your own ad shows where it runs, and your looking costs it nothing: ben's Dear outbids amy's Cheap.
     assert.equal((await ben("POST", "/api/social/post", { text: "solana rpc tips" })).status, 200);
     assert.equal((await ben("GET", "/api/social/timeline")).json.ad.title, "Dear");
+    // cat saw Dear on three timelines, on two devices: one viewer, signed in, so one impression.
     await flushAds();
     ad = await getAd(dear);
-    assert.deepEqual(ad?.keywords, [{ keyword: "solana", budget: 100, spent: 12, shown: 6, social: 3 }]);
+    assert.deepEqual(ad?.keywords, [{ keyword: "solana", budget: 100, spent: 6, shown: 3, social: 1 }]);
 
     // Spend the rest; then the 1¢ ad is the one left.
-    for (let i = 0; i < 44; i++) assert.match(adFor(visit(`2.0.0.${i}`), "solana rpc"), />Dear</);
+    for (let i = 0; i < 47; i++) assert.match(adFor(visit(`2.0.0.${i}`), "solana rpc"), />Dear</);
     assert.match(adFor(visit("2.0.1.0"), "solana rpc"), />Cheap</);
     await flushAds();
     ad = await getAd(dear);
     assert.equal(ad?.keywords[0].spent, 100, "never past the budget");
     assert.equal(ad?.keywords[0].shown, 50);
+
+    // A script cycling user agents from one address is five viewers at most;
+    // an <img> pointed at a results page, and a prefetch, show the ad to no one.
+    for (let i = 0; i < 10; i++) assert.match(adFor(visit("4.0.0.1", `Mozilla/5.0 (Macintosh) v${i}`), "solana rpc"), />Cheap</);
+    assert.match(adFor(visit("5.0.0.1", undefined, { "sec-fetch-dest": "image" }), "solana rpc"), />Cheap</);
+    assert.match(adFor(visit("5.0.0.2", undefined, { "sec-fetch-dest": "document", "sec-purpose": "prefetch;prerender" }), "solana rpc"), />Cheap</);
+    assert.match(adFor(visit("5.0.0.3", undefined, { "sec-fetch-dest": "document" }), "solana rpc"), />Cheap</);
+    await flushAds();
+    assert.equal((await getAd(cheap))?.keywords[0].shown, 1 + 5 + 1);
 
     // Paid budget stays: words change at once, a keyword with budget left cannot go.
     const edit = (json: Record<string, unknown>) => amy("POST", `/api/social/ads/${cheap}`, packAd({ ...creative, banner: false, ...json }));

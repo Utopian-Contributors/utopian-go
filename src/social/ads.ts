@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "crypto";
 import type { Request } from "express";
 import { readSession } from "./auth";
 import { type Ad, addImpressions, liveAds } from "./db";
@@ -8,9 +9,10 @@ import { words } from "./limits";
  * Postgres for one. Search picks from the query; a timeline picks from the
  * latest post of the person reading it that an ad matched (ad_topics). Of
  * the keywords the text contains, the ad bidding most with the budget for an
- * impression wins, and equal bids take turns. Every ad the server puts on a
- * page is an impression, charged there and written to Postgres in batches,
- * except on its owner's own pages: they see it where it runs, for nothing.
+ * impression wins, and equal bids take turns. An ad's first showing to a
+ * viewer in half an hour is an impression (firstLook), charged there and
+ * written to Postgres in batches; showing it again to them is free, and so is
+ * every showing on its owner's own pages.
  */
 
 type Entry = { ad: Ad; keyword: string; words: string[]; left: number };
@@ -121,9 +123,96 @@ export function matchesAd(text: string): boolean {
   return !!(pickAd(text, false) || pickAd(text, true));
 }
 
-/** Put on `viewer`'s page: one impression, at the ad's bid. Its owner looking costs nothing and counts for nothing. */
-function charge(entry: Entry, social: boolean, viewer: string): void {
+/**
+ * One impression per viewer per ad per SEEN_MS, however often the page loads.
+ *
+ * Without this every render was a charge, so anyone could burn a rival's
+ * budget with a loop of requests, or with an <img> pointed at a results URL on
+ * a busy page. A viewer is their account when signed in, else a fingerprint:
+ * the network they come from, with the browser headers that tell people on one
+ * network apart. Those headers are the caller's to vary, so one network is
+ * charged at most PER_NETWORK distinct viewers per ad in the same span:
+ * a household or an office, not a script cycling user agents.
+ *
+ * Nothing here is written down or sent anywhere. The fingerprint is an HMAC
+ * under a salt that lives in this process and is replaced every SALT_MS, and
+ * entries go once SEEN_MS has passed, so no viewer can be followed across
+ * days, and a restart forgets everyone.
+ */
+const SEEN_MS = 30 * 60_000;
+const PER_NETWORK = 5;
+const SALT_MS = 24 * 3600_000;
+/** Remembered viewers, at most. Past this nobody new is charged until entries expire: an advertiser is never billed for a flood. */
+const MAX_SEEN = 100_000;
+
+let salt = randomBytes(32);
+let saltAt = Date.now();
+/** `viewer\nad` → when that look stops counting as the same impression. */
+const seen = new Map<string, number>();
+/** `network\nad` → how many viewers were charged from it, and until when that count holds. */
+const networks = new Map<string, { count: number; until: number }>();
+let sweptAt = 0;
+
+/** The network part of an address: all of an IPv4 one, the first 48 bits of an IPv6 one, where one site's addresses all start alike. */
+function network(ip: string): string {
+  const v4 = /^(?:::ffff:)?(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
+  if (v4) return v4[1];
+  return ip.toLowerCase().split(":").slice(0, 3).join(":");
+}
+
+function viewerKey(req: Request, viewer: string, net: string): string {
+  if (viewer) return `u:${viewer}`;
+  const now = Date.now();
+  if (now - saltAt > SALT_MS) {
+    salt = randomBytes(32);
+    saltAt = now;
+  }
+  const parts = [net, req.get("user-agent"), req.get("accept-language"), req.get("sec-ch-ua"), req.get("sec-ch-ua-platform")];
+  return createHmac("sha256", salt).update(parts.map((p) => p ?? "").join("\n")).digest("base64url");
+}
+
+function sweep(now: number): void {
+  if (now - sweptAt < 60_000 && seen.size < MAX_SEEN) return;
+  sweptAt = now;
+  for (const [k, until] of seen) if (until <= now) seen.delete(k);
+  for (const [k, held] of networks) if (held.until <= now) networks.delete(k);
+}
+
+/** Whether this look at `ad` is a new impression, and if so, remembered as one. */
+function firstLook(req: Request, ad: string, viewer: string): boolean {
+  const now = Date.now();
+  sweep(now);
+  const net = network(req.ip || req.socket?.remoteAddress || "");
+  const look = `${viewerKey(req, viewer, net)}\n${ad}`;
+  if ((seen.get(look) ?? 0) > now) return false;
+  const from = `${net}\n${ad}`;
+  const held = networks.get(from);
+  const count = held && held.until > now ? held.count : 0;
+  if (count >= PER_NETWORK || seen.size >= MAX_SEEN) return false;
+  seen.set(look, now + SEEN_MS);
+  networks.set(from, { count: count + 1, until: count ? held!.until : now + SEEN_MS });
+  return true;
+}
+
+/**
+ * A page someone is looking at: a document, not an image, a frame or a
+ * prefetch. Sec-Fetch-Dest says which; a browser too old to send it is taken
+ * at its word, as it was before.
+ */
+function looking(req: Request): boolean {
+  const dest = req.get("sec-fetch-dest");
+  if (dest && dest !== "document") return false;
+  return !/prefetch|prerender/i.test(req.get("sec-purpose") || req.get("purpose") || "");
+}
+
+/**
+ * Put on `viewer`'s page: one impression, at the ad's bid, if it is this
+ * viewer's first look in SEEN_MS. Its owner looking costs nothing and counts
+ * for nothing.
+ */
+function charge(req: Request, entry: Entry, social: boolean, viewer: string): void {
   if (viewer && viewer === entry.ad.owner) return;
+  if (!firstLook(req, entry.ad.id, viewer)) return;
   lastShown.set(entry.ad.id, Date.now());
   entry.left -= entry.ad.bid;
   const k = key(entry.ad.id, entry.keyword);
@@ -187,7 +276,7 @@ export function adFor(req: Request, query: string): string {
   if (isBot(req)) return "";
   const entry = pickAd(query, isMobile(req));
   if (!entry) return "";
-  charge(entry, false, viewerOf(req));
+  if (looking(req)) charge(req, entry, false, viewerOf(req));
   return adMarkup(entry.ad);
 }
 
@@ -196,7 +285,7 @@ export function socialAdFor(req: Request, topic: string, viewer: string): Social
   if (!topic || isBot(req)) return null;
   const entry = pickAd(topic, isMobile(req));
   if (!entry) return null;
-  charge(entry, true, viewer);
+  charge(req, entry, true, viewer);
   const { ad } = entry;
   const img = ad.banner ? `/social/b/${ad.id}?v=${ad.banner}` : "";
   return {
