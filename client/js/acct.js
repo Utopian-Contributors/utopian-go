@@ -44,7 +44,8 @@ export async function logOut() {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Could not log out.");
   }
-  // Messenger's opened key (client/chat) is this device's, not the next person's.
+  // Messenger keeps its opened key in tab memory now (client/chat); this is the
+  // store earlier versions wrote it to, gone for whoever uses the device next.
   try {
     indexedDB.deleteDatabase("ug-chat");
   } catch {

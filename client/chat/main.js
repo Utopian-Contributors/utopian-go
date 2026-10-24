@@ -9,10 +9,14 @@
  * recipient, is the additional data, so the server cannot pass one person's
  * message off as the other's.
  *
- * Once opened, the private key is kept in IndexedDB as a non-extractable
- * CryptoKey. The page can use it and cannot read it out, so the passkey is
- * asked for once per device, not on every visit. Logging out deletes the
- * store (social.js), which is why its name is spelled there too.
+ * Once opened, the private key is kept in this tab's memory and nowhere else.
+ * It is never written down open, on this device or any other: IndexedDB would
+ * keep a non-extractable CryptoKey's bytes in the browser profile on disk,
+ * readable to anything that can read the profile, offline. So the passkey is
+ * asked for once per tab, and closing or reloading the tab locks the
+ * messages again. Earlier versions did keep it in IndexedDB; that store is
+ * deleted on load here, and on logout (acct.js), which is why its name is
+ * spelled there too.
  *
  * Loaded by social.js on /social/c. It shares that bundle's helpers through
  * `ctx` rather than carrying copies of them; the photo scaler is its own,
@@ -63,42 +67,14 @@ function unseal(key, iv, bytes, aad) {
   return subtle.decrypt({ name: "AES-GCM", iv, additionalData: te.encode(aad) }, key, bytes);
 }
 
-/** One IndexedDB request, with the database opened and closed around it. */
-function idb(mode, fn) {
-  return new Promise((resolve, reject) => {
-    const open = indexedDB.open(STORE, 1);
-    open.onupgradeneeded = () => open.result.createObjectStore("k");
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const db = open.result;
-      const t = db.transaction("k", mode);
-      const req = fn(t.objectStore("k"));
-      t.oncomplete = () => {
-        db.close();
-        resolve(req.result);
-      };
-      t.onerror = t.onabort = () => {
-        db.close();
-        reject(t.error);
-      };
-    };
-  });
-}
+/** Opened private keys by account, for this tab only: Messenger mounts again on every visit to /social/c, the tab does not. */
+const opened = new Map();
 
-async function cachedKey(name) {
-  try {
-    return (await idb("readonly", (s) => s.get(name))) || null;
-  } catch {
-    return null;
-  }
-}
-
-async function cacheKey(name, key) {
-  try {
-    await idb("readwrite", (s) => s.put(key, name));
-  } catch {
-    // Private windows may refuse storage. The key still works until the page closes.
-  }
+// A key an earlier version wrote down, open, goes now rather than at logout.
+try {
+  indexedDB.deleteDatabase(STORE);
+} catch {
+  // No IndexedDB here, so nothing was ever kept in it.
 }
 
 /**
@@ -299,7 +275,7 @@ export function mount(ctx) {
     }
     const priv = await subtle.importKey("pkcs8", pkcs8, ECDH, false, ["deriveBits"]);
     mine = { v: status.key.v, priv };
-    await cacheKey(name, mine);
+    opened.set(name, mine);
   }
 
   /** A new key, sealed under the passkey. The same assertion proves it to the server. */
@@ -314,13 +290,13 @@ export function mount(ctx) {
     const { v } = await ctx.send("/api/social/ck", { ...proof, pub: b64u(pub), iv: b64u(iv), ct: b64u(ct) });
     mine = { v, priv: await subtle.importKey("pkcs8", pkcs8, ECDH, false, ["deriveBits"]) };
     pairs.clear();
-    await cacheKey(name, mine);
+    opened.set(name, mine);
     status = await ctx.pull("/api/social/ck");
   }
 
   async function loadStatus() {
     status = await ctx.pull("/api/social/ck");
-    const held = await cachedKey(name);
+    const held = opened.get(name);
     mine = held && status.key && held.v === status.key.v ? held : null;
     pairs.clear();
   }
@@ -533,7 +509,7 @@ export function mount(ctx) {
       off: added
         ? "Passkey added. Turn on Messenger to make your encryption key; your passkey asks once more."
         : "Messages are end-to-end encrypted with your passkey. Only you and the person you write to can read them.",
-      locked: "Unlock your messages on this device with your passkey.",
+      locked: "Unlock your messages with your passkey. They lock again when this tab closes.",
       moved: "Your passkey changed since Messenger was turned on. A new key starts fresh. Messages sealed to the old one stay unreadable here.",
     }[state];
     const label = { off: "Turn on Messenger", locked: "Unlock messages", moved: "Start a new key" }[state];
