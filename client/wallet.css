@@ -833,7 +833,7 @@ body.hist .wl-top {
    button, so the button arriving moves nothing below it. */
 .wl-hd {
   display: flex;
-  align-items: center;
+  align-items: start;
   justify-content: space-between;
   gap: 12px;
   min-height: 28px;
