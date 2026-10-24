@@ -19,24 +19,24 @@
     "seed": "npm run build:server && node --env-file=.env dist/social/seed.js"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "7.10.0",
-    "@prisma/client": "7.10.0",
-    "compression": "^1.8.1",
-    "express": "^4.19.2",
-    "pg": "^8.23.0",
-    "prisma": "7.10.0",
-    "sharp": "^0.35.4"
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "compression": "^1.8.2",
+    "express": "^4.22.3",
+    "pg": "^8.23.1",
+    "prisma": "7.10.1",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.5.0",
+    "@types/express": "^4.17.25",
+    "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
     "esbuild": "^0.25.12",
     "html-minifier-terser": "^7.2.0",
     "lightningcss": "^1.33.0",
-    "railway": "^3.11.0",
+    "railway": "^3.16.0",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.9.3"
   }
 }
