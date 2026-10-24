@@ -133,13 +133,20 @@ import { verifyAssertion, verifyRegistration } from "./webauthn";
  * A passkey added from the profile is a discoverable credential. Login can
  * start from it, with no password. Password login still asks for that
  * passkey afterwards when one is enrolled, so the second factor stays.
- * The recovery phrase is never in a response except the one call that
- * re-checks the password for that purpose. The phrase alone recovers the
- * account: it is the wallet, so whoever holds it already owns what matters.
+ * The phrase alone recovers the account: it is the wallet, so whoever holds
+ * it already owns what matters.
+ *
+ * Every account has a passkey. Sign-up, a password login and recovery each
+ * answer an account without one with the challenge to add it (`passkeySetup`),
+ * and until it is added the session may do nothing else (requireAuth in
+ * guard.ts). Everything the account's key does then takes that passkey, every
+ * time, and never the password: a trade, a send, the phrase, and a passkey in
+ * place of the old one. A session cookie and the password together reach no
+ * key: a stolen cookie, or a password a phishing page asked for, moves nothing.
  */
 
 interface Challenge {
-  kind: "login" | "add" | "phrase" | "chat" | "send";
+  kind: "login" | "add" | "renew" | "phrase" | "chat" | "send" | "swap" | "replace";
   name: string;
   exp: number;
 }
@@ -323,6 +330,15 @@ async function passwordMatches(user: User, password: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * The challenge an account without a passkey adds one with, issued as its
+ * password has just been checked (sign-up, login, recovery), so the dialog
+ * that follows asks for nothing again. Null once it has one.
+ */
+function passkeySetup(user: Pick<User, "name" | "uid" | "passkey">): { challenge: string; uid: string } | null {
+  return user.passkey ? null : { challenge: issue("add", user.name).toString("base64url"), uid: user.uid };
+}
+
 function wrap(fn: (req: Request, res: Response) => Promise<void>) {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res)).catch((err: unknown) => {
@@ -435,8 +451,8 @@ socialRouter.post(
     // Only once the name is ours: before, it could overwrite a taken name's photo.
     if (pic) writeAvatar(name, pic.full, pic.tiny);
     setSession(res, name, 0, req.secure);
-    // The phrase stays out of this response. Profile shows it, behind the password.
-    res.json({ name, address });
+    // The phrase stays out of this response; it is behind the passkey this adds.
+    res.json({ name, address, passkeySetup: passkeySetup(user) });
   }),
 );
 
@@ -457,8 +473,9 @@ socialRouter.post(
       res.json({ passkey: { challenge: challenge.toString("base64url"), id: user.passkey.id } });
       return;
     }
+    // Signed in, but held to adding a passkey before anything else (guard.ts).
     setSession(res, user.name, user.epoch, req.secure);
-    res.json({ name: user.name });
+    res.json({ name: user.name, passkeySetup: passkeySetup(user) });
   }),
 );
 
@@ -481,7 +498,8 @@ socialRouter.post(
     if (!user) throw new SocialError(401, "No account uses that phrase.");
     misses.delete(user.name);
     setSession(res, user.name, user.epoch, req.secure);
-    res.json({ name: user.name });
+    // Recovery took the passkey, so the next thing is a new one.
+    res.json({ name: user.name, passkeySetup: passkeySetup(user) });
   }),
 );
 
@@ -1003,30 +1021,22 @@ socialRouter.post(
   }),
 );
 
+/**
+ * The phrase by password, as it once was: refused, with the passkey to use
+ * instead. Kept so a page from before says why rather than "Not found".
+ */
 socialRouter.post(
   "/phrase",
   requireAuth,
-  passwordLimit,
   readJson,
   wrap(async (req, res) => {
     assertSameOrigin(req);
     const me = requireUser(res);
-    const password = typeof req.body?.password === "string" ? req.body.password : "";
-    refuseGuessing(me.name);
-    let phrase: string;
-    try {
-      // The GCM tag is the password check; a second scrypt would add nothing.
-      phrase = await openPhrase(
-        { salt: me.phraseSalt, iv: me.phraseIv, tag: me.phraseTag, ct: me.phraseCt },
-        password,
-      );
-    } catch {
-      noteMiss(me.name);
-      throw new SocialError(403, "Wrong password.");
-    }
-    if (!me.keyBox) await setKeyBox(me.name, sealForServer(phrase));
-    res.locals.revealPhrase = true;
-    res.json({ phrase });
+    throw new SocialError(
+      403,
+      me.passkey ? "Use your passkey to see your recovery phrase." : "Add a passkey to see your recovery phrase.",
+      { stepUp: true, passkey: !!me.passkey },
+    );
   }),
 );
 
@@ -1044,7 +1054,7 @@ socialRouter.post(
   }),
 );
 
-/** A passkey reveals the phrase from the server's copy; an account without one yet needs its password once. */
+/** A passkey reveals the phrase from the server's copy; an account without one yet needs a password login once. */
 socialRouter.post(
   "/phrase/passkey",
   requireAuth,
@@ -1082,16 +1092,34 @@ socialRouter.post(
       throw new SocialError(403, "Passkey was not accepted.");
     }
     if (!me.keyBox) {
-      throw new SocialError(409, "Enter your password once. After that, the passkey is enough.", { setup: true });
+      throw new SocialError(409, "Log in with your password once. After that, the passkey is enough.", { setup: true });
     }
     res.locals.revealPhrase = true;
     res.json({ phrase: openForServer(me.keyBox) });
   }),
 );
 
+socialRouter.post(
+  "/swap/passkey/options",
+  requireAuth,
+  loginLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    if (!me.passkey) throw new SocialError(400, "Add a passkey first.");
+    const challenge = issue("swap", me.name);
+    res.json({ challenge: challenge.toString("base64url"), id: me.passkey.id });
+  }),
+);
+
 /**
  * Swap from the account's own wallet. The server quotes, signs and sends; see
  * swap.ts for what a caller can and cannot choose.
+ *
+ * Every trade carries a passkey assertion against a /swap/passkey/options
+ * challenge, as every send does: a session cookie on its own trades nothing.
+ * Without one the answer is 403 with `stepUp`.
  */
 socialRouter.post(
   "/swap",
@@ -1119,6 +1147,10 @@ socialRouter.post(
     if (!me.keyBox) {
       throw new SocialError(409, "Log in with your password once to trade from this account.", { setup: true });
     }
+    if (req.body?.challenge == null) {
+      throw new SocialError(403, "Confirm this trade with your passkey.", { stepUp: true, passkey: !!me.passkey });
+    }
+    await assertPasskey(req, me, "swap");
     res.json(await swapFor(me.address, openForServer(me.keyBox), {
         input,
         output,
@@ -1195,13 +1227,34 @@ socialRouter.post(
   }),
 );
 
+socialRouter.post(
+  "/passkey/replace/options",
+  requireAuth,
+  loginLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    if (!me.passkey) throw new SocialError(400, "Add a passkey first.");
+    const challenge = issue("replace", me.name);
+    res.json({ challenge: challenge.toString("base64url"), id: me.passkey.id });
+  }),
+);
+
 /**
  * A wrong password while signed in is 403, not 401: the session is fine, and
  * the client reads 401 as "you are logged out".
  *
- * Adding a passkey asks for the password first. A passkey signs in without
- * one, so letting a session alone enroll it would turn a stolen cookie into
- * an account that stays stolen.
+ * The first passkey asks for the password, unless sign-up, login or recovery
+ * just checked it and handed out the challenge (passkeySetup). A passkey signs
+ * in without one, so letting a session alone enroll it would turn a stolen
+ * cookie into an account that stays stolen. A passkey in place of one already
+ * there asks for that one, by an assertion against a /passkey/replace/options
+ * challenge, and not the password: otherwise a cookie and a phished password
+ * would swap in a key of their own and send with it. The challenge for the new
+ * one is then a `renew`, which only this route issues, so no `add` handed out
+ * before the account had a passkey can replace it later. A lost passkey is
+ * what recovery is for; it clears the passkey, and the password adds a new one.
  */
 socialRouter.post(
   "/passkey/options",
@@ -1211,9 +1264,16 @@ socialRouter.post(
   wrap(async (req, res) => {
     assertSameOrigin(req);
     const me = requireUser(res);
-    const password = typeof req.body?.password === "string" ? req.body.password : "";
-    if (!(await passwordMatches(me, password))) throw new SocialError(403, "Wrong password.");
-    const challenge = issue("add", me.name);
+    if (me.passkey) {
+      if (req.body?.challenge == null) {
+        throw new SocialError(403, "Confirm with your current passkey to replace it.", { stepUp: true, passkey: true });
+      }
+      await assertPasskey(req, me, "replace");
+    } else {
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      if (!(await passwordMatches(me, password))) throw new SocialError(403, "Wrong password.");
+    }
+    const challenge = issue(me.passkey ? "renew" : "add", me.name);
     res.json({ challenge: challenge.toString("base64url"), uid: me.uid });
   }),
 );
@@ -1233,7 +1293,7 @@ socialRouter.post(
     if (!id || !clientData || !attestation || !challenge) {
       throw new SocialError(400, "Passkey was not completed.");
     }
-    if (!take(challenge, "add", me.name)) {
+    if (!take(challenge, me.passkey ? "renew" : "add", me.name)) {
       throw new SocialError(401, "Passkey challenge expired. Try again.");
     }
     let registered;

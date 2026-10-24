@@ -261,7 +261,7 @@
     back, itself encrypted under a server key kept outside our database;
   </li>
   <li>
-    if you add a passkey, its public credential (never its private half, which
+    your passkey&rsquo;s public credential (never its private half, which
     stays on your device);
   </li>
   <li>
@@ -301,8 +301,9 @@
   encrypted again under a server key kept outside our database, and once under
   that server key alone, so that our server can sign the transactions you ask
   for. Neither copy can be opened from a copy of our database. Our API never
-  returns a private key, and returns the phrase only to you, after you enter
-  your password or use your passkey. The wallet&rsquo;s address is public. We read its
+  returns a private key, and returns the phrase only to you, after you confirm
+  with your passkey. Every account has a passkey, and every trade and every
+  send from the wallet takes it, each time. The wallet&rsquo;s address is public. We read its
   balances from the Solana blockchain via Helius. When you trade or send from
   it, our server builds the transaction, with Jupiter for a swap, and submits
   it to Solana. Jupiter and Helius then see your wallet address and our

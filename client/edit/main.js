@@ -1,13 +1,14 @@
 /**
  * Edit profile: the photo, bio and location, then the passkey and the
- * recovery phrase, each behind the password.
+ * recovery phrase. The first passkey is behind the password; the phrase, and
+ * a passkey in place of the old one, are behind the passkey.
  *
  * Its own bundle, fetched by social.js on /social/edit only, so the timeline
  * carries neither these settings nor the passkey and dialog code under them.
  * Handed social.js's helpers so it carries no copies.
  */
 import { el } from "../js/dom.js";
-import { register, why } from "../js/passkey.js";
+import { assertion, register, why } from "../js/passkey.js";
 import { dismissible } from "../js/sheet.js";
 import { bin, lens, shrink } from "../js/shrink.js";
 
@@ -56,29 +57,104 @@ function passDialog(title, label, run) {
   return { dialog, form };
 }
 
-/** Add this device's passkey, or replace the one on the account. The server asks for the password first. */
-function passkeyDialog(me, send, show) {
-  const label = me.passkey ? "Replace passkey" : "Add passkey";
-  const { dialog } = passDialog("Passkey", label, async (password) => {
-    await register(me.name, password, send);
-    dialog.close();
-    show();
+/**
+ * A dialog of words and one button, in front of one passkey action, removing
+ * itself and whatever it showed when closed. `run` may hand back a next step,
+ * a label and a run of its own: browsers want a fresh tap for each passkey
+ * prompt, so two prompts are two presses of the button.
+ *
+ * @typedef {{label: string, run: () => Promise<Step | void>}} Step
+ * @param {string} title
+ * @param {string} text
+ * @param {Step} first
+ */
+function keyDialog(title, text, first) {
+  let step = first;
+  const err = el("p", { class: "err", role: "alert" });
+  const go = el("button", { type: "button", text: step.label });
+  const tools = el("div", { class: "tools" }, el("p", { class: "hint", text }), go, err);
+  const dialog = /** @type {HTMLDialogElement} */ (el("dialog", { class: "pd", "aria-label": title }, el("h2", { text: title }), tools));
+  dismissible(dialog);
+  dialog.addEventListener("close", () => dialog.remove());
+  go.addEventListener("click", async () => {
+    err.textContent = "";
+    go.disabled = true;
+    try {
+      const next = await step.run();
+      if (next) {
+        step = next;
+        go.textContent = next.label;
+      }
+    } catch (cause) {
+      err.textContent = why(cause);
+    } finally {
+      go.disabled = false;
+    }
   });
+  document.body.append(dialog);
+  dialog.showModal();
+  return { dialog, tools };
 }
 
 /**
- * The recovery phrase, behind the password. The words leave with the dialog:
+ * Add this device's passkey, behind the password; or put it in place of the
+ * one on the account, behind that one. A lost passkey cannot unlock anything,
+ * which is what recovery is for: it clears the passkey, and the password adds
+ * a new one.
+ */
+function passkeyDialog(me, send, show) {
+  if (!me.passkey) {
+    const { dialog } = passDialog("Passkey", "Add passkey", async (password) => {
+      await register(me.name, password, send);
+      dialog.close();
+      show();
+    });
+    return;
+  }
+  const { dialog } = keyDialog(
+    "Passkey",
+    "Your current passkey confirms the change first. If you have lost it, recover the account with its phrase, then add a new one.",
+    {
+      label: "Confirm with current passkey",
+      run: async () => {
+        const proof = await assertion(await send("/api/social/passkey/replace/options"));
+        return {
+          label: "Add the new passkey",
+          run: async () => {
+            await register(me.name, "", send, proof);
+            dialog.close();
+            show();
+          },
+        };
+      },
+    },
+  );
+}
+
+/**
+ * The recovery phrase, behind the passkey. The words leave with the dialog:
  * on its X, after two minutes, or as soon as the tab is put away, whichever
  * comes first. A phrase left on an unattended screen is a wallet left open.
  */
-function phraseDialog(send) {
+function phraseDialog(me, send) {
+  if (!me.passkey) {
+    const { dialog } = keyDialog("Recovery phrase", "Your recovery phrase is behind your passkey. Add one under Passkey first.", {
+      label: "Close",
+      run: async () => dialog.close(),
+    });
+    return;
+  }
   let timer = 0;
   const away = () => document.hidden && dialog.close();
-  const { dialog, form } = passDialog("Recovery phrase", "Show phrase", async (password) => {
-    const result = await send("/api/social/phrase", { password });
-    form.replaceWith(el("p", { class: "phrase", text: result.phrase }));
-    timer = window.setTimeout(() => dialog.close(), 120_000);
-    document.addEventListener("visibilitychange", away);
+  const { dialog, tools } = keyDialog("Recovery phrase", "Anyone who sees these 12 words can take everything in this wallet.", {
+    label: "Show with passkey",
+    run: async () => {
+      const proof = await assertion(await send("/api/social/phrase/passkey/options"));
+      const result = await send("/api/social/phrase/passkey", proof);
+      tools.replaceWith(el("p", { class: "phrase", text: result.phrase }));
+      timer = window.setTimeout(() => dialog.close(), 120_000);
+      document.addEventListener("visibilitychange", away);
+    },
   });
   dialog.addEventListener("close", () => {
     clearTimeout(timer);
@@ -201,7 +277,7 @@ async function mount({ main, me: who, pull, send, show, photo, load, useSide, re
         "div",
         { class: "rows" },
         settingRow("Passkey", me.passkey ? short(me.passkey.id) : "Not set up", () => passkeyDialog(me, send, show)),
-        settingRow("Wallet", short(me.address), () => phraseDialog(send)),
+        settingRow("Wallet", short(me.address), () => phraseDialog(me, send)),
       ),
     ),
   );

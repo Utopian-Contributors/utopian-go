@@ -7,7 +7,7 @@ import { el } from "../js/dom.js";
 import { dismissible } from "../js/sheet.js";
 import { load } from "../js/lazy.js";
 import { amount } from "../js/num.js";
-import { b64u, needPasskey, u8, why } from "../js/passkey.js";
+import { assertion, why } from "../js/passkey.js";
 import { confirmSend } from "../js/sendconfirm.js";
 import { dialog } from "../js/ui.js";
 
@@ -22,11 +22,7 @@ async function send(path, body) {
     body: JSON.stringify(body || {}),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw Object.assign(new Error(data.error || "Something went wrong."), {
-      setup: data.setup,
-    });
-  }
+  if (!res.ok) throw new Error(data.error || "Something went wrong.");
   return data;
 }
 
@@ -61,83 +57,35 @@ function toDecimal(units, decimals) {
   return frac ? `${whole}.${frac}` : whole;
 }
 
-/** @param {{passkey: false | {id: string}}} me */
+/**
+ * The phrase, behind the passkey and nothing else. An account without one is
+ * pointed at Edit profile, where the password adds it.
+ *
+ * @param {{passkey: false | {id: string}}} me
+ */
 function phrase(me) {
   const err = el("p", { class: "ks-err", role: "alert" });
   const out = el("div", {});
-  const pass = el("input", {
-    type: "password",
-    id: "ks-p",
-    autocomplete: "current-password",
-    required: true,
-    minlength: "8",
-    maxlength: "128",
-  });
-  const form = el(
-    "form",
-    { class: "ks-f" },
-    el("label", { for: "ks-p", text: "Password" }),
-    pass,
-    el("button", { type: "submit", class: "wl-cta", text: "Show phrase" }),
-  );
-  const key =
-    me.passkey && window.PublicKeyCredential
-      ? el("button", { type: "button", class: "wl-b", text: "Unlock with passkey", onclick: viaPasskey })
-      : null;
+  const key = me.passkey
+    ? el("button", { type: "button", class: "wl-cta", text: "Show with passkey", onclick: viaPasskey })
+    : el("p", { class: "ks-n" }, "Your recovery phrase is behind a passkey. ", el("a", { href: "/social/edit", text: "Add one in Edit profile" }), ".");
 
   function show(words) {
-    pass.value = "";
-    form.hidden = true;
-    if (key) key.hidden = true;
+    key.hidden = true;
     err.textContent = "";
     out.replaceChildren(el("ol", { class: "ks-w" }, ...words.split(" ").map((word) => el("li", { text: word }))));
     // Same as the Social profile: the words do not outlast two minutes.
     setTimeout(() => out.replaceChildren(), 120_000);
   }
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    err.textContent = "";
-    try {
-      show((await send("/api/social/phrase", { password: pass.value })).phrase);
-    } catch (cause) {
-      err.textContent = cause.message;
-    }
-  });
-
   async function viaPasskey() {
     err.textContent = "";
     key.disabled = true;
     try {
-      needPasskey();
-      const opt = await send("/api/social/phrase/passkey/options");
-      const cred = await navigator.credentials.get({
-        publicKey: {
-          challenge: u8(opt.challenge),
-          rpId: location.hostname,
-          allowCredentials: [{ type: "public-key", id: u8(opt.id) }],
-          userVerification: "required",
-          timeout: 60_000,
-        },
-      });
-      if (!cred) throw new Error("Passkey was cancelled.");
-      const response = /** @type {AuthenticatorAssertionResponse} */ (cred.response);
-      show(
-        (
-          await send("/api/social/phrase/passkey", {
-            challenge: opt.challenge,
-            clientData: b64u(response.clientDataJSON),
-            authenticatorData: b64u(response.authenticatorData),
-            signature: b64u(response.signature),
-          })
-        ).phrase,
-      );
+      const proof = await assertion(await send("/api/social/phrase/passkey/options"));
+      show((await send("/api/social/phrase/passkey", proof)).phrase);
     } catch (cause) {
       err.textContent = why(cause);
-      if (cause.setup) {
-        key.hidden = true;
-        pass.focus();
-      }
     } finally {
       key.disabled = false;
     }
@@ -148,7 +96,6 @@ function phrase(me) {
     el("p", { class: "ks-n", text: "These 12 words control this wallet. Anyone who sees them can take everything in it." }),
     el("p", { class: "ks-n ks-warn", text: "Nobody from UtopianGO will ask for them." }),
     key,
-    form,
     err,
     out,
   );

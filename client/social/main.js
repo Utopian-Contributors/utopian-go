@@ -57,6 +57,11 @@ function paintAccount(signed) {
 
 function applyMe(next) {
   me = next;
+  // Every account has a passkey; one without is held to adding it (client/js/login.js).
+  if (me && me.passkey === false) {
+    const name = me.name;
+    load("lg", "__login").then((login) => login.setupPasskey(name, null, show), () => {});
+  }
   const link = $("me");
   const badge = $("badge");
   // My Profile always shows, so the tab bar never reflows once the session is known.
@@ -102,7 +107,8 @@ function markNav() {
 
 /**
  * JSON in, JSON out. A 401 means the session is gone, so the header forgets
- * who you are. A wrong password while signed in is a 403 and changes nothing.
+ * who you are. A wrong password while signed in is a 403 and changes nothing;
+ * one asking for a passkey the account has not got carries `passkey: false`.
  */
 async function pull(path, opts = {}) {
   /** @type {Record<string, string>} */
@@ -119,7 +125,7 @@ async function pull(path, opts = {}) {
     applyMe(data.me);
     writeName(data.me?.name);
   }
-  if (!res.ok) throw new Error(data.error || "Something went wrong.");
+  if (!res.ok) throw Object.assign(new Error(data.error || "Something went wrong."), { passkey: data.passkey });
   return data;
 }
 

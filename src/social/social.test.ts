@@ -606,6 +606,40 @@ function authData(rpId: string, flags: number, count: number, credId: Uint8Array
   return Buffer.concat(parts);
 }
 
+type Call = (
+  method: string,
+  urlPath: string,
+  body?: Record<string, unknown>,
+) => Promise<{ status: number; json: Record<string, any> | null; text: string }>;
+
+/**
+ * The passkey every account adds before it may do anything else, made the way
+ * the browser makes one: against `opt`, the challenge sign-up, login or
+ * recovery answered with (`passkeySetup`), or /passkey/options's. Its private
+ * half comes back, to sign as the account later.
+ */
+async function addPasskey(call: Call, opt: unknown, origin: string, credId: Buffer = randomBytes(16)) {
+  const challenge = (opt as { challenge?: unknown } | null)?.challenge;
+  assert.equal(typeof challenge, "string", "a challenge to add the passkey with");
+  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = publicKey.export({ format: "jwk" }) as { x: string; y: string };
+  const cose = coseP256(Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url"));
+  const regAuth = authData("127.0.0.1", 0x45, 0, credId, cose);
+  const attestation = Buffer.concat([
+    Buffer.from([0xa3, 0x63]), Buffer.from("fmt"), Buffer.from([0x64]), Buffer.from("none"),
+    Buffer.from([0x67]), Buffer.from("attStmt"), Buffer.from([0xa0]),
+    Buffer.from([0x68]), Buffer.from("authData"), Buffer.from([0x58, regAuth.length]), regAuth,
+  ]);
+  const enrolled = await call("POST", "/api/social/passkey", {
+    id: credId.toString("base64url"),
+    challenge,
+    clientData: Buffer.from(JSON.stringify({ type: "webauthn.create", challenge, origin })).toString("base64url"),
+    attestation: attestation.toString("base64url"),
+  });
+  assert.equal(enrolled.status, 200, enrolled.text);
+  return { privateKey, credId };
+}
+
 test("accounts, posts, friends, phrase, and a passkey", async () => {
   await useTestDatabase();
   await ensureSchema();
@@ -689,6 +723,34 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(typeof ada.json?.address, "string");
     assert.equal(JSON.stringify(ada.json).includes("phrase"), false);
     const adaAddress = String(ada.json?.address);
+    // Signed in, and held to adding a passkey before anything else; sign-up
+    // answered with the challenge for it, so no password is asked again.
+    const rpId = "127.0.0.1";
+    const held = await call("POST", "/api/social/post", { text: "first" });
+    assert.equal(held.status, 403, held.text);
+    assert.equal(held.json?.passkeySetup, true);
+    assert.equal(held.json?.passkey, false);
+    const { privateKey, credId } = await addPasskey(call, ada.json?.passkeySetup, base, Buffer.from("credential-id-001"));
+    assert.deepEqual(((await call("GET", "/api/social/me")).json?.me as { passkey: unknown }).passkey, { id: credId.toString("base64url") });
+    /**
+     * A password login, and the passkey step every password login takes now.
+     * Counter 0 is an authenticator that does not count, which leaves the
+     * counted assertions below to start from 1.
+     */
+    async function logIn(name: string, password: string, key = privateKey) {
+      const first = await call("POST", "/api/social/login", { username: name, password });
+      if (first.status !== 200 || !first.json?.passkey) return first;
+      const ch = String((first.json.passkey as { challenge: string }).challenge);
+      const cdata = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: ch, origin: base }));
+      const auth = authData(rpId, 0x05, 0, null, null);
+      return call("POST", "/api/social/login/passkey", {
+        username: name,
+        challenge: ch,
+        clientData: cdata.toString("base64url"),
+        authenticatorData: auth.toString("base64url"),
+        signature: sign("sha256", Buffer.concat([auth, createHash("sha256").update(cdata).digest()]), key).toString("base64url"),
+      });
+    }
     const adaTerms = (await getUser("ada"))?.terms;
     assert.equal(adaTerms?.version, TERMS_VERSION);
     assert.ok(adaTerms && Date.now() - adaTerms.at < 60_000);
@@ -714,6 +776,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
       terms: true,
     });
     assert.equal(ben.status, 200);
+    const benKey = (await addPasskey(call, ben.json?.passkeySetup, base)).privateKey;
     jar = "";
 
     const unagreed = await call("POST", "/api/social/register", { username: "dee", password: "password4" });
@@ -729,8 +792,8 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const bad = await call("POST", "/api/social/login", { username: "ada", password: "nope" });
     assert.equal(bad.status, 401);
 
-    const login = await call("POST", "/api/social/login", { username: "ada", password: "password1" });
-    assert.equal(login.status, 200);
+    const login = await logIn("ada", "password1");
+    assert.equal(login.status, 200, login.text);
     assert.ok(jar.includes("soc="));
 
     const timeline = await call("GET", "/api/social/timeline");
@@ -785,7 +848,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(catLocked.status, 429, "cat's three misses above hold the account for a minute");
     assert.match(String(catLocked.json?.error), /Too many wrong passwords/);
 
-    const benIn = await call("POST", "/api/social/login", { username: "ben", password: "password2" });
+    const benIn = await logIn("ben", "password2", benKey);
     assert.equal(benIn.status, 200);
 
     const pair = (): [Buffer, Buffer] => [jpeg(8, 8), jpeg(8, 8)];
@@ -860,7 +923,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.deepEqual((found.json?.people as { name: string }[]).map((p) => p.name), ["ada"]);
     assert.equal(((await call("GET", "/api/social/people?q=ad")).json?.people as unknown[]).length, 0);
     assert.equal(((await call("GET", "/api/social/people?q=a_%25")).json?.people as unknown[]).length, 0);
-    await call("POST", "/api/social/login", { username: "ben", password: "password2" });
+    await logIn("ben", "password2", benKey);
 
     // The profile card offers Add until it has been used.
     const before = await call("GET", "/api/social/u/ada");
@@ -878,7 +941,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const out = await call("GET", "/api/social/u/ada");
     assert.equal((out.json?.user as { friend: boolean }).friend, false);
 
-    const adaIn = await call("POST", "/api/social/login", { username: "ada", password: "password1" });
+    const adaIn = await logIn("ada", "password1");
     assert.equal(adaIn.status, 200);
     const noted = await call("GET", "/api/social/notes");
     const notes = noted.json?.notes as { from: string; post: string; avatarRev: number; at: number; seen: boolean }[];
@@ -890,9 +953,16 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(notes[0].seen, false);
     assert.equal((noted.json?.me as { unseen: number }).unseen, 1);
 
+    // The phrase is behind the passkey, never the password.
     const phrase = await call("POST", "/api/social/phrase", { password: "password1" });
-    const adaPhrase = String(phrase.json?.phrase);
-    assert.equal(phrase.status, 200);
+    assert.equal(phrase.status, 403, phrase.text);
+    assert.equal(phrase.json?.passkey, true);
+    assert.equal("phrase" in (phrase.json ?? {}), false);
+    // What the database keeps of it opens with neither the password nor WALLET_KEY alone,
+    // and its password hash is under the pepper.
+    assert.match(String((await getUser("ada"))?.phraseCt), /^wrapped\./);
+    assert.match(String((await getUser("ada"))?.passHash), /^peppered\./);
+    let adaPhrase = "";
 
     // Every send is confirmed with a passkey, however small; the session alone
     // moves nothing, and neither does the password.
@@ -900,7 +970,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const unconfirmed = await call("POST", "/api/social/send", tiny);
     assert.equal(unconfirmed.status, 403, unconfirmed.text);
     assert.equal(unconfirmed.json?.stepUp, true);
-    assert.equal(unconfirmed.json?.passkey, false, "ada has no passkey, so she is told to add one");
+    assert.equal(unconfirmed.json?.passkey, true, "ada is asked for hers");
     const byPassword = await call("POST", "/api/social/send", { ...tiny, password: "password1" });
     assert.equal(byPassword.status, 403, byPassword.text);
     assert.equal(byPassword.json?.stepUp, true);
@@ -912,13 +982,6 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
       slippageBps: 100,
     });
     assert.equal(unreviewed.status, 400);
-    const words = String(phrase.json?.phrase).split(" ");
-    assert.equal(words.length, 12);
-    for (const word of words) assert.ok(WORDLIST.includes(word));
-    assert.equal(solanaAddress(String(phrase.json?.phrase)), adaAddress);
-
-    const wrong = await call("POST", "/api/social/phrase", { password: "nope" });
-    assert.equal(wrong.status, 403);
 
     const frozen = await call("POST", "/api/social/profile", { username: "eve", bio: "nope" });
     assert.equal(frozen.status, 400);
@@ -947,47 +1010,41 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(avatar.status, 200);
     assert.equal(avatar.headers.get("content-type"), "image/jpeg");
 
-    const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
-    const jwk = publicKey.export({ format: "jwk" }) as { x: string; y: string };
-    const cose = coseP256(Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url"));
-    const credId = Buffer.from("credential-id-001");
+    // An account from before passkeys were required: its password login
+    // signs it in, held to adding one, and hands it the challenge for it; a
+    // session that missed that challenge adds one with the password. Its own
+    // address: the write bucket is twenty calls deep, and ada's above spent it.
+    client = "10.0.0.4";
+    assert.equal((await call("POST", "/api/social/logout", {})).status, 200);
+    assert.equal((await call("POST", "/api/social/register", { username: "fay", password: "password5", terms: true })).status, 200);
+    await call("POST", "/api/social/logout", {});
+    const fayIn = await call("POST", "/api/social/login", { username: "fay", password: "password5" });
+    assert.equal(fayIn.status, 200, fayIn.text);
+    assert.equal(fayIn.json?.name, "fay");
+    assert.equal(typeof (fayIn.json?.passkeySetup as { challenge: string }).challenge, "string");
+    assert.ok(jar.includes("soc="));
+    const fayHeld = await call("GET", "/api/social/friends");
+    assert.equal(fayHeld.status, 403, fayHeld.text);
+    assert.equal(fayHeld.json?.passkeySetup, true);
+    assert.equal((await call("POST", "/api/social/swap/passkey/options", {})).status, 403, "and certainly no trading");
+    assert.equal(((await call("GET", "/api/social/me")).json?.me as { passkey: unknown }).passkey, false, "who she is still answers");
     assert.equal((await call("POST", "/api/social/passkey/options", {})).status, 403, "needs the password");
-    const options = await call("POST", "/api/social/passkey/options", { password: "password1" });
+    const options = await call("POST", "/api/social/passkey/options", { password: "password5" });
     assert.equal(options.status, 200);
     const challenge = Buffer.from(String(options.json?.challenge), "base64url");
-    const rpId = "127.0.0.1";
-    const regClient = Buffer.from(
-      JSON.stringify({
-        type: "webauthn.create",
-        challenge: String(options.json?.challenge),
-        origin: base,
-      }),
-    );
-    const regAuth = authData(rpId, 0x45, 0, credId, cose);
-    const attestation = Buffer.concat([
-      Buffer.from([0xa3]),
-      Buffer.from([0x63]),
-      Buffer.from("fmt"),
-      Buffer.from([0x64]),
-      Buffer.from("none"),
-      Buffer.from([0x67]),
-      Buffer.from("attStmt"),
-      Buffer.from([0xa0]),
-      Buffer.from([0x68]),
-      Buffer.from("authData"),
-      Buffer.from([0x58, regAuth.length]),
-      regAuth,
-    ]);
-    const enrolled = await call("POST", "/api/social/passkey", {
-      id: credId.toString("base64url"),
-      challenge: String(options.json?.challenge),
-      clientData: regClient.toString("base64url"),
-      attestation: attestation.toString("base64url"),
+    await addPasskey(call, options.json, base);
+    assert.equal((await call("GET", "/api/social/friends")).status, 200, "a passkey on, the account is hers to use");
+    // The challenge her login handed out was for an account with no passkey; it replaces nothing now.
+    const spent = await call("POST", "/api/social/passkey", {
+      id: "x",
+      challenge: (fayIn.json?.passkeySetup as { challenge: string }).challenge,
+      clientData: "e30",
+      attestation: "oA",
     });
-    assert.equal(enrolled.status, 200, enrolled.text);
-    assert.deepEqual((enrolled.json?.me as { passkey: unknown }).passkey, { id: credId.toString("base64url") });
+    assert.equal(spent.status, 401, spent.text);
 
-    await call("POST", "/api/social/logout", {});
+    assert.equal((await call("POST", "/api/social/logout", {})).status, 200);
+    client = "10.0.0.1";
     const needsKey = await call("POST", "/api/social/login", {
       username: "ada",
       password: "password1",
@@ -1061,7 +1118,11 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     }
     const byPasskey = await unlock(3);
     assert.equal(byPasskey.status, 200, byPasskey.text);
-    assert.equal(byPasskey.json?.phrase, adaPhrase);
+    adaPhrase = String(byPasskey.json?.phrase);
+    const words = adaPhrase.split(" ");
+    assert.equal(words.length, 12);
+    for (const word of words) assert.ok(WORDLIST.includes(word));
+    assert.equal(solanaAddress(adaPhrase), adaAddress);
     assert.equal(/key_ct|keyBox|phrase_ct/.test(byPasskey.text), false);
     const otherKey = generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey;
     assert.equal((await unlock(4, otherKey)).status, 403);
@@ -1099,8 +1160,48 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(forged.status, 403, forged.text);
     assert.match(String(forged.json?.error), /Passkey was not accepted/);
 
+    // Every trade is confirmed with the passkey, as every send is: the
+    // session, and the password with it, trade nothing.
+    client = "10.0.0.3";
+    const trade = { inputMint: sol, outputMint: usdc, amount: "1000", quotedOut: "1", slippageBps: 100 };
+    const unconfirmedTrade = await swap(trade);
+    assert.equal(unconfirmedTrade.status, 403, unconfirmedTrade.text);
+    assert.equal(unconfirmedTrade.json?.stepUp, true);
+    assert.equal(unconfirmedTrade.json?.passkey, true);
+    assert.equal((await swap({ ...trade, password: "password1" })).status, 403, "nor by password");
+    /** An assertion of `kind`, by `signer`, at counter `count`. */
+    async function proofFor(path: string, count: number, signer = privateKey) {
+      const opt = await call("POST", path, {});
+      assert.equal(opt.status, 200, opt.text);
+      const ch = String(opt.json?.challenge);
+      const cdata = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: ch, origin: base }));
+      const auth = authData(rpId, 0x05, count, null, null);
+      return {
+        challenge: ch,
+        clientData: cdata.toString("base64url"),
+        authenticatorData: auth.toString("base64url"),
+        signature: sign("sha256", Buffer.concat([auth, createHash("sha256").update(cdata).digest()]), signer).toString("base64url"),
+      };
+    }
+    const forgedTrade = await swap({ ...trade, ...(await proofFor("/api/social/swap/passkey/options", 6, otherKey)) });
+    assert.equal(forgedTrade.status, 403, forgedTrade.text);
+    assert.match(String(forgedTrade.json?.error), /Passkey was not accepted/);
+    // A send's challenge is a send's: it confirms no trade.
+    const sendsProof = await proofFor("/api/social/send/passkey/options", 6);
+    assert.equal((await swap({ ...trade, ...sendsProof })).status, 403, "the wrong kind of challenge");
+
+    // A passkey in place of this one takes this one, never the password.
+    const byPasswordAgain = await call("POST", "/api/social/passkey/options", { password: "password1" });
+    assert.equal(byPasswordAgain.status, 403, byPasswordAgain.text);
+    assert.equal(byPasswordAgain.json?.stepUp, true);
+    const forgedReplace = await call("POST", "/api/social/passkey/options", await proofFor("/api/social/passkey/replace/options", 6, otherKey));
+    assert.equal(forgedReplace.status, 403, forgedReplace.text);
+    const replacing = await call("POST", "/api/social/passkey/options", await proofFor("/api/social/passkey/replace/options", 6));
+    assert.equal(replacing.status, 200, replacing.text);
+    assert.equal(typeof replacing.json?.challenge, "string", "the current passkey confirmed it, and no password was asked");
+
     await call("POST", "/api/social/logout", {});
-    assert.equal((await call("POST", "/api/social/login", { username: "ben", password: "password2" })).status, 200);
+    assert.equal((await logIn("ben", "password2", benKey)).status, 200);
     const plus = await call("POST", "/api/social/plus", { post: postId });
     assert.equal(plus.status, 200, plus.text);
     assert.equal(plus.json?.saved, true);
@@ -1220,12 +1321,17 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     jar = newJar;
     await call("POST", "/api/social/logout", {});
     assert.equal((await call("POST", "/api/social/login", { username: "ada", password: "password1" })).status, 401);
-    // The passkey went with the old password, so this logs straight in.
+    // The passkey went with the old password, so this logs straight in, held
+    // to adding a new one, with the challenge for it.
     const fresh = await call("POST", "/api/social/login", { username: "ada", password: "password9" });
     assert.equal(fresh.status, 200, fresh.text);
     assert.equal(fresh.json?.name, "ada");
+    assert.equal(typeof (fresh.json?.passkeySetup as { challenge: string }).challenge, "string");
+    assert.equal(typeof (back.json?.passkeySetup as { challenge: string }).challenge, "string", "recovery answered with one too");
+    // Recovery took the passkey, and the new password does not stand in for it.
     const reread = await call("POST", "/api/social/phrase", { password: "password9" });
-    assert.equal(reread.json?.phrase, adaPhrase);
+    assert.equal(reread.status, 403, reread.text);
+    assert.equal(reread.json?.passkey, false);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
@@ -1372,11 +1478,16 @@ test("messenger keeps only ciphertext and refuses stale or foreign keys", async 
     const bob = await join("bob");
     const eve = await join("eve");
 
-    assert.equal((await ada("GET", "/api/social/ck")).json?.cred, null);
-    assert.equal((await ada("POST", "/api/social/ck/options", {})).status, 400, "a passkey comes first");
+    // Messenger, like everything else, waits for the passkey.
+    const noKey = await ada("GET", "/api/social/ck");
+    assert.equal(noKey.status, 403, noKey.text);
+    assert.equal(noKey.json?.passkeySetup, true);
+    assert.equal((await ada("POST", "/api/social/ck/options", {})).status, 403, "a passkey comes first");
 
     const adaProof = await enroll(ada, "ada");
     const bobProof = await enroll(bob, "bob");
+    // eve has one too, so what keeps her out below is not being in the conversation.
+    await enroll(eve, "eve");
     const adaKey = await newKey();
     const bobKey = await newKey();
     const box = { iv: Buffer.alloc(12, 1).toString("base64url"), ct: Buffer.alloc(64, 2).toString("base64url") };
@@ -1582,7 +1693,9 @@ test("a voice memo posts, plays from its own address, and rides a re-post", asyn
       }
       return { status: res.status, json, text };
     };
-    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1", terms: true })).status, 200);
+    const joined = await call("POST", "/api/social/register", { username: name, password: "password1", terms: true });
+    assert.equal(joined.status, 200, joined.text);
+    await addPasskey(call, joined.json?.passkeySetup, base);
     return call;
   }
   const files = (ext: string) => readdirSync(path.join(dir, "posts")).filter((f) => f.endsWith(ext));
@@ -1685,7 +1798,9 @@ test("the timeline filters in the query, and pages through what is left", async 
   }
   async function join(name: string) {
     const call = visitor();
-    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1", terms: true })).status, 200);
+    const joined = await call("POST", "/api/social/register", { username: name, password: "password1", terms: true });
+    assert.equal(joined.status, 200, joined.text);
+    await addPasskey(call, joined.json?.passkeySetup, base);
     return call;
   }
   /** Every id the filtered timeline gives, page after page. Only a full page may have a next. */
@@ -2080,7 +2195,9 @@ test("an ad runs once paid: the higher bid first, on search and in timelines, ea
       const text = await res.text();
       return { status: res.status, json: JSON.parse(text) as Record<string, any>, text };
     };
-    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1", terms: true })).status, 200);
+    const joined = await call("POST", "/api/social/register", { username: name, password: "password1", terms: true });
+    assert.equal(joined.status, 200, joined.text);
+    await addPasskey(call, joined.json?.passkeySetup, base);
     return call;
   }
   const packAd = (json: Record<string, unknown>, banner?: [Buffer, Buffer]) => {
@@ -2332,7 +2449,9 @@ test("a called-out ticker rides its post to the timeline, the post page, a profi
       }
       return { status: res.status, json, text };
     };
-    assert.equal((await call("POST", "/api/social/register", { username: name, password: "password1", terms: true })).status, 200);
+    const joined = await call("POST", "/api/social/register", { username: name, password: "password1", terms: true });
+    assert.equal(joined.status, 200, joined.text);
+    await addPasskey(call, joined.json?.passkeySetup, base);
     return call;
   }
 

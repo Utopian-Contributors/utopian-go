@@ -18,6 +18,7 @@ import { dollars as usd } from "../js/num.js";
 import { renderPicker } from "../js/picker.js";
 import { livePrice } from "../js/price.js";
 import { account } from "../js/me.js";
+import { assertion, register, why } from "../js/passkey.js";
 import { onSession, readSession, shortAddr } from "../js/session.js";
 import { dialog } from "../js/ui.js";
 import { connect, restore, settled, signAndSend } from "../js/wallet.js";
@@ -227,8 +228,24 @@ function defaultAmount(preset, decimals, spendable) {
   return toDecimal(units.toString(), decimals);
 }
 
-/** The server re-quotes the same pair and amount for the account, then signs and sends. */
-async function serverSwap(q) {
+/** POST JSON to this server. An error carries the answer's `passkey`: false is an account with none to confirm with. */
+async function post(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || "Something went wrong."), { passkey: data.passkey });
+  return data;
+}
+
+/**
+ * The server re-quotes the same pair and amount for the account, then signs
+ * and sends. `proof` is the account's passkey assertion for this trade: the
+ * server trades nothing on the session cookie alone.
+ */
+async function serverSwap(q, proof) {
   const res = await fetch("/api/social/swap", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -240,12 +257,16 @@ async function serverSwap(q) {
       // What this screen showed. The server's own quote may not pay less than
       // this, less the slippage, or it refuses instead of trading.
       quotedOut: q.outAmount,
+      ...proof,
     }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || typeof data.signature !== "string") {
     // A signature on an error means it was sent and failed on chain.
-    throw Object.assign(new Error(data.error || "Swap failed."), { signature: data.signature });
+    throw Object.assign(new Error(data.error || "Swap failed."), {
+      signature: data.signature,
+      passkey: data.passkey,
+    });
   }
   return { signature: data.signature, confirmed: data.confirmed === true };
 }
@@ -372,7 +393,7 @@ function open(t) {
     void account().then(async (me) => {
       if (!body.isConnected) return;
       if (me) {
-        session = { custodial: true, account: { address: me.address } };
+        session = { custodial: true, name: me.name, account: { address: me.address } };
         form();
         return;
       }
@@ -1332,8 +1353,45 @@ function open(t) {
         finish.focus();
       }
 
+      /**
+       * No passkey on the account to trade with: the password adds one under
+       * the note, as a send's confirmation does, and the button then trades
+       * with it.
+       */
+      function addPasskey() {
+        const pass = el("input", {
+          class: "swx-pw",
+          type: "password",
+          autocomplete: "current-password",
+          placeholder: "Password",
+          "aria-label": "Password",
+          required: true,
+          minlength: "8",
+          maxlength: "128",
+        });
+        const ok = el("button", { class: "swx-2nd", type: "submit", text: "Add passkey" });
+        const form = el("form", {}, pass, ok);
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          ok.disabled = true;
+          try {
+            await register(session.name, pass.value, post);
+            form.remove();
+            setRNote("Passkey added. Trading from this account is confirmed with it from now on.");
+          } catch (cause) {
+            setRNote(why(cause), "err");
+            rnote.append(form);
+            ok.disabled = false;
+          }
+        });
+        rnote.append(form);
+        pass.focus();
+      }
+
       /** An error, in the terms someone can act on. */
       function explain(err) {
+        // The passkey prompt, closed or timed out: a DOMException with no useful message.
+        if (err?.name === "NotAllowedError") return why(err);
         const message = err?.message ?? "";
         if (NO_SOL.test(message)) {
           return `Not enough SOL for network fees. Keep about ${FEE_SOL_TEXT} SOL in this wallet to trade.`;
@@ -1353,7 +1411,7 @@ function open(t) {
         const q = current;
         go.disabled = true;
         go.classList.add("busy");
-        go.textContent = session.custodial ? "Sending…" : "Confirm in wallet…";
+        go.textContent = session.custodial ? "Confirm with passkey…" : "Confirm in wallet…";
         back.disabled = true;
         setRNote("");
 
@@ -1361,8 +1419,11 @@ function open(t) {
           let sig;
           let status;
           if (session.custodial) {
-            // The server answers once the trade has landed, or has stopped waiting.
-            const r = await serverSwap(q);
+            // Confirmed with the passkey, every trade; then the server answers
+            // once the trade has landed, or has stopped waiting.
+            const proof = await assertion(await post("/api/social/swap/passkey/options"));
+            go.textContent = "Sending…";
+            const r = await serverSwap(q, proof);
             sig = r.signature;
             status = r.confirmed ? { status: "confirmed" } : { status: "pending" };
           } else {
@@ -1406,6 +1467,7 @@ function open(t) {
           // Sent and reverted still moved the fee, so the opener should re-read.
           if (err?.signature) sent = true;
           setRNote(explain(err), "err");
+          if (session.custodial && err?.passkey === false) addPasskey();
           go.textContent = `${buying ? "Buy" : "Sell"} ${t.symbol}`;
           go.disabled = false;
           back.disabled = false;

@@ -3,6 +3,8 @@
  * it without asking the server on every search. Social and the wallet page
  * keep it true; the cookie is still what the server believes.
  */
+import { load } from "./lazy.js";
+
 const KEY = "ug.me";
 const EVENT = "ug:me";
 const NAME = /^[a-z0-9_]{3,16}$/;
@@ -35,7 +37,12 @@ export function onName(fn) {
   });
 }
 
-/** Who is signed in, asked once per page and shared by every bundle on it. */
+/**
+ * Who is signed in, asked once per page and shared by every bundle on it. An
+ * account without a passkey is asked to add one first (client/js/login.js),
+ * and the page starts again once it has, so nothing on it still holds the
+ * account as it was.
+ */
 export function account() {
   if (!window.__ugme) {
     window.__ugme = fetch("/api/social/me", { headers: { Accept: "application/json" } })
@@ -43,7 +50,11 @@ export function account() {
       .then((data) => {
         // Only a real answer corrects the header; a failed request says nothing about the session.
         if (data) writeName(data.me?.name);
-        return data?.me ?? null;
+        const me = data?.me ?? null;
+        if (me && me.passkey === false) {
+          load("lg", "__login").then((login) => login.setupPasskey(me.name, null, () => location.reload()), () => {});
+        }
+        return me;
       })
       .catch(() => null);
   }

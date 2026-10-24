@@ -1,15 +1,18 @@
 /**
- * The Log in dialog: log in, create an account, or recover one.
+ * The Log in dialog: log in, create an account, or recover one. Then, for an
+ * account with no passkey, the dialog that adds one, which every account must
+ * have before it can do anything (src/social/guard.ts).
  *
  * One implementation for every page, each of which fetches it as login.js the
- * first time someone presses Log in. It builds its own markup and injects its
- * own styles, so it looks the same whichever page opened it — every colour
- * comes from the page's custom properties.
+ * first time someone presses Log in, or finds itself signed in to an account
+ * without a passkey. It builds its own markup and injects its own styles, so
+ * it looks the same whichever page opened it — every colour comes from the
+ * page's custom properties.
  */
-import { LOGIN } from "./acct.js";
+import { LOGIN, logOut } from "./acct.js";
 import { el } from "./dom.js";
 import { writeName } from "./me.js";
-import { b64u, needPasskey, u8, why } from "./passkey.js";
+import { NO_PASSKEY, b64u, canPasskey, enrol, needPasskey, register, u8, why } from "./passkey.js";
 import { dismissible } from "./sheet.js";
 import { injectStyles } from "./ui.js";
 
@@ -99,16 +102,21 @@ async function passkey(opt, username) {
   });
 }
 
-/** Every way into an account ends the same: the dialog shuts and the page is told. */
+/**
+ * Every way into an account ends the same: the dialog shuts and the page is
+ * told. An account without a passkey adds one first, with the challenge the
+ * server answered with, and the page is told once it has.
+ */
 async function signIn(button, task) {
   $.err.textContent = "";
   button.disabled = true;
   try {
-    await task();
+    const data = await task();
     $.pass.value = $.again.value = $.phrase.value = "";
     $.terms.checked = false;
     dialog?.close();
-    done();
+    if (data?.passkeySetup) setupPasskey(data.name, data.passkeySetup, done);
+    else done();
   } catch (cause) {
     $.err.textContent = why(cause);
   } finally {
@@ -219,7 +227,9 @@ function build() {
         password: $.pass.value,
         ...(mode === "register" && { terms: $.terms.checked }),
       });
-      if (data.passkey) await passkey(data.passkey, $.user.value.trim().toLowerCase());
+      if (!data.passkey) return data;
+      await passkey(data.passkey, $.user.value.trim().toLowerCase());
+      return null;
     });
   });
 
@@ -266,4 +276,111 @@ export function open(next = "login", onDone) {
   $.err.textContent = "";
   if (!dialog.open) dialog.showModal();
   (mode === "recover" ? $.phrase : $.user).focus();
+}
+
+/** The passkey step's dialog, built the first time it is needed. */
+let setup = null;
+/** Who it is for, the challenge it may use, and what to do once it is done. */
+let setupFor = { name: "", opt: null, done: () => {} };
+
+function buildSetup() {
+  injectStyles("lgd-css", CSS);
+  const pass = el("input", {
+    id: "lgd-sp",
+    type: "password",
+    autocomplete: "current-password",
+    required: true,
+    minlength: "8",
+    maxlength: "128",
+  });
+  const passRow = el("div", {}, el("label", { for: "lgd-sp", text: "Password" }), pass);
+  const err = el("p", { class: "lgd-e", role: "alert" });
+  const go = el("button", { type: "submit", class: "lgd-go", text: "Create passkey" });
+  /** In place of the password and the button, on a browser that cannot make one. */
+  const unable = el("p", { class: "lgd-e", role: "alert", text: NO_PASSKEY });
+  const form = el(
+    "form",
+    {},
+    el("h2", { id: "lgd-st", text: "Add a passkey" }),
+    el("p", {
+      class: "lgd-h",
+      text: "Every account has one. It signs you in, confirms every trade and send, and shows your recovery phrase. It stays on this device, opened by your face, fingerprint or screen lock.",
+    }),
+    passRow,
+    unable,
+    err,
+    go,
+  );
+  const out = el("button", { type: "button", class: "lgd-t", text: "Log out" });
+  const d = /** @type {HTMLDialogElement} */ (
+    el("dialog", { class: "lgd", "aria-labelledby": "lgd-st" }, form, el("div", { class: "lgd-f" }, out))
+  );
+  // No X, no outside tap, no Escape: a passkey or Log out are the ways on.
+  d.addEventListener("cancel", (e) => e.preventDefault());
+
+  /**
+   * With the challenge from signing in, the passkey is all; without, or once
+   * it is spent, the password comes first. A browser that cannot make a
+   * passkey gets neither, only the reason and Log out.
+   */
+  const paint = () => {
+    const able = canPasskey();
+    unable.hidden = able;
+    go.hidden = !able;
+    passRow.hidden = pass.disabled = !able || !!setupFor.opt;
+    err.textContent = "";
+    return able;
+  };
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err.textContent = "";
+    go.disabled = true;
+    try {
+      if (setupFor.opt) await enrol(setupFor.name, setupFor.opt, send);
+      else await register(setupFor.name, pass.value, send);
+      pass.value = "";
+      d.close();
+      setupFor.done();
+    } catch (cause) {
+      // A prompt closed leaves the challenge unused; anything the server
+      // refused may have spent it, so the password asks for a fresh one.
+      if (cause.name !== "NotAllowedError" && setupFor.opt) {
+        setupFor.opt = null;
+        paint();
+      }
+      err.textContent = why(cause);
+    } finally {
+      go.disabled = false;
+    }
+  });
+  out.addEventListener("click", async () => {
+    out.disabled = true;
+    try {
+      await logOut();
+    } catch {
+      // Still signed in, and still held here; the reload says which.
+    }
+    location.reload();
+  });
+  document.body.append(d);
+  return { dialog: d, paint, pass };
+}
+
+/**
+ * Ask for the passkey an account must have. `opt` is the challenge sign-up,
+ * login or recovery just answered with, so only the passkey is asked for;
+ * without one, as for a session from before passkeys were required, the
+ * password comes first. Opened once however many callers ask.
+ *
+ * @param {string} name
+ * @param {{challenge: string, uid: string} | null} [opt]
+ * @param {() => void} [onDone] called once the passkey is on the account
+ */
+export function setupPasskey(name, opt = null, onDone = () => {}) {
+  if (setup?.dialog.open) return;
+  setup ??= buildSetup();
+  setupFor = { name, opt, done: onDone };
+  const able = setup.paint();
+  setup.dialog.showModal();
+  if (able && !opt) setup.pass.focus();
 }

@@ -84,10 +84,27 @@ export async function loadAccount(req: Request, res: Response, next: NextFunctio
   }
 }
 
-/** Private routes. A missing session is 401 before the handler runs. */
-export function requireAuth(_req: Request, res: Response, next: NextFunction): void {
-  if (!res.locals.account) {
+/**
+ * What a signed-in account with no passkey may do: add one. Every account has
+ * a passkey; one made before that was required, or one whose passkey went
+ * with a recovery, is held here until it has one again.
+ */
+const PASSKEY_SETUP = new Set(["/passkey/options", "/passkey"]);
+
+/**
+ * Private routes. A missing session is 401 before the handler runs. A session
+ * on an account without a passkey is 403 with `passkeySetup`, everywhere but
+ * the two routes that add one; `passkey: false` is how the send and trade
+ * dialogs already read "add one first".
+ */
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  const account = res.locals.account as User | null;
+  if (!account) {
     res.status(401).json({ error: "Log in first." });
+    return;
+  }
+  if (!account.passkey && !PASSKEY_SETUP.has(req.path)) {
+    res.status(403).json({ error: "Add a passkey to use this account.", stepUp: true, passkey: false, passkeySetup: true });
     return;
   }
   next();
