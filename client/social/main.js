@@ -507,7 +507,12 @@ function gallery(post) {
       e.preventDefault();
       view();
     });
-    row.append(el("picture", {}, el("source", { media: "(max-width: 900px)", srcset: `${full[i]}?m=1` }), img));
+    // The box is sized by social.css and pulses until the file has decoded.
+    const pic = el("picture", { class: "ld" }, el("source", { media: "(max-width: 900px)", srcset: `${full[i]}?m=1` }), img);
+    const done = () => pic.classList.remove("ld");
+    img.addEventListener("load", done, { once: true });
+    img.addEventListener("error", () => (done(), pic.classList.add("bad")), { once: true });
+    row.append(pic);
   }
   row.addEventListener("click", (event) => event.stopPropagation());
   return row;

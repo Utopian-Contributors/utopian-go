@@ -431,23 +431,50 @@ dialog textarea { resize: none; }
 .gallery img { cursor: zoom-in; }
 .gallery img:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
 
+/*
+ * The server keeps no picture sizes, so each picture gets a box of its own
+ * size before a byte of it arrives: the card never moves when a file lands.
+ * Until then the box is a pulsing skeleton (.ld, which gallery() drops).
+ */
 .gallery picture {
   display: block;
   flex: none;
+  height: 200px;
+  aspect-ratio: 4 / 5;
   max-width: 85%;
+  border-radius: 16px;
+  background: var(--ch);
   scroll-snap-align: start;
 }
 
+.gallery picture.ld { animation: g-pulse 1.4s ease-in-out infinite; }
+
+.gallery picture img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+
+/* One picture spans the card and is shown whole, letterboxed on the skeleton's ground. */
 .gallery picture:only-child {
   width: 100%;
   max-width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  max-height: 320px;
 }
 
-.gallery picture:only-child img {
-  width: 100%;
-  height: auto;
-  max-height: 320px;
-  object-fit: contain;
+.gallery picture:only-child img { object-fit: contain; }
+
+/* An image that fails keeps its box, without the broken-file glyph. */
+.gallery picture.bad img { visibility: hidden; }
+
+@keyframes g-pulse {
+  50% { opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery picture.ld { animation: none; }
 }
 
 .shots button {
