@@ -361,6 +361,9 @@ dialog textarea { resize: none; }
   margin: 10px 0 2px;
 }
 
+/* The first card as far from the filters as the cards are from each other. */
+.flt + .feed { margin-top: 12px; }
+
 .flt button {
   display: inline-flex;
   align-items: center;
@@ -708,7 +711,14 @@ a.cashtag:hover { color: var(--a); }
 
 button:disabled { opacity: 0.55; cursor: default; }
 
-.post { padding: 14px 0; cursor: pointer; }
+/* A card of its own, on the wash the wallet's action tiles stand on (.wl-a). */
+.post {
+  padding: 14px 16px 8px;
+  border-radius: 6px;
+  background: var(--in);
+  border: solid 1px var(--b);
+  cursor: pointer;
+}
 
 .post-row { display: flex; gap: 12px; align-items: flex-start; }
 .post-main { min-width: 0; flex: 1; }
@@ -812,7 +822,7 @@ a.nt:hover b { color: var(--go); }
 
 .hit.on,
 .hit:hover:not(:disabled) { background: var(--ch); }
-.post + .post { border-top: 1px solid var(--b); }
+.post + .post { margin-top: 12px; }
 
 /* A sponsored post: drawn as a post, and the whole card is its link. */
 a.sad,
@@ -825,7 +835,18 @@ a.sad:hover { display: block; color: var(--t); text-decoration: none; }
 a.sad:hover .sad-l b { text-decoration: underline; }
 
 /* The spacing between actions is their own padding. */
-.acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 8px 0 0 -12px; }
+.acts { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 10px 0 0 -12px; padding-top: 8px; }
+
+/* The card's foot: a rule across the whole card, from under the avatar (the
+   40px .mini; the row's 12px gap is the 12px this row hangs out by). */
+.acts::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -40px;
+  right: 0;
+  border-top: 1px solid var(--ln);
+}
 
 /*
  * Every post action is a pill bigger than its label, so it is easy to hit.
@@ -912,6 +933,9 @@ a.sad:hover .sad-l b { text-decoration: underline; }
   gap: 16px;
   margin: 0 0 4px;
 }
+
+/* An opened post's card, as far below the bar as the cards are apart. */
+.detail-bar + .post { margin-top: 12px; }
 
 /*
  * Back: the Wallet pill's shape and wash (acct.css .ac-w), in the link green,
@@ -1227,10 +1251,11 @@ body.soc .pn {
 
   /*
    * Phone gutters. Neither #mn nor #m pads its sides here, so the rules
-   * between posts, friends, sections and the composer run edge to edge.
-   * Each block keeps off the edge on its own: a margin on whatever is a plain
-   * block or card, a padding on whatever draws a rule, and the lists that
-   * hold those (.feed, .friends, .abc) pass the gutter on to their children.
+   * between friends, sections and the composer run edge to edge. Each block
+   * keeps off the edge on its own: a margin on whatever is a plain block or
+   * card (a post is one), a padding on whatever draws a rule, and the lists
+   * that hold those (.feed, .friends, .abc) pass the gutter on to their
+   * children.
    */
   body.soc #mn { padding-inline: 0; }
   body.soc #m { --gut: 16px; padding-inline: 0; }
@@ -1245,12 +1270,9 @@ body.soc .pn {
   body.soc #m > .feed,
   body.soc #m > .friends,
   body.soc #m > .sec,
-  body.soc #m > .post,
-  body.soc .friends > .abc,
-  body.soc .post { margin-inline: 0; }
+  body.soc .friends > .abc { margin-inline: 0; }
 
   body.soc .composer,
-  body.soc .post,
   body.soc .abc-h,
   body.soc .friend { padding-inline: var(--gut); }
 
