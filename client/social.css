@@ -852,10 +852,25 @@ a.sad:hover .sad-l b { text-decoration: underline; }
 .act.saved,
 .act.saved:hover { color: var(--f); }
 
-/* The + and − glyphs sit low in their line; the bottom pad lifts them to center. */
+/*
+ * Save: skeu-icons' plus, its minus once saved (client/ic-plus.svg,
+ * ic-minus.svg). Drawn only while the button is empty, so an error that
+ * borrows the label shows in its place, and longhands only, so the hover's
+ * wash still lands behind the mark.
+ */
 .act.plus {
-  padding: 0 8px 4px;
-  font-size: 18px;
+  padding: 0 8px;
+}
+
+.act.plus:empty {
+  background-image: url("/ic-plus.svg");
+  background-position: center;
+  background-size: 20px;
+  background-repeat: no-repeat;
+}
+
+.act.plus.saved:empty {
+  background-image: url("/ic-minus.svg");
 }
 
 @media (max-width: 900px) {

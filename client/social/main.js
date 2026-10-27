@@ -453,7 +453,8 @@ function react(kind, post, inDetail, label, props) {
 }
 
 function postActions(post, inDetail, comments) {
-  const plus = react("plus", post, inDetail, post.saved ? "−" : "+", {
+  // No label: social.css draws the mark into the empty button.
+  const plus = react("plus", post, inDetail, "", {
     class: post.saved ? "act plus saved" : "act plus",
     "aria-label": post.saved ? "Remove from saved" : "Save",
   });

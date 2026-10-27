@@ -454,18 +454,13 @@ a:hover {
 }
 
 /*
- * Buy and sell, per position.
+ * Buy and sell, per position: skeu-icons' plus and minus (client/ic-plus.svg,
+ * ic-minus.svg), standing on the row like the marks on the tiles above.
  *
- * The same two fills the trade dialog's own action button uses, so pressing
- * the green one leads to a green "Review buy" and the orange one to an orange
- * "Review sell" — the direction is stated once and never changes colour on the
- * way. Stated once literally now: both are the --buy/--buy-ink pair off the
- * palette, which is what keeps this circle and the dialog's button the same
- * green after dark, when the green is the one that glows.
- *
- * Sell does not move. Orange is orange under either sky, and a direction told
- * by colour needs the two ends to stay told apart more than it needs both to
- * follow the theme.
+ * The colours are the drawings' own, the same under either sky: a green plus
+ * that leads to the dialog's green "Review buy", and a red minus that leads to
+ * its orange "Review sell". The two ends stay told apart by shape as well as
+ * colour, which the palette's pair did not need to be.
  */
 .wl-act {
   display: flex;
@@ -475,31 +470,21 @@ a:hover {
 .wl-t {
   width: 26px;
   height: 26px;
-  /*
-   * The glyph, not the box. "+" and "−" are drawn on the font's math axis,
-   * which sits above the middle of the line box, so flex centring alone leaves
-   * both sitting low in the circle. Two pixels off the bottom lifts the
-   * content box by one and puts the bar where the eye expects it.
-   */
-  padding: 0 0 2px;
+  padding: 0;
   border: 0;
   border-radius: 50%;
-  background: var(--buy);
-  color: var(--buy-ink);
-  font: 500 16px/1 var(--ff);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: url("/ic-plus.svg") center / 22px no-repeat;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.22));
   cursor: pointer;
   transition: filter 0.15s;
 }
 
 .wl-sell {
-  background: #c2410c;
+  background-image: url("/ic-minus.svg");
 }
 
 .wl-t:hover:not(:disabled) {
-  filter: brightness(1.12);
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.22)) brightness(1.12);
 }
 
 .wl-t:focus-visible {

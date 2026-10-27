@@ -174,7 +174,7 @@ function paintRows() {
 
 /**
  * Buy or sell in the dialog the rest of the site trades in. With a label it is
- * the side panel's pill; without, a row's round + or −.
+ * the side panel's pill; without, a row's + or − mark (ic-plus / ic-minus).
  */
 async function openTrade(h, mode) {
   try {
@@ -201,7 +201,7 @@ function trade(h, mode, label) {
   return el("button", {
     class: label ? "wl-cta tp-buy" : `wl-t${selling ? " wl-sell" : ""}`,
     type: "button",
-    text: label ? title : selling ? "−" : "+",
+    text: label ? title : null,
     title,
     "aria-label": title,
     onclick: async (e) => {
