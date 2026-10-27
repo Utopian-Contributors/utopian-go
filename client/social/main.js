@@ -445,7 +445,12 @@ function react(kind, post, inDetail, label, props) {
       if (!post.saved && kind === "plus" && route().page === "timeline" && shown.saved) button.closest("article").remove();
       // Only the action row: swapping the whole card would rebuild its images,
       // which blink as they decode again.
-      else button.closest(".acts").replaceWith(renderPost(post, inDetail).querySelector(".acts"));
+      else {
+        const acts = renderPost(post, inDetail).querySelector(".acts");
+        button.closest(".acts").replaceWith(acts);
+        // Just saved: the new mark springs in (social.css .act.plus.pop).
+        if (kind === "plus" && post.saved) acts.querySelector(".plus").classList.add("pop");
+      }
     } catch (cause) {
       button.textContent = cause.message;
       setTimeout(() => {

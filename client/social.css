@@ -906,6 +906,26 @@ a.sad:hover .sad-l b { text-decoration: underline; }
   background-image: url("/ic-saved.svg");
 }
 
+/*
+ * Saved just now (social.js adds .pop to the button it draws for the save):
+ * the disk springs in, out past its size, back under it, and settles. By its
+ * background-size alone, so the button's box and the hover's wash stay put.
+ */
+.act.plus.saved.pop:empty {
+  animation: act-spring 0.6s;
+}
+
+@keyframes act-spring {
+  0% { background-size: 6px; animation-timing-function: cubic-bezier(0.2, 0.6, 0.35, 1); }
+  45% { background-size: 26px; animation-timing-function: ease-in-out; }
+  68% { background-size: 17px; animation-timing-function: ease-in-out; }
+  86% { background-size: 21px; animation-timing-function: ease-in-out; }
+  100% { background-size: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .act.plus.saved.pop:empty { animation: none; }
+}
 
 @media (max-width: 900px) {
   .act {
@@ -1289,6 +1309,7 @@ body.soc .pn {
   overflow-x: hidden;
   overflow-y: auto;
 }
+
 
 @media (max-width: 900px) {
   body.soc #mn {
