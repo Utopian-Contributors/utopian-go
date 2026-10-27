@@ -22,6 +22,7 @@
         "html-minifier-terser": "^7.2.0",
         "lightningcss": "^1.33.0",
         "railway": "^3.16.0",
+        "skeu-icons": "0.1.0",
         "ts-node-dev": "^2.0.0",
         "typescript": "^5.9.3",
       },
@@ -717,6 +718,8 @@
     "side-channel-weakmap": ["side-channel-weakmap@1.0.2", "", { "dependencies": { "call-bound": "^1.0.2", "es-errors": "^1.3.0", "get-intrinsic": "^1.2.5", "object-inspect": "^1.13.3", "side-channel-map": "^1.0.1" } }, "sha512-WPS/HvHQTYnHisLo9McqBHOJk2FkHO/tlpvldyrnem4aeQp4hai3gythswg6p01oSoTl58rcpiFAjF2br2Ak2A=="],
 
     "signal-exit": ["signal-exit@4.1.0", "", {}, "sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw=="],
+
+    "skeu-icons": ["skeu-icons@0.1.0", "", {}, "sha512-dsqkiwKk7zaxvK5bvcYbvySN5ANRUXjP+9Y+6KWC8SdC8CG29i7j4b3N+tkCvXKPB+/41G1ZRF3MZldrfsmfog=="],
 
     "source-map": ["source-map@0.6.1", "", {}, "sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g=="],
 

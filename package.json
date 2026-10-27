@@ -10,6 +10,7 @@
     "build:client": "node scripts/build-client.mjs",
     "build:og": "node scripts/og-image.mjs",
     "build:icons": "node scripts/app-icons.mjs",
+    "build:skeu": "node scripts/skeu-icons.mjs && node scripts/app-icons.mjs",
     "build:scene": "node scripts/home-scene.mjs",
     "build:server": "tsc",
     "build": "npm run build:client && npm run build:server",
@@ -36,6 +37,7 @@
     "html-minifier-terser": "^7.2.0",
     "lightningcss": "^1.33.0",
     "railway": "^3.16.0",
+    "skeu-icons": "0.1.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
   }
