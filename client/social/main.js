@@ -20,6 +20,8 @@ import { mountPwa } from "../js/pwa.js";
 import { UTCC, utccShort, utccText } from "../js/utcc.js";
 
 const main = $("m");
+/** A post, laid over the timeline (social.css #pv) so the timeline under it keeps its place. */
+const pv = $("pv");
 
 /** @type {null | {name: string, address: string, bio: string, loc: string, avatarRev: number, passkey: false | {id: string}, nextPost: number, wait: number, unseen: number}} */
 let me = null;
@@ -56,6 +58,9 @@ function paintAccount(signed) {
 }
 
 function applyMe(next) {
+  // A timeline kept under an open post was drawn for whoever was signed in
+  // then; Back draws it afresh instead.
+  if ((next?.name || "") !== (me?.name || "") && !pv.hidden) main.replaceChildren();
   me = next;
   // Every account has a passkey; one without is held to adding it (client/js/login.js).
   if (me && me.passkey === false) {
@@ -691,7 +696,8 @@ function paintDetail() {
   const back = el("a", { class: "back", href: "/social", text: "Back" });
   back.addEventListener("click", (event) => {
     const ref = document.referrer;
-    if (ref.startsWith(location.origin) && history.length > 1) {
+    // Opened over the timeline (showOver), the entry before this one is that timeline.
+    if (history.state?.over || (ref.startsWith(location.origin) && history.length > 1)) {
       event.preventDefault();
       history.back();
     }
@@ -700,7 +706,7 @@ function paintDetail() {
     class: "views",
     text: post.views === 1 ? "1 view" : `${post.views} views`,
   });
-  main.replaceChildren(
+  pv.replaceChildren(
     ...[
       el("div", { class: "detail-bar" }, back, views),
       renderPost(post, true),
@@ -708,13 +714,67 @@ function paintDetail() {
       commentList(detail.comments),
     ].filter(Boolean),
   );
+  pv.hidden = false;
 }
 
 async function renderPostPage(id) {
   detail = await send("/api/social/open", { post: id });
-  railSide();
   paintDetail();
 }
+
+function closePost() {
+  pv.hidden = true;
+  pv.replaceChildren();
+}
+
+/** The timeline is up in #m, so a post can be laid over it, or taken off it again. */
+const timelineUp = () => !!main.querySelector(":scope > .feed");
+
+/**
+ * A post opened from the timeline goes over it, and Back takes it off again.
+ * The timeline is not redrawn either way, so it is just as it was left:
+ * scrolled where it was, a draft in the composer kept, the next page of posts
+ * still armed.
+ */
+async function showOver(here) {
+  playing?.pause();
+  playing = null;
+  if (here.page === "timeline") {
+    // Its card catches up with whatever was done on the post: a comment, a save.
+    const acts = detail && main.querySelector(`[id="p-${detail.post.id}"] .acts`);
+    if (acts) acts.replaceWith(renderPost(detail.post).querySelector(".acts"));
+    detail = null;
+    closePost();
+  } else {
+    const loaded = progress.start();
+    try {
+      await renderPostPage(here.id);
+    } catch (cause) {
+      detail = null;
+      pv.replaceChildren(el("p", { class: "err", text: cause.message }));
+      pv.hidden = false;
+    }
+    loaded();
+  }
+  markNav();
+}
+
+/*
+ * A post opened from the timeline: at its own address, so it can be shared,
+ * reloaded and gone back from, but over the timeline (showOver) rather than in
+ * its place. A press with a modifier keeps the browser's meaning: a new tab.
+ */
+const POST_PATH = /^\/social\/p\/[A-Za-z0-9_-]{1,32}\/?$/;
+main.addEventListener("click", (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const link = e.target instanceof Element ? e.target.closest("a[href]") : null;
+  if (!link || !timelineUp()) return;
+  const url = new URL(link.href);
+  if (url.origin !== location.origin || !POST_PATH.test(url.pathname)) return;
+  e.preventDefault();
+  history.pushState({ over: true }, "", url.pathname);
+  show();
+});
 
 /**
  * The composer, its own bundle (client/compose). show() asks for it beside the
@@ -995,6 +1055,7 @@ const kit = {
 
 async function show() {
   const here = route();
+  if (timelineUp() && (here.page === "post" || (here.page === "timeline" && !pv.hidden))) return showOver(here);
   if (leaveChat) leaveChat();
   leaveChat = null;
   stopMore();
@@ -1008,6 +1069,7 @@ async function show() {
   document.body.classList.toggle("newpost", here.page === "new");
   // The loading bar along the top while the page loads, not a placeholder in it.
   main.replaceChildren();
+  closePost();
   const loaded = progress.start();
   try {
     if (here.page === "timeline") {
@@ -1025,8 +1087,11 @@ async function show() {
     } else if (here.page === "edit") await (await load("ed", "__edit")).mount(kit);
     else if (here.page === "profile")
       renderProfile(await pull(`/api/social/u/${here.name}`));
-    else if (here.page === "post") await renderPostPage(here.id);
-    else if (here.page === "new") {
+    else if (here.page === "post") {
+      // Reached by its address: over a timeline that was never drawn.
+      await renderPostPage(here.id);
+      railSide();
+    } else if (here.page === "new") {
       // The composer as a page of its own (client/compose), a phone's +.
       if (!me) await pull("/api/social/me");
       if (!me) throw new Error("Log in to post.");
@@ -1053,10 +1118,11 @@ async function show() {
  * The header's Back (phones only) is whatever back link the page drew: a post's
  * Back, an open chat's Chats. It shows while there is one to press.
  */
-new MutationObserver(() => {
-  document.body.classList.toggle("deep", !!main.querySelector(".back"));
-}).observe(main, { childList: true, subtree: true });
-$("bk").addEventListener("click", () => main.querySelector(".back")?.click());
+const backLink = () => pv.querySelector(".back") || main.querySelector(".back");
+const deep = new MutationObserver(() => document.body.classList.toggle("deep", !!backLink()));
+deep.observe(main, { childList: true, subtree: true });
+deep.observe(pv, { childList: true, subtree: true });
+$("bk").addEventListener("click", () => backLink()?.click());
 
 // The + opens /social/new in place (client/compose); Back, or Cancel, comes home to the timeline.
 addEventListener("popstate", show);
@@ -1123,12 +1189,16 @@ addEventListener("touchend", async () => {
  * keeps that owner, momentum included, as the browser's own scrolling does.
  */
 const SCROLLS = /auto|scroll/;
-/** #m, or on a phone-width profile #mn, which holds the card and the posts together. Messenger has none. */
-const pageBox = () => [main, $("mn")].find((box) => SCROLLS.test(getComputedStyle(box).overflowY));
+/**
+ * A post open over the timeline (#pv), else #m, or on a phone-width profile
+ * #mn, which holds the card and the posts together. Messenger has none.
+ */
+const pageBox = () =>
+  [pv, main, $("mn")].find((box) => !box.hidden && SCROLLS.test(getComputedStyle(box).overflowY));
 
 function wheelIsNative(e) {
   const t = e.target;
-  if (!(t instanceof Element) || main.contains(t)) return true;
+  if (!(t instanceof Element) || main.contains(t) || pv.contains(t)) return true;
   if (t !== document.body && t !== document.documentElement && !t.closest("#chrome, #mn, #ft")) return true;
   for (let n = t; n && n !== document.body; n = n.parentElement) {
     if (!SCROLLS.test(getComputedStyle(n).overflowY)) continue;

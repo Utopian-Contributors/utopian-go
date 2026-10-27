@@ -1180,7 +1180,8 @@ dialog label { display: block; margin-top: 14px; font-size: 13px; color: var(--m
  */
 body.soc { --feed: 72ch; }
 
-#m {
+#m,
+#pv {
   --mx: max(16px, 50% - var(--feed) / 2 + 16px);
   padding: 0 var(--mx);
 }
@@ -1214,7 +1215,7 @@ body.soc #sc {
   display: contents;
 }
 
-body.soc #m {
+body.soc :is(#m, #pv) {
   grid-column: 1;
   grid-row: 1;
   min-height: 0;
@@ -1224,6 +1225,28 @@ body.soc #m {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
+/*
+ * A post opened from the timeline (#pv), laid over the timeline's own box
+ * rather than drawn into it. The timeline stays under it, hidden but laid out,
+ * so its scroll box keeps its place and Back finds it where it was left: no
+ * script has to remember the position or put it back. A post reached by its
+ * address opens the same way, over a timeline that was never drawn.
+ *
+ * Absolute, so taking the cell changes nothing about #m's own box: on a wide
+ * screen the grid area is #m's cell, on a phone the whole of #mn.
+ */
+body.soc #mn { position: relative; }
+
+/* Every grid line named: for an absolute box, an `auto` end is the far edge of
+   the grid, not the next line, and the post would cover the rail too. */
+body.soc #pv {
+  position: absolute;
+  inset: 0;
+  grid-area: 1 / 1 / 2 / 2;
+}
+
+body.soc #mn:has(> #pv:not([hidden])) > #m { visibility: hidden; }
 
 body.soc #sd {
   grid-column: 2;
@@ -1260,9 +1283,9 @@ body.soc .pn {
    * children.
    */
   body.soc #mn { padding-inline: 0; }
-  body.soc #m { --gut: 16px; padding-inline: 0; }
+  body.soc :is(#m, #pv) { --gut: 16px; padding-inline: 0; }
 
-  body.soc #m > *,
+  body.soc :is(#m, #pv) > *,
   body.soc .feed > *,
   body.soc .friends > *,
   body.soc .sec > * { margin-inline: var(--gut); }
@@ -1394,7 +1417,7 @@ body.soc .pn {
   body.tl #sd { grid-column: 3; }
 
   /* The grid never lets this column past --feed, so its pad is always the gutter. */
-  body.tl #m {
+  body.tl :is(#m, #pv) {
     --gut: 16px;
     padding-inline: var(--gut);
   }
@@ -1923,7 +1946,7 @@ a.back.chat-back { display: none; }
     padding: 0;
   }
 
-  body.soc #m { padding-block: var(--main-gap) calc(16px + var(--ft-h)); }
+  body.soc :is(#m, #pv) { padding-block: var(--main-gap) calc(16px + var(--ft-h)); }
 
   /* Messenger's composer is the column's last row, so it stops on the footer. */
   body.chat #m { padding-bottom: var(--ft-h); }
@@ -2024,9 +2047,9 @@ a.back.chat-back { display: none; }
   /* The header's Back stands in for these, except on a page with a bar of its
      own (a post, with its views): there the bar's Back stays, on the views'
      line, and the header's goes. */
-  body.soc #m .back { display: none; }
-  body.soc #m .detail-bar .back { display: inline-flex; }
-  body.soc.deep:has(#m .detail-bar) .hb { display: none; }
+  body.soc :is(#m, #pv) .back { display: none; }
+  body.soc :is(#m, #pv) .detail-bar .back { display: inline-flex; }
+  body.soc.deep:has(:is(#m, #pv) .detail-bar) .hb { display: none; }
 
   body.soc #tb {
     order: 1;
