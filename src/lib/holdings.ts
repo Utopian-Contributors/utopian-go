@@ -41,8 +41,8 @@ const LAMPORTS_PER_SOL = 1_000_000_000;
 const MAX_ITEMS = 50;
 
 /**
- * Below this a holding is dust, and dust is noise on a page whose whole job is
- * to be read at a glance. Counted rather than dropped, so the page can say so.
+ * Below this a holding is dust: still a row, since it is still theirs, but not
+ * worth a request upstream for a history no line could show moving.
  */
 const DUST_USD = 0.01;
 
@@ -80,7 +80,7 @@ const MIN_SERIES_COVERAGE = 0.5;
  */
 const HISTORY_MAX = 16;
 
-/** One priced holding, dust included: what a line is summed from. */
+/** One priced holding: what a line is summed from. */
 export interface Held {
   rec: TokenRecord;
   units: number;
@@ -215,7 +215,6 @@ interface Book {
    */
   slot?: number;
   more?: number;
-  dust?: number;
   unpriced?: number;
   unknown?: UnknownHolding[];
 }
@@ -388,8 +387,8 @@ async function lookup(owner: string): Promise<Book> {
   const priced = lookupMints([...totals.keys()]);
 
   const items: Holding[] = [];
-  // Every priced holding, dust included, because it counts towards the total
-  // the line has to end on.
+  // Every priced holding, because each counts towards the total the line has
+  // to end on.
   const held: Held[] = [];
   let total = 0;
   let unpriced = 0;
@@ -398,7 +397,6 @@ async function lookup(owner: string): Promise<Book> {
     unpriced += 1;
     if (unknown.length < MAX_UNKNOWN) unknown.push({ mint, amount: amount.toString(), decimals });
   };
-  let dust = 0;
 
   for (const [mint, { amount, decimals }] of totals) {
     const rec = priced.get(mint);
@@ -425,11 +423,6 @@ async function lookup(owner: string): Promise<Book> {
     held.push({ rec, units, usd, kind });
     total += usd;
 
-    if (usd < DUST_USD) {
-      dust += 1;
-      continue;
-    }
-
     items.push({
       mint,
       symbol: rec.symbol,
@@ -454,7 +447,6 @@ async function lookup(owner: string): Promise<Book> {
     held,
     ...(slot ? { slot } : {}),
     ...(items.length > shown.length ? { more: items.length - shown.length } : {}),
-    ...(dust ? { dust } : {}),
     ...(unpriced ? { unpriced, unknown } : {}),
   };
 

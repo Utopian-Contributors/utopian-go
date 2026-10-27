@@ -258,7 +258,7 @@ export interface PriceSeries {
 /** One line of the wallet page's breakdown: everything held of one kind. */
 export interface PortfolioSlice {
   kind: TokenKind;
-  /** USD, dust included, so the slices add up to Holdings.total. */
+  /** USD, so the slices add up to Holdings.total. */
   usd: number;
   /** As Holdings.series, for this kind alone. */
   series?: number[];
@@ -366,8 +366,6 @@ export interface Holdings {
   slices?: PortfolioSlice[];
   /** Priced rows past the display cap. */
   more?: number;
-  /** Priced rows worth less than a cent. */
-  dust?: number;
   /** Mints the token index carries no price for — almost always airdrop spam. */
   unpriced?: number;
   /** Those mints and how much of each, the first fifty, so the page can name what it can. */

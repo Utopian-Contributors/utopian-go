@@ -59,7 +59,6 @@ let shown = null;
 function signature(data) {
   return [
     ...(data.items ?? []).map((i) => `${i.mint}:${i.amount}`).sort(),
-    data.dust ?? 0,
     data.unpriced ?? 0,
     data.more ?? 0,
   ].join("|");
@@ -728,7 +727,6 @@ async function paintKeys() {
 function omitted(data) {
   const parts = [];
   if (data.more) parts.push(`${data.more} smaller holding${data.more > 1 ? "s" : ""}`);
-  if (data.dust) parts.push(`${data.dust} worth under a cent`);
   if (data.unpriced) {
     const what = `${data.unpriced} token${data.unpriced > 1 ? "s" : ""} we hold no price for`;
     const list = data.unknown ?? [];
