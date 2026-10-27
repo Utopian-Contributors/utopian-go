@@ -1170,16 +1170,18 @@ dialog h2 { margin: 0; font-size: 18px; }
 dialog label { display: block; margin-top: 14px; font-size: 13px; color: var(--m); }
 
 /*
- * Timeline and friends: a 60ch column down the middle of the cell.
+ * Timeline and friends: a --feed column down the middle of the cell.
  *
  * #m is the scroll box, so it takes the whole cell and its padding draws the
  * column: a wheel anywhere across the cell moves the feed, not only one over
  * the posts. Padding percentages are of the cell, which is #m's own width, and
- * ch is #m's own font, so the column sits where a 60ch box with 16px sides,
+ * ch is #m's own font, so the column sits where a --feed box with 16px sides,
  * centred by auto margins, used to put it.
  */
+body.soc { --feed: 72ch; }
+
 #m {
-  --mx: max(16px, 50% - 30ch + 16px);
+  --mx: max(16px, 50% - var(--feed) / 2 + 16px);
   padding: 0 var(--mx);
 }
 
@@ -1362,41 +1364,47 @@ body.soc .pn {
   body.profile #sd { grid-column: 1; }
 
   /*
-   * The posts keep to the left of their column, 60ch wide. The scroll box
+   * The posts keep to the left of their column, --feed wide. The scroll box
    * takes in the rest of the column, and the gap back to the card.
    */
   body.profile #m {
     grid-column: 2;
     margin-left: calc(var(--col-gap) * -1);
-    padding-inline: calc(16px + var(--col-gap)) max(16px, 100% - 60ch + 16px);
+    padding-inline: calc(16px + var(--col-gap)) max(16px, 100% - var(--feed) + 16px);
   }
 
-  /* The rule sits between the card and the posts, so it moves to the right edge. */
+  /* No rule beside the card: the posts are cards of their own. */
   body.profile .pn {
-    border-left: 0;
-    border-right: 1px solid var(--b);
-    padding: 20px 20px 0 4px;
+    border: 0;
+    padding: calc(20px + var(--main-gap)) 20px var(--ft-h);
   }
 
   /*
    * The timeline keeps its posts in the middle and the rail (client/rail) at
-   * the right, signed in or not. A post opened from it keeps the same
-   * columns, so it opens where it was read.
+   * the right, signed in or not. The posts stop at --feed and the rail at its
+   * own width; whatever #mn has past those goes between them, so the rail
+   * ends where the header does. Short of room, the posts give first. A post
+   * opened from it keeps the same columns, so it opens where it was read.
    */
-  body.tl #mn { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); }
-  body.tl #sd { grid-column: 2; }
-
-  /* Centred in its column, the scroll box running on over the gap to the rail. */
-  body.tl #m {
-    grid-column: 1;
-    margin: 0 calc(var(--col-gap) * -1) 0 0;
-    padding-inline: var(--mx) calc(var(--mx) + var(--col-gap));
+  body.tl #mn {
+    grid-template-columns: minmax(0, var(--feed)) 1fr minmax(280px, var(--rail));
+    column-gap: 0;
   }
 
+  body.tl #sd { grid-column: 3; }
+
+  /* The grid never lets this column past --feed, so its pad is always the gutter. */
+  body.tl #m {
+    --gut: 16px;
+    padding-inline: var(--gut);
+  }
+
+  body.tl #m { grid-column: 1; }
+
+  /* The pads past the header's gap and the footer, as #mn no longer keeps them. */
   body.tl .pn {
-    border-left: 1px solid var(--b);
-    border-right: 0;
-    padding: 20px 0 4px 20px;
+    border: 0;
+    padding: calc(4px + var(--main-gap)) 0 calc(4px + var(--ft-h)) 20px;
   }
 }
 
@@ -1427,9 +1435,9 @@ body.chat #m {
   overflow: hidden;
 }
 
-/* The friends page's search box, at its width: #m's 60ch less its 16px sides. */
+/* The friends page's search box, at its width: #m's --feed less its 16px sides. */
 body.chat .find {
-  max-width: calc(60ch - 32px);
+  max-width: calc(var(--feed) - 32px);
   margin-inline: auto;
 }
 
@@ -1655,10 +1663,10 @@ a.back.chat-back { display: none; }
   body.chat #sd { grid-column: 1; }
   body.chat #m { grid-column: 2; }
 
+  /* No rules between the columns; the same pad either side. */
   body.chat .pn {
-    border-left: 0;
-    border-right: 1px solid var(--b);
-    padding: 16px 16px 0 4px;
+    border: 0;
+    padding: calc(16px + var(--main-gap)) 16px var(--ft-h);
   }
 }
 
@@ -1735,21 +1743,38 @@ a.back.chat-back { display: none; }
 
 @media (min-width: 901px) {
   /*
-   * The header across the top, then the tabs beside everything else. The
-   * outer columns are the gutter, or all that is left past the shell, so the
-   * tabs start under the wordmark just as the header's own content does.
+   * The header across the top, then the tabs beside everything else.
+   *
+   * The header and the footer are every page's width (--shell), so the
+   * wordmark does not move between search, Social and the wallet. The columns
+   * under them stop sooner: the tabs, the timeline's --feed column (#m) and
+   * the rail. The posts sit where they would with those three centred as one
+   * block in the window, but the first and last columns reach out past that,
+   * by the same amount, to the header's own insets: the tabs start under the
+   * wordmark and the rail ends under the account control. Once the window is
+   * too narrow for the shell to stop, the two insets are the same and neither
+   * reaches out at all.
    */
   body.soc {
     --nav: 212px;
     /* Messenger's list and a profile's card: one width, so the two line up. */
     --list: minmax(300px, 380px);
+    /* The timeline's rail (client/rail) at its widest. */
+    --rail: 340px;
+    /* The footer's height. It lies over the columns' last stretch, so each
+       scroll box pads its end by this much to scroll clear of it. */
+    --ft-h: 48px;
+    /* The header's content edge, and where the columns would start centred.
+       Percentages of <body>, so read only in its own grid. */
+    --hd-in: max(var(--pad), (100% - var(--shell)) / 2 + var(--pad));
+    --cols-in: max(var(--pad), (100% - var(--nav) - var(--feed) - var(--rail)) / 2);
     display: grid;
     grid-template-columns:
-      minmax(var(--pad), 1fr)
-      var(--nav)
-      minmax(0, calc(var(--shell) - 2 * var(--pad) - var(--nav)))
+      var(--hd-in)
+      calc(var(--nav) + var(--cols-in) - var(--hd-in))
+      minmax(0, calc(var(--feed) + var(--rail) + var(--cols-in) - var(--hd-in)))
       minmax(var(--pad), 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   body.soc .chrome { display: contents; }
@@ -1768,12 +1793,21 @@ a.back.chat-back { display: none; }
     gap: 2px;
     width: auto;
     max-width: none;
-    /* Out by a tab's own inset, so the icons, not their pills, line up under the wordmark. */
+    /* Out by a tab's own inset, so the icons, not their pills, line up under
+       the wordmark. */
     margin: 0 0 0 -12px;
-    padding: var(--main-gap) 16px 16px 0;
+    padding: var(--main-gap) 16px calc(16px + var(--ft-h)) 10px;
     border-bottom: 0;
     overflow-x: hidden;
     overflow-y: auto;
+  }
+
+  /* As wide as when the column was just --nav (plus the 12px it hangs out by,
+     less its 16px pad), not stretched across whatever it reaches out to. */
+  body.soc #tb :is(.tab, .tb-bal) {
+    align-self: flex-start;
+    box-sizing: border-box;
+    width: calc(var(--nav) - 4px);
   }
 
   body.soc #tb .tab {
@@ -1875,23 +1909,63 @@ a.back.chat-back { display: none; }
 
   .tb-bal-s { display: none; }
 
+  /*
+   * No pad of its own above the columns, so they scroll right up to the
+   * header's rule. The gap under the header goes inside each scroll box
+   * instead, with the footer's height at the other end.
+   */
   body.soc #mn {
     grid-column: 3;
     grid-row: 2;
     width: auto;
     max-width: none;
     margin: 0;
-    padding-inline: 0;
+    padding: 0;
   }
 
-  /* The last row, across the page and boxed like the header, so its links start under the wordmark. */
+  body.soc #m { padding-block: var(--main-gap) calc(16px + var(--ft-h)); }
+
+  /* Messenger's composer is the column's last row, so it stops on the footer. */
+  body.chat #m { padding-bottom: var(--ft-h); }
+
+  /*
+   * Over the last stretch of the columns rather than under them, so they run
+   * on to the bottom of the screen and show through it. Boxed like the
+   * header, so its links start under the wordmark.
+   */
   body.soc #ft {
     grid-column: 1 / -1;
-    grid-row: 3;
+    grid-row: 2;
+    align-self: end;
+    position: relative;
+    z-index: 1;
     width: 100%;
     max-width: var(--shell);
+    height: var(--ft-h);
     margin: 0 auto;
+    padding-block: 0;
     padding-inline: var(--pad);
+    align-items: center;
+    /* Only its links take a press; anywhere else the post under it does. */
+    pointer-events: none;
+  }
+
+  body.soc #ft > * { pointer-events: auto; }
+
+  /*
+   * No background: what scrolls under it is blurred, fully at the bottom edge
+   * and less on the way up, until the top edge is clear. The mask is on the
+   * blurring layer, not the footer, so the links stay sharp.
+   */
+  body.soc #ft::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    -webkit-mask: linear-gradient(to top, #000 20%, transparent);
+    mask: linear-gradient(to top, #000 20%, transparent);
   }
 }
 
