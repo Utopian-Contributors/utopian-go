@@ -867,21 +867,20 @@ body:not(.home) #bm {
   color: var(--t);
 }
 
-.ra-b svg {
-  fill: none;
-  stroke: currentcolor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.ra-b .mk {
+  width: 18px;
+  height: 18px;
 }
 
-.ra-b.on {
-  color: var(--a);
+/* Saved: the disk with a tick, as on a saved post (social.css .act.plus). */
+.ra-b.on .ic-save {
+  --ic: url("/ic-saved.svg");
 }
 
-.ra-b.on svg {
-  fill: currentcolor;
-}
+.ic-chat { --ic: url("/ic-chat.svg"); }
+.ic-save { --ic: url("/ic-save.svg"); }
+/* Advertise's, on the home page's pill and Social's New ad. */
+.ic-wand { --ic: url("/ic-wand.svg"); }
 
 /* Desktop only: a phone has no hover to reveal them. */
 @media (hover: none), (max-width: 900px) {

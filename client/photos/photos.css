@@ -94,6 +94,11 @@
   .pv-x:hover { filter: brightness(1.25); }
 }
 
+.pv-x .mk { width: 16px; height: 16px; }
+.pv-go .mk { width: 22px; height: 22px; }
+.ic-prev { --ic: url("/ic-prev.svg"); }
+.ic-next { --ic: url("/ic-next.svg"); }
+
 .pv-go { top: 50%; translate: 0 -50%; }
 .pv-go:disabled { opacity: 0.3; cursor: default; }
 .pv-prev { left: 12px; }

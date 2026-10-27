@@ -287,11 +287,13 @@ dialog textarea { resize: none; }
     width: 56px;
     height: 56px;
     border-radius: 50%;
-    background: var(--buy);
-    color: var(--buy-ink);
+    /* The page's own ground, so the green plus (client/ic-plus.svg) stands on it. */
+    background: var(--bg);
     box-shadow: 0 6px 20px rgb(0 0 0 / 24%);
     --press: 0.92;
   }
+
+  body.soc .composer .fab .mk { width: 30px; height: 30px; }
 
   body.soc .composer .fab:focus-visible { outline: 2px solid var(--buy); outline-offset: 3px; }
   body.soc .composer.page .fab { display: none; }
@@ -321,6 +323,7 @@ dialog textarea { resize: none; }
   cursor: pointer;
 }
 
+.tool .mk { width: 22px; height: 22px; }
 .tool:hover:not(:disabled) { background: var(--wash); color: var(--go); }
 .tool:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
 .tool:disabled { opacity: 0.4; cursor: default; }
@@ -381,7 +384,7 @@ dialog textarea { resize: none; }
 
 /* All and Friends swap in place, so the chip holds the longer one's width. */
 .flt button:first-child { min-width: 82px; }
-.flt svg { flex: none; }
+.flt .mk { width: 18px; height: 18px; }
 .flt button:hover { background: var(--wash2); color: var(--t); }
 .flt button:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
 
@@ -480,22 +483,25 @@ dialog textarea { resize: none; }
   .gallery picture.ld { animation: none; }
 }
 
+/* Remove: the red disc (client/ic-remove.svg), lifted off the photo by its shadow. */
 .shots button {
   position: absolute;
   top: 4px;
   right: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   width: 22px;
   height: 22px;
-  padding: 0 0 3px;
+  padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: rgb(0 0 0 / 65%);
-  color: #fff;
-  font: 600 15px/1 var(--ff);
+  background: none;
   cursor: pointer;
+}
+
+.shots button .mk {
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.45));
 }
 
 /* A voice memo: play, the shape of the recording, and its length. */
@@ -511,6 +517,7 @@ dialog textarea { resize: none; }
   background: var(--ch);
 }
 
+/* Play and pause (client/ic-play.svg, ic-pause.svg) on a disc of the page's own ground, raised off the memo's. */
 .memo-go {
   flex: none;
   display: grid;
@@ -520,15 +527,15 @@ dialog textarea { resize: none; }
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: var(--buy);
-  color: var(--buy-ink);
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
   cursor: pointer;
 }
 
-.memo-go svg { display: block; }
-.memo-go:hover:not(:disabled) { filter: brightness(1.08); }
+.memo-go .mk { width: 18px; height: 18px; }
+.memo-go:hover:not(:disabled) { filter: brightness(1.04); }
 .memo-go:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
-.memo-go:disabled { background: var(--ln); color: var(--f); cursor: default; }
+.memo-go:disabled { opacity: 0.5; cursor: default; }
 
 .wave {
   display: flex;
@@ -598,18 +605,23 @@ a.cashtag:hover { color: var(--a); }
 
 .memo-x {
   flex: none;
+  display: grid;
+  place-items: center;
   width: 28px;
   height: 28px;
-  padding: 0 0 3px;
+  padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: var(--ch);
-  color: var(--m);
-  font: 600 18px/1 var(--ff);
+  background: none;
   cursor: pointer;
 }
 
-.memo-x:hover { color: var(--dn); }
+.memo-x .mk {
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.22));
+}
+
+.memo-x:hover { filter: brightness(1.1); }
 
 .composer .wait {
   color: var(--ff);
@@ -874,8 +886,8 @@ a.sad:hover .sad-l b { text-decoration: underline; }
 .act.saved:hover { color: var(--f); }
 
 /*
- * Save: skeu-icons' plus, its minus once saved (client/ic-plus.svg,
- * ic-minus.svg). Drawn only while the button is empty, so an error that
+ * Save: skeu-icons' plus, the disk with a tick once saved (client/ic-plus.svg,
+ * ic-saved.svg). Drawn only while the button is empty, so an error that
  * borrows the label shows in its place, and longhands only, so the hover's
  * wash still lands behind the mark.
  */
@@ -891,8 +903,9 @@ a.sad:hover .sad-l b { text-decoration: underline; }
 }
 
 .act.plus.saved:empty {
-  background-image: url("/ic-minus.svg");
+  background-image: url("/ic-saved.svg");
 }
+
 
 @media (max-width: 900px) {
   .act {
@@ -1082,6 +1095,17 @@ img.pfp {
   --ic: url("/ic-edit.svg");
 }
 
+/* The marks Social's own controls wear as a .mk (base.css): the filters, the composers' tools, a memo's play. */
+.ic-home { --ic: url("/ic-home.svg"); }
+.ic-social { --ic: url("/ic-social.svg"); }
+.ic-image { --ic: url("/ic-image.svg"); }
+.ic-audio { --ic: url("/ic-audio.svg"); }
+.ic-cash { --ic: url("/ic-cash.svg"); }
+.ic-play { --ic: url("/ic-play.svg"); }
+.ic-pause { --ic: url("/ic-pause.svg"); }
+.ic-plus { --ic: url("/ic-plus.svg"); }
+.ic-remove { --ic: url("/ic-remove.svg"); }
+
 .tools { margin: 14px 0; }
 .tools label { display: block; margin-top: 10px; font-size: 13px; color: var(--m); }
 
@@ -1265,7 +1289,6 @@ body.soc .pn {
   overflow-x: hidden;
   overflow-y: auto;
 }
-
 
 @media (max-width: 900px) {
   body.soc #mn {

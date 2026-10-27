@@ -29,10 +29,6 @@ const SOL_MINT = "So11111111111111111111111111111111111111112";
 const FEE_SOL = "0.000005 SOL";
 const FEE_TOKEN = "Up to 0.0021 SOL";
 
-/** The trade dialog's tick, for the same green disc. */
-const CHECK_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
-
 async function post(path, body) {
   const res = await fetch(path, {
     method: "POST",
@@ -210,7 +206,6 @@ export function confirmSend(body, p) {
   function done(signature) {
     p.setTitle("Sent");
     const disc = el("div", { class: "swx-check", role: "img", "aria-label": "Payment sent" });
-    disc.innerHTML = CHECK_SVG;
     const finish = el("button", { class: "swx-go", type: "button", text: "Done", onclick: p.close });
     body.replaceChildren(
       el(

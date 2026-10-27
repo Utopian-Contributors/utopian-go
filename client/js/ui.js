@@ -35,7 +35,7 @@ const CSS = `
 .swx-x{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;
  border-radius:50%;background:var(--wash);color:var(--t);font-size:20px;line-height:1;cursor:pointer}
 .swx-x:hover{background:var(--wash2)}
-.swx-x svg{display:block}
+.swx-x .mk{width:13px;height:13px}
 .swx-h .swx-x{margin:-4px -4px -4px 0}
 .swx-lbl{display:flex;justify-content:space-between;align-items:center;
  font-size:12px;color:var(--f);margin-bottom:6px}
@@ -58,9 +58,8 @@ const CSS = `
 @media (max-width:620px) and (display-mode:standalone){.swx-d{border-bottom:24px solid transparent}}
 `;
 
-/** The close button's X. Static markup, so it goes in as HTML: el() builds in the HTML namespace. */
-export const X_ICON =
-  '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+/** The close button's x: the app's red one (base.css .mk.ic-close). Static markup, so it goes in as HTML. */
+export const X_ICON = '<i class="mk ic-close" aria-hidden="true"></i>';
 
 /**
  * Add a stylesheet once per page.

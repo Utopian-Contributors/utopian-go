@@ -72,10 +72,6 @@ const PCTS = [5, 25, 50, 100];
 /** How long to wait for a sent trade to land before calling it in flight. */
 const LAND_MS = 60_000;
 
-/** Tick for the completion disc. */
-const CHECK_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
-
 /** A wallet or RPC error that really means the wallet is out of SOL. */
 const NO_SOL = /prior credit|insufficient lamports|InsufficientFundsForFee|insufficient funds for fee|AccountNotFound/i;
 
@@ -627,7 +623,6 @@ function open(t) {
     const flip = el("button", {
       class: `swx-flip${buying ? "" : " up"}`,
       type: "button",
-      text: "↓",
       title: buying ? `Sell ${t.symbol} instead` : `Buy ${t.symbol} instead`,
       "aria-label": buying ? `Switch to selling ${t.symbol}` : `Switch to buying ${t.symbol}`,
       onclick: () => {
@@ -1270,7 +1265,7 @@ function open(t) {
         el(
           "div",
           { class: "swx-arrow" },
-          el("span", { class: "swx-flip static", "aria-hidden": "true", text: "↓" }),
+          el("span", { class: "swx-flip static", "aria-hidden": "true" }),
         ),
         el(
           "div",
@@ -1322,7 +1317,6 @@ function open(t) {
         cleanup = null;
         setTitle(buying ? "Bought" : "Sold");
         const disc = el("div", { class: "swx-check", role: "img", "aria-label": "Trade complete" });
-        disc.innerHTML = CHECK_SVG;
         const gotQty = units(recv, q.outAmount);
         const paidQty = units(pay, q.inAmount);
         const finish = el("button", { class: "swx-go", type: "button", text: "Done", onclick: close });

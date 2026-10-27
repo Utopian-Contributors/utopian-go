@@ -67,11 +67,12 @@
 
 .swx-arrow{display:flex;justify-content:center;margin:-7px 0;position:relative;
  z-index:1}
-.swx-flip{width:28px;height:28px;border-radius:50%;background:var(--pn);
- border:1px solid var(--b);color:var(--f);font-size:12px;display:flex;
- align-items:center;justify-content:center;cursor:pointer;padding:0;
- transition:transform .18s,border-color .18s,color .18s}
-.swx-flip:hover{border-color:var(--a);color:var(--a)}
+/* The arrow between the panes (client/ic-down.svg), on a disc of the panel's own. */
+.swx-flip{width:28px;height:28px;border-radius:50%;
+ background:url("/ic-down.svg") center/16px no-repeat,var(--pn);
+ border:1px solid var(--b);cursor:pointer;padding:0;
+ transition:transform .18s,border-color .18s}
+.swx-flip:hover{border-color:var(--a)}
 .swx-flip.up{transform:rotate(180deg)}
 
 /*
@@ -180,22 +181,17 @@
 .swx-pct button.on{background:var(--t);border-color:var(--t);color:var(--bg)}
 .swx-pct button:disabled{opacity:.45;cursor:default}
 /*
- * The trade landed. A big green disc, the same green as the Buy button and its
- * ink, so the tick stays legible after dark where the green turns pale.
+ * The trade landed: one big green disc with its tick (client/ic-done.svg),
+ * popping in. Its colours are the drawing's own, the same under either sky.
  */
 .swx-done{display:flex;flex-direction:column;align-items:center;text-align:center;
  padding:14px 0 2px}
-.swx-check{width:88px;height:88px;border-radius:50%;background:var(--buy);
- color:var(--buy-ink);display:grid;place-items:center;
+.swx-check{width:88px;height:88px;background:url("/ic-done.svg") center/contain no-repeat;
+ filter:drop-shadow(0 2px 3px rgb(0 0 0/.22));
  animation:swx-pop .38s cubic-bezier(.2,1.4,.4,1) both}
-.swx-check svg{width:46px;height:46px;display:block}
-.swx-check path{stroke-dasharray:24;stroke-dashoffset:24;
- animation:swx-draw .32s .22s ease-out forwards}
 @keyframes swx-pop{from{transform:scale(.4);opacity:0}}
-@keyframes swx-draw{to{stroke-dashoffset:0}}
 .swx-done-t{margin-top:16px;font:600 18px/1.3 var(--ff);color:var(--t)}
 .swx-done-s{margin-top:4px;font-size:13px;color:var(--f);
  font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .swx-done-s a{color:var(--a);text-decoration:underline}
-@media (prefers-reduced-motion:reduce){
- .swx-check,.swx-check path{animation:none;stroke-dashoffset:0}}
+@media (prefers-reduced-motion:reduce){.swx-check{animation:none}}

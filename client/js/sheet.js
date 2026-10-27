@@ -15,7 +15,7 @@ dialog.dlg{position:fixed}
 .dlg-x{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:30px;height:30px;
  padding:0;border:0;border-radius:50%;background:var(--wash);color:var(--t);cursor:pointer}
 .dlg-x:hover{background:var(--wash2)}
-.dlg-x svg{display:block}
+.dlg-x .mk{width:13px;height:13px}
 dialog.dlg h2{margin-right:36px}
 @media (max-width:620px){dialog.dlg{width:100%;max-width:none;max-height:calc(100% - 24px);
  margin:auto 0 0;border-bottom:0;border-radius:24px 24px 0 0}}

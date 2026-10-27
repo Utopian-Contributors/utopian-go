@@ -30,9 +30,6 @@ const BANNER_SIZES = [
   [1200, 48 * 1024],
 ];
 
-const CHECK_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
-
 /** Base units as a decimal amount, without a float. */
 function decimal(units, places) {
   const text = String(units).padStart(places + 1, "0");
@@ -199,8 +196,8 @@ function short(text) {
  */
 function frame(main, tab, content) {
   const add = el("a", { class: "av-new", href: "/social/ads/new" });
-  // The sprite's wand, from social.html: static markup.
-  add.innerHTML = '<svg aria-hidden="true"><use href="#n-ad"/></svg>New ad';
+  // Advertise's wand (social.css .ic-wand): static markup.
+  add.innerHTML = '<i class="mk ic-wand" aria-hidden="true"></i>New ad';
   const tabs = el(
     "nav",
     { class: "av-tabs", "aria-label": "Advertise" },
@@ -553,7 +550,6 @@ function editor({ main, ad, payable, back, pull, adPost, me }) {
         const remove = el("button", {
           type: "button",
           class: "av-x",
-          text: "×",
           "aria-label": `Remove ${k.keyword}`,
           onclick: () => {
             draft.keywords.splice(draft.keywords.indexOf(k), 1);
@@ -561,6 +557,7 @@ function editor({ main, ad, payable, back, pull, adPost, me }) {
             paint();
           },
         });
+        remove.innerHTML = '<i class="mk ic-close" aria-hidden="true"></i>';
         return el(
           "li",
           { class: "av-kw" },
@@ -952,7 +949,6 @@ async function pay(order, pull, fresh, paid) {
     paid?.();
     setTitle("Paid");
     const disc = el("div", { class: "swx-check", role: "img", "aria-label": "Paid" });
-    disc.innerHTML = CHECK_SVG;
     const finish = el("button", {
       class: "swx-go",
       type: "button",

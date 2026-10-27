@@ -11,10 +11,11 @@ import { safeUrl } from "./text.js";
 
 const KEY = "bm";
 
-const ICONS = {
-  comment: '<path d="M5 4h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 4V5a1 1 0 0 1 1-1z"/>',
-  save: '<path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1z"/>',
-  remove: '<path d="M6 6l12 12M18 6 6 18"/>',
+/** Each button's mark (base.css .mk). Save's turns into the disk with a tick once saved (app.css .ra-b.on). */
+const MARKS = {
+  comment: "ic-chat",
+  save: "ic-save",
+  remove: "ic-close",
 };
 
 /** @typedef {{ url: string, title?: string, description?: string, profile?: { name?: string }, meta_url?: { netloc?: string, path?: string } }} Saved */
@@ -38,13 +39,13 @@ function write(list) {
 
 /**
  * @param {"a" | "button"} tag
- * @param {keyof typeof ICONS} kind
+ * @param {keyof typeof MARKS} kind
  * @param {string} label
  * @param {Record<string, unknown>} [props]
  */
 function iconButton(tag, kind, label, props) {
   const node = el(tag, { class: "ra-b", "aria-label": label, title: label, ...props });
-  node.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">${ICONS[kind]}</svg>`;
+  node.innerHTML = `<i class="mk ${MARKS[kind]}" aria-hidden="true"></i>`;
   return node;
 }
 

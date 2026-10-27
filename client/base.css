@@ -105,6 +105,29 @@ button,
 }
 
 /*
+ * One of the app's coloured marks (client/ic-*.svg, skeu-icons' drawings) as
+ * an element of its own, where a control used to draw a line icon:
+ * <i class="mk ic-close"></i>. A background rather than an inline <svg>, for
+ * the reason scripts/skeu-icons.mjs writes them out as files: each is its own
+ * document, so two copies' gradient ids never meet, and the url() here carries
+ * the file's fingerprint. 20px square unless the control sizes it.
+ *
+ * The marks more than one page's controls wear are named here — a dialog's x,
+ * the install guide's disclosure — and the rest in the sheet of the page that
+ * wears them.
+ */
+.mk {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background: var(--ic) center / contain no-repeat;
+}
+
+.ic-close { --ic: url("/ic-close.svg"); }
+.ic-up { --ic: url("/ic-up.svg"); }
+
+/*
  * The loading bar (client/js/progress.js): 2px along the top, a green that
  * runs across it. The script sets its width. .boot is the page's own, drawn
  * before any script has run: it creeps by itself until a script takes it.

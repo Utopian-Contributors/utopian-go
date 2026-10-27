@@ -524,9 +524,9 @@ function gallery(post) {
   return row;
 }
 
-/** A sprite symbol from social.html, as a button's whole face. */
-function icon(id, size) {
-  return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${id}"/></svg>`;
+/** One of the app's marks (base.css .mk), as a button's whole face. social.css sizes it. */
+function icon(mark) {
+  return `<i class="mk ${mark}" aria-hidden="true"></i>`;
 }
 
 /** The memo playing now. Starting another pauses it, and so does leaving the page. */
@@ -547,7 +547,7 @@ let playing = null;
  */
 function memoPlayer(src, ms, wave) {
   const go = el("button", { type: "button", class: "memo-go", "aria-label": "Play voice memo" });
-  go.innerHTML = icon("mp", 18);
+  go.innerHTML = icon("ic-play");
   const bars = el("div", { class: "wave" });
   for (const ch of wave) {
     const bar = el("i");
@@ -583,14 +583,14 @@ function memoPlayer(src, ms, wave) {
     audio.addEventListener("play", () => {
       if (playing && playing !== audio) playing.pause();
       playing = audio;
-      go.innerHTML = icon("mz", 18);
+      go.innerHTML = icon("ic-pause");
       go.setAttribute("aria-label", "Pause voice memo");
       cancelAnimationFrame(frame);
       loop();
     });
     audio.addEventListener("pause", () => {
       cancelAnimationFrame(frame);
-      go.innerHTML = icon("mp", 18);
+      go.innerHTML = icon("ic-play");
       go.setAttribute("aria-label", "Play voice memo");
       paint();
     });
@@ -794,10 +794,10 @@ function composer() {
  * person's own, so signed out they show as off and ask to log in.
  */
 const FILTERS = [
-  ["friends", "All", "n-tl", "Friends", "n-fr"],
-  ["saved", "Saved", "n-sv"],
-  ["images", "Images", "pi"],
-  ["audio", "Audio", "au"],
+  ["friends", "All", "ic-home", "Friends", "ic-social"],
+  ["saved", "Saved", "ic-save"],
+  ["images", "Images", "ic-image"],
+  ["audio", "Audio", "ic-audio"],
 ];
 /** Remembered on this device. The server filters, so every page scrolled to is already filtered. */
 const shown = { friends: false, saved: false, images: true, audio: true };
@@ -958,7 +958,7 @@ function filterBar(feed) {
       const paint = () => {
         const on = shown[key] && (!!me || i > 1);
         button.setAttribute("aria-pressed", on);
-        button.innerHTML = icon((on && onId) || id, 16);
+        button.innerHTML = icon((on && onId) || id);
         button.append((on && onText) || text);
       };
       paint();

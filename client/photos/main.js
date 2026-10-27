@@ -10,9 +10,8 @@ import { el } from "../js/dom.js";
 import { injectStyles } from "../js/ui.js";
 import CSS from "./photos.css";
 
-const svg = (d) =>
-  `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ` +
-  `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+/** One of the app's marks (base.css .mk; photos.css names the ones only the viewer wears). */
+const mark = (name) => `<i class="mk ${name}" aria-hidden="true"></i>`;
 
 /**
  * @param {string[]} srcs each photo's address, in the post's order
@@ -39,11 +38,11 @@ function open(srcs, at) {
     ),
   );
   const x = el("button", { type: "button", class: "pv-x", "aria-label": "Close" });
-  x.innerHTML = svg("M6 6l12 12M18 6 6 18");
+  x.innerHTML = mark("ic-close");
   const prev = el("button", { type: "button", class: "pv-go pv-prev", "aria-label": "Previous photo", hidden: !many });
-  prev.innerHTML = svg("M15 5l-7 7 7 7");
+  prev.innerHTML = mark("ic-prev");
   const next = el("button", { type: "button", class: "pv-go pv-next", "aria-label": "Next photo", hidden: !many });
-  next.innerHTML = svg("M9 5l7 7-7 7");
+  next.innerHTML = mark("ic-next");
   const count = el("div", { class: "pv-n", "aria-live": "polite", hidden: !many });
   const box = el("dialog", { class: "pv", "aria-label": "Photos", tabindex: "-1" }, row, prev, next, count, x);
 

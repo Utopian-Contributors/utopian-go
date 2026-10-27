@@ -836,16 +836,13 @@ body.hist .wl-top {
   color: var(--t);
   font: 500 12.5px/1 var(--ff);
   cursor: pointer;
-  --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E");
 }
 
 .wl-hb::before {
   content: "";
-  width: 15px;
-  height: 15px;
-  background: var(--go);
-  -webkit-mask: var(--ic) center / contain no-repeat;
-  mask: var(--ic) center / contain no-repeat;
+  width: 16px;
+  height: 16px;
+  background: url("/ic-clock.svg") center / contain no-repeat;
 }
 
 .wl-hb:hover {

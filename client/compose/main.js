@@ -30,14 +30,9 @@ function waitLabel(ms) {
   return `You can post again in ${min} min.`;
 }
 
-/** The phone's new-post button (social.css .fab). */
-const PLUS =
-  '<svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" ' +
-  'fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
-
-/** A sprite symbol from social.html, as a button's whole face. */
-function icon(id, size) {
-  return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${id}"/></svg>`;
+/** One of the app's marks (base.css .mk), as a button's whole face. social.css sizes it. */
+function icon(mark) {
+  return `<i class="mk ${mark}" aria-hidden="true"></i>`;
 }
 
 /**
@@ -125,10 +120,10 @@ function composer(kit, page = false) {
   const strip = el("div", { class: "shots", hidden: true });
   const file = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true });
   const add = el("button", { type: "button", class: "tool", "aria-label": "Add photos" });
-  // The drawing is a <symbol> in social.html, so the bundle carries only a reference.
-  add.innerHTML = icon("pi", 22);
+  // The drawing is a file social.css names (client/ic-image.svg), so the bundle carries only a class.
+  add.innerHTML = icon("ic-image");
   const mic = el("button", { type: "button", class: "tool", "aria-label": "Record a voice memo", hidden: !CAN_RECORD });
-  mic.innerHTML = icon("au", 22);
+  mic.innerHTML = icon("ic-audio");
   /** The recorded memo, until it is posted or removed: {blob, ms, wave, url}. */
   let voice = null;
   const voiceRow = el("div", { class: "voice", hidden: true });
@@ -229,7 +224,8 @@ function composer(kit, page = false) {
   function paintShots() {
     strip.replaceChildren(
       ...shots.map((shot, i) => {
-        const remove = el("button", { type: "button", "aria-label": "Remove photo", text: "×" });
+        const remove = el("button", { type: "button", "aria-label": "Remove photo" });
+        remove.innerHTML = icon("ic-remove");
         remove.addEventListener("click", () => {
           URL.revokeObjectURL(shot.url);
           shots.splice(i, 1);
@@ -242,12 +238,13 @@ function composer(kit, page = false) {
     strip.hidden = shots.length === 0;
   }
 
-  /** One memo a post: while there is one, the microphone waits and × takes it off. */
+  /** One memo a post: while there is one, the microphone waits and its x takes it off. */
   function paintVoice() {
     mic.disabled = !!voice;
     voiceRow.hidden = !voice;
     if (!voice) return voiceRow.replaceChildren();
-    const remove = el("button", { type: "button", class: "memo-x", "aria-label": "Remove voice memo", text: "×" });
+    const remove = el("button", { type: "button", class: "memo-x", "aria-label": "Remove voice memo" });
+    remove.innerHTML = icon("ic-remove");
     remove.addEventListener("click", () => {
       URL.revokeObjectURL(voice.url);
       voice = null;
@@ -334,7 +331,7 @@ function composer(kit, page = false) {
    * above the posts as it always has.
    */
   const fab = el("a", { class: "fab", href: "/social/new", "aria-label": "New post" });
-  fab.innerHTML = PLUS;
+  fab.innerHTML = icon("ic-plus");
   fab.addEventListener("click", (e) => {
     e.preventDefault();
     history.pushState({ ugNew: 1 }, "", "/social/new");

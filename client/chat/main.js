@@ -798,12 +798,12 @@ export function mount(ctx) {
     const strip = el("div", { class: "shots", hidden: true });
     const file = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true });
     const add = el("button", { type: "button", class: "tool", "aria-label": "Add photos" });
-    add.innerHTML = '<svg width="22" height="22" aria-hidden="true"><use href="#pi"/></svg>';
+    add.innerHTML = '<i class="mk ic-image" aria-hidden="true"></i>';
     const mic = el("button", { type: "button", class: "tool", "aria-label": "Record a voice memo", hidden: !CAN_RECORD });
-    mic.innerHTML = '<svg width="22" height="22" aria-hidden="true"><use href="#au"/></svg>';
+    mic.innerHTML = '<i class="mk ic-audio" aria-hidden="true"></i>';
     // Pay them $UTCC in the profile's Pay dialog (client/pay). The payment comes back as a card here.
     const pay = el("button", { type: "button", class: "tool", "aria-label": `Pay ${who}`, title: `Pay ${who}`, hidden: !peerOf(who).address });
-    pay.innerHTML = '<svg width="22" height="22" aria-hidden="true"><use href="#py"/></svg>';
+    pay.innerHTML = '<i class="mk ic-cash" aria-hidden="true"></i>';
     pay.addEventListener("click", async () => {
       pay.disabled = true;
       try {
@@ -837,7 +837,8 @@ export function mount(ctx) {
     function paintShots() {
       strip.replaceChildren(
         ...shots.map((shot, i) => {
-          const remove = el("button", { type: "button", "aria-label": "Remove photo", text: "×" });
+          const remove = el("button", { type: "button", "aria-label": "Remove photo" });
+          remove.innerHTML = '<i class="mk ic-remove" aria-hidden="true"></i>';
           remove.addEventListener("click", () => {
             shots.splice(i, 1);
             paintShots();
@@ -849,12 +850,13 @@ export function mount(ctx) {
       strip.hidden = !shots.length;
     }
 
-    /** One memo a message: while there is one, the microphone waits and × takes it off. */
+    /** One memo a message: while there is one, the microphone waits and its x takes it off. */
     function paintVoice() {
       mic.disabled = !!memo;
       voiceRow.hidden = !memo;
       if (!memo) return voiceRow.replaceChildren();
-      const remove = el("button", { type: "button", class: "memo-x", "aria-label": "Remove voice memo", text: "×" });
+      const remove = el("button", { type: "button", class: "memo-x", "aria-label": "Remove voice memo" });
+      remove.innerHTML = '<i class="mk ic-remove" aria-hidden="true"></i>';
       remove.addEventListener("click", () => {
         URL.revokeObjectURL(memo.url);
         memo = null;

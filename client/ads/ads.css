@@ -51,18 +51,18 @@ textarea.av-in { resize: none; }
   pointer-events: none;
 }
 .av-x {
+  display: grid;
+  place-items: center;
   width: 28px;
   height: 28px;
   padding: 0;
   border: 0;
   border-radius: 50%;
   background: none;
-  color: var(--f);
-  font-size: 18px;
-  line-height: 1;
   cursor: pointer;
 }
-.av-x:hover { background: var(--hover); color: var(--t); }
+.av-x .mk { width: 13px; height: 13px; }
+.av-x:hover { background: var(--hover); }
 .av-add { display: flex; gap: 6px; margin-top: 8px; }
 .av-2nd {
   display: inline-flex;
@@ -191,7 +191,7 @@ textarea.av-in { resize: none; }
   font: 600 14px/1 var(--ff);
 }
 .av-new:hover { color: var(--buy-ink); text-decoration: none; filter: brightness(1.08); }
-.av-new svg { width: 18px; height: 18px; }
+.av-new .mk { width: 20px; height: 20px; }
 .av-t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .av-t th { padding: 10px 12px; border-bottom: 1px solid var(--b); color: var(--f); font-size: 12px; font-weight: 600; text-align: left; }
 .av-t td { padding: 12px; border-bottom: 1px solid var(--ln); vertical-align: middle; }

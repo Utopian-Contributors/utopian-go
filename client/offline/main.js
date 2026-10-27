@@ -35,6 +35,10 @@
  * the next visit can open offline.
  */
 
+import { createElement } from "skeu-icons";
+import CloudDownload from "skeu-icons/icons/cloud-download";
+import Close from "skeu-icons/icons/x";
+
 const CSS = `
 body.ug-off .lg-mark{fill:var(--f)}
 body.ug-off .lg::after{filter:grayscale(1)}
@@ -59,15 +63,6 @@ body.ug-off .lg::after{filter:grayscale(1)}
 @keyframes ugu-in{from{opacity:0;translate:0 8px}}
 @media (prefers-reduced-motion:reduce){.ugo,.ugu{animation:none}}
 `;
-
-const X =
-  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-  'stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
-
-const SYNC =
-  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
-  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-  '<path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>';
 
 /** Set by the panel's x, for the tab: the outage it was closed for is not over until the network answers. */
 const SHUT = "ug.off.x";
@@ -166,7 +161,9 @@ function open() {
   x.type = "button";
   x.className = "ugo-x";
   x.setAttribute("aria-label", "Close, and show what was last synced");
-  x.innerHTML = X;
+  // The app's marks drawn into the page, not its client/ic-*.svg files: this
+  // shows when the network is gone, and a file never fetched would not come.
+  x.append(createElement(Close, { size: 16 }));
   x.addEventListener("click", dismiss);
 
   const text = document.createElement("p");
@@ -232,8 +229,7 @@ function offerUpdate() {
   update = document.createElement("button");
   update.type = "button";
   update.className = "ugu";
-  update.innerHTML = SYNC;
-  update.append("Update");
+  update.append(createElement(CloudDownload, { size: 20 }), "Update");
   update.addEventListener("click", () => location.reload());
   document.body.append(update);
   place();

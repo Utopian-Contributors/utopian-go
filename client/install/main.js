@@ -37,7 +37,7 @@ dialog.pw{inset:auto 0 0;z-index:25;width:min(420px,calc(100% - 32px));max-heigh
 .pw-tx{display:flex;flex-direction:column;flex:1;min-width:0}
 .pw-tx b{font-weight:600}
 .pw-tx span{color:var(--f);font-size:13px}
-.pw-ch{flex:none;color:var(--f);transition:transform .2s}
+.pw-ch{width:16px;height:16px;transition:transform .2s}
 .pw [open] .pw-ch{transform:rotate(180deg)}
 .pw .dlg-x{top:17px}
 .pw-b{padding:0 16px 16px}
@@ -252,9 +252,7 @@ function paint() {
 function build() {
   how = guide();
   body = el("div", { class: "pw-b" });
-  const chevron = el("span", { class: "pw-ch", "aria-hidden": "true" });
-  chevron.innerHTML =
-    '<svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const chevron = el("span", { class: "pw-ch mk ic-up", "aria-hidden": "true" });
 
   dialog = el(
     "dialog",
