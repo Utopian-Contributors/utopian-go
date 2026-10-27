@@ -78,7 +78,7 @@ function adopt(list: TokenRecord[]): void {
   records = list;
   index = buildIndex(list);
   ranked = list.filter((r) => r.verified && (r.volume24h ?? 0) > 0).sort(byVolume);
-  lists = buildLists(ranked, list.filter((r) => TOKEN_PINNED_MINTS.has(r.mint) && !r.verified));
+  lists = buildLists(ranked, list.filter((r) => TOKEN_PINNED_MINTS.has(r.mint)));
   updatedAt = Date.now();
 }
 
@@ -402,9 +402,9 @@ export function isTokenList(key: string): key is TokenList {
  * The lists, from a ranking already in order. Built once per rebuild, so a
  * request only ever slices. Trending is the busiest twentieth of everything
  * that is not a stablecoin, whatever its kind; each other list is one kind, all of
- * it, busiest first. `pinned` are mints named by hand that Jupiter has not
- * verified, $UTCC: on their kind's list at their place by volume, though
- * never Trending, which is the market's verdict rather than ours.
+ * it, busiest first. `pinned` are mints named by hand, $UTCC: first on
+ * Trending whatever their volume, since it is our own coin on our own page,
+ * and on their kind's list at their place by volume.
  */
 export function buildLists(
   order: readonly TokenRecord[],
@@ -412,8 +412,9 @@ export function buildLists(
 ): Map<TokenList, TokenRecord[]> {
   const out = new Map<TokenList, TokenRecord[]>(TOKEN_LISTS.map((key) => [key, []]));
   const traded = order.filter((rec) => !isStable(rec));
-  out.set("trending", traded.slice(0, Math.ceil(traded.length * TOKEN_TRENDING_SHARE)));
-  const extra = pinned.filter((rec) => !isStable(rec));
+  const busiest = traded.slice(0, Math.ceil(traded.length * TOKEN_TRENDING_SHARE));
+  out.set("trending", [...pinned, ...busiest.filter((rec) => !pinned.includes(rec))]);
+  const extra = pinned.filter((rec) => !isStable(rec) && !traded.includes(rec));
   for (const rec of extra.length ? [...traded, ...extra].sort(byVolume) : traded) {
     const kind = kindOf(rec);
     // Stablecoins are already out, and the unsorted rest has no list.
@@ -434,13 +435,18 @@ function cursor(rec: TokenRecord): string {
  * offset taken before a rebuild lands somewhere else after it, and the next
  * page repeats rows or skips them. A cursor names a place in the order, which
  * outlives the rows around it. Unreadable, it is past the end.
+ *
+ * The first `head` rows stand ahead of the order (Trending's pinned mints), so
+ * one of those is found by name and the search covers only the rest.
  */
-function resume(list: readonly TokenRecord[], after: string): number {
+function resume(list: readonly TokenRecord[], after: string, head: number): number {
   const cut = after.lastIndexOf("_");
   const volume = Number(after.slice(0, cut));
   const mint = after.slice(cut + 1);
   if (cut < 1 || !Number.isFinite(volume) || !mint) return list.length;
-  let lo = 0;
+  const pinned = list.slice(0, head).findIndex((rec) => rec.mint === mint);
+  if (pinned >= 0) return pinned + 1;
+  let lo = head;
   let hi = list.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
@@ -452,9 +458,9 @@ function resume(list: readonly TokenRecord[], after: string): number {
   return lo;
 }
 
-/** One page of a list, from its start or from a cursor. */
-export function pageOf(list: readonly TokenRecord[], after: string, limit: number): TokenPage {
-  const start = after ? resume(list, after) : 0;
+/** One page of a list, from its start or from a cursor; `head` as resume has it. */
+export function pageOf(list: readonly TokenRecord[], after: string, limit: number, head = 0): TokenPage {
+  const start = after ? resume(list, after, head) : 0;
   const rows = list.slice(start, start + limit);
   const last = rows[rows.length - 1];
   return {
@@ -466,7 +472,11 @@ export function pageOf(list: readonly TokenRecord[], after: string, limit: numbe
 
 /** A page of one of the wallet page's lists. */
 export function listTokens(key: TokenList, after: string, limit: number): TokenPage {
-  return pageOf(lists.get(key) ?? [], after, limit);
+  const list = lists.get(key) ?? [];
+  let head = 0;
+  // buildLists puts the pinned mints at the top of Trending, and only there.
+  if (key === "trending") while (head < list.length && TOKEN_PINNED_MINTS.has(list[head].mint)) head += 1;
+  return pageOf(list, after, limit, head);
 }
 
 /** How long every list is. */

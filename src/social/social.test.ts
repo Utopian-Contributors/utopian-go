@@ -2003,7 +2003,7 @@ test("every token is one kind, read off Jupiter's tags", () => {
   assert.equal(tokenKind([], ["BTC"], false), "other");
 });
 
-test("the wallet page's lists: Trending is the busiest 5%, each kind all of itself, paged by cursor", () => {
+test("the wallet page's lists: Trending is $UTCC then the busiest 5%, each kind all of itself, paged by cursor", () => {
   const token = (symbol: string, volume24h: number, extra: Partial<TokenRecord> = {}) =>
     ({ mint: `m-${symbol}`, symbol, name: symbol, price: 2, change24h: 3, volume24h, liquidity: 1e7, verified: true, priceAt: 0, checkedAt: 0, ...extra }) as TokenRecord;
   const kinds: TokenKind[] = ["memes", "stocks", "majors", "defi", "other"];
@@ -2045,6 +2045,26 @@ test("the wallet page's lists: Trending is the busiest 5%, each kind all of itse
   const rebuilt = memes.filter((r) => r.symbol !== first.tokens[0].symbol);
   assert.equal(pageOf(rebuilt, first.after!, 3).tokens[0].symbol, memes[3].symbol);
   assert.deepEqual(pageOf(memes, "garbage", 3).tokens, []);
+
+  // A pinned mint leads Trending whatever its volume, and sits at its place on its kind's list.
+  const utcc = token("UTCC", 5, { kind: "majors", verified: false });
+  const pinned = buildLists(order, [utcc]);
+  const head = pinned.get("trending")!;
+  assert.deepEqual(head.map((r) => r.symbol), ["UTCC", ...trending.map((r) => r.symbol)]);
+  assert.equal(pinned.get("majors")!.at(-1), utcc);
+  // Paged one at a time, the cursor on it resumes after it, and every row comes once.
+  const rows: string[] = [];
+  after = "";
+  for (let pages = 0; pages < 10; pages += 1) {
+    const page = pageOf(head, after, 1, 1);
+    rows.push(...page.tokens.map((t) => t.symbol));
+    if (!page.after) break;
+    after = page.after;
+  }
+  assert.deepEqual(rows, head.map((r) => r.symbol));
+  // A cursor ahead of every busy row, as after a rebuild that cut their volumes,
+  // resumes at the first of them, never at the pinned one again.
+  assert.deepEqual(pageOf(head, "1e12_zzz", 3, 1).tokens.map((t) => t.symbol), head.slice(1, 4).map((r) => r.symbol));
 });
 
 test("a swap that fails for want of SOL says so, with the amounts", () => {

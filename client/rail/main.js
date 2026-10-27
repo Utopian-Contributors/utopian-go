@@ -87,8 +87,8 @@ function people(list, { send, face, openAuth, me }) {
 }
 
 /**
- * The wallet page's Trending list: the busiest 5% of everything but
- * stablecoins, its top few here under its length. Each opens its chart on the
+ * The wallet page's Trending list: $UTCC, then the busiest 5% of everything
+ * but stablecoins, its top few here under its length. Each opens its chart on the
  * wallet page; See all opens the whole list there.
  * @param {{ count: number, tokens: object[] }} trending
  */
