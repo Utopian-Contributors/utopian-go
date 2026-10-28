@@ -725,10 +725,8 @@ button:disabled { opacity: 0.55; cursor: default; }
 
 /* A card of its own, on the wash the wallet's action tiles stand on (.wl-a). */
 .post {
-  padding: 14px 16px 8px;
-  border-radius: 6px;
-  background: var(--in);
-  border: solid 1px var(--b);
+  padding: 14px 0 24px;
+  border-bottom: solid 1px var(--b);
   cursor: pointer;
 }
 
@@ -847,18 +845,7 @@ a.sad:hover { display: block; color: var(--t); text-decoration: none; }
 a.sad:hover .sad-l b { text-decoration: underline; }
 
 /* The spacing between actions is their own padding. */
-.acts { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 10px 0 0 -12px; padding-top: 8px; }
-
-/* The card's foot: a rule across the whole card, from under the avatar (the
-   40px .mini; the row's 12px gap is the 12px this row hangs out by). */
-.acts::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -40px;
-  right: 0;
-  border-top: 1px solid var(--ln);
-}
+.acts { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 10px 0 0 -8px; padding-top: 8px; }
 
 /*
  * Every post action is a pill bigger than its label, so it is easy to hit.
