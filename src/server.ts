@@ -1,4 +1,3 @@
-import "./threads";
 import compression from "compression";
 import express from "express";
 import { existsSync, readFileSync, watch } from "fs";
@@ -16,14 +15,15 @@ import {
 import { iconFile } from "./lib/tokens/icons";
 import { startTokenIndex } from "./lib/tokens/store";
 import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
+import { ACCOUNT_NAV, accountNav, profileCard, renderPage } from "./pages";
 import { apiRouter } from "./routes/api";
 import { startAdPayments } from "./social/adPay";
 import { adFor, flushAds, startAds } from "./social/ads";
 import { readSession } from "./social/auth";
 import { addedBy, ensureSchema, getUser } from "./social/db";
 import { sendAvatar, sendBanner, sendPostAudio, sendPostPhoto, socialRouter } from "./social/routes";
-import { ACCOUNT_NAV, accountNav, profileCard, renderPage } from "./pages";
 import { isCheck, sameState, stateTag, stateTags } from "./state";
+import "./threads";
 
 const app = express();
 const publicDir = path.join(__dirname, "..", "public");
@@ -794,7 +794,7 @@ app.use((err: unknown, req: express.Request, res: express.Response, _next: expre
 });
 
 const server = app.listen(PORT, () => {
-  console.log(`utopian-go demo running at http://localhost:${PORT}`);
+  console.log(`utopian-go running at http://localhost:${PORT}`);
   if (!BRAVE_API_KEY) {
     console.log("Set BRAVE_API_KEY env var to get live results.");
   }
