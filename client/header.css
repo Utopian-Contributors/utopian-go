@@ -290,7 +290,7 @@ body.res .sf {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: none;
+  background: var(--wash);
   color: var(--f);
   font: inherit;
   line-height: 0;
@@ -312,7 +312,6 @@ body.res .sf {
 
 /* No surface of its own until it is pointed at: one wash in the field is enough. */
 .sf-clear:hover {
-  background: var(--wash);
   color: var(--t);
 }
 
