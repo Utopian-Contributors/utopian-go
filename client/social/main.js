@@ -518,8 +518,12 @@ function gallery(post) {
       e.preventDefault();
       view();
     });
-    // The box is sized by social.css and pulses until the file has decoded.
+    // The box pulses until the file has decoded, already the picture's shape:
+    // a lone one no taller than 4:5, cropped to that. A post whose sizes the
+    // server lacks keeps social.css's box.
     const pic = el("picture", { class: "ld" }, el("source", { media: "(max-width: 900px)", srcset: `${full[i]}?m=1` }), img);
+    const size = post.sizes?.[i];
+    if (size) pic.style.aspectRatio = n === 1 && size[0] / size[1] < 4 / 5 ? "4 / 5" : `${size[0]} / ${size[1]}`;
     const done = () => pic.classList.remove("ld");
     img.addEventListener("load", done, { once: true });
     img.addEventListener("error", () => (done(), pic.classList.add("bad")), { once: true });

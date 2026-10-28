@@ -869,9 +869,10 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
       ]),
     );
     assert.equal(pictured.status, 200);
-    const picturedPost = pictured.json?.post as { id: string; text: string; photos: number };
+    const picturedPost = pictured.json?.post as { id: string; text: string; photos: number; sizes: number[][] };
     assert.equal(picturedPost.text, "");
     assert.equal(picturedPost.photos, 2);
+    assert.deepEqual(picturedPost.sizes, [[40, 20], [20, 30]], "each picture's size is the desktop file's");
     const shot = await fetch(`${base}/social/i/${picturedPost.id}/0`);
     assert.equal(shot.status, 200);
     assert.equal(shot.headers.get("content-type"), "image/jpeg");
@@ -882,8 +883,9 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal((await fetch(`${base}/social/i/${picturedPost.id}/1`)).status, 200);
     assert.equal((await fetch(`${base}/social/i/${picturedPost.id}/2`)).status, 404);
     const feed = await call("GET", "/api/social/timeline");
-    const card = (feed.json?.posts as { by: string; photos: number; text: string }[]).find((row) => row.by === "ben");
+    const card = (feed.json?.posts as { by: string; photos: number; text: string; sizes: number[][] }[]).find((row) => row.by === "ben");
     assert.equal(card?.photos, 2);
+    assert.deepEqual(card?.sizes, [[40, 20], [20, 30]]);
     assert.equal(card?.text, "");
 
     // A snapshot's tag (src/state.ts): the offline app asks with it, and an
@@ -1761,6 +1763,11 @@ test("a voice memo posts, plays from its own address, and rides a re-post", asyn
     const shared = (feed.json?.posts as { repost: string | null; audio: number; wave: string }[]).find((p) => p.repost === card.id);
     assert.equal(shared?.audio, MAX_AUDIO_MS);
     assert.equal(shared?.wave, wave);
+    // And its photos' sizes.
+    assert.equal((await amy("POST", "/api/social/repost", { post: both.json?.post.id })).status, 200);
+    const amyFeed = await amy("GET", "/api/social/timeline");
+    const sharedPhoto = (amyFeed.json?.posts as { repost: string | null; sizes: number[][] }[]).find((p) => p.repost === both.json?.post.id);
+    assert.deepEqual(sharedPhoto?.sizes, [[16, 16]]);
     const plain = (feed.json?.posts as { text: string; audio: number; wave: string }[]).filter((p) => p.text === "listen");
     assert.equal(plain.length, 1);
   } finally {

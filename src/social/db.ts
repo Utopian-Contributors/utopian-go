@@ -6,7 +6,9 @@ import { Pool, type PoolClient, types } from "pg";
 import { type AdDevices, CHAT_PAGE, MAX_CHAT_KEEP, MAX_COMMENTS, MAX_NOTES_KEEP, SocialError, postWait } from "./limits";
 import type { AudioKind } from "./audio";
 import type { Callout } from "./callouts";
+import { jpegSize } from "./jpeg";
 import {
+  postPhotoFile,
   removeBanner,
   removeChatAudio,
   removeChatPhotos,
@@ -95,6 +97,7 @@ CREATE TABLE IF NOT EXISTS posts (
   audio integer NOT NULL DEFAULT 0,
   wave text NOT NULL DEFAULT '',
   coins jsonb NOT NULL DEFAULT '[]',
+  sizes jsonb NOT NULL DEFAULT '[]',
   repost text REFERENCES posts(id)
 );
 DROP INDEX IF EXISTS posts_at;
@@ -141,6 +144,9 @@ ALTER TABLE posts ADD COLUMN IF NOT EXISTS audio integer NOT NULL DEFAULT 0;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS wave text NOT NULL DEFAULT '';
 -- The tickers a post calls out ($SOL), each a mint and its price when the post went up.
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS coins jsonb NOT NULL DEFAULT '[]';
+-- Each picture's [width, height] in pixels, so its box has its shape before the
+-- file arrives. measurePhotos() fills it in for posts from before it was kept.
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS sizes jsonb NOT NULL DEFAULT '[]';
 -- A re-post carries its original's photo count and memo length, so a
 -- timeline filter reads one row. Re-posts from before that are given theirs.
 UPDATE posts r SET photos = o.photos, audio = o.audio FROM posts o
@@ -295,6 +301,7 @@ export function ensureSchema(): Promise<void> {
   ready ??= db()
     .query(SCHEMA)
     .then(() => sealAtRest())
+    .then(() => measurePhotos())
     .catch((err) => {
       ready = null;
       throw err;
@@ -323,6 +330,30 @@ async function sealAtRest(): Promise<void> {
     if (rows.length) console.log(`[social] sealed ${rows.length} accounts' password hashes and boxes at rest`);
   } catch (err) {
     console.error("[social] sealing password hashes and boxes at rest:", err);
+  }
+}
+
+/**
+ * Give each post from before sizes were kept its pictures' sizes, read from
+ * the files on disk. A file that is gone is kept as null, so the post is not
+ * tried again and its card keeps the box it always had. A failure is said and
+ * not fatal, like sealAtRest's.
+ */
+async function measurePhotos(): Promise<void> {
+  try {
+    const rows = await many<{ id: string; photos: number }>(
+      "SELECT id, photos FROM posts WHERE repost IS NULL AND photos > 0 AND sizes = '[]'",
+    );
+    for (const row of rows) {
+      const sizes = Array.from({ length: row.photos }, (_, n) => {
+        const file = postPhotoFile(row.id, n);
+        return file ? photoSize(readFileSync(file)) : null;
+      });
+      await db().query("UPDATE posts SET sizes = $2 WHERE id = $1", [row.id, JSON.stringify(sizes)]);
+    }
+    if (rows.length) console.log(`[social] measured the pictures on ${rows.length} older posts`);
+  } catch (err) {
+    console.error("[social] measuring older posts' pictures:", err);
   }
 }
 
@@ -411,6 +442,8 @@ export interface Card {
   wave: string;
   /** Tickers the text calls out, with their prices at posting. A re-post shows the original's. */
   coins: Callout[];
+  /** Each picture's [width, height], or null where its file could not be measured. A re-post shows the original's. */
+  sizes: (PhotoSize | null)[];
 }
 
 export interface CommentRow {
@@ -552,6 +585,7 @@ type CardRow = {
   audio: number;
   wave: string;
   coins: Callout[];
+  sizes: (PhotoSize | null)[];
 };
 
 function cardFrom(row: CardRow): Card {
@@ -572,6 +606,7 @@ function cardFrom(row: CardRow): Card {
     audio: row.audio,
     wave: row.wave,
     coins: row.coins,
+    sizes: row.sizes,
   };
 }
 
@@ -583,6 +618,7 @@ function card(from: string): string {
          CASE WHEN p.repost IS NULL THEN p.audio ELSE COALESCE(op.audio, 0) END AS audio,
          CASE WHEN p.repost IS NULL THEN p.wave ELSE COALESCE(op.wave, '') END AS wave,
          CASE WHEN p.repost IS NULL THEN p.coins ELSE COALESCE(op.coins, '[]') END AS coins,
+         CASE WHEN p.repost IS NULL THEN p.sizes ELSE COALESCE(op.sizes, '[]') END AS sizes,
          u.avatar_rev,
          op.by_name AS original_by,
          ou.avatar_rev AS original_rev,
@@ -730,6 +766,14 @@ export function newId(): string {
   return randomBytes(6).toString("base64url");
 }
 
+/** A picture's width and height in pixels. */
+export type PhotoSize = [w: number, h: number];
+
+function photoSize(jpeg: Buffer): PhotoSize | null {
+  const size = jpegSize(jpeg);
+  return size && [size.w, size.h];
+}
+
 /** A voice memo, checked by the route: its bytes, container, length, and shape. */
 export type Memo = { bytes: Buffer; kind: AudioKind; ms: number; wave: string };
 
@@ -753,7 +797,9 @@ export async function createPost(
   let created: { wait: number } | Card;
   try {
     if (memo) writePostAudio(id, memo);
-    created = await insertPost(id, by, text, at, photos.length, memo, coins);
+    // The desktop file's: the phone's is the same picture, smaller.
+    const sizes = photos.map((photo) => photoSize(photo.full));
+    created = await insertPost(id, by, text, at, sizes, memo, coins);
   } catch (err) {
     unwrite();
     throw err;
@@ -767,7 +813,7 @@ function insertPost(
   by: string,
   text: string,
   at: number,
-  photos: number,
+  sizes: (PhotoSize | null)[],
   memo: Memo | null,
   coins: Callout[],
 ): Promise<{ wait: number } | Card> {
@@ -781,15 +827,15 @@ function insertPost(
     const wait = postWait(Number(row.last_post), at);
     if (wait > 0) return { wait };
     await client.query(
-      "INSERT INTO posts (id, by_name, text, at, views, photos, audio, wave, coins) VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8)",
+      "INSERT INTO posts (id, by_name, text, at, views, photos, audio, wave, coins, sizes) VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,$9)",
       // As JSON text: handed an array, pg would write a Postgres array.
-      [id, by, text, at, photos, memo?.ms ?? 0, memo?.wave ?? "", JSON.stringify(coins)],
+      [id, by, text, at, sizes.length, memo?.ms ?? 0, memo?.wave ?? "", JSON.stringify(coins), JSON.stringify(sizes)],
     );
     await client.query("UPDATE users SET last_post = $2 WHERE name = $1", [by, at]);
     return {
       id, by, text, at, views: 0, comments: 0, saved: false, reposted: false,
       repost: null, repostBy: null, originalRev: 0, avatarRev: row.avatar_rev,
-      photos, audio: memo?.ms ?? 0, wave: memo?.wave ?? "", coins,
+      photos: sizes.length, audio: memo?.ms ?? 0, wave: memo?.wave ?? "", coins, sizes,
     };
   });
 }

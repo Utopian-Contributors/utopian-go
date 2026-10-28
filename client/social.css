@@ -438,8 +438,9 @@ dialog textarea { resize: none; }
 .gallery img:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
 
 /*
- * The server keeps no picture sizes, so each picture gets a box of its own
- * size before a byte of it arrives: the card never moves when a file lands.
+ * Each picture has its box before a byte of it arrives, so the card never
+ * moves when a file lands: the picture's own shape, which gallery() sets from
+ * the sizes the server kept, or 4:5 on a post from before it kept them.
  * Until then the box is a pulsing skeleton (.ld, which gallery() drops).
  */
 .gallery picture {
@@ -461,16 +462,13 @@ dialog textarea { resize: none; }
   max-width: none;
 }
 
-/* One picture spans the card and is shown whole, letterboxed on the skeleton's ground. */
+/* One picture spans the card, as tall as its shape makes it (4:3 without one). */
 .gallery picture:only-child {
   width: 100%;
   max-width: 100%;
   height: auto;
   aspect-ratio: 4 / 3;
-  max-height: 320px;
 }
-
-.gallery picture:only-child img { object-fit: contain; }
 
 /* An image that fails keeps its box, without the broken-file glyph. */
 .gallery picture.bad img { visibility: hidden; }
