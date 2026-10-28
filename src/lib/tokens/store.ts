@@ -146,9 +146,22 @@ function saveSnapshot(): void {
  */
 const MIN_REBUILD_RATIO = 0.5;
 
+/**
+ * A rebuild, with every pinned mint it missed taken from what is held.
+ *
+ * A pinned mint is in none of Jupiter's lists, so its own lookup is its only
+ * way in, and one 429 there (as on a deploy's first rebuild) used to drop
+ * $UTCC from search, Trending and every wallet holding it for the hour. The
+ * record held stays instead, at its last price, until a lookup lands again.
+ */
+export function keepPinned(list: TokenRecord[], held: readonly TokenRecord[]): TokenRecord[] {
+  const fresh = new Set(list.map((rec) => rec.mint));
+  return [...list, ...held.filter((rec) => TOKEN_PINNED_MINTS.has(rec.mint) && !fresh.has(rec.mint))];
+}
+
 async function refreshIndex(): Promise<void> {
   try {
-    const list = await fetchTokenRecords();
+    const list = keepPinned(await fetchTokenRecords(), records);
 
     if (records.length && list.length < records.length * MIN_REBUILD_RATIO) {
       console.warn(

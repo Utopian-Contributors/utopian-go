@@ -20,24 +20,31 @@ import { JupToken, TokenKind, TokenRecord } from "../../types";
  * override. `lst` covers liquid-staking tokens (JitoSOL, mSOL, bSOL …), which
  * are trusted assets people search by name but that the verified tag misses.
  */
-const SOURCES = [
+const LISTS = [
   `${JUP_TOKENS_ENDPOINT}/tag?query=verified`,
   `${JUP_TOKENS_ENDPOINT}/tag?query=lst`,
   `${JUP_TOKENS_ENDPOINT}/toptraded/24h`,
-  // Pinned mints, one lookup each. They are pinned precisely because no list
-  // above carries them, so these are pure gap-fillers and go last.
-  ...[...TOKEN_PINNED_MINTS].map(
-    (mint) => `${JUP_TOKENS_ENDPOINT}/search?query=${encodeURIComponent(mint)}`,
-  ),
 ];
 
-async function fetchList(url: string): Promise<JupToken[]> {
+/**
+ * Pinned mints, one lookup each. They are pinned precisely because no list
+ * above carries them, so these are pure gap-fillers and go last, and a 429 on
+ * one is asked again: nothing else would bring the mint in.
+ */
+const PINNED = [...TOKEN_PINNED_MINTS].map(
+  (mint) => `${JUP_TOKENS_ENDPOINT}/search?query=${encodeURIComponent(mint)}`,
+);
+
+async function fetchList(url: string, retries = 0): Promise<JupToken[]> {
   // Waits its turn in the shared lite-api budget: an hourly rebuild can
   // afford a minute, and must not crowd out a trade.
   const res = await jupFetch(url, { headers: { Accept: "application/json" } }, "index", {
     timeoutMs: TOKEN_INDEX_TIMEOUT_MS,
     maxWaitMs: 120_000,
   });
+  // The gate holds every caller until the 429's Retry-After has passed, so
+  // the next ask waits that out first.
+  if (res.status === 429 && retries > 0) return fetchList(url, retries - 1);
   if (!res.ok) throw new Error(`Jupiter responded ${res.status} for ${url}`);
   const body = (await res.json()) as unknown;
   // V2 returns a bare array; tolerate a wrapped shape if that ever changes.
@@ -178,7 +185,10 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
  */
 export async function fetchTokenRecords(): Promise<TokenRecord[]> {
   const now = Date.now();
-  const settled = await Promise.allSettled(SOURCES.map(fetchList));
+  const settled = await Promise.allSettled([
+    ...LISTS.map((url) => fetchList(url)),
+    ...PINNED.map((url) => fetchList(url, 1)),
+  ]);
 
   const byMint = new Map<string, TokenRecord>();
   let ok = 0;

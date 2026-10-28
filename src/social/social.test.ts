@@ -35,7 +35,7 @@ import { USDC_MINT, decimal, dollars, matchTransfer, orderAmounts, orderCodes, p
 import { drawAvatar } from "./avatar";
 import { backdrop, palette } from "./backdrop";
 import { tokenKind } from "../lib/tokens/jupiter";
-import { buildLists, isStable, pageOf } from "../lib/tokens/store";
+import { buildLists, isStable, keepPinned, pageOf } from "../lib/tokens/store";
 import { type RawTx, readTx } from "../lib/history";
 import { averageEntries, follows } from "../lib/entries";
 import { encodeTicks } from "../lib/tokens/ticks";
@@ -2072,6 +2072,18 @@ test("the wallet page's lists: Trending is $UTCC then the busiest 5%, each kind 
   // A cursor ahead of every busy row, as after a rebuild that cut their volumes,
   // resumes at the first of them, never at the pinned one again.
   assert.deepEqual(pageOf(head, "1e12_zzz", 3, 1).tokens.map((t) => t.symbol), head.slice(1, 4).map((r) => r.symbol));
+});
+
+test("a rebuild that missed $UTCC keeps the record already held, and only that", () => {
+  const rec = (mint: string, price: number) =>
+    ({ mint, symbol: mint.slice(0, 4), name: mint, price, liquidity: 0, verified: false, priceAt: 0, checkedAt: 0 }) as TokenRecord;
+  const held = [rec(UTCC_MINT, 9e-6), rec("gone", 1)];
+  // Its lookup was rate-limited: the held $UTCC stays, and a delisted mint does not come back.
+  assert.deepEqual(keepPinned([rec("SOL", 100)], held).map((r) => r.mint), ["SOL", UTCC_MINT]);
+  // Its lookup answered: the fresh record wins, at its fresh price.
+  const fresh = keepPinned([rec(UTCC_MINT, 1e-5)], held);
+  assert.equal(fresh.length, 1);
+  assert.equal(fresh[0].price, 1e-5);
 });
 
 test("a swap that fails for want of SOL says so, with the amounts", () => {

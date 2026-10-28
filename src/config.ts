@@ -189,7 +189,7 @@ export const TOKEN_TICKS_TIMEOUT_MS = 8_000;
  * Swap API V1. Keyless on lite-api; `api.jup.ag` would want an x-api-key.
  *
  * Keyless means shared: this host answers on a per-IP budget, and the hourly
- * token index (SOURCES in lib/tokens/jupiter.ts) spends from the same one. So
+ * token index (lib/tokens/jupiter.ts) spends from the same one. So
  * nothing on the request path may call it per visitor — a proxy in front of
  * this endpoint would put every visitor's traffic on the server's single IP and
  * starve the index, which is what every price card on the site is built from.
@@ -296,7 +296,8 @@ export const UTCC_MINT = "HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA";
  *
  * These are also fetched individually: the hourly index is built from
  * Jupiter's verified, lst and top-traded lists, and a mint this small is in
- * none of them. See SOURCES in lib/tokens/jupiter.ts.
+ * none of them. See PINNED in lib/tokens/jupiter.ts, and keepPinned in
+ * lib/tokens/store.ts, which keeps one a rebuild missed.
  */
 export const TOKEN_PINNED_MINTS = new Set([UTCC_MINT]);
 
