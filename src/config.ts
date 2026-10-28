@@ -302,6 +302,14 @@ export const UTCC_MINT = "HGTXnhgyast5fJKhMcE4VgyeEVWhYKEsHxpZtpjhrYqA";
 export const TOKEN_PINNED_MINTS = new Set([UTCC_MINT]);
 
 /**
+ * Logos the app ships itself, by mint: client/<file>, which the build copies
+ * into public/ and the site serves at /<file>. The icon sync's second place to
+ * get one, after the URL in the token's metadata: $UTCC's is on IPFS, whose
+ * gateways rate-limit or go down.
+ */
+export const TOKEN_OWN_ICONS = new Map([[UTCC_MINT, path.join(__dirname, "..", "public", "utcc.png")]]);
+
+/**
  * The Terms of Service a new account agrees to, recorded against it at sign-up.
  * Bump it, to the date in client/legal/terms.html, whenever those terms change.
  */

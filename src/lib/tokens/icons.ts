@@ -1,5 +1,5 @@
 import { execFile } from "child_process";
-import { mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "fs";
 import { lookup, type LookupAddress } from "dns";
 import { request } from "https";
 import { isIP, type LookupFunction } from "net";
@@ -15,6 +15,7 @@ import {
   TOKEN_ICON_RETRY_MS,
   TOKEN_ICON_TIMEOUT_MS,
   TOKEN_ICON_TTL_MS,
+  TOKEN_OWN_ICONS,
 } from "../../config";
 import { TokenRecord } from "../../types";
 
@@ -249,15 +250,23 @@ function sources(icon: string): string[] {
   return [...new Set(all)];
 }
 
-async function fetchIcon(icon: string): Promise<Buffer> {
-  let last: unknown;
-  for (const url of sources(icon)) {
+/**
+ * A mint's thumbnail, from the first source whose answer is an image: its
+ * logo's URL on each gateway, then the copy the app ships (TOKEN_OWN_ICONS).
+ * A gateway can answer 200 with an error page, so a source counts only once
+ * its bytes have been drawn.
+ */
+async function iconOf(rec: TokenRecord): Promise<Buffer> {
+  let last: unknown = new Error("no logo");
+  for (const url of rec.icon ? sources(rec.icon) : []) {
     try {
-      return await download(url);
+      return await thumb(await download(url));
     } catch (err) {
       last = err;
     }
   }
+  const own = TOKEN_OWN_ICONS.get(rec.mint);
+  if (own) return thumb(readFileSync(own));
   throw last;
 }
 
@@ -292,13 +301,15 @@ export async function syncIcons(list: TokenRecord[]): Promise<void> {
   try {
     mkdirSync(TOKEN_ICON_DIR, { recursive: true });
     const now = Date.now();
-    const queue = list.filter((rec) => rec.icon && MINT.test(rec.mint) && !fresh(rec.mint, now));
+    const queue = list.filter(
+      (rec) => (rec.icon || TOKEN_OWN_ICONS.has(rec.mint)) && MINT.test(rec.mint) && !fresh(rec.mint, now),
+    );
     if (!queue.length) return;
     let made = 0;
     const work = async () => {
       for (let rec = queue.shift(); rec; rec = queue.shift()) {
         try {
-          write(rec.mint, await thumb(await fetchIcon(rec.icon!)));
+          write(rec.mint, await iconOf(rec));
           failed.delete(rec.mint);
           made += 1;
         } catch {
