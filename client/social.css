@@ -253,10 +253,9 @@ dialog textarea { resize: none; }
   right: 0;
 }
 
-.composer.page textarea { min-height: 120px; }
-
+/* The rule sits where the draft ends: it grows the page only as the words do. */
 .composer.page .compose-bar {
-  margin-top: 12px;
+  margin-top: 0;
   padding-top: 8px;
   border-top: 1px solid var(--b);
 }
