@@ -253,9 +253,9 @@ dialog textarea { resize: none; }
   right: 0;
 }
 
-/* The rule sits where the draft ends: it grows the page only as the words do. */
+/* The rule sits a little under the draft: it moves only as the words grow. */
 .composer.page .compose-bar {
-  margin-top: 0;
+  margin-top: 12px;
   padding-top: 8px;
   border-top: 1px solid var(--b);
 }
