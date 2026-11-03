@@ -1,5 +1,6 @@
 /**
  * The timeline's composer: the text, up to four photos, a voice memo, Post.
+ * The same box, set to answer a post, is the reply box on a post's page.
  *
  * Its own bundle, so Social's first load carries none of it: signed out there
  * is no composer at all. social.js asks for it beside the timeline's posts
@@ -90,21 +91,22 @@ function keptDraft() {
 /** A phone: the composer is a page of its own (/social/new) behind a + on the timeline. */
 const PHONE = matchMedia("(max-width: 900px)");
 
-function composer(kit, page = false) {
+/**
+ * `reply` is {post, done} for the reply box: it answers that post, keeps no
+ * draft, waits for nothing, and once sent empties itself and hands `done` the
+ * reply.
+ */
+function composer(kit, page = false, reply = null) {
   const { me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, trimUrl, webLink } = kit;
   const me = who();
   // A deadline rather than a count, so the button wakes when the wait is over.
   // nextPost is a time, right however old the answer it came in; wait was a
   // count from that answer, wrong once it was kept and shown again.
-  const until = me.nextPost ?? Date.now() + me.wait;
+  const until = reply ? 0 : (me.nextPost ?? Date.now() + me.wait);
   const wait = Math.max(0, until - Date.now());
   let busy = 0;
-  const area = el("textarea", {
-    maxlength: String(MAX_POST),
-    rows: "1",
-    placeholder: "What’s happening?",
-    "aria-label": "What’s happening?",
-  });
+  const ask = reply ? "Post your reply" : "What’s happening?";
+  const area = el("textarea", { maxlength: String(MAX_POST), rows: "1", placeholder: ask, "aria-label": ask });
   // The draft's words again, under the field, with each ticker that has a card in blue (social.css .draft).
   const shade = el("div", { class: "draft-b", "aria-hidden": "true" });
   // The cards the post will carry, drawn as it will draw them: client/coins, fetched at the first `$`.
@@ -127,7 +129,7 @@ function composer(kit, page = false) {
   /** The recorded memo, until it is posted or removed: {blob, ms, wave, url}. */
   let voice = null;
   const voiceRow = el("div", { class: "voice", hidden: true });
-  const button = el("button", { type: "submit", class: "post-go", text: "Post", disabled: true });
+  const button = el("button", { type: "submit", class: "post-go", text: reply ? "Reply" : "Post", disabled: true });
   const note = el("span", { class: "wait", hidden: wait <= 0, text: waitLabel(wait) });
   const count = el("span", { class: "count", "aria-live": "polite" });
 
@@ -198,14 +200,14 @@ function composer(kit, page = false) {
       });
   }
 
-  if (handed) {
+  if (handed && !reply) {
     keepDraft(handed.slice(0, MAX_POST));
     handed = "";
     history.replaceState(history.state, "", location.pathname);
     // On a phone the composer is its own page: the draft is waiting there.
     if (PHONE.matches && !page) location.replace("/social/new");
   }
-  const kept = keptDraft();
+  const kept = reply ? "" : keptDraft();
   if (kept) {
     area.value = kept;
     setTimeout(() => {
@@ -306,19 +308,21 @@ function composer(kit, page = false) {
     sync();
   });
   area.addEventListener("input", () => {
-    keepDraft(area.value);
+    if (!reply) keepDraft(area.value);
+    // The words under the field first: it shares their box, so it is only as short as they are.
+    paintShade();
     area.style.height = "auto";
     area.style.height = `${area.scrollHeight}px`;
     tally();
     sync();
     paintLinks();
-    paintShade();
     clearTimeout(settle);
     settle = setTimeout(lookUp, SETTLE_MS);
   });
   area.addEventListener("keydown", (e) => {
+    // Enter starts a new line, which the post keeps; with Cmd or Ctrl it sends.
     // Enter while an IME is composing picks a candidate; it is not a send.
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
       e.preventDefault();
       if (ready()) form.requestSubmit();
     }
@@ -347,9 +351,9 @@ function composer(kit, page = false) {
   cancel.addEventListener("click", leave);
   const form = el(
     "form",
-    { class: page ? "composer page" : "composer", "aria-label": "New post" },
-    fab,
-    cancel,
+    { class: page ? "composer page" : reply ? "composer replying" : "composer", "aria-label": reply ? "Reply" : "New post" },
+    reply ? null : fab,
+    reply ? null : cancel,
     el("div", { class: "compose-top" }, thumb(me.name, me.avatarRev), el("div", { class: "draft" }, shade, area)),
     links,
     strip,
@@ -360,6 +364,19 @@ function composer(kit, page = false) {
     note,
   );
   if (page) form.addEventListener("keydown", (e) => e.key === "Escape" && leave(e));
+
+  /** Empty again, ready for the next reply. */
+  function clear() {
+    area.value = "";
+    for (const shot of shots.splice(0)) URL.revokeObjectURL(shot.url);
+    if (voice) URL.revokeObjectURL(voice.url);
+    voice = null;
+    paintShots();
+    paintVoice();
+    add.disabled = false;
+    // Fits the field, and redraws the count, the links, the tickers and the button.
+    area.dispatchEvent(new Event("input"));
+  }
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!ready()) return;
@@ -369,6 +386,11 @@ function composer(kit, page = false) {
     try {
       const text = area.value.trim();
       const body = shots.length || voice ? packPost(text, shots, voice) : JSON.stringify({ text });
+      if (reply) {
+        const made = await pull(`/api/social/reply?post=${encodeURIComponent(reply.post.id)}`, { method: "POST", body });
+        clear();
+        return reply.done(made.reply);
+      }
       await pull("/api/social/post", { method: "POST", body });
       keepDraft("");
       // From its own page, back to the timeline, which shows the post.
@@ -394,4 +416,9 @@ function openPage(kit) {
   return form;
 }
 
-window.__compose = { composer, openPage };
+/** The reply box under `post` on its page. `done` takes each reply sent. */
+function replyBox(kit, post, done) {
+  return composer(kit, false, { post, done });
+}
+
+window.__compose = { composer, openPage, replyBox };

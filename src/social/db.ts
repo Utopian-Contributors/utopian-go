@@ -822,29 +822,42 @@ function photoSize(jpeg: Buffer): PhotoSize | null {
 /** A voice memo, checked by the route: its bytes, container, length, and shape. */
 export type Memo = { bytes: Buffer; kind: AudioKind; ms: number; wave: string };
 
+/** A post's or a reply's pictures, as the route checked them: each one's desktop and phone JPEG. */
+export type Photos = { full: Buffer; small: Buffer }[];
+
 export async function createPost(
   by: string,
   text: string,
   at: number,
-  photos: { full: Buffer; small: Buffer }[],
+  photos: Photos,
   memo: Memo | null = null,
   coins: Callout[] = [],
 ): Promise<{ wait: number } | Card> {
-  // Files first, row second: a row never points at pictures or a memo that
-  // are not on disk, and the row lock is not held across disk writes. A post
-  // that does not happen takes its files with it.
+  return withFiles(photos, memo, (id, sizes) => insertPost(id, by, text, at, sizes, memo, coins));
+}
+
+/**
+ * A new post's id, its files on disk under it, then its row. Files first, row
+ * second: a row never points at pictures or a memo that are not on disk, and
+ * the row lock is not held across disk writes. A post that does not happen,
+ * refused or told to wait, takes its files with it.
+ */
+async function withFiles<T extends object>(
+  photos: Photos,
+  memo: Memo | null,
+  insert: (id: string, sizes: (PhotoSize | null)[]) => Promise<T>,
+): Promise<T> {
   const id = newId();
   const unwrite = () => {
     removePostPhotos(id, photos.length);
     if (memo) removePostAudio(id);
   };
   writePostPhotos(id, photos);
-  let created: { wait: number } | Card;
+  let created: T;
   try {
     if (memo) writePostAudio(id, memo);
     // The desktop file's: the phone's is the same picture, smaller.
-    const sizes = photos.map((photo) => photoSize(photo.full));
-    created = await insertPost(id, by, text, at, sizes, memo, coins);
+    created = await insert(id, photos.map((photo) => photoSize(photo.full)));
   } catch (err) {
     unwrite();
     throw err;
@@ -887,10 +900,10 @@ function insertPost(
 
 /**
  * A reply: a post of its own under the one it answers, or under the original
- * when that is a re-post. Unlike a post it does not wait ten minutes; a post
- * takes MAX_REPLIES, and that is the bound. The note opens the reply itself,
- * which its page draws under what it answers. `avatarRev` is the author's,
- * which the caller already has.
+ * when that is a re-post, with pictures and a memo as a post has. Unlike a
+ * post it does not wait ten minutes; a post takes MAX_REPLIES, and that is
+ * the bound. The note opens the reply itself, which its page draws under what
+ * it answers. `avatarRev` is the author's, which the caller already has.
  */
 export async function addReply(
   by: string,
@@ -898,7 +911,23 @@ export async function addReply(
   postId: string,
   text: string,
   at: number,
+  photos: Photos = [],
+  memo: Memo | null = null,
   coins: Callout[] = [],
+): Promise<Card> {
+  return withFiles(photos, memo, (id, sizes) => insertReply(id, by, avatarRev, postId, text, at, sizes, memo, coins));
+}
+
+function insertReply(
+  id: string,
+  by: string,
+  avatarRev: number,
+  postId: string,
+  text: string,
+  at: number,
+  sizes: (PhotoSize | null)[],
+  memo: Memo | null,
+  coins: Callout[],
 ): Promise<Card> {
   return tx(async (client) => {
     const target = await one<{ repost: string | null }>("SELECT repost FROM posts WHERE id = $1", [postId], client);
@@ -913,17 +942,20 @@ export async function addReply(
     if (!parent) throw new SocialError(404, "That post is gone.");
     const count = await one<{ n: number }>("SELECT count(*)::int AS n FROM posts WHERE reply_to = $1", [replyTo], client);
     if ((count?.n ?? 0) >= MAX_REPLIES) throw new SocialError(400, "This post has enough replies.");
-    const id = newId();
     const root = parent.root ?? replyTo;
     await client.query(
-      "INSERT INTO posts (id, by_name, text, at, views, coins, reply_to, root) VALUES ($1,$2,$3,$4,0,$5,$6,$7)",
-      [id, by, text, at, JSON.stringify(coins), replyTo, root],
+      `INSERT INTO posts (id, by_name, text, at, views, photos, audio, wave, coins, sizes, reply_to, root)
+       VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        id, by, text, at, sizes.length, memo?.ms ?? 0, memo?.wave ?? "",
+        JSON.stringify(coins), JSON.stringify(sizes), replyTo, root,
+      ],
     );
     await note(client, parent.by_name, by, id, at, "reply");
     return {
       id, by, text, at, views: 0, replies: 0, saved: false, reposted: false,
       repost: null, replyTo, root, repostBy: null, originalRev: 0, avatarRev,
-      photos: 0, audio: 0, wave: "", coins, sizes: [],
+      photos: sizes.length, audio: memo?.ms ?? 0, wave: memo?.wave ?? "", coins, sizes,
     };
   });
 }

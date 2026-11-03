@@ -154,12 +154,14 @@ const POSTS: SeedPost[] = [
     key: "r8",
     by: "rajiv",
     ago: 1700,
-    // Past 256 characters, so the timeline folds it behind See more.
+    // Past 256 characters, so the timeline folds it behind See more, in paragraphs.
     text:
-      "Notes from five years of building onboarding flows, in no particular order. Nobody reads the first screen, so put the one thing they must do there and nothing else. " +
-      "Every extra field costs you people, and you never meet the ones you lost. Ask for a name only when you are about to use it. " +
-      "Show the product working before asking anyone to trust it. A progress bar that lies is worse than none. " +
-      "Test it on the oldest phone in the office, on the train, with one hand. And when someone gets stuck, the bug is in the screen, not in the person.",
+      "Notes from five years of building onboarding flows, in no particular order.\n\n" +
+      "Nobody reads the first screen, so put the one thing they must do there and nothing else.\n\n" +
+      "Every extra field costs you people, and you never meet the ones you lost. Ask for a name only when you are about to use it.\n\n" +
+      "Show the product working before asking anyone to trust it. A progress bar that lies is worse than none.\n\n" +
+      "Test it on the oldest phone in the office, on the train, with one hand.\n" +
+      "And when someone gets stuck, the bug is in the screen, not in the person.",
   },
   { key: "r3", by: "rajiv", ago: 2400, text: "Long walk, no podcast. Recommend." },
   { key: "r4", by: "rajiv", ago: 3300, text: "Nandi Hills at 5am. Worth every yawn.", photos: [["mountains", 720, 960]] },
@@ -213,11 +215,12 @@ const REPOSTS: [string, string, number][] = [
 ];
 
 /**
- * [key, who, the post or reply it answers, minutes ago, text]. A reply has a
- * key so another can answer it: y1's thread runs four deep, so the timeline
- * draws its last reply under the first post with a broken line between.
+ * [key, who, the post or reply it answers, minutes ago, text, photos?]. A
+ * reply has a key so another can answer it: y1's thread runs four deep, so the
+ * timeline draws its last reply under the first post with a broken line
+ * between.
  */
-const REPLIES: [string, string, string, number, string][] = [
+const REPLIES: [string, string, string, number, string, Shot[]?][] = [
   ["m1a", "ines", "m1", 22, "This is unreal."],
   ["m1b", "oskar", "m1", 18, "The Tagus showing off again."],
   ["m1c", "mara", "m1b", 14, "It does that most evenings. I just happened to be holding the camera."],
@@ -231,6 +234,7 @@ const REPLIES: [string, string, string, number, string][] = [
   ["y1d", "yuki", "y1c", 6, "There is always a queue."],
   ["m3a", "ines", "m3", 1450, "Booking a train, brb."],
   ["o3a", "mara", "o3", 2500, "Stay warm!"],
+  ["o2a", "mara", "o2", 170, "Same evening, other side of the river.", [["sunset", 960, 640]]],
   ["t4a", "rajiv", "t4", 2050, "Tomorrow! Nervous."],
   ["t4b", "tobi_k", "t4a", 2040, "You'll be fine. Show it working, then stop talking."],
   ["m8a", "oskar", "m8", 700, "Try the one near Cais do Sodré, they did mine in a few hours."],
@@ -592,10 +596,11 @@ async function run(args: string[]): Promise<void> {
     })),
     ...reposts.map(([by, key, ago]) => ({ ago, go: () => repost(by, post(key), at(ago)) })),
     // Every seed account has its drawn picture, revision 1.
-    ...replies.map(([key, by, to, ago, text]) => ({
+    ...replies.map(([key, by, to, ago, text, shots = []], n) => ({
       ago,
       go: async () => {
-        ids.set(key, (await addReply(by, 1, post(to), text, at(ago))).id);
+        const photos = await Promise.all(shots.map((shot, i) => photo(shot, 1000 + n * 16 + i)));
+        ids.set(key, (await addReply(by, 1, post(to), text, at(ago), photos)).id);
       },
     })),
   ];

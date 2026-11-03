@@ -25,7 +25,7 @@ import {
 import { checkSwapInstructions, parseMessage, reviewedFloor, signTransaction, simulationError, slippageFor } from "./swap";
 import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMessage, onCurve } from "./send";
 import { scrub } from "./guard";
-import { AUDIO_BYTES, MAX_AUDIO_MS, MAX_POST, SOCIAL_BYTES, TINY_BYTES, adKeyword, adText, adUrl, postWait, username, waitText } from "./limits";
+import { AUDIO_BYTES, MAX_AUDIO_MS, MAX_POST, SOCIAL_BYTES, TINY_BYTES, adKeyword, adText, adUrl, postText, postWait, username, waitText } from "./limits";
 import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
 import { type AdCreative, type AdOrder, SCHEMA, TIMELINE_PAGE, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, payOrder, postPayment, resetSocial, saveAd } from "./db";
 import { MAX_CALLOUTS, calloutsIn, isTicker, resolveTickers } from "./callouts";
@@ -541,6 +541,18 @@ test("posting waits ten minutes", () => {
   assert.match(waitText(10 * 60 * 1000), /10 min/);
   assert.equal(username(" Ada "), "ada");
   assert.equal(username("no"), null);
+});
+
+test("a post keeps its line breaks, one empty line between paragraphs at most", () => {
+  const words = (input: string) => {
+    const out = postText(input);
+    return out.ok ? out.text : out.error;
+  };
+  assert.equal(words("one\r\ntwo\rthree"), "one\ntwo\nthree");
+  assert.equal(words("  one  \n\n\n\n  two\t\tthree \n"), "one\n\ntwo three");
+  assert.equal(words("a\n \n \nb"), "a\n\nb", "a line of spaces is an empty line");
+  assert.equal(words("tab\u0007bell"), "tab bell");
+  assert.equal(words("\n\n"), "");
 });
 
 function packPost(text: string, photos: [Buffer, Buffer][], memo?: { bytes: Buffer; ms: number; wave: string }): Buffer {
@@ -1772,6 +1784,20 @@ test("a voice memo posts, plays from its own address, and rides a re-post", asyn
     assert.deepEqual(sharedPhoto?.sizes, [[16, 16]]);
     const plain = (feed.json?.posts as { text: string; audio: number; wave: string }[]).filter((p) => p.text === "listen");
     assert.equal(plain.length, 1);
+
+    // A reply carries what a post does, at once, with no wait: the post it answers rides in the address.
+    const reply = await amy("POST", `/api/social/reply?post=${both.json?.post.id}`, packPost("me too\nreally", [[jpeg(8, 8), jpeg(24, 12)]], { bytes: webm(200), ms: 3000, wave }));
+    assert.equal(reply.status, 200, reply.text);
+    assert.equal(reply.json?.reply.replyTo, both.json?.post.id);
+    assert.equal(reply.json?.reply.text, "me too\nreally");
+    assert.equal(reply.json?.reply.photos, 1);
+    assert.deepEqual(reply.json?.reply.sizes, [[24, 12]]);
+    assert.equal(reply.json?.reply.audio, 3000);
+    assert.equal((await fetch(`${base}/social/v/${reply.json?.reply.id}`)).status, 200);
+    const opened = await bob("POST", "/api/social/open", { post: both.json?.post.id });
+    assert.equal(opened.json?.replies[0].photos, 1, "and its page draws them");
+    assert.equal((await amy("POST", "/api/social/reply?post=nope", packPost("", [], { bytes: webm(64), ms: 2000, wave }))).status, 404);
+    assert.equal(files(".webm").length, 2, "a reply that went nowhere kept no memo");
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
@@ -2011,6 +2037,9 @@ test("a reply is a post on the timeline, under what it answers and the thread's 
     assert.equal((await amy("POST", "/api/social/reply", { post: top.id, text: long })).status, 200);
     assert.equal((await amy("POST", "/api/social/reply", { post: top.id, text: `${long}a` })).status, 400);
     assert.equal((await amy("POST", "/api/social/reply", { post: top.id, text: "   " })).status, 400);
+    const blank = await amy("POST", "/api/social/reply", { post: top.id, text: "\n \r\n\n\t\n" });
+    assert.equal(blank.status, 400, "line breaks alone are no reply");
+    assert.equal(blank.json.error, "Write something.");
     assert.equal((await amy("POST", "/api/social/reply", { post: "nope", text: "hi" })).status, 404);
     const longPost = await bob("POST", "/api/social/post", { text: "é".repeat(MAX_POST) });
     assert.equal(longPost.status, 200, longPost.text);

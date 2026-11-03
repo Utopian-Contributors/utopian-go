@@ -2,9 +2,9 @@
  * The bounds the product actually states, in one place so a route and a check
  * cannot drift apart.
  *
- * Posts are one line on purpose. A post and a reply share one ceiling, since a
- * reply is a post of its own; a timeline shows the first 256 characters of
- * either and folds the rest behind See more (FOLD in client/social/main.js).
+ * A post and a reply share one ceiling, since a reply is a post of its own;
+ * a timeline shows the first 256 characters of either and folds the rest
+ * behind See more (FOLD in client/social/main.js). A bio stays one line.
  */
 
 export const SOCIAL_BYTES = 14 * 1024;
@@ -127,14 +127,19 @@ export function shortText(
 }
 
 /**
- * The words on a post or a reply. Empty is allowed: a picture can be the
+ * The words on a post or a reply, its line breaks kept. Within a line,
+ * controls become spaces and a run of spaces becomes one; between
+ * paragraphs, one empty line at most. Empty is allowed: a picture can be the
  * whole post. Over the ceiling is still refused.
  */
 export function postText(input: unknown): { ok: true; text: string } | { ok: false; error: string } {
   if (typeof input !== "string") return { ok: false, error: "Write something." };
   const text = input
-    .replace(/[\u0000-\u001f\u007f]/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, " ")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ ?\n ?/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
   if (text.length > MAX_POST) return { ok: false, error: `Keep it to ${MAX_POST} characters.` };
   return { ok: true, text };

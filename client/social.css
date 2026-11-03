@@ -44,7 +44,6 @@ body.res #ac {
 
 .tools textarea,
 .tools input,
-.cmt textarea,
 .find input,
 dialog input,
 dialog textarea {
@@ -66,7 +65,6 @@ dialog textarea {
 /* Deeper while it has the caret, as the search field does. No browser focus ring. */
 .tools textarea:focus,
 .tools input:focus,
-.cmt textarea:focus,
 .find input:focus,
 dialog input:focus,
 dialog textarea:focus {
@@ -75,7 +73,6 @@ dialog textarea:focus {
 
 .tools textarea::placeholder,
 .tools input::placeholder,
-.cmt textarea::placeholder,
 .find input::placeholder,
 dialog input::placeholder,
 dialog textarea::placeholder {
@@ -89,7 +86,6 @@ dialog textarea { resize: none; }
  * so those win on order where the specificity ties.
  */
 .composer .post-go,
-.cmt button[type="submit"],
 .tools button[type="submit"],
 .sec > button:not(.ghost),
 .go-pill {
@@ -103,7 +99,6 @@ dialog textarea { resize: none; }
 }
 
 .composer .post-go:hover:not(:disabled),
-.cmt button[type="submit"]:hover,
 .tools button[type="submit"]:hover,
 .sec > button:not(.ghost):hover,
 .go-pill:hover:not(:disabled) {
@@ -267,13 +262,13 @@ dialog textarea { resize: none; }
  */
 @media (max-width: 900px) {
   /* The timeline's composer only: Messenger's message box is a .composer too (.chat-compose), and stays. */
-  body.soc .composer:not(.page, .chat-compose) {
+  body.soc .composer:not(.page, .chat-compose, .replying) {
     margin: 0;
     padding: 0;
     border: 0;
   }
 
-  body.soc .composer:not(.page, .chat-compose) > :not(.fab) { display: none; }
+  body.soc .composer:not(.page, .chat-compose, .replying) > :not(.fab) { display: none; }
 
   body.soc .composer .fab {
     position: fixed;
@@ -625,13 +620,6 @@ a.cashtag:hover { color: var(--a); }
   font-size: 13px;
 }
 
-.cmt {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-top: 10px;
-}
-
 .hint {
   margin: 4px 0 0;
   font-size: 12px;
@@ -951,7 +939,7 @@ a.sad:hover .sad-l b { text-decoration: underline; }
 
 .post .who { font-weight: 600; }
 .post time { color: var(--f); font-size: 13px; margin-left: 6px; }
-.post p { margin: 6px 0; overflow-wrap: anywhere; }
+.post p { margin: 6px 0; overflow-wrap: anywhere; white-space: pre-line; }
 
 /* See more, at the end of a long post's first words: a word in the link green, not a pill. */
 .post .see {
@@ -965,28 +953,16 @@ a.sad:hover .sad-l b { text-decoration: underline; }
 
 .post .see:hover { color: var(--buy-text); text-decoration: underline; }
 
-/* The reply box, between an opened post and its replies. The field grows with what is typed. */
-.reply .cmt {
-  flex-wrap: nowrap;
-  align-items: flex-end;
-  margin-top: 8px;
+/*
+ * The reply box, between an opened post and its replies (social.js
+ * replyBox): the timeline's composer, without the rule under it.
+ */
+.composer.replying {
+  margin: 12px 0 0;
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
-.reply .cmt textarea {
-  display: block;
-  width: auto;
-  flex: 1 1 auto;
-  min-width: 0;
-  max-height: 160px;
-  margin-top: 0;
-  line-height: 1.35;
-  overflow-y: auto;
-  resize: none;
-}
-
-.reply .cmt button { flex: none; }
-.reply .err { min-height: 0; margin: 4px 0 0; }
-.reply .err:empty { display: none; }
 .replies { margin-top: 12px; }
 
 .detail-bar {
@@ -2155,7 +2131,7 @@ a.back.chat-back { display: none; }
    * the keyboard then.
    */
   body.soc.detail #tb { display: none; }
-  body.soc.detail #pv { padding-bottom: 96px; }
+  body.soc.detail #pv { padding-bottom: calc(var(--rb, 120px) + 16px); }
 
   /* With the tabs gone, Back and the views stay along the top as the page scrolls. */
   body.soc #pv > .detail-bar {
@@ -2167,7 +2143,7 @@ a.back.chat-back { display: none; }
     background: var(--bg);
   }
 
-  body.soc #pv > .reply {
+  body.soc #pv > .composer.replying {
     position: fixed;
     inset: auto 0 0;
     z-index: 30;
@@ -2177,11 +2153,13 @@ a.back.chat-back { display: none; }
     background: var(--bg);
   }
 
-  body.soc #pv > .reply .cmt { margin: 0; }
-  body.soc #pv > .reply textarea { font-size: 16px; }
+  /* A smaller hand than the timeline's draft, and only so tall before the words scroll in their box. */
+  body.soc #pv > .replying .draft { max-height: 30vh; overflow-y: auto; }
+  body.soc #pv > .replying :is(.draft-b, .draft textarea) { font-size: 17px; }
+  body.soc #pv > .replying .shots img { height: 96px; }
 
   @media (display-mode: standalone) {
-    body.soc:not(.kb) #pv > .reply { padding-bottom: 24px; }
+    body.soc:not(.kb) #pv > .composer.replying { padding-bottom: 24px; }
   }
 
   body.soc #tb .tab {

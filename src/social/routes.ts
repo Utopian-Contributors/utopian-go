@@ -26,6 +26,7 @@ import {
   type AdPlan,
   type FeedFilter,
   type Memo,
+  type Photos,
   type User,
   addChatKey,
   addReply,
@@ -665,7 +666,7 @@ type MemoIn = { bytes: Buffer; ms: number; wave: string };
  * length in milliseconds as another four, WAVE_BARS characters of shape, then
  * the recording. A post with no pictures and no memo stays JSON.
  */
-function readPackedPost(buf: Buffer): { text: string; photos: { full: Buffer; small: Buffer }[]; memo: MemoIn | null } {
+function readPackedPost(buf: Buffer): { text: string; photos: Photos; memo: MemoIn | null } {
   if (buf.length < 3) throw new SocialError(400, "Malformed request.");
   const textLen = buf.readUInt16BE(0);
   if (textLen > MAX_TEXT_BYTES || 2 + textLen >= buf.length) throw new SocialError(400, "Malformed request.");
@@ -673,7 +674,7 @@ function readPackedPost(buf: Buffer): { text: string; photos: { full: Buffer; sm
   let at = 2 + textLen;
   const count = buf[at++];
   if (count > MAX_PHOTOS) throw new SocialError(400, "Four photos at most.");
-  const photos: { full: Buffer; small: Buffer }[] = [];
+  const photos: Photos = [];
   for (let i = 0; i < count; i++) {
     if (at + 8 > buf.length) throw new SocialError(400, "Malformed request.");
     const smallLen = buf.readUInt32BE(at);
@@ -742,6 +743,27 @@ function readPost(req: Request, res: Response, next: NextFunction) {
   readJson(req, res, next);
 }
 
+/** A post's or a reply's words, pictures and memo, as JSON or packed, each one checked. */
+function postBody(req: Request): { text: string; photos: Photos; memo: Memo | null } {
+  let textIn: unknown = req.body?.text;
+  let photos: Photos = [];
+  let memo: Memo | null = null;
+  if (Buffer.isBuffer(req.body)) {
+    const packed = readPackedPost(req.body);
+    textIn = packed.text;
+    photos = packed.photos;
+    memo = packed.memo && checkMemo(packed.memo);
+  }
+  const text = postText(textIn);
+  if (!text.ok) throw new SocialError(400, text.error);
+  if (!text.text && photos.length === 0 && !memo) throw new SocialError(400, "Write something.");
+  for (const photo of photos) {
+    checkPostPhoto(photo.small, PHOTO_SMALL_BYTES, PHOTO_SMALL_EDGE);
+    checkPostPhoto(photo.full, PHOTO_BYTES, PHOTO_EDGE);
+  }
+  return { text: text.text, photos, memo };
+}
+
 socialRouter.post(
   "/post",
   requireAuth,
@@ -750,46 +772,34 @@ socialRouter.post(
   wrap(async (req, res) => {
     assertSameOrigin(req);
     const me = requireUser(res);
-    let textIn: unknown = req.body?.text;
-    let photos: { full: Buffer; small: Buffer }[] = [];
-    let memo: Memo | null = null;
-    if (Buffer.isBuffer(req.body)) {
-      const packed = readPackedPost(req.body);
-      textIn = packed.text;
-      photos = packed.photos;
-      memo = packed.memo && checkMemo(packed.memo);
-    }
-    const text = postText(textIn);
-    if (!text.ok) throw new SocialError(400, text.error);
-    if (!text.text && photos.length === 0 && !memo) throw new SocialError(400, "Write something.");
-    for (const photo of photos) {
-      checkPostPhoto(photo.small, PHOTO_SMALL_BYTES, PHOTO_SMALL_EDGE);
-      checkPostPhoto(photo.full, PHOTO_BYTES, PHOTO_EDGE);
-    }
+    const { text, photos, memo } = postBody(req);
     // Each $TICKER's price is taken now, before the row is written, so the
     // card's "since" starts at the moment the post went up.
-    const created = await createPost(me.name, text.text, Date.now(), photos, memo, calloutsIn(text.text));
+    const created = await createPost(me.name, text, Date.now(), photos, memo, calloutsIn(text));
     if ("wait" in created) throw new SocialError(429, waitText(created.wait), { wait: created.wait });
     // A post an ad matches is what this person's timeline ads are picked from next.
-    if (matchesAd(text.text)) await setAdTopic(me.name, text.text, created.at);
+    if (matchesAd(text)) await setAdTopic(me.name, text, created.at);
     res.json({ post: created });
   }),
 );
 
-/** A reply is words only, as long as a post's, with the post's $TICKER cards. */
+/**
+ * A reply carries what a post can: words, pictures, a memo, $TICKER cards.
+ * The post it answers is `?post=`, since a packed body has no room for it;
+ * a JSON one may carry it as `post` instead.
+ */
 socialRouter.post(
   "/reply",
   requireAuth,
   writeLimit,
-  readJson,
+  readPost,
   wrap(async (req, res) => {
     assertSameOrigin(req);
     const me = requireUser(res);
-    const postId = typeof req.body?.post === "string" ? req.body.post : "";
-    const text = postText(req.body?.text);
-    if (!text.ok) throw new SocialError(400, text.error);
-    if (!text.text) throw new SocialError(400, "Write something.");
-    const reply = await addReply(me.name, me.avatarRev, postId, text.text, Date.now(), calloutsIn(text.text));
+    const postId =
+      typeof req.query.post === "string" ? req.query.post : typeof req.body?.post === "string" ? req.body.post : "";
+    const { text, photos, memo } = postBody(req);
+    const reply = await addReply(me.name, me.avatarRev, postId, text, Date.now(), photos, memo, calloutsIn(text));
     res.json({ reply });
   }),
 );

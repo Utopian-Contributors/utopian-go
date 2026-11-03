@@ -111,14 +111,22 @@ partial copies without photos, without audio, or without both; `posts_by_at_id` 
 
 **Replies.** A reply is a post of its own (`reply_to`, and `root`, the post its thread
 started from), so it is on the timeline, a profile, Saved and the filters like any other.
-It is words only, without the ten-minute wait, and a post takes 100 of them. A reply to a
+It carries what a post does (words, up to four photos, a voice memo, $TICKER cards) without
+the ten-minute wait, and a post takes 100 of them. A reply to a
 re-post answers the original. On a timeline or a profile a reply is drawn under the post it
 answers, and under the thread's first post as well when it is further down than the first
 reply. A line runs from each face down to the next, broken where posts between two were left
 out. A post's page shows the thread above it (the nearest 30, after the first post), the post,
 the reply box, then its replies, oldest first, and opens scrolled to show the post and the box.
-On a phone the bottom tabs go on a post's page: the reply box takes their place along the
-bottom of the screen, rides up on the keyboard, and Back stays along the top.
+The reply box is the timeline's composer (`compose.js`, fetched beside the post when signed
+in) with Reply for Post and no rule under it. On a phone the bottom tabs go on a post's page:
+the reply box takes their place along the bottom of the screen, rides up on the keyboard, and
+Back stays along the top.
+
+**Line breaks.** A post or a reply keeps its line breaks, with one empty line between
+paragraphs at most; within a line, spaces collapse as before. In a composer Enter starts a
+new line and Cmd or Ctrl with Enter sends. Line breaks alone are no post: the button stays
+off and the server answers "Write something."
 
 **See more.** Posts and replies hold 4,000 characters. Past 256 a card shows the words up to
 the last space before that, then **… See more**, which opens the rest in place. A post open
@@ -306,7 +314,7 @@ GET  /api/social/rail               → {people: {name, bio, avatarRev, posts}[]
 GET  /api/social/u/<name>           → {me, user: {name, address, bio, loc, avatarRev, posts: Card[]}}
 POST /api/social/open    {post}     → {me, post: Card, above: Card[], replies: Card[]}
 POST /api/social/post    {text} | application/octet-stream (text + up to 4 photos + a voice memo) → {post: Card}
-POST /api/social/reply   {post, text} → {reply: Card}
+POST /api/social/reply?post=<id> {text} | packed, as a post → {reply: Card}   (JSON may carry post instead)
 POST /api/social/plus    {post}     → {saved}
 POST /api/social/repost  {post}     → {ok}
 GET  /api/social/notes              → {me, notes: Note[]}   every note kept, newest first
@@ -586,7 +594,7 @@ The limits live in `src/social/limits.ts`:
 
 | What | Limit |
 |---|---|
-| Post, reply | 4,000 characters, one line; a card shows 256 before See more |
+| Post, reply | 4,000 characters, line breaks kept; a card shows 256 before See more |
 | Bio | 160 characters, one line |
 | Location | 40 characters |
 | Photos per post | 4 |

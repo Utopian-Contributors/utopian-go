@@ -382,50 +382,36 @@ function adPost(ad) {
 /** The post open on /social/p/:id. Null on every other page. */
 let detail = null;
 
-/** Matches MAX_POST in src/social/limits.ts: a reply holds as many words as a post. */
-const MAX_POST = 4000;
+/** The composer's bundle (client/compose) once it is here, so a page that waited for it draws it at once. */
+let compose = null;
+
+/*
+ * On a phone the reply box lies over the end of a post's page, which pads
+ * itself as tall as the box is (social.css --rb): the box grows with what is
+ * typed, and with the photos and the memo put on it.
+ */
+const replySize = new ResizeObserver(([entry]) => pv.style.setProperty("--rb", `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`));
 
 /**
- * The reply box under an opened post; on a phone, along the bottom of the
- * screen in the tabs' place (social.css body.detail). It grows with what is
- * typed, and Enter sends, as the composer's does. `done` takes the reply.
+ * The reply box under an opened post: the composer, set to answer it, with
+ * words, photos and a voice memo as a post has. On a phone it runs along the
+ * bottom of the screen in the tabs' place (social.css body.detail). The page
+ * asks for the bundle beside the post, so it is here already; a page drawn
+ * without it gets the box when the bundle comes. `done` takes each reply.
  */
-function replyForm(post, done) {
+function replyBox(post, done) {
   if (!me) return null;
-  const area = el("textarea", { rows: "1", maxlength: String(MAX_POST), placeholder: "Post your reply", "aria-label": "Reply" });
-  const button = el("button", { type: "submit", text: "Reply", disabled: true });
-  const err = el("p", { class: "err" });
-  const form = el("form", { class: "cmt" }, area, button);
-  const fit = () => {
-    area.style.height = "auto";
-    area.style.height = `${area.scrollHeight}px`;
-  };
-  area.addEventListener("input", () => {
-    fit();
-    button.disabled = !area.value.trim();
-  });
-  area.addEventListener("keydown", (e) => {
-    // Enter while an IME is composing picks a candidate; it is not a send.
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      if (!button.disabled) form.requestSubmit();
-    }
-  });
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    err.textContent = "";
-    button.disabled = true;
-    try {
-      const result = await send("/api/social/reply", { post: post.id, text: area.value });
-      area.value = "";
-      fit();
-      done(result.reply);
-    } catch (cause) {
-      err.textContent = cause.message;
-      button.disabled = false;
-    }
-  });
-  return el("div", { class: "reply" }, form, err);
+  if (compose) return compose.replyBox(kit, post, done);
+  const box = el("div", { class: "composer replying" });
+  load("cp", "__compose").then((c) => {
+    compose = c;
+    if (!box.isConnected) return;
+    const real = c.replyBox(kit, post, done);
+    box.replaceWith(real);
+    replySize.disconnect();
+    replySize.observe(real);
+  }, () => {});
+  return box;
 }
 
 /**
@@ -657,13 +643,12 @@ function coins(post) {
 const FOLD = 256;
 
 /**
- * Where a long post's words fold: at the last space before FOLD, so no word
- * is cut. With no space near it, at FOLD itself, moved back to before an
+ * Where a long post's words fold: at the last space or line break before
+ * FOLD, so no word is cut. With no space near it, at FOLD itself, moved back to before an
  * address, a name or a ticker that would run across it.
  */
 function foldAt(text) {
-  const space = text.lastIndexOf(" ", FOLD);
-  if (space > FOLD - 40) return space;
+  for (let space = FOLD; space > FOLD - 40; space--) if (/\s/.test(text[space])) return space;
   let cut = FOLD;
   for (const match of text.matchAll(LINK)) {
     if (match.index >= cut) break;
@@ -795,7 +780,7 @@ function paintDetail() {
   const replies = el("div", { class: "replies" }, ...detail.replies.map((reply) => renderPost(reply)));
   // Only the new card and the post's action row: drawing the page again would
   // blink every picture on it.
-  const form = replyForm(post, (reply) => {
+  const form = replyBox(post, (reply) => {
     detail.replies.push(reply);
     post.replies += 1;
     const card = renderPost(reply);
@@ -814,6 +799,8 @@ function paintDetail() {
     ].filter(Boolean),
   );
   pv.hidden = false;
+  replySize.disconnect();
+  if (form) replySize.observe(form);
 }
 
 /**
@@ -835,12 +822,17 @@ function reveal(first, last = first) {
 }
 
 async function renderPostPage(id) {
-  detail = await send("/api/social/open", { post: id });
+  // Signed in, the reply box's bundle comes beside the post, so the page paints once.
+  const [opened] = await Promise.all([
+    send("/api/social/open", { post: id }),
+    (me || readName()) && load("cp", "__compose").then((c) => (compose = c), () => {}),
+  ]);
+  detail = opened;
   paintDetail();
   // A post opened from another post's page starts at its own top, then shows itself.
   pv.scrollTop = 0;
   const focus = pv.querySelector(`[id="p-${detail.post.id}"]`);
-  const form = pv.querySelector(":scope > .reply");
+  const form = pv.querySelector(":scope > .replying");
   reveal(focus, form && getComputedStyle(form).position !== "fixed" ? form : focus);
 }
 
@@ -929,7 +921,7 @@ function openPost(e) {
   if (url.origin !== location.origin || !POST_PATH.test(url.pathname)) return;
   e.preventDefault();
   // The open post's own reply count goes to its reply box.
-  if (url.pathname === location.pathname) return pv.querySelector(".reply textarea")?.focus();
+  if (url.pathname === location.pathname) return pv.querySelector(".replying textarea")?.focus();
   history.pushState({ over: true }, "", url.pathname);
   show();
 }
