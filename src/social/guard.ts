@@ -70,14 +70,23 @@ function walk(value: unknown, revealPhrase: boolean, depth: number): unknown {
   return out;
 }
 
+/**
+ * The account a request's session cookie still speaks for, or null. Every API
+ * request goes by this (loadAccount), and so do the pages only an account may
+ * open (src/server.ts).
+ */
+export async function sessionAccount(req: Request): Promise<User | null> {
+  const session = readSession(req);
+  const user = session ? await getUser(session.name) : null;
+  // A cookie from before the last recovery or logout names a real account but
+  // no longer speaks for it.
+  return user && user.epoch === session?.epoch ? user : null;
+}
+
 /** Runs first. Later handlers read the account; they do not trust the client. */
 export async function loadAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const session = readSession(req);
-    const user = session ? await getUser(session.name) : null;
-    // A cookie from before the last recovery names a real account but no
-    // longer speaks for it.
-    res.locals.account = user && user.epoch === session?.epoch ? user : null;
+    res.locals.account = await sessionAccount(req);
     next();
   } catch (err) {
     next(err);

@@ -908,8 +908,9 @@ async function settle() {
   setNote("Trade sent, but your balance has not changed yet. It can take a moment — reload to check again.");
 }
 
+// Signed out, the page is not yours to stay on (src/server.ts): home, as Social goes.
 mountAccount($("ac"), {
-  self: () => logOutButton((err) => (err ? setNote(err.message, "err") : switched())),
+  self: () => logOutButton((err) => (err ? setNote(err.message, "err") : location.replace("/"))),
   onLogin: switched,
 });
 noZoom();

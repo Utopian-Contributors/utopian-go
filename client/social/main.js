@@ -1399,11 +1399,11 @@ for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data
     openAuth("login", () => location.assign(/** @type {HTMLAnchorElement} */ (tab).href));
   });
 }
+// Signed out, Social is not yours to stay on (src/server.ts): home, as the wallet goes.
 $("out").addEventListener("click", async () => {
   try {
     await logOut();
-    applyMe(null);
-    show();
+    location.replace("/");
   } catch (cause) {
     main.replaceChildren(el("p", { class: "err", text: cause.message }));
   }

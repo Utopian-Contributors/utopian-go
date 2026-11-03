@@ -15,12 +15,13 @@ import {
 import { iconFile } from "./lib/tokens/icons";
 import { startTokenIndex } from "./lib/tokens/store";
 import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
-import { ACCOUNT_NAV, HOME_NAV, accountNav, homeNav, nextPath, profileCard, renderAuth, renderPage } from "./pages";
+import { ACCOUNT_NAV, HOME_NAV, accountNav, authPath, homeNav, nextPath, profileCard, renderAuth, renderPage } from "./pages";
 import { apiRouter } from "./routes/api";
 import { startAdPayments } from "./social/adPay";
 import { adFor, flushAds, startAds } from "./social/ads";
 import { readSession } from "./social/auth";
 import { addedBy, ensureSchema, getUser } from "./social/db";
+import { sessionAccount } from "./social/guard";
 import { sendAvatar, sendBanner, sendPostAudio, sendPostPhoto, socialRouter } from "./social/routes";
 import { isCheck, sameState, stateTag, stateTags } from "./state";
 import "./threads";
@@ -503,6 +504,50 @@ app.get(WALLET_FILE, (req, res) => {
   res.redirect(308, `${WALLET_PATH}${qs}`);
 });
 
+/**
+ * Whether a request is signed in, as the wallet's and Social's pages and the
+ * login page all go by it: a session cookie its account still honours, the
+ * check every API request makes (sessionAccount). The pages and the login
+ * page have to agree, or a cookie one honoured and the other did not would
+ * send a visitor back and forth between them.
+ *
+ * Without the database the signed cookie alone answers, so the pages stay up
+ * through an outage the API already answers 503 to: a cookie revoked meanwhile
+ * opens a page, and none of what is on it.
+ */
+async function signedIn(req: express.Request): Promise<boolean> {
+  if (!readSession(req)) return false;
+  try {
+    return !!(await sessionAccount(req));
+  } catch (err) {
+    console.warn("[pages] session check fell back to the cookie:", err instanceof Error ? err.message : err);
+    return true;
+  }
+}
+
+/**
+ * The pages only an account may open: the wallet and every Social page.
+ * Case-blind, as Express's own routes are, so /WALLET is the wallet too.
+ */
+const PRIVATE_PAGE = /^\/(wallet|social)(?:\/|$)/i;
+
+/** Social's files, not pages: search results show its avatars, and search ads its banners, to anyone. */
+const SOCIAL_FILE = /^\/social\/[abtiv]\//i;
+
+/**
+ * The wallet and Social, signed in only. Anyone else asking for one of their
+ * pages goes to the login page, which brings them back to it once they are in.
+ */
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  if (!PRIVATE_PAGE.test(req.path) || SOCIAL_FILE.test(req.path)) return next();
+  signedIn(req).then((yes) => {
+    if (yes) return next();
+    res.setHeader("Cache-Control", "private, no-cache");
+    res.redirect(302, authPath("/login", nextPath(req.originalUrl)));
+  }, next);
+});
+
 app.get(WALLET_PATH, (req, res, next) => {
   const doc = docs.wallet;
   if (doc) {
@@ -518,10 +563,10 @@ app.get(WALLET_PATH, (req, res, next) => {
 
 /**
  * The login page: /login and /register, one document (client/auth.html) in
- * either mode. Signed out, the home page's Wallet and Social come here
- * (src/pages.ts homeNav), and it goes on to ?next= once someone is in; anyone
- * already signed in goes straight on. Its own file name redirects, as the
- * wallet page's does.
+ * either mode. Signed out, the wallet and Social send anyone here (the guard
+ * above), as the home page's rows link here outright (src/pages.ts homeNav),
+ * and it goes on to ?next= once someone is in; anyone already signed in goes
+ * straight on. Its own file name redirects, as the wallet page's does.
  */
 const AUTH_FILE = "/auth.html";
 
@@ -534,20 +579,24 @@ app.get(AUTH_FILE, (req, res) => {
 });
 
 app.get(["/login", "/register"], (req, res, next) => {
-  const to = nextPath(req.query.next);
-  if (readSession(req)) {
-    res.setHeader("Cache-Control", "private, no-cache");
-    res.redirect(302, to);
-    return;
-  }
-  if (authDoc) {
-    const mode = req.path.startsWith("/register") ? "register" : "login";
-    sendDoc(req, res, renderAuth(authDoc, mode, to), AUTH_NEXT.has(to) ? `auth:${mode}:${to}` : null);
-    return;
-  }
-  // Not built yet: the file as it is, which auth.js puts in the URL's mode.
-  req.url = AUTH_FILE + req.originalUrl.slice(req.path.length);
-  next();
+  signedIn(req)
+    .then((yes) => {
+      const to = nextPath(req.query.next);
+      if (yes) {
+        res.setHeader("Cache-Control", "private, no-cache");
+        res.redirect(302, to);
+        return;
+      }
+      if (authDoc) {
+        const mode = req.path.startsWith("/register") ? "register" : "login";
+        sendDoc(req, res, renderAuth(authDoc, mode, to), AUTH_NEXT.has(to) ? `auth:${mode}:${to}` : null);
+        return;
+      }
+      // Not built yet: the file as it is, which auth.js puts in the URL's mode.
+      req.url = AUTH_FILE + req.originalUrl.slice(req.path.length);
+      next();
+    })
+    .catch(next);
 });
 
 /**
@@ -585,7 +634,7 @@ app.use((req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD") return next();
   const p = req.path;
   if (p !== "/social" && !p.startsWith("/social/")) return next();
-  if (/^\/social\/[abtiv]\//.test(p)) return next();
+  if (SOCIAL_FILE.test(p)) return next();
   if (docs.social) {
     renderSocial(req, res, docs.social).catch(next);
     return;

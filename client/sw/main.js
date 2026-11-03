@@ -31,7 +31,8 @@
  * alone, and offers Update only where the state has moved.
  *
  * What is stored is this device's own state: on a logout, or a 401 that says
- * the session is gone, the API copies go with it.
+ * the session is gone, the API copies go with it, and so do the copies of the
+ * pages only an account may open (the wallet, Social).
  *
  * Only this origin's GETs are touched. Jupiter and every result thumbnail
  * from the open web pass straight through, as does a request made with
@@ -43,7 +44,11 @@
  * src/server.ts serves it no-cache.
  */
 
-const PAGES = "ug-pages-1";
+/**
+ * -2 since the wallet and Social became signed-in only: the copies -1 kept
+ * from before were opened by anyone, and the worker that names -2 drops them.
+ */
+const PAGES = "ug-pages-2";
 const ASSETS = "ug-assets-1";
 const API = "ug-api-1";
 const KEEP = { [PAGES]: 40, [ASSETS]: 400, [API]: 150 };
@@ -92,6 +97,26 @@ function shellOf(url) {
   if (p === "/social" || p.startsWith("/social/")) return "/social";
   if (p === "/wallet" || p.startsWith("/wallet/")) return "/wallet";
   return "/";
+}
+
+/**
+ * The pages only an account may open (src/server.ts). Asked for signed out,
+ * each answers with a redirect to the login page; that is never kept as the
+ * page, and the copies kept while signed in go when the account does.
+ */
+const PRIVATE = /^\/(wallet|social)(?:\/|$)/i;
+
+/** A page's own answer, worth keeping: not an error, and not the login page a redirect landed on. */
+const keepable = (response) => response.status === 200 && !response.redirected;
+
+/** This device's copies of the account: its API answers, and the private pages. */
+async function forgetAccount() {
+  const pages = await caches.open(PAGES);
+  const keys = await pages.keys();
+  await Promise.all([
+    caches.delete(API),
+    ...keys.filter((key) => PRIVATE.test(new URL(key.url).pathname)).map((key) => pages.delete(key)),
+  ]);
 }
 
 /** Keep a page under its own address and, where it is one, as its section's shell. */
@@ -259,7 +284,7 @@ async function page(event) {
       fetching,
       hit,
       PATIENCE.page,
-      (r) => r.status === 200 && keepPage(url, r),
+      (r) => keepable(r) && keepPage(url, r),
       event.resultingClientId,
     );
     if (response) return response;
@@ -296,7 +321,7 @@ async function api(event) {
     (r) => {
       if (r.status === 200) return keep(API, event.request, r.clone());
       // The session is gone, and this device's copy of the account with it.
-      if (r.status === 401) return caches.delete(API);
+      if (r.status === 401) return forgetAccount();
     },
     event.clientId,
   );
@@ -336,7 +361,7 @@ async function precache() {
     SHELLS.map(async (path) => {
       try {
         const response = await fetch(path, { credentials: "same-origin" });
-        if (response.status !== 200) return;
+        if (!keepable(response)) return;
         const html = await response.clone().text();
         await keep(PAGES, path, response);
         const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="(\/[^"]+)"/g)].map((m) => m[1]);
@@ -377,7 +402,7 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin || request.cache === "no-store" || request.headers.has("x-ug-check")) return;
   if (request.method !== "GET") {
     // Logging out takes this device's copies of the account with it.
-    if (url.pathname === "/api/social/logout") event.waitUntil(caches.delete(API));
+    if (url.pathname === "/api/social/logout") event.waitUntil(forgetAccount());
     // A write passes straight to the server, but its answer says the network
     // is up. The page's next read shows what was just saved, and must not be
     // handed the copy from before it because a stalled request still has the
@@ -412,7 +437,7 @@ self.addEventListener("message", (event) => {
         if (url.origin !== self.location.origin || url.pathname === "/sw.js") return;
         try {
           const response = await fetch(url, { credentials: "same-origin" });
-          if (response.status !== 200) return;
+          if (!keepable(response)) return;
           if (url.href === event.data.page) await keepPage(url, response);
           else if (url.pathname.startsWith("/api/")) await keep(API, url.href, response);
           else await keep(ASSETS, url.href, response);
