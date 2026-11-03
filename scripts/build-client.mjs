@@ -17,11 +17,12 @@
  *   (HTTP/2). Summing a document with its subresources measures a flight that
  *   never happens; each gets its own budget instead.
  *
- *   There are three documents. The search shell is one; the wallet page is a
+ *   There are four documents. The search shell is one; the wallet page is a
  *   second, with its own stylesheet and its own bundle, because it shares
  *   almost nothing with search and serving it app.css to use a tenth of it
  *   would cost more than the whole page weighs. Social is a third, for the
- *   same reason, and its document is capped at 14KB gzip.
+ *   same reason, and its document is capped at 14KB gzip. The login page is
+ *   the fourth, and the smallest.
  */
 import * as esbuild from "esbuild";
 import { minify as minifyHtml } from "html-minifier-terser";
@@ -120,6 +121,13 @@ const PAGES = [
     doc: { file: "social.html", gzip: Math.min(FLIGHT, 14 * 1024) },
     parallel: [{ file: "social.js", gzip: FLIGHT }],
   },
+  {
+    name: "Login",
+    // The server renders a destination and two ?next= into it (src/pages.ts
+    // renderAuth): a few dozen bytes, against a page that weighs a third of this.
+    doc: { file: "auth.html", gzip: FLIGHT },
+    parallel: [{ file: "auth.js", gzip: FLIGHT }],
+  },
 ];
 
 /**
@@ -161,7 +169,7 @@ const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
  * public/ waiting for something to serve it by mistake. The wallet page has no
  * per-request content at all, so for it the file *is* the response.
  */
-const PRECOMPRESS_HTML = ["wallet.html", "social.html"];
+const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html"];
 
 const watch = process.argv.includes("--watch");
 
@@ -395,6 +403,13 @@ const editOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "edit", "main.js")],
   outfile: path.join(outDir, "edit.js"),
+};
+
+/** The login page's bundle (client/auth): the page's form, and signing in by it. */
+const authOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "auth", "main.js")],
+  outfile: path.join(outDir, "auth.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -665,18 +680,34 @@ const SOCIAL_LAZY = {
 };
 const SOCIAL_BUNDLES = ["social.js", ...Object.values(SOCIAL_LAZY)];
 
-async function buildSocialCss() {
+function buildSocialCss() {
+  return prunedCss(["base.css", "app.css", "header.css", "acct.css", "social.css"], SOCIAL_BUNDLES, "social.html");
+}
+
+/**
+ * Stylesheets under client/, pruned to the names a document and its built
+ * bundles write (see pruneVisitor).
+ *
+ * @param {string[]} sheets
+ * @param {string[]} bundles built files under public/
+ * @param {string} doc the document under client/
+ */
+async function prunedCss(sheets, bundles, doc) {
   const words = (text) => text.match(/[A-Za-z_][\w-]*/g) ?? [];
   const names = new Set([
-    ...SOCIAL_BUNDLES.flatMap((file) => words(readFileSync(path.join(outDir, file), "utf8"))),
-    ...words(readFileSync(path.join(clientDir, "social.html"), "utf8")),
+    ...bundles.flatMap((file) => words(readFileSync(path.join(outDir, file), "utf8"))),
+    ...words(readFileSync(path.join(clientDir, doc), "utf8")),
   ]);
-  return minifyCss(
-    ["base.css", "app.css", "header.css", "acct.css", "social.css"]
-      .map((name) => readFileSync(path.join(clientDir, name), "utf8"))
-      .join(""),
-    names,
-  );
+  return minifyCss(sheets.map((name) => readFileSync(path.join(clientDir, name), "utf8")).join(""), names);
+}
+
+/**
+ * The login page's sheet: base.css and header.css (the wordmark) around its
+ * own, pruned to what the page writes. It has no header row and no account
+ * control, so the rest of header.css, and acct.css, never match.
+ */
+function buildAuthCss() {
+  return prunedCss(["base.css", "auth.css", "header.css"], ["auth.js"], "auth.html");
 }
 
 async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, installHash) {
@@ -874,6 +905,30 @@ async function buildSocialHtml(css, hash) {
   writeFileSync(path.join(outDir, "social.html"), await minifyDoc(raw));
 }
 
+/**
+ * The login page, built as Social's is: its pruned sheet and the wordmark
+ * inlined, its bundle fingerprinted. The server renders the mode and the
+ * destination into it per URL (src/pages.ts renderAuth).
+ */
+async function buildAuthHtml(css, hash) {
+  let raw = readFileSync(path.join(clientDir, "auth.html"), "utf8");
+  raw = replaceOnce(
+    raw,
+    /<link rel="stylesheet" href="\/auth\.css"\s*\/?>/,
+    `<style>${css}</style>`,
+    "auth stylesheet link",
+  );
+  raw = replaceOnce(
+    raw,
+    /<img\b[^>]*class="lg-mark"[^>]*\/>/,
+    inlineWordmark(),
+    "auth wordmark img",
+  );
+  raw = replaceOnce(raw, /src="\/auth\.js"/, `src="/auth.js?v=${hash("auth.js")}"`, "auth.js src");
+  raw = fingerprintOffline(raw);
+  writeFileSync(path.join(outDir, "auth.html"), await minifyDoc(raw));
+}
+
 /** Typeset the legal documents into public/ as PDFs. */
 function buildLegal() {
   for (const doc of LEGAL) {
@@ -997,12 +1052,13 @@ async function buildAssets() {
     esbuild.build(friendsOpts),
     esbuild.build(notesOpts),
     esbuild.build(editOpts),
+    esbuild.build(authOpts),
     buildCss("app.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
   const [css, walletCss] = built.slice(-2);
-  // After every bundle, because each one Social can load is its list of names.
-  const socialCss = await buildSocialCss();
+  // After every bundle, because each one a page can load is its list of names.
+  const [socialCss, authCss] = await Promise.all([buildSocialCss(), buildAuthCss()]);
 
   const hash = (file) => contentHash(readFileSync(path.join(outDir, file)));
   const connectHash = hash("connect.js");
@@ -1015,6 +1071,7 @@ async function buildAssets() {
     buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, installHash),
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
     buildSocialHtml(socialCss, hash),
+    buildAuthHtml(authCss, hash),
   ]);
   buildLegal();
   precompress();

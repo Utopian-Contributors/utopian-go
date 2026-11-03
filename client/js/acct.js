@@ -16,6 +16,11 @@ export const WALLET_PAGE = "/wallet";
 /** The one label for logging in, on every button that opens the login dialog. */
 export const LOGIN = "Log in";
 
+/** The login page, going on to `to` once someone is in (client/auth). As src/pages.ts authPath writes it. */
+export function loginPath(to) {
+  return `/login?next=${encodeURIComponent(to).replace(/%2F/gi, "/")}`;
+}
+
 /**
  * Open the login dialog from a page that fetches it lazily (data-lg).
  *
@@ -120,4 +125,26 @@ export function mountAccount(node, opts = {}) {
 
   onName(paint);
   paint();
+}
+
+/**
+ * The home page's Wallet and Social rows: straight to their page signed in,
+ * by the login page signed out. The server points them from the session
+ * cookie (src/pages.ts homeNav), which is the truth as the page arrives; this
+ * follows the session as it changes after, here or in another tab, or while
+ * the page sat in the back cache.
+ *
+ * @param {HTMLElement} node #hm-nv
+ */
+export function mountHomeNav(node) {
+  function paint() {
+    const signed = !!readName();
+    for (const a of /** @type {NodeListOf<HTMLAnchorElement>} */ (node.querySelectorAll("a[data-to]"))) {
+      const to = /** @type {string} */ (a.dataset.to);
+      a.setAttribute("href", signed ? to : loginPath(to));
+    }
+  }
+
+  onName(paint);
+  window.addEventListener("pageshow", (e) => e.persisted && paint());
 }

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- No zoom on phones, by any means: not onto a focused field, not by
+         pinch or double-tap. iOS ignores this for gestures; noZoom() in
+         client/js/device.js refuses those. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- The server names it per page (src/pages.ts renderAuth); auth.js as the page switches. -->
+    <title>Log in</title>
+    <link rel="icon" href="/go-favicon.png" sizes="64x64" type="image/png" />
+    <link rel="icon" href="/go-favicon.svg" type="image/svg+xml" />
+    <!-- The installed app's, as on every other document; see client/index.html. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="UtopianGO" />
+    <meta name="application-name" content="UtopianGO" />
+    <meta name="theme-color" content="#fffff6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#282124" media="(prefers-color-scheme: dark)" />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="stylesheet" href="/auth.css" />
+  </head>
+  <!-- /login and /register: one document, in the mode data-m names. The
+       server renders that per URL (src/pages.ts renderAuth), so the page
+       paints in its final shape; auth.css shows each [data-m] node in the
+       modes it lists, and auth.js moves between them. -->
+  <body class="au" data-m="login">
+    <main class="au-w">
+      <a class="lg" href="/" aria-label="utopian-go home">
+        <img
+          class="lg-mark"
+          src="/go-wordmark.svg"
+          alt=""
+          width="188"
+          height="64"
+          decoding="async"
+        />
+      </a>
+
+      <!-- Should it ever be sent before auth.js is there to take it, it is
+           posted to its own URL, which takes no POST and answers 404: never a
+           GET, which would put the password in the address bar. -->
+      <form class="au-c" id="au-f" method="post" aria-labelledby="au-t">
+        <!-- Sign-up's two steps: the account, then the passkey every account
+             must have before it can do anything. -->
+        <ol class="au-st" data-m="register key">
+          <li id="au-s1">Account</li>
+          <li id="au-s2">Passkey</li>
+        </ol>
+
+        <h1 id="au-t">
+          <span data-m="login">Log in</span>
+          <span data-m="register">Create account</span>
+          <span data-m="recover">Recover account</span>
+          <span data-m="key">Add a passkey</span>
+        </h1>
+        <!-- Where the page goes on to, from its ?next= (src/pages.ts renderAuth). -->
+        <p class="au-to" id="au-to"></p>
+
+        <p class="au-h" data-m="recover">
+          Enter the 12-word recovery phrase from your profile and a new password. This removes any passkey and signs out
+          your other devices.
+        </p>
+        <p class="au-h" data-m="key">
+          Every account has one. It signs you in, confirms every trade and send, and shows your recovery phrase. It
+          stays on this device, opened by your face, fingerprint or screen lock.
+        </p>
+
+        <div class="au-fd" data-m="login register">
+          <label for="au-u">Username</label>
+          <input
+            id="au-u"
+            name="username"
+            required
+            maxlength="16"
+            autocomplete="username"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <p class="au-h" data-m="register">3–16 letters, numbers, or _. It cannot be changed later.</p>
+        </div>
+
+        <div class="au-fd" data-m="recover">
+          <label for="au-r">Recovery phrase</label>
+          <textarea id="au-r" rows="3" required autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+        </div>
+
+        <div class="au-fd" data-m="login register recover">
+          <div class="au-lr">
+            <label for="au-p">
+              <span data-m="login register">Password</span>
+              <span data-m="recover">New password</span>
+            </label>
+            <button type="button" class="au-t" id="au-fg" data-m="login">Forgot password?</button>
+          </div>
+          <input id="au-p" name="password" type="password" required minlength="8" maxlength="128" />
+          <p class="au-h" data-m="register recover">At least 8 characters.</p>
+        </div>
+
+        <div class="au-fd" data-m="register">
+          <label for="au-p2">Confirm password</label>
+          <input id="au-p2" name="password-again" type="password" required autocomplete="new-password" maxlength="128" />
+        </div>
+
+        <!-- The passkey step asks for the password only once the challenge
+             signing in handed it has been spent (auth.js). -->
+        <div class="au-fd" id="au-kp" data-m="key" hidden>
+          <label for="au-sp">Password</label>
+          <input id="au-sp" type="password" autocomplete="current-password" required minlength="8" maxlength="128" />
+        </div>
+
+        <label class="au-ck" for="au-a" data-m="register">
+          <input id="au-a" type="checkbox" required />
+          <span>I agree to the <a href="/terms.pdf" target="_blank" rel="noopener">Terms of Service</a></span>
+        </label>
+
+        <p class="au-e" id="au-e" role="alert"></p>
+
+        <button type="submit" class="au-go" id="au-go">
+          <span data-m="login">Log in</span>
+          <span data-m="register">Create account</span>
+          <span data-m="recover">Recover account</span>
+          <span data-m="key">Create passkey</span>
+        </button>
+
+        <div data-m="login">
+          <p class="au-or"><span>or</span></p>
+          <button type="button" class="au-k" id="au-k">Use a passkey</button>
+        </div>
+
+        <!-- The hrefs carry ?next= on (src/pages.ts renderAuth), so either works as a plain link. -->
+        <p class="au-sw" data-m="login">New here? <a href="/register" id="au-tr">Create account</a></p>
+        <p class="au-sw" data-m="register">Have an account? <a href="/login" id="au-tl">Log in</a></p>
+        <p class="au-sw" data-m="recover"><button type="button" class="au-t" id="au-bk">Back to log in</button></p>
+        <p class="au-sw" data-m="key"><button type="button" class="au-t" id="au-out">Log out</button></p>
+      </form>
+    </main>
+
+    <script src="/auth.js" defer></script>
+    <!-- The offline panel (client/offline): after the page, never ahead of it. -->
+    <script src="/offline.js" defer></script>
+  </body>
+</html>

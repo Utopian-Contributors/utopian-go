@@ -5,7 +5,7 @@
  * Source is modular; `scripts/build-client.mjs` bundles + minifies to public/.
  */
 import { $, clearResults, hideSkeleton, setLoading, setStatus, showSkeleton } from "./dom.js";
-import { mountAccount } from "./acct.js";
+import { mountAccount, mountHomeNav } from "./acct.js";
 import { noZoom } from "./device.js";
 import { mountPwa } from "./pwa.js";
 import { readUrlState, writeUrl } from "./url.js";
@@ -60,6 +60,7 @@ function syncClearButton() {
 // buttons, and the corner of the page it fills is otherwise empty until it
 // runs. Nothing here fetches, and nothing here waits on a search.
 mountAccount($("ac"), { loginAlone: true });
+mountHomeNav($("hm-nv"));
 paintSaved();
 noZoom();
 mountPwa();

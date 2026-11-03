@@ -7,13 +7,14 @@
  * first time someone presses Log in, or finds itself signed in to an account
  * without a passkey. It builds its own markup and injects its own styles, so
  * it looks the same whichever page opened it — every colour comes from the
- * page's custom properties.
+ * page's custom properties. The ways in themselves are signin.js, which the
+ * login page (client/auth) goes in by too.
  */
 import { LOGIN, logOut } from "./acct.js";
 import { el } from "./dom.js";
-import { writeName } from "./me.js";
-import { NO_PASSKEY, b64u, canPasskey, enrol, needPasskey, register, u8, why } from "./passkey.js";
+import { NO_PASSKEY, canPasskey, enrol, register, why } from "./passkey.js";
 import { dismissible } from "./sheet.js";
+import { passkeyLogIn, send, submit } from "./signin.js";
 import { injectStyles } from "./ui.js";
 
 const CSS = `
@@ -52,18 +53,6 @@ let done = () => {};
 /** @type {Record<string, any>} */
 let $ = {};
 
-async function send(path, body) {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body || {}),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Something went wrong.");
-  if (data.name) writeName(data.name);
-  return data;
-}
-
 /** A node shown only in the listed modes. */
 function only(modes, node) {
   node.dataset.m = modes;
@@ -73,33 +62,6 @@ function only(modes, node) {
 /** One line of copy per mode, only one of which is visible at a time. */
 function per(tag, props, texts) {
   return Object.entries(texts).map(([m, text]) => only(m, el(tag, { ...props, text })));
-}
-
-/**
- * Sign in with a passkey. With a username the password came first and `opt.id`
- * names the one key that may answer; without, the authenticator names the
- * account itself.
- */
-async function passkey(opt, username) {
-  needPasskey();
-  const cred = await navigator.credentials.get({
-    publicKey: {
-      challenge: u8(opt.challenge),
-      rpId: location.hostname,
-      allowCredentials: opt.id ? [{ type: "public-key", id: u8(opt.id) }] : undefined,
-      userVerification: "required",
-      timeout: 60_000,
-    },
-  });
-  if (!cred) throw new Error("Passkey was cancelled.");
-  const response = /** @type {AuthenticatorAssertionResponse} */ (cred.response);
-  await send("/api/social/login/passkey", {
-    ...(username ? { username } : { id: cred.id }),
-    challenge: opt.challenge,
-    clientData: b64u(response.clientDataJSON),
-    authenticatorData: b64u(response.authenticatorData),
-    signature: b64u(response.signature),
-  });
 }
 
 /**
@@ -171,7 +133,7 @@ function build() {
     type: "button",
     class: "lgd-go",
     text: "Use a passkey",
-    onclick: () => signIn($.key, async () => passkey(await send("/api/social/passkey/login"))),
+    onclick: () => signIn($.key, passkeyLogIn),
   });
 
   const form = el(
@@ -219,18 +181,15 @@ function build() {
   );
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    signIn($.go, async () => {
-      if (mode === "recover") return send("/api/social/recover", { phrase: $.phrase.value, password: $.pass.value });
-      if (mode === "register" && $.again.value !== $.pass.value) throw new Error("The passwords don't match.");
-      const data = await send(mode === "register" ? "/api/social/register" : "/api/social/login", {
+    signIn($.go, () =>
+      submit(mode, {
         username: $.user.value,
         password: $.pass.value,
-        ...(mode === "register" && { terms: $.terms.checked }),
-      });
-      if (!data.passkey) return data;
-      await passkey(data.passkey, $.user.value.trim().toLowerCase());
-      return null;
-    });
+        again: $.again.value,
+        phrase: $.phrase.value,
+        terms: $.terms.checked,
+      }),
+    );
   });
 
   const d = /** @type {HTMLDialogElement} */ (

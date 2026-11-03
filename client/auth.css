@@ -1,0 +1,365 @@
+/*
+ * The login page, /login and /register (client/auth.html) — its own sheet,
+ * built as base.css + this + header.css and pruned to what the page writes
+ * (build-client.mjs), then inlined so the page paints off the first flight.
+ *
+ * The palette is app.css's, repeated as wallet.css repeats it: a handful of
+ * custom properties, cheaper restated than fetched.
+ */
+:root {
+  color-scheme: light dark;
+  --bg: #fffff6;
+  --t: #202124;
+  --m: #4d5156;
+  --f: #70757a;
+  /* A green to read and a green to press; see the note in app.css. */
+  --go: #39a11c;
+  --buy: #3cc316;
+  --buy-ink: #fefefe;
+  --buy-text: #167c3c;
+  --dn: #d93025;
+  --in-ink: #202124;
+  --in-ph: #70757a;
+  --ff: system-ui, Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #282124;
+    --t: #e8eaed;
+    --m: #bdc1c6;
+    --f: #9aa0a6;
+    /* Bioluminescent after dark, and the fill's ink flips with it; app.css carries the reasoning. */
+    --go: #75ffbe;
+    --buy: #75ffbe;
+    --buy-ink: #202124;
+    --buy-text: #75ffbe;
+    --dn: #f28b82;
+    --in-ink: #e8eaed;
+    --in-ph: #9aa0a6;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/*
+ * The page's mode, on <body data-m>: each [data-m] node shows only in the
+ * modes it lists. One rule per mode, and more specific than any rule below
+ * that gives a node its display, so a node out of its mode stays out.
+ */
+body[data-m="login"] [data-m]:not([data-m~="login"]),
+body[data-m="register"] [data-m]:not([data-m~="register"]),
+body[data-m="recover"] [data-m]:not([data-m~="recover"]),
+body[data-m="key"] [data-m]:not([data-m~="key"]) {
+  display: none;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  font: 14px/1.5 var(--ff);
+  color: var(--t);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+a {
+  color: var(--buy-text);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* One column, centred both ways: on a phone it starts near the top instead. */
+.au-w {
+  width: 100%;
+  max-width: 392px;
+  margin: auto;
+  padding: 48px 16px max(48px, env(safe-area-inset-bottom));
+}
+
+.au-w > .lg {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+@media (max-width: 620px) {
+  .au-w {
+    margin-top: 0;
+    padding-top: max(32px, env(safe-area-inset-top));
+  }
+
+  .au-w > .lg {
+    margin-bottom: 24px;
+  }
+
+  .au-w .lg-mark {
+    height: 34px;
+  }
+}
+
+/*
+ * The two steps of a new account, numbered by counter so the first turns
+ * into a tick once it is done. The current one is filled in the press green.
+ */
+.au-st {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  counter-reset: au-st;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--f);
+}
+
+.au-st li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  counter-increment: au-st;
+}
+
+.au-st li::before {
+  content: counter(au-st);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--wash);
+  color: var(--m);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* The rule between the two. */
+.au-st li + li::after {
+  order: -1;
+  content: "";
+  width: 28px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--wash2);
+}
+
+/* Off the mode rather than aria-current, which auth.js sets: drawn with the page. */
+body[data-m="register"] #au-s1,
+body[data-m="key"] #au-s2 {
+  color: var(--t);
+}
+
+body[data-m="register"] #au-s1::before,
+body[data-m="key"] #au-s2::before {
+  background: var(--buy);
+  color: var(--buy-ink);
+}
+
+body[data-m="key"] #au-s1::before {
+  content: "✓";
+  background: var(--wash2);
+  color: var(--buy-text);
+}
+
+h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.au-to {
+  margin: 4px 0 0;
+  color: var(--m);
+  font-size: 15px;
+}
+
+.au-to:empty {
+  display: none;
+}
+
+.au-h {
+  margin: 6px 0 0;
+  color: var(--f);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+h1 + .au-to + .au-h,
+h1 + .au-to + .au-h + .au-h {
+  margin-top: 12px;
+}
+
+.au-fd {
+  margin-top: 18px;
+}
+
+.au-fd label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--m);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Password's label, with Forgot password? at the far end of its line. */
+.au-lr {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.au-lr label {
+  margin-bottom: 6px;
+}
+
+.au-fd input,
+.au-fd textarea {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--wash);
+  color: var(--in-ink);
+  /* 16px: iOS zooms onto anything smaller that takes focus. */
+  font: 16px/1.35 var(--ff);
+  outline: 0;
+  transition: background-color 0.16s;
+}
+
+.au-fd input:focus,
+.au-fd textarea:focus {
+  background: var(--wash2);
+}
+
+.au-fd textarea {
+  resize: none;
+}
+
+.au-ck {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 18px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.au-ck input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--buy);
+}
+
+.au-e {
+  margin: 14px 0 0;
+  color: var(--dn);
+}
+
+.au-e:empty {
+  display: none;
+}
+
+.au-go,
+.au-k {
+  display: block;
+  width: 100%;
+  margin-top: 20px;
+  padding: 15px 16px;
+  border: 0;
+  border-radius: 999px;
+  font: 600 15px/1 var(--ff);
+  cursor: pointer;
+}
+
+.au-go {
+  background: var(--buy);
+  color: var(--buy-ink);
+}
+
+.au-go:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.au-k {
+  margin-top: 0;
+  background: var(--wash);
+  color: var(--t);
+}
+
+.au-k:hover:not(:disabled) {
+  background: var(--wash2);
+}
+
+.au-c button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.au-c button:focus-visible,
+.au-c a:focus-visible {
+  outline: 2px solid var(--buy);
+  outline-offset: 2px;
+}
+
+/* "or", between two rules. */
+.au-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  color: var(--f);
+  font-size: 13px;
+}
+
+.au-or::before,
+.au-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--wash2);
+}
+
+/* A button that reads as a link. */
+.au-t {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--buy-text);
+  font: 500 13px/1.5 var(--ff);
+  cursor: pointer;
+}
+
+.au-t:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.au-sw {
+  margin: 28px 0 0;
+  color: var(--m);
+  text-align: center;
+}
+
+.au-sw a,
+.au-sw .au-t {
+  font-weight: 500;
+  font-size: 14px;
+}

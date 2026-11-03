@@ -79,15 +79,17 @@
         <!-- Filled server-side with live prices; empty until then. -->
         <div id="hm-tk"></div>
 
-        <!-- Home only: where to go from here, one row each. Plain links, so they
-             need nothing from the session — the wallet page offers the sign-in
-             to anyone who arrives signed out. Stands in for #ac on this page. -->
+        <!-- Home only: where to go from here, one row each. Stands in for #ac on
+             this page. Signed out, each goes by the login page and on to its
+             page from there: the server points them there from the session
+             cookie (src/pages.ts homeNav), and app.js keeps them pointed right
+             (js/acct.js mountHomeNav). data-to is where each row is going. -->
         <nav id="hm-nv" aria-label="Go to">
-          <a href="/wallet">
+          <a href="/wallet" data-to="/wallet">
             <img src="/ic-wallet.svg" alt="" width="30" height="30" />
             Wallet
           </a>
-          <a href="/social">
+          <a href="/social" data-to="/social">
             <img src="/ic-social.svg" alt="" width="30" height="30" />
             Social
           </a>

@@ -311,8 +311,8 @@ body.home #st {
 
 /*
  * Home has no header row, and the rows under the price strip (#hm-nv) already
- * go to the wallet and to Social, so the control is left out here. The wallet
- * page offers the sign-in to anyone who arrives there signed out.
+ * go to the wallet and to Social, so the control is left out here. Signed
+ * out, those rows go by the login page (client/auth.html) on the way.
  */
 body.home #ac {
   display: none;

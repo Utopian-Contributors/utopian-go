@@ -40,6 +40,7 @@ import { type RawTx, readTx } from "../lib/history";
 import { averageEntries, follows } from "../lib/entries";
 import { encodeTicks } from "../lib/tokens/ticks";
 import { stateTags } from "../state";
+import { authPath, homeNav, nextPath, renderAuth } from "../pages";
 import type { Activity, PriceSeries, TokenKind, TokenQuote, TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
 
@@ -2708,4 +2709,34 @@ test("a called-out ticker rides its post to the timeline, the post page, a profi
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
+});
+
+test("the login page goes on only to a page on this site, and signed out the home rows go by it", () => {
+  assert.equal(nextPath("/wallet"), "/wallet");
+  assert.equal(nextPath("/social/u/ada?x=1&y=2"), "/social/u/ada?x=1&y=2");
+  for (const away of ["//evil.com", "/\\evil.com", "https://evil.com", "evil.com", "/wal let", "/login", "/register?next=/wallet", "", undefined, ["/wallet"]]) {
+    assert.equal(nextPath(away), "/", JSON.stringify(away));
+  }
+  assert.equal(authPath("/login", "/wallet"), "/login?next=/wallet");
+  assert.equal(authPath("/register", "/"), "/register");
+  assert.equal(authPath("/login", "/social?a=1&b=2"), "/login?next=/social%3Fa%3D1%26b%3D2");
+
+  const shell =
+    '<nav id="hm-nv" aria-label="Go to"><a href="/wallet" data-to="/wallet">Wallet</a><a href="/social" data-to="/social">Social</a></nav>' +
+    '<nav id="ac" aria-label="Account"><a class="ac-w ac-in" href="/wallet">Log in</a></nav>';
+  assert.equal(homeNav(shell, true), shell);
+  const out = homeNav(shell, false);
+  assert.ok(out.includes('<a href="/login?next=/wallet" data-to="/wallet">Wallet</a><a href="/login?next=/social" data-to="/social">Social</a>'));
+  assert.ok(out.includes('class="ac-w ac-in" href="/wallet"'), "only the home rows");
+
+  const page =
+    '<title>Log in</title><body class="au" data-m="login"><p class="au-to" id="au-to"></p>' +
+    '<a href="/register" id="au-tr">Create account</a><a href="/login" id="au-tl">Log in</a>';
+  const reg = renderAuth(page, "register", "/social?a=1&b=2");
+  assert.ok(reg.includes('<body class="au" data-m="register">'));
+  assert.ok(reg.includes("<title>Create account</title>"));
+  assert.ok(reg.includes(">to continue to Social</p>"));
+  assert.ok(reg.includes('href="/register?next=/social%3Fa%3D1%26b%3D2" id="au-tr"'));
+  assert.ok(renderAuth(page, "login", "/").includes('<p class="au-to" id="au-to"></p><a href="/register" id="au-tr">'), "nowhere to name, no ?next=");
+  assert.throws(() => renderAuth(page.replace(' id="au-tl"', ""), "login", "/"), /au-tl/);
 });

@@ -15,7 +15,7 @@ import {
 import { iconFile } from "./lib/tokens/icons";
 import { startTokenIndex } from "./lib/tokens/store";
 import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
-import { ACCOUNT_NAV, accountNav, profileCard, renderPage } from "./pages";
+import { ACCOUNT_NAV, HOME_NAV, accountNav, homeNav, nextPath, profileCard, renderAuth, renderPage } from "./pages";
 import { apiRouter } from "./routes/api";
 import { startAdPayments } from "./social/adPay";
 import { adFor, flushAds, startAds } from "./social/ads";
@@ -327,6 +327,8 @@ function loadShell() {
       );
     }
     resShell = buildResShell(shell);
+    // Not fatal: the rows would still go somewhere, only past the login page.
+    if (!HOME_NAV.test(shell)) console.warn("[shell] no #hm-nv: signed out, the home rows skip the login page");
   } catch (err) {
     // Client not built yet; the request handler falls back to sendFile.
     //
@@ -352,6 +354,9 @@ function loadShell() {
  */
 const docs: Partial<Record<"wallet" | "social", Record<"in" | "out", string>>> = {};
 
+/** The login page as built, rendered per URL (src/pages.ts renderAuth); empty until it is built. */
+let authDoc = "";
+
 function loadDocs() {
   for (const page of ["wallet", "social"] as const) {
     try {
@@ -362,6 +367,15 @@ function loadDocs() {
       console.warn(`[docs] ${page}.html load failed — serving the file as built:`, err);
       delete docs[page];
     }
+  }
+  try {
+    const raw = readFileSync(path.join(publicDir, "auth.html"), "utf8");
+    // Rendered once here so a build that moved a slot says so now, not per request.
+    renderAuth(raw, "register", "/wallet");
+    authDoc = raw;
+  } catch (err) {
+    console.warn("[docs] auth.html load failed — serving the file as built:", err);
+    authDoc = "";
   }
 }
 
@@ -385,7 +399,7 @@ try {
   watch(publicDir, { persistent: false }, (_event, filename) => {
     const base = filename ? path.basename(String(filename)) : "";
     if (!base || base.startsWith("index.html")) loadShell();
-    if (!base || base.startsWith("wallet.html") || base.startsWith("social.html")) loadDocs();
+    if (!base || /^(wallet|social|auth)\.html/.test(base)) loadDocs();
   });
 } catch {
   // Watch is best-effort — a missing directory just means we fall back.
@@ -499,6 +513,40 @@ app.get(WALLET_PATH, (req, res, next) => {
   // express.static and the precompressed lookup both read the path off
   // req.url, so pointing it at the built file is all this takes.
   req.url = WALLET_FILE + req.originalUrl.slice(req.path.length);
+  next();
+});
+
+/**
+ * The login page: /login and /register, one document (client/auth.html) in
+ * either mode. Signed out, the home page's Wallet and Social come here
+ * (src/pages.ts homeNav), and it goes on to ?next= once someone is in; anyone
+ * already signed in goes straight on. Its own file name redirects, as the
+ * wallet page's does.
+ */
+const AUTH_FILE = "/auth.html";
+
+/** The destinations the home page sends here with: the only renderings worth keeping compressed. */
+const AUTH_NEXT = new Set(["/", "/wallet", "/social"]);
+
+app.get(AUTH_FILE, (req, res) => {
+  const qs = req.originalUrl.slice(req.path.length);
+  res.redirect(308, `/login${qs}`);
+});
+
+app.get(["/login", "/register"], (req, res, next) => {
+  const to = nextPath(req.query.next);
+  if (readSession(req)) {
+    res.setHeader("Cache-Control", "private, no-cache");
+    res.redirect(302, to);
+    return;
+  }
+  if (authDoc) {
+    const mode = req.path.startsWith("/register") ? "register" : "login";
+    sendDoc(req, res, renderAuth(authDoc, mode, to), AUTH_NEXT.has(to) ? `auth:${mode}:${to}` : null);
+    return;
+  }
+  // Not built yet: the file as it is, which auth.js puts in the URL's mode.
+  req.url = AUTH_FILE + req.originalUrl.slice(req.path.length);
   next();
 });
 
@@ -662,7 +710,7 @@ app.use(
       // `wallet.html`. Matching the bare name alone silently missed every
       // compressed response — which is every real one.
       const name = path.basename(filePath).replace(/\.(br|gz)$/, "");
-      if (name === "index.html" || name === "wallet.html" || name === "social.html") {
+      if (name === "index.html" || name === "wallet.html" || name === "social.html" || name === "auth.html") {
         res.setHeader("Cache-Control", "no-cache");
       }
       // The service worker and the manifest keep one URL across deploys, so
@@ -710,10 +758,11 @@ function sendIndex(
   // client-side transition that never asks the server for fresh markup.
   // The strip carries the quote tokens' USD prices as well as its own cells —
   // the buy dialog converts with them, and they are already here.
-  // The account buttons as its script will draw them, off the session cookie.
+  // The account buttons as its script will draw them, off the session cookie,
+  // and the home rows by the login page for anyone signed out.
   const signed = !!readSession(req);
   let html = replaceSlot(
-    (variant === "res" ? resShell : shell).replace(ACCOUNT_NAV, () => accountNav("index", signed)),
+    homeNav((variant === "res" ? resShell : shell).replace(ACCOUNT_NAV, () => accountNav("index", signed)), signed),
     TICKER_SLOT,
     `<div id="hm-tk"${renderFundPrices()}>${renderHomeTicker()}</div>`,
   );
