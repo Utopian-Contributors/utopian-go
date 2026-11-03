@@ -10,8 +10,8 @@ import { el } from "../js/dom.js";
 import { B64, clock } from "../js/memo.js";
 import { bin, lens, shrink } from "../js/shrink.js";
 
-/** Matches MAX_POST in src/social/limits.ts. */
-const MAX_POST = 256;
+/** Matches MAX_POST in src/social/limits.ts. A timeline shows the first 256 and folds the rest. */
+const MAX_POST = 4000;
 /** Insecure pages (a phone on the LAN over http) have no microphone, so no button either. */
 const CAN_RECORD = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 

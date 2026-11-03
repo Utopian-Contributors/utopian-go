@@ -44,7 +44,7 @@ body.res #ac {
 
 .tools textarea,
 .tools input,
-.cmt input,
+.cmt textarea,
 .find input,
 dialog input,
 dialog textarea {
@@ -66,7 +66,7 @@ dialog textarea {
 /* Deeper while it has the caret, as the search field does. No browser focus ring. */
 .tools textarea:focus,
 .tools input:focus,
-.cmt input:focus,
+.cmt textarea:focus,
 .find input:focus,
 dialog input:focus,
 dialog textarea:focus {
@@ -75,7 +75,7 @@ dialog textarea:focus {
 
 .tools textarea::placeholder,
 .tools input::placeholder,
-.cmt input::placeholder,
+.cmt textarea::placeholder,
 .find input::placeholder,
 dialog input::placeholder,
 dialog textarea::placeholder {
@@ -829,7 +829,38 @@ a.nt:hover b { color: var(--go); }
 
 .hit.on,
 .hit:hover:not(:disabled) { background: var(--ch); }
-.post + .post { margin-top: 12px; }
+:is(.post, .thread) + :is(.post, .thread) { margin-top: 12px; }
+
+/*
+ * A reply under what it answers (social.js thread()): the cards run on as one
+ * entry, with no rule between them, and a line runs down from each face to
+ * the next. Where posts between two were left out, as between a thread's
+ * first post and a reply further down, the line is broken.
+ */
+.thread > .post.up { padding-bottom: 4px; border-bottom: 0; }
+.thread > .post + .post { margin-top: 0; padding-top: 4px; }
+
+.thread .mini-link {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 40px;
+}
+
+/* From under the face to just above the next one, through the two cards' pads. */
+.post.up .mini-link::after {
+  content: "";
+  flex: 1;
+  width: 2px;
+  margin: 4px 0 -4px;
+  border-radius: 1px;
+  background: var(--b);
+}
+
+.post.gap .mini-link::after {
+  background: repeating-linear-gradient(var(--b) 0 4px, transparent 0 9px);
+}
 
 /* A sponsored post: drawn as a post, and the whole card is its link. */
 a.sad,
@@ -922,26 +953,41 @@ a.sad:hover .sad-l b { text-decoration: underline; }
 .post time { color: var(--f); font-size: 13px; margin-left: 6px; }
 .post p { margin: 6px 0; overflow-wrap: anywhere; }
 
-.comments { margin: 8px 0 0; padding: 0; list-style: none; }
-.comments li { margin: 10px 0; font-size: 14px; }
+/* See more, at the end of a long post's first words: a word in the link green, not a pill. */
+.post .see {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--go);
+  font: inherit;
+  cursor: pointer;
+}
 
+.post .see:hover { color: var(--buy-text); text-decoration: underline; }
+
+/* The reply box, between an opened post and its replies. The field grows with what is typed. */
 .reply .cmt {
   flex-wrap: nowrap;
+  align-items: flex-end;
   margin-top: 8px;
 }
 
-.reply .cmt input {
+.reply .cmt textarea {
+  display: block;
   width: auto;
   flex: 1 1 auto;
   min-width: 0;
+  max-height: 160px;
   margin-top: 0;
+  line-height: 1.35;
+  overflow-y: auto;
+  resize: none;
 }
 
 .reply .cmt button { flex: none; }
-.reply .err { min-height: 0; }
-
-.comment { display: flex; gap: 10px; align-items: flex-start; }
-.comment-main { min-width: 0; }
+.reply .err { min-height: 0; margin: 4px 0 0; }
+.reply .err:empty { display: none; }
+.replies { margin-top: 12px; }
 
 .detail-bar {
   display: flex;
@@ -952,7 +998,7 @@ a.sad:hover .sad-l b { text-decoration: underline; }
 }
 
 /* An opened post's card, as far below the bar as the cards are apart. */
-.detail-bar + .post { margin-top: 12px; }
+.detail-bar + :is(.post, .thread) { margin-top: 12px; }
 
 /*
  * Back: the Wallet pill's shape and wash (acct.css .ac-w), in the link green,
@@ -1759,12 +1805,13 @@ a.back.chat-back { display: none; }
   body.soc .chat-who { grid-column: 2; }
 
   /*
-   * The keyboard is up (client/chat sets body.kb): the page is as tall as
-   * what the keyboard leaves and sits where iOS panned the view to, so the
-   * header and the person's name stay at the top and the box on the keyboard.
-   * The tabs step aside meanwhile, as a native chat's do.
+   * The keyboard is up (client/chat sets body.kb, and social.js on a post's
+   * page): the page is as tall as what the keyboard leaves and sits where iOS
+   * panned the view to, so the header and the person's name stay at the top
+   * and the box on the keyboard. The tabs step aside meanwhile, as a native
+   * chat's do.
    */
-  body.soc.chat.kb {
+  body.soc:is(.chat, .detail).kb {
     /* app.css holds every page to at least a screen's height; not this one. */
     min-height: 0;
     height: var(--vvh, 100dvh);
@@ -2098,6 +2145,43 @@ a.back.chat-back { display: none; }
      keep the tabs clear of that. */
   @media (display-mode: standalone) {
     body.soc #tb { padding-bottom: 24px; }
+  }
+
+  /*
+   * A post's page: no tabs, and the reply box along the bottom of the screen
+   * in their place, over the end of the page, which pads itself clear of it.
+   * The box is fixed to the screen, or to the page while the keyboard is up
+   * (body.kb moves the page, which makes it the box's frame), so it sits on
+   * the keyboard then.
+   */
+  body.soc.detail #tb { display: none; }
+  body.soc.detail #pv { padding-bottom: 96px; }
+
+  /* With the tabs gone, Back and the views stay along the top as the page scrolls. */
+  body.soc #pv > .detail-bar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin: 0;
+    padding: 4px var(--gut) 8px;
+    background: var(--bg);
+  }
+
+  body.soc #pv > .reply {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 30;
+    margin: 0;
+    padding: 8px var(--gut);
+    border-top: 1px solid var(--ln);
+    background: var(--bg);
+  }
+
+  body.soc #pv > .reply .cmt { margin: 0; }
+  body.soc #pv > .reply textarea { font-size: 16px; }
+
+  @media (display-mode: standalone) {
+    body.soc:not(.kb) #pv > .reply { padding-bottom: 24px; }
   }
 
   body.soc #tb .tab {

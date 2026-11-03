@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import { readFileSync } from "fs";
 import path from "path";
 import { Pool, type PoolClient, types } from "pg";
-import { type AdDevices, CHAT_PAGE, MAX_CHAT_KEEP, MAX_COMMENTS, MAX_NOTES_KEEP, SocialError, postWait } from "./limits";
+import { type AdDevices, CHAT_PAGE, MAX_CHAT_KEEP, MAX_NOTES_KEEP, MAX_REPLIES, SocialError, postWait } from "./limits";
 import type { AudioKind } from "./audio";
 import type { Callout } from "./callouts";
 import { jpegSize } from "./jpeg";
@@ -61,7 +61,8 @@ export async function closePool(): Promise<void> {
   if (current) await current.end();
 }
 
-const SCHEMA = `
+/** Every table and index, made or brought up to date. Safe to run again: each boot does. */
+export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   name text PRIMARY KEY,
   uid text NOT NULL UNIQUE,
@@ -108,14 +109,6 @@ CREATE INDEX IF NOT EXISTS posts_at_id ON posts (at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS posts_by_at_id ON posts (by_name, at DESC, id DESC);
 -- One re-post per person per post, which also answers "did I re-post this".
 CREATE UNIQUE INDEX IF NOT EXISTS posts_repost ON posts (repost, by_name) WHERE repost IS NOT NULL;
-CREATE TABLE IF NOT EXISTS comments (
-  id text PRIMARY KEY,
-  post text NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-  by_name text NOT NULL REFERENCES users(name),
-  text text NOT NULL,
-  at bigint NOT NULL
-);
-CREATE INDEX IF NOT EXISTS comments_post ON comments (post);
 CREATE TABLE IF NOT EXISTS notes (
   id text PRIMARY KEY,
   to_name text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
@@ -155,6 +148,24 @@ UPDATE posts r SET photos = o.photos, audio = o.audio FROM posts o
 CREATE INDEX IF NOT EXISTS posts_at_id_no_photos ON posts (at DESC, id DESC) WHERE photos = 0;
 CREATE INDEX IF NOT EXISTS posts_at_id_no_audio ON posts (at DESC, id DESC) WHERE audio = 0;
 CREATE INDEX IF NOT EXISTS posts_at_id_plain ON posts (at DESC, id DESC) WHERE photos = 0 AND audio = 0;
+-- A reply is a post of its own: reply_to is the post it answers, root the post
+-- its thread started from. Neither is ever a re-post; a reply to one answers
+-- its original. A re-post of a reply has neither, so it is no reply itself.
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS reply_to text REFERENCES posts(id) ON DELETE CASCADE;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS root text REFERENCES posts(id) ON DELETE CASCADE;
+-- A post's replies, oldest first, and how many it has.
+CREATE INDEX IF NOT EXISTS posts_reply_to ON posts (reply_to, at, id) WHERE reply_to IS NOT NULL;
+-- Before replies were posts they were comments, in a table of their own. Each
+-- becomes a reply to the post it was on, once; the table goes with it.
+DO $$ BEGIN
+  IF to_regclass('comments') IS NOT NULL THEN
+    INSERT INTO posts (id, by_name, text, at, reply_to, root)
+      SELECT c.id, c.by_name, c.text, c.at, o.id, COALESCE(o.root, o.id)
+      FROM comments c JOIN posts p ON p.id = c.post JOIN posts o ON o.id = COALESCE(p.repost, p.id)
+      ON CONFLICT (id) DO NOTHING;
+    DROP TABLE comments;
+  END IF;
+END $$;
 -- The saved post's own time, so Saved pages through saves in the timeline's order.
 ALTER TABLE saves ADD COLUMN IF NOT EXISTS post_at bigint;
 UPDATE saves s SET post_at = p.at FROM posts p WHERE p.id = s.post AND s.post_at IS NULL;
@@ -426,10 +437,20 @@ export interface Card {
   text: string;
   at: number;
   views: number;
-  comments: number;
+  /** Replies to this post, or to the original when this card is a re-post. */
+  replies: number;
   saved: boolean;
   reposted: boolean;
   repost: string | null;
+  /** The post this one answers, when it is a reply. A re-post of a reply carries its original's. */
+  replyTo: string | null;
+  /** The post the reply's thread started from; null on a post that is no reply. */
+  root: string | null;
+  /**
+   * On a timeline or a profile, what a reply is drawn under: the post it
+   * answers, after the thread's first post when that is further up.
+   */
+  context?: Card[];
   /** Author of the original post, when this card is a re-post. */
   repostBy: string | null;
   originalRev: number;
@@ -444,14 +465,6 @@ export interface Card {
   coins: Callout[];
   /** Each picture's [width, height], or null where its file could not be measured. A re-post shows the original's. */
   sizes: (PhotoSize | null)[];
-}
-
-export interface CommentRow {
-  id: string;
-  by: string;
-  text: string;
-  at: number;
-  avatarRev: number;
 }
 
 export interface NoteRow {
@@ -578,7 +591,9 @@ type CardRow = {
   original_by: string | null;
   original_rev: number | null;
   avatar_rev: number;
-  comments: number;
+  replies: number;
+  reply_to: string | null;
+  root: string | null;
   saved: boolean;
   reposted: boolean;
   photos: number;
@@ -595,10 +610,12 @@ function cardFrom(row: CardRow): Card {
     text: row.text,
     at: Number(row.at),
     views: row.views,
-    comments: row.comments,
+    replies: row.replies,
     saved: row.saved,
     reposted: row.reposted,
     repost: row.repost,
+    replyTo: row.reply_to,
+    root: row.root,
     repostBy: row.original_by,
     originalRev: row.original_rev ?? 0,
     avatarRev: row.avatar_rev,
@@ -619,10 +636,12 @@ function card(from: string): string {
          CASE WHEN p.repost IS NULL THEN p.wave ELSE COALESCE(op.wave, '') END AS wave,
          CASE WHEN p.repost IS NULL THEN p.coins ELSE COALESCE(op.coins, '[]') END AS coins,
          CASE WHEN p.repost IS NULL THEN p.sizes ELSE COALESCE(op.sizes, '[]') END AS sizes,
+         CASE WHEN p.repost IS NULL THEN p.reply_to ELSE op.reply_to END AS reply_to,
+         CASE WHEN p.repost IS NULL THEN p.root ELSE op.root END AS root,
          u.avatar_rev,
          op.by_name AS original_by,
          ou.avatar_rev AS original_rev,
-         (SELECT count(*)::int FROM comments c WHERE c.post = p.id) AS comments,
+         (SELECT count(*)::int FROM posts c WHERE c.reply_to = COALESCE(p.repost, p.id)) AS replies,
          EXISTS (SELECT 1 FROM saves s WHERE s.post = p.id AND s.by_name = $1) AS saved,
          EXISTS (SELECT 1 FROM posts r WHERE r.repost = p.id AND r.by_name = $1) AS reposted
   FROM ${from}
@@ -709,14 +728,40 @@ export async function timeline(
   const page = more ? rows.slice(0, TIMELINE_PAGE) : rows;
   const last = page[page.length - 1];
   return {
-    posts: page.map(cardFrom),
+    posts: await withContext(page.map(cardFrom), who),
     next: more && last ? { at: Number(last.at), id: last.id } : null,
   };
 }
 
 export async function postsBy(name: string, who: string | null): Promise<Card[]> {
   const rows = await many<CardRow>(`${CARD} WHERE p.by_name = $2 ORDER BY p.at DESC LIMIT 40`, [who, name]);
-  return rows.map(cardFrom);
+  return withContext(rows.map(cardFrom), who);
+}
+
+/** Cards by id, in the order asked for. One that is gone is left out. */
+async function cardsById(ids: string[], who: string | null): Promise<Card[]> {
+  if (!ids.length) return [];
+  const rows = await many<CardRow>(`${CARD} WHERE p.id = ANY($2)`, [who, ids]);
+  const byId = new Map(rows.map((row) => [row.id, cardFrom(row)]));
+  return ids.flatMap((id) => byId.get(id) ?? []);
+}
+
+/**
+ * Gives each reply on a page what it is drawn under (Card.context): the post
+ * it answers, and before that the thread's first post when the reply is
+ * further down than the first reply. The client draws a broken line between
+ * those two when there are posts between them. One query for the whole page.
+ */
+async function withContext(cards: Card[], who: string | null): Promise<Card[]> {
+  const ids = new Set(cards.flatMap((card) => (card.replyTo ? [card.replyTo, card.root ?? card.replyTo] : [])));
+  const found = new Map((await cardsById([...ids], who)).map((card) => [card.id, card]));
+  for (const card of cards) {
+    if (!card.replyTo) continue;
+    const top = card.root && card.root !== card.replyTo ? found.get(card.root) : undefined;
+    const parent = found.get(card.replyTo);
+    card.context = [top, parent].filter((c): c is Card => !!c);
+  }
+  return cards;
 }
 
 /** Every note kept for this person, seen or not, newest first, with the sender's picture. */
@@ -833,33 +878,53 @@ function insertPost(
     );
     await client.query("UPDATE users SET last_post = $2 WHERE name = $1", [by, at]);
     return {
-      id, by, text, at, views: 0, comments: 0, saved: false, reposted: false,
-      repost: null, repostBy: null, originalRev: 0, avatarRev: row.avatar_rev,
+      id, by, text, at, views: 0, replies: 0, saved: false, reposted: false,
+      repost: null, replyTo: null, root: null, repostBy: null, originalRev: 0, avatarRev: row.avatar_rev,
       photos: sizes.length, audio: memo?.ms ?? 0, wave: memo?.wave ?? "", coins, sizes,
     };
   });
 }
 
-/** `avatarRev` is the author's, which the caller already has. */
-export async function addComment(
+/**
+ * A reply: a post of its own under the one it answers, or under the original
+ * when that is a re-post. Unlike a post it does not wait ten minutes; a post
+ * takes MAX_REPLIES, and that is the bound. The note opens the reply itself,
+ * which its page draws under what it answers. `avatarRev` is the author's,
+ * which the caller already has.
+ */
+export async function addReply(
   by: string,
   avatarRev: number,
   postId: string,
   text: string,
   at: number,
-): Promise<CommentRow> {
+  coins: Callout[] = [],
+): Promise<Card> {
   return tx(async (client) => {
-    const post = await one<{ by_name: string }>("SELECT by_name FROM posts WHERE id = $1 FOR UPDATE", [postId], client);
-    if (!post) throw new SocialError(404, "That post is gone.");
-    const count = await one<{ n: number }>("SELECT count(*)::int AS n FROM comments WHERE post = $1", [postId], client);
-    if ((count?.n ?? 0) >= MAX_COMMENTS) throw new SocialError(400, "This post has enough comments.");
-    const id = newId();
-    await client.query(
-      "INSERT INTO comments (id, post, by_name, text, at) VALUES ($1,$2,$3,$4,$5)",
-      [id, postId, by, text, at],
+    const target = await one<{ repost: string | null }>("SELECT repost FROM posts WHERE id = $1", [postId], client);
+    if (!target) throw new SocialError(404, "That post is gone.");
+    const replyTo = target.repost ?? postId;
+    // Locked, so two replies racing for the last place cannot both have it.
+    const parent = await one<{ by_name: string; root: string | null }>(
+      "SELECT by_name, root FROM posts WHERE id = $1 FOR UPDATE",
+      [replyTo],
+      client,
     );
-    await note(client, post.by_name, by, postId, at, "comment");
-    return { id, by, text, at, avatarRev };
+    if (!parent) throw new SocialError(404, "That post is gone.");
+    const count = await one<{ n: number }>("SELECT count(*)::int AS n FROM posts WHERE reply_to = $1", [replyTo], client);
+    if ((count?.n ?? 0) >= MAX_REPLIES) throw new SocialError(400, "This post has enough replies.");
+    const id = newId();
+    const root = parent.root ?? replyTo;
+    await client.query(
+      "INSERT INTO posts (id, by_name, text, at, views, coins, reply_to, root) VALUES ($1,$2,$3,$4,0,$5,$6,$7)",
+      [id, by, text, at, JSON.stringify(coins), replyTo, root],
+    );
+    await note(client, parent.by_name, by, id, at, "reply");
+    return {
+      id, by, text, at, views: 0, replies: 0, saved: false, reposted: false,
+      repost: null, replyTo, root, repostBy: null, originalRev: 0, avatarRev,
+      photos: 0, audio: 0, wave: "", coins, sizes: [],
+    };
   });
 }
 
@@ -901,27 +966,46 @@ export async function repost(by: string, postId: string, at: number): Promise<vo
   });
 }
 
-export async function openPost(id: string, who: string | null): Promise<{ post: Card; comments: CommentRow[] } | null> {
+/** How far up a post's page follows its thread before it skips to the first post. */
+const ABOVE = 30;
+
+/**
+ * A post's page: the post, the thread above it when it is a reply, and its
+ * replies, oldest first. `above` starts at the thread's first post and comes
+ * down to the one this answers, the nearest ABOVE of them; past that, the
+ * first post is followed straight by the rest, which the page draws as a
+ * broken line. A re-post's page has its original's thread and replies.
+ */
+export async function openPost(
+  id: string,
+  who: string | null,
+): Promise<{ post: Card; above: Card[]; replies: Card[] } | null> {
   const updated = await one<{ id: string }>("UPDATE posts SET views = views + 1 WHERE id = $1 RETURNING id", [id]);
   if (!updated) return null;
   const row = await one<CardRow>(`${CARD} WHERE p.id = $2`, [who, id]);
   if (!row) return null;
-  const comments = await many<{ id: string; by_name: string; text: string; at: number; avatar_rev: number }>(
-    `SELECT c.id, c.by_name, c.text, c.at, u.avatar_rev
-     FROM comments c JOIN users u ON u.name = c.by_name
-     WHERE c.post = $1 ORDER BY c.at ASC LIMIT $2`,
-    [id, MAX_COMMENTS],
+  const post = cardFrom(row);
+  const [above, replies] = await Promise.all([
+    threadAbove(post, who),
+    many<CardRow>(`${CARD} WHERE p.reply_to = $2 ORDER BY p.at, p.id LIMIT $3`, [who, post.repost ?? post.id, MAX_REPLIES]),
+  ]);
+  return { post, above, replies: replies.map(cardFrom) };
+}
+
+async function threadAbove(post: Card, who: string | null): Promise<Card[]> {
+  if (!post.replyTo) return [];
+  const chain = await many<{ id: string }>(
+    `WITH RECURSIVE up (id, n) AS (
+       SELECT $1::text, 1
+       UNION ALL
+       SELECT p.reply_to, up.n + 1 FROM up JOIN posts p ON p.id = up.id WHERE p.reply_to IS NOT NULL AND up.n < $2
+     )
+     SELECT id FROM up ORDER BY n DESC`,
+    [post.replyTo, ABOVE],
   );
-  return {
-    post: cardFrom(row),
-    comments: comments.map((c) => ({
-      id: c.id,
-      by: c.by_name,
-      text: c.text,
-      at: Number(c.at),
-      avatarRev: c.avatar_rev,
-    })),
-  };
+  const ids = chain.map((row) => row.id);
+  if (post.root && ids[0] !== post.root) ids.unshift(post.root);
+  return cardsById(ids, who);
 }
 
 export async function markSeen(name: string): Promise<void> {

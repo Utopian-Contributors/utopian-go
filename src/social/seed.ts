@@ -2,7 +2,7 @@
  * Seed data for Social, for trying the timeline on a dev database.
  *
  *   npm run seed                  fourteen accounts, a few days of posts,
- *                                 re-posts, comments, saves and friends. Run
+ *                                 re-posts, replies, saves and friends. Run
  *                                 again after adding people here, it adds just
  *                                 them, and what touches them
  *   npm run seed -- --me <name>   also: your account adds three of them and
@@ -19,7 +19,7 @@
  * database, never for one that holds anything.
  *
  * It goes through the same functions the routes use, so rows, files and
- * notifications land as a real post, comment or save would. Photos are
+ * notifications land as a real post, reply or save would. Photos are
  * drawn here, and each account gets the picture sign-up draws; the voice
  * memos are recordings in assets/seed.
  */
@@ -33,8 +33,8 @@ import { newPassword, sealForServer, sealPhrase } from "./auth";
 import type { AudioKind } from "./audio";
 import { drawAvatar } from "./avatar";
 import {
-  addComment,
   addFriend,
+  addReply,
   closePool,
   createPost,
   databaseUrl,
@@ -131,7 +131,7 @@ const POSTS: SeedPost[] = [
     key: "t7",
     by: "tobi_k",
     ago: 6500,
-    // Exactly MAX_POST characters, to see the longest a post can be.
+    // Exactly 256 characters: the most a timeline shows before See more.
     text: "Things I wish someone told me before my first mainnet deploy: simulate everything, then simulate it again. Keep the upgrade authority somewhere boring. Write down every address. Log more than you think you need. Sleep before you ship, not after. Tea helps.",
   },
 
@@ -150,6 +150,17 @@ const POSTS: SeedPost[] = [
   { key: "r1", by: "rajiv", ago: 95, text: "First voice memo, go easy on me.", memo: "rajiv" },
   { key: "r7", by: "rajiv", ago: 500, text: "Product lesson of the week: if you have to explain the button, the button is wrong." },
   { key: "r2", by: "rajiv", ago: 1000, text: "Demo went well! @tobi_k thanks for the late-night debugging." },
+  {
+    key: "r8",
+    by: "rajiv",
+    ago: 1700,
+    // Past 256 characters, so the timeline folds it behind See more.
+    text:
+      "Notes from five years of building onboarding flows, in no particular order. Nobody reads the first screen, so put the one thing they must do there and nothing else. " +
+      "Every extra field costs you people, and you never meet the ones you lost. Ask for a name only when you are about to use it. " +
+      "Show the product working before asking anyone to trust it. A progress bar that lies is worse than none. " +
+      "Test it on the oldest phone in the office, on the train, with one hand. And when someone gets stuck, the bug is in the screen, not in the person.",
+  },
   { key: "r3", by: "rajiv", ago: 2400, text: "Long walk, no podcast. Recommend." },
   { key: "r4", by: "rajiv", ago: 3300, text: "Nandi Hills at 5am. Worth every yawn.", photos: [["mountains", 720, 960]] },
   { key: "r5", by: "rajiv", ago: 4500, text: "Cricket on the radio, chai on the stove. Perfect Sunday." },
@@ -201,31 +212,47 @@ const REPOSTS: [string, string, number][] = [
   ["elif", "n5", 50],
 ];
 
-/** [who, post, minutes ago, text] */
-const COMMENTS: [string, string, number, string][] = [
-  ["ines", "m1", 22, "This is unreal."],
-  ["oskar", "m1", 18, "The Tagus showing off again."],
-  ["yuki", "m1", 10, "Wallpaper, thanks."],
-  ["rajiv", "t1", 50, "The await always gets you."],
-  ["tobi_k", "r1", 85, "Sounds great! More of these."],
-  ["ines", "r1", 60, "Welcome to the voice memo club."],
-  ["mara", "y1", 30, "Which shop??"],
-  ["yuki", "y1", 28, "The tiny one behind the station. No sign, just a queue."],
-  ["ines", "m3", 1450, "Booking a train, brb."],
-  ["mara", "o3", 2500, "Stay warm!"],
-  ["rajiv", "t4", 2050, "Tomorrow! Nervous."],
-  ["oskar", "m8", 700, "Try the one near Cais do Sodré, they did mine in a few hours."],
-  ["yuki", "i2", 650, "Save me one."],
-  ["rajiv", "y4", 3800, "Anything with Yo-Yo Ma, obviously."],
-  ["tobi_k", "r6", 6100, "A good password manager."],
-  ["mara", "r6", 6000, "Lightroom, sadly."],
-  ["sanne", "n1", 5, "The cat looks thrilled."],
-  ["kwame", "n2", 12, "Respect."],
-  ["ayla", "n4", 40, "That sky though."],
-  ["theo", "n6", 80, "Saving this for my next trip."],
-  ["mara", "n7", 110, "Jealous. Post the photos!"],
-  ["chidi", "n8", 128, "No questions, I said."],
-  ["tobi_k", "n8", 130, "Nigerian jollof, obviously."],
+/**
+ * [key, who, the post or reply it answers, minutes ago, text]. A reply has a
+ * key so another can answer it: y1's thread runs four deep, so the timeline
+ * draws its last reply under the first post with a broken line between.
+ */
+const REPLIES: [string, string, string, number, string][] = [
+  ["m1a", "ines", "m1", 22, "This is unreal."],
+  ["m1b", "oskar", "m1", 18, "The Tagus showing off again."],
+  ["m1c", "mara", "m1b", 14, "It does that most evenings. I just happened to be holding the camera."],
+  ["m1d", "yuki", "m1", 10, "Wallpaper, thanks."],
+  ["t1a", "rajiv", "t1", 50, "The await always gets you."],
+  ["r1a", "tobi_k", "r1", 85, "Sounds great! More of these."],
+  ["r1b", "ines", "r1", 60, "Welcome to the voice memo club."],
+  ["y1a", "mara", "y1", 30, "Which shop??"],
+  ["y1b", "yuki", "y1a", 28, "The tiny one behind the station. No sign, just a queue."],
+  ["y1c", "mara", "y1b", 20, "Going tomorrow. If there is no queue I will assume it has closed."],
+  ["y1d", "yuki", "y1c", 6, "There is always a queue."],
+  ["m3a", "ines", "m3", 1450, "Booking a train, brb."],
+  ["o3a", "mara", "o3", 2500, "Stay warm!"],
+  ["t4a", "rajiv", "t4", 2050, "Tomorrow! Nervous."],
+  ["t4b", "tobi_k", "t4a", 2040, "You'll be fine. Show it working, then stop talking."],
+  ["m8a", "oskar", "m8", 700, "Try the one near Cais do Sodré, they did mine in a few hours."],
+  ["i2a", "yuki", "i2", 650, "Save me one."],
+  ["y4a", "rajiv", "y4", 3800, "Anything with Yo-Yo Ma, obviously."],
+  ["r6a", "tobi_k", "r6", 6100, "A good password manager."],
+  ["r6b", "mara", "r6", 6000, "Lightroom, sadly."],
+  [
+    "r8a",
+    "tobi_k",
+    "r8",
+    1600,
+    "The oldest phone in the office is the one I keep for exactly this. It has caught more layout bugs than any test suite I have written, and it cannot run half the " +
+      "analytics scripts people put on sign-up pages, which tells you something about those scripts. Also: the one-handed rule should be printed on every designer's monitor.",
+  ],
+  ["n1a", "sanne", "n1", 5, "The cat looks thrilled."],
+  ["n2a", "kwame", "n2", 12, "Respect."],
+  ["n4a", "ayla", "n4", 40, "That sky though."],
+  ["n6a", "theo", "n6", 80, "Saving this for my next trip."],
+  ["n7a", "mara", "n7", 110, "Jealous. Post the photos!"],
+  ["n8a", "tobi_k", "n8", 130, "Nigerian jollof, obviously."],
+  ["n8b", "chidi", "n8a", 128, "No questions, I said."],
 ];
 
 /** [who, post] */
@@ -433,11 +460,12 @@ async function createAccount(person: Person, now: number): Promise<void> {
 }
 
 /**
- * Everything the seed accounts made, and whatever points at it: anyone's
- * re-posts of their posts go first, since those reference them, then their
- * comments and notes elsewhere, then their posts (taking the comments and
- * saves on them), then the accounts (taking friends, saves, notes to them and
- * Messenger). The files go once the rows are gone.
+ * Everything the seed accounts made, and whatever points at it: their posts
+ * and replies with every reply under them, whoever wrote it. Anyone's
+ * re-posts of those go first, since those reference them, then their notes
+ * elsewhere, then the posts (taking the saves on them), then the accounts
+ * (taking friends, saves, notes to them and Messenger). The files go once the
+ * rows are gone.
  */
 async function wipe(names: string[]): Promise<number> {
   if (!names.length) return 0;
@@ -446,11 +474,14 @@ async function wipe(names: string[]): Promise<number> {
   let files: { id: string; photos: number; audio: number }[];
   try {
     await client.query("BEGIN");
-    await client.query("DELETE FROM posts WHERE repost IN (SELECT id FROM posts WHERE by_name = ANY($1))", [names]);
-    await client.query("DELETE FROM comments WHERE by_name = ANY($1)", [names]);
+    const under = `WITH RECURSIVE gone (id) AS (
+      SELECT id FROM posts WHERE by_name = ANY($1)
+      UNION SELECT p.id FROM posts p JOIN gone g ON p.reply_to = g.id
+    )`;
+    await client.query(`${under} DELETE FROM posts WHERE repost IN (SELECT id FROM gone)`, [names]);
     await client.query("DELETE FROM notes WHERE from_name = ANY($1)", [names]);
     const gone = await client.query<{ id: string; photos: number; audio: number; repost: string | null }>(
-      "DELETE FROM posts WHERE by_name = ANY($1) RETURNING id, photos, audio, repost",
+      `${under} DELETE FROM posts WHERE id IN (SELECT id FROM gone) RETURNING id, photos, audio, repost`,
       [names],
     );
     await client.query("DELETE FROM users WHERE name = ANY($1)", [names]);
@@ -529,7 +560,11 @@ async function run(args: string[]): Promise<void> {
   const posts = POSTS.map((p, n) => ({ ...p, n })).filter((p) => fresh.has(p.by));
   const keys = new Set(posts.map((p) => p.key));
   const reposts = REPOSTS.filter(([, key]) => keys.has(key));
-  const comments = COMMENTS.filter(([, key]) => keys.has(key));
+  // A reply goes with the post its thread starts from, so a thread is seeded whole or not at all.
+  const replies: typeof REPLIES = [];
+  for (const reply of REPLIES) {
+    if (keys.has(reply[2]) || replies.some(([key]) => key === reply[2])) replies.push(reply);
+  }
 
   const now = Date.now();
   const at = (ago: number) => now - ago * MINUTE;
@@ -557,10 +592,10 @@ async function run(args: string[]): Promise<void> {
     })),
     ...reposts.map(([by, key, ago]) => ({ ago, go: () => repost(by, post(key), at(ago)) })),
     // Every seed account has its drawn picture, revision 1.
-    ...comments.map(([by, key, ago, text]) => ({
+    ...replies.map(([key, by, to, ago, text]) => ({
       ago,
       go: async () => {
-        await addComment(by, 1, post(key), text, at(ago));
+        ids.set(key, (await addReply(by, 1, post(to), text, at(ago))).id);
       },
     })),
   ];
@@ -576,7 +611,7 @@ async function run(args: string[]): Promise<void> {
   const width = Math.max(...adding.map((person) => person.name.length));
   console.log(
     `${topUp ? "Added" : "Seeded"} ${adding.length} accounts, ${posts.length} posts, ${reposts.length} re-posts, ` +
-      `${comments.length} comments.`,
+      `${replies.length} replies.`,
   );
   if (me) console.log(`${me} added ${FOR_ME.friends.join(", ")} and saved ${FOR_ME.saves.length} posts.`);
   console.log(`\nSign in as ${topUp ? "the new ones" : "any of them"} with the password "${SEED_PASSWORD}":`);

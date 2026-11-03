@@ -382,44 +382,44 @@ function adPost(ad) {
 /** The post open on /social/p/:id. Null on every other page. */
 let detail = null;
 
-function commentList(comments) {
-  const list = el("ul", { class: "comments" });
-  for (const comment of comments || []) {
-    list.append(
-      el(
-        "li",
-        { class: "comment" },
-        thumb(comment.by, comment.avatarRev),
-        el(
-          "div",
-          { class: "comment-main" },
-          el("a", { href: `/social/u/${comment.by}`, text: comment.by, class: "who" }),
-          " ",
-          linkedText(comment.text),
-        ),
-      ),
-    );
-  }
-  return list;
-}
+/** Matches MAX_POST in src/social/limits.ts: a reply holds as many words as a post. */
+const MAX_POST = 4000;
 
-function commentForm(post) {
+/**
+ * The reply box under an opened post; on a phone, along the bottom of the
+ * screen in the tabs' place (social.css body.detail). It grows with what is
+ * typed, and Enter sends, as the composer's does. `done` takes the reply.
+ */
+function replyForm(post, done) {
   if (!me) return null;
-  const input = el("input", { maxlength: "160", placeholder: "Comment", "aria-label": "Comment" });
-  const button = el("button", { type: "submit", text: "Reply" });
+  const area = el("textarea", { rows: "1", maxlength: String(MAX_POST), placeholder: "Post your reply", "aria-label": "Reply" });
+  const button = el("button", { type: "submit", text: "Reply", disabled: true });
   const err = el("p", { class: "err" });
-  const form = el("form", { class: "cmt" }, input, button);
+  const form = el("form", { class: "cmt" }, area, button);
+  const fit = () => {
+    area.style.height = "auto";
+    area.style.height = `${area.scrollHeight}px`;
+  };
+  area.addEventListener("input", () => {
+    fit();
+    button.disabled = !area.value.trim();
+  });
+  area.addEventListener("keydown", (e) => {
+    // Enter while an IME is composing picks a candidate; it is not a send.
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      if (!button.disabled) form.requestSubmit();
+    }
+  });
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     err.textContent = "";
     button.disabled = true;
     try {
-      const result = await send("/api/social/comment", { post: post.id, text: input.value });
-      if (detail && detail.post.id === post.id) {
-        detail.comments.push(result.comment);
-        detail.post.comments += 1;
-        paintDetail();
-      } else show();
+      const result = await send("/api/social/reply", { post: post.id, text: area.value });
+      area.value = "";
+      fit();
+      done(result.reply);
     } catch (cause) {
       err.textContent = cause.message;
       button.disabled = false;
@@ -441,8 +441,12 @@ function react(kind, post, inDetail, label, props) {
       const data = await send(`/api/social/${kind}`, { post: post.id });
       if (kind === "plus") post.saved = data.saved;
       else post.reposted = true;
-      // Un-saving on a timeline of saved posts only takes the post off it.
-      if (!post.saved && kind === "plus" && route().page === "timeline" && shown.saved) button.closest("article").remove();
+      const card = button.closest("article");
+      // Un-saving on a timeline of saved posts only takes the post off it,
+      // with what it was drawn under. A post drawn above a reply stays.
+      if (!post.saved && kind === "plus" && route().page === "timeline" && shown.saved && card.id) {
+        (card.closest(".thread") || card).remove();
+      }
       // Only the action row: swapping the whole card would rebuild its images,
       // which blink as they decode again.
       else {
@@ -462,7 +466,7 @@ function react(kind, post, inDetail, label, props) {
   return button;
 }
 
-function postActions(post, inDetail, comments) {
+function postActions(post, inDetail, replies) {
   // No label: social.css draws the mark into the empty button.
   const plus = react("plus", post, inDetail, "", {
     class: post.saved ? "act plus saved" : "act plus",
@@ -472,7 +476,7 @@ function postActions(post, inDetail, comments) {
   const repost = post.repost
     ? null
     : react("repost", post, inDetail, post.reposted ? "reposted" : "re-post", { disabled: post.reposted });
-  return el("div", { class: "acts" }, plus, comments, repost);
+  return el("div", { class: "acts" }, plus, replies, repost);
 }
 
 /** Timeline face: the small file, 40px wide, a square until the file loads. */
@@ -649,13 +653,53 @@ function coins(post) {
   return box;
 }
 
-function renderPost(post, inDetail) {
-  const body = el("p", {}, linkedText(post.text, post.coins));
+/** A post's words past this many wait behind See more. */
+const FOLD = 256;
+
+/**
+ * Where a long post's words fold: at the last space before FOLD, so no word
+ * is cut. With no space near it, at FOLD itself, moved back to before an
+ * address, a name or a ticker that would run across it.
+ */
+function foldAt(text) {
+  const space = text.lastIndexOf(" ", FOLD);
+  if (space > FOLD - 40) return space;
+  let cut = FOLD;
+  for (const match of text.matchAll(LINK)) {
+    if (match.index >= cut) break;
+    if (match.index + match[0].length > cut) cut = match.index;
+  }
+  // Not between the two halves of an emoji.
+  if (/[\ud800-\udbff]/.test(text[cut - 1] || "")) cut -= 1;
+  return cut || FOLD;
+}
+
+/**
+ * A post's words, its links in them. Past FOLD the rest waits behind See
+ * more, which opens it in place. `whole` is a post open on its own page,
+ * which is there to be read.
+ */
+function words(post, whole) {
+  const body = el("p");
   if (!post.text) body.hidden = true;
-  const comments = el("a", { class: "act", href: `/social/p/${post.id}`, text: `comment (${post.comments || 0})` });
+  else if (whole || post.text.length <= FOLD) body.append(linkedText(post.text, post.coins));
+  else {
+    const more = el("button", { type: "button", class: "see", text: "See more" });
+    more.addEventListener("click", () => body.replaceChildren(linkedText(post.text, post.coins)));
+    // A cut after a full stop or a comma ends on the ellipsis alone.
+    const shown = post.text.slice(0, foldAt(post.text)).replace(/[\s.,;:]+$/, "");
+    body.append(linkedText(shown, post.coins), "… ", more);
+  }
+  return body;
+}
+
+function renderPost(post, inDetail) {
+  const replies = el("a", { class: "act", href: `/social/p/${post.id}`, text: `reply (${post.replies || 0})` });
   const block = el(
     "article",
-    { class: "post", id: `p-${post.id}` },
+    // data-id is on every card of the post, one drawn above a reply too, so
+    // each catches up with what was done on the post's page (showOver).
+    { class: "post", id: `p-${post.id}`, "data-id": post.id },
     el(
       "div",
       { class: "post-row" },
@@ -682,11 +726,11 @@ function renderPost(post, inDetail) {
             : null,
           el("time", { text: ago(post.at), datetime: new Date(post.at).toISOString() }),
         ),
-        body,
+        words(post, inDetail),
         gallery(post),
         memo(post),
         coins(post),
-        postActions(post, inDetail, comments),
+        postActions(post, inDetail, replies),
       ),
     ),
   );
@@ -694,10 +738,42 @@ function renderPost(post, inDetail) {
     // The rest of the card opens the post too. Handing the click to the link,
     // modifier keys and all, keeps Cmd-click opening a new tab.
     block.addEventListener("click", (event) => {
-      if (!event.target.closest("a, button, form, input, .gallery, .memo")) comments.dispatchEvent(new MouseEvent("click", event));
+      if (!event.target.closest("a, button, form, input, .gallery, .memo")) replies.dispatchEvent(new MouseEvent("click", event));
     });
   }
   return block;
+}
+
+/**
+ * Cards one under the other, a line from each face down to the next: a reply
+ * under what it answers. The line is broken where posts between two were left
+ * out, as between a thread's first post and a reply further down. The last
+ * card is the one the rest are drawn for; only it keeps its id, so a page of
+ * the timeline knows which posts it already has.
+ */
+function thread(cards) {
+  return el(
+    "div",
+    { class: "thread" },
+    ...cards.map((card, i) => {
+      // The line hangs from the face; a post with no picture keeps the face's column all the same.
+      const row = card.block.querySelector(".post-row");
+      if (!row.querySelector(":scope > .mini-link")) row.prepend(el("span", { class: "mini-link" }));
+      const next = cards[i + 1];
+      if (!next) return card.block;
+      card.block.removeAttribute("id");
+      card.block.classList.add("up");
+      if (next.post.replyTo !== card.post.id) card.block.classList.add("gap");
+      return card.block;
+    }),
+  );
+}
+
+/** A post on a timeline or a profile. A reply comes under what it answers (Card.context). */
+function entry(post) {
+  const block = renderPost(post);
+  if (!post.context?.length) return block;
+  return thread([...post.context.map((above) => ({ post: above, block: renderPost(above) })), { post, block }]);
 }
 
 function paintDetail() {
@@ -715,20 +791,57 @@ function paintDetail() {
     class: "views",
     text: post.views === 1 ? "1 view" : `${post.views} views`,
   });
+  const focus = renderPost(post, true);
+  const replies = el("div", { class: "replies" }, ...detail.replies.map((reply) => renderPost(reply)));
+  // Only the new card and the post's action row: drawing the page again would
+  // blink every picture on it.
+  const form = replyForm(post, (reply) => {
+    detail.replies.push(reply);
+    post.replies += 1;
+    const card = renderPost(reply);
+    replies.append(card);
+    focus.querySelector(".acts").replaceWith(renderPost(post, true).querySelector(".acts"));
+    reveal(card);
+  });
   pv.replaceChildren(
     ...[
       el("div", { class: "detail-bar" }, back, views),
-      renderPost(post, true),
-      commentForm(post),
-      commentList(detail.comments),
+      detail.above.length
+        ? thread([...detail.above.map((above) => ({ post: above, block: renderPost(above) })), { post, block: focus }])
+        : focus,
+      form,
+      replies,
     ].filter(Boolean),
   );
   pv.hidden = false;
 }
 
+/**
+ * Scrolls the post page just far enough to show everything from the top of
+ * `first` to the bottom of `last`, or from the top of `first` when that is
+ * more than fits: a reply opened deep in a thread shows itself and its reply
+ * box, under as much of the thread as fits. The page's bottom pad is what the
+ * footer, or on a phone the reply box, lies over (social.css), and a bar held
+ * along its top covers that much of it.
+ */
+function reveal(first, last = first) {
+  const box = pv.getBoundingClientRect();
+  const head = pv.querySelector(":scope > .detail-bar");
+  const top = head && getComputedStyle(head).position === "sticky" ? head.getBoundingClientRect().bottom : box.top;
+  const bottom = box.bottom - parseFloat(getComputedStyle(pv).paddingBottom);
+  const to = last.getBoundingClientRect().bottom;
+  if (to <= bottom) return;
+  pv.scrollTop += Math.min(first.getBoundingClientRect().top - top, to - bottom);
+}
+
 async function renderPostPage(id) {
   detail = await send("/api/social/open", { post: id });
   paintDetail();
+  // A post opened from another post's page starts at its own top, then shows itself.
+  pv.scrollTop = 0;
+  const focus = pv.querySelector(`[id="p-${detail.post.id}"]`);
+  const form = pv.querySelector(":scope > .reply");
+  reveal(focus, form && getComputedStyle(form).position !== "fixed" ? form : focus);
 }
 
 function closePost() {
@@ -739,6 +852,35 @@ function closePost() {
 /** The timeline is up in #m, so a post can be laid over it, or taken off it again. */
 const timelineUp = () => !!main.querySelector(":scope > .feed");
 
+/*
+ * A post's page. On a phone its reply box takes the tabs' place along the
+ * bottom (social.css body.detail). The keyboard does not shrink the page:
+ * iOS pans the view up over it, and the header would go off the top. While
+ * it is up, the page is fitted to what the keyboard leaves and moved to where
+ * the view went (body.kb), as Messenger's is (client/chat), so the box sits
+ * on the keyboard. Measured against the layout's own height, which the
+ * keyboard leaves alone.
+ */
+const view = window.visualViewport;
+function fitKeyboard() {
+  if (!document.body.classList.contains("detail")) return;
+  const root = document.documentElement;
+  const up = !!view && root.clientHeight - view.height > 120;
+  document.body.classList.toggle("kb", up);
+  if (up) {
+    root.style.setProperty("--vvh", `${view.height}px`);
+    root.style.setProperty("--vvt", `${view.offsetTop}px`);
+  }
+}
+view?.addEventListener("resize", fitKeyboard);
+view?.addEventListener("scroll", fitKeyboard);
+
+function setDetail(on) {
+  // Messenger fits the keyboard itself; only a post's page takes its own fit away.
+  if (!on && document.body.classList.contains("detail")) document.body.classList.remove("kb");
+  document.body.classList.toggle("detail", on);
+}
+
 /**
  * A post opened from the timeline goes over it, and Back takes it off again.
  * The timeline is not redrawn either way, so it is just as it was left:
@@ -748,10 +890,15 @@ const timelineUp = () => !!main.querySelector(":scope > .feed");
 async function showOver(here) {
   playing?.pause();
   playing = null;
+  setDetail(here.page === "post");
   if (here.page === "timeline") {
-    // Its card catches up with whatever was done on the post: a comment, a save.
-    const acts = detail && main.querySelector(`[id="p-${detail.post.id}"] .acts`);
-    if (acts) acts.replaceWith(renderPost(detail.post).querySelector(".acts"));
+    // Its cards catch up with whatever was done on the post: a reply, a save.
+    // There can be several: its own, and each one above a reply to it.
+    if (detail) {
+      for (const acts of main.querySelectorAll(`[data-id="${detail.post.id}"] > .post-row .acts`)) {
+        acts.replaceWith(renderPost(detail.post).querySelector(".acts"));
+      }
+    }
     detail = null;
     closePost();
   } else {
@@ -774,16 +921,21 @@ async function showOver(here) {
  * its place. A press with a modifier keeps the browser's meaning: a new tab.
  */
 const POST_PATH = /^\/social\/p\/[A-Za-z0-9_-]{1,32}\/?$/;
-main.addEventListener("click", (e) => {
+function openPost(e) {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   const link = e.target instanceof Element ? e.target.closest("a[href]") : null;
-  if (!link || !timelineUp()) return;
+  if (!link) return;
   const url = new URL(link.href);
   if (url.origin !== location.origin || !POST_PATH.test(url.pathname)) return;
   e.preventDefault();
+  // The open post's own reply count goes to its reply box.
+  if (url.pathname === location.pathname) return pv.querySelector(".reply textarea")?.focus();
   history.pushState({ over: true }, "", url.pathname);
   show();
-});
+}
+main.addEventListener("click", (e) => timelineUp() && openPost(e));
+// A post in a post's page (the thread above it, a reply under it) opens in its place, and Back comes back.
+pv.addEventListener("click", openPost);
 
 /**
  * The composer, its own bundle (client/compose). show() asks for it beside the
@@ -859,8 +1011,8 @@ async function loadMore(gen) {
     );
     if (gen !== feedGen) return;
     sentinel.replaceChildren();
-    const seen = new Set([...main.querySelectorAll("article.post")].map((node) => node.id));
-    for (const post of data.posts) if (!seen.has(`p-${post.id}`)) sentinel.before(renderPost(post));
+    const seen = new Set([...main.querySelectorAll("article.post[id]")].map((node) => node.id));
+    for (const post of data.posts) if (!seen.has(`p-${post.id}`)) sentinel.before(entry(post));
     feedNext = data.next || null;
     if (!feedNext) sentinel.remove();
     armMore(gen);
@@ -944,7 +1096,7 @@ function paintFeed(feed, data, gen, error) {
   if (gen !== feedGen) return;
   feedNext = data.next || null;
   feed.removeAttribute("aria-busy");
-  const cards = data.posts.map((post) => renderPost(post));
+  const cards = data.posts.map(entry);
   // The first page's ad, after the second post.
   if (data.ad) cards.splice(2, 0, adPost(data.ad));
   feed.replaceChildren(
@@ -1000,7 +1152,7 @@ function renderProfile(data) {
   const user = data.user;
   renderSide(user);
   const posts = user.posts.length
-    ? user.posts.map((p) => renderPost(p))
+    ? user.posts.map(entry)
     : [el("p", { class: "muted", text: "No posts yet." })];
   main.replaceChildren(...posts);
 }
@@ -1076,6 +1228,7 @@ async function show() {
   document.body.classList.toggle("tl", here.page === "timeline" || here.page === "post");
   document.body.classList.toggle("ads", here.page === "ads");
   document.body.classList.toggle("newpost", here.page === "new");
+  setDetail(here.page === "post");
   // The loading bar along the top while the page loads, not a placeholder in it.
   main.replaceChildren();
   closePost();

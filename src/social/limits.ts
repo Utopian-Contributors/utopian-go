@@ -2,9 +2,9 @@
  * The bounds the product actually states, in one place so a route and a check
  * cannot drift apart.
  *
- * Posts are one line on purpose. A comment and a bio share the same ceiling
- * because nothing in the UI is a composition surface — a longer field would
- * only be room the page does not have.
+ * Posts are one line on purpose. A post and a reply share one ceiling, since a
+ * reply is a post of its own; a timeline shows the first 256 characters of
+ * either and folds the rest behind See more (FOLD in client/social/main.js).
  */
 
 export const SOCIAL_BYTES = 14 * 1024;
@@ -15,12 +15,10 @@ export const TINY_BYTES = 2 * 1024;
 
 export const POST_EVERY_MS = 10 * 60 * 1000;
 
-/** A comment. */
-export const MAX_TEXT = 160;
-/** The words on a post. */
-export const MAX_POST = 256;
-/** A post takes this many comments, and the post page shows all of them. */
-export const MAX_COMMENTS = 100;
+/** The words on a post, or on a reply. */
+export const MAX_POST = 4000;
+/** A post takes this many replies, and the post page shows all of them. */
+export const MAX_REPLIES = 100;
 /** Notifications kept per person; older ones are dropped as new ones arrive, and the page shows all of them. */
 export const MAX_NOTES_KEEP = 100;
 export const MAX_BIO = 160;
@@ -129,8 +127,8 @@ export function shortText(
 }
 
 /**
- * The words on a post. Empty is allowed: a picture can be the whole post.
- * Over the ceiling is still refused.
+ * The words on a post or a reply. Empty is allowed: a picture can be the
+ * whole post. Over the ceiling is still refused.
  */
 export function postText(input: unknown): { ok: true; text: string } | { ok: false; error: string } {
   if (typeof input !== "string") return { ok: false, error: "Write something." };

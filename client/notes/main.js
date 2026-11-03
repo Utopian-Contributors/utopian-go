@@ -1,5 +1,5 @@
 /**
- * Notifications: comments on your posts and re-posts of them.
+ * Notifications: replies to your posts and re-posts of them.
  *
  * Its own bundle, fetched by social.js on /social/notifications only, beside
  * the notes it shows. Handed social.js's helpers so it carries no copies.
@@ -33,7 +33,7 @@ function mount(data, { main, send, face, useSide }) {
                 "div",
                 { class: "friend-main" },
                 el("b", { text: note.from }),
-                note.kind === "repost" ? " re-posted your post" : " commented on your post",
+                note.kind === "repost" ? " re-posted your post" : " replied to your post",
                 el("time", { datetime: new Date(note.at).toISOString(), text: when.format(note.at) }),
               ),
             ),

@@ -28,7 +28,7 @@ import {
   type Memo,
   type User,
   addChatKey,
-  addComment,
+  addReply,
   addFriend,
   adTopic,
   adsBy,
@@ -101,7 +101,7 @@ import {
   MAX_BIO,
   MAX_LOC,
   MAX_PHOTOS,
-  MAX_TEXT,
+  MAX_POST,
   PHOTO_BYTES,
   PHOTO_EDGE,
   PHOTO_SMALL_BYTES,
@@ -642,9 +642,12 @@ socialRouter.get(
   }),
 );
 
+/** A post's words in UTF-8 at their longest: three bytes for each UTF-16 unit. */
+const MAX_TEXT_BYTES = MAX_POST * 3;
+
 const postRaw = express.raw({
   type: "application/octet-stream",
-  limit: MAX_PHOTOS * (PHOTO_BYTES + PHOTO_SMALL_BYTES) + AUDIO_BYTES + 2048,
+  limit: MAX_PHOTOS * (PHOTO_BYTES + PHOTO_SMALL_BYTES) + AUDIO_BYTES + MAX_TEXT_BYTES + 1024,
 });
 
 /** A memo as it arrives, before its bytes and numbers are judged. */
@@ -665,7 +668,7 @@ type MemoIn = { bytes: Buffer; ms: number; wave: string };
 function readPackedPost(buf: Buffer): { text: string; photos: { full: Buffer; small: Buffer }[]; memo: MemoIn | null } {
   if (buf.length < 3) throw new SocialError(400, "Malformed request.");
   const textLen = buf.readUInt16BE(0);
-  if (textLen > 1024 || 2 + textLen >= buf.length) throw new SocialError(400, "Malformed request.");
+  if (textLen > MAX_TEXT_BYTES || 2 + textLen >= buf.length) throw new SocialError(400, "Malformed request.");
   const text = buf.subarray(2, 2 + textLen).toString("utf8");
   let at = 2 + textLen;
   const count = buf[at++];
@@ -773,8 +776,9 @@ socialRouter.post(
   }),
 );
 
+/** A reply is words only, as long as a post's, with the post's $TICKER cards. */
 socialRouter.post(
-  "/comment",
+  "/reply",
   requireAuth,
   writeLimit,
   readJson,
@@ -782,10 +786,11 @@ socialRouter.post(
     assertSameOrigin(req);
     const me = requireUser(res);
     const postId = typeof req.body?.post === "string" ? req.body.post : "";
-    const text = shortText(req.body?.text, MAX_TEXT);
+    const text = postText(req.body?.text);
     if (!text.ok) throw new SocialError(400, text.error);
-    const comment = await addComment(me.name, me.avatarRev, postId, text.text, Date.now());
-    res.json({ comment });
+    if (!text.text) throw new SocialError(400, "Write something.");
+    const reply = await addReply(me.name, me.avatarRev, postId, text.text, Date.now(), calloutsIn(text.text));
+    res.json({ reply });
   }),
 );
 

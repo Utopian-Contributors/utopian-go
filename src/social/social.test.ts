@@ -25,9 +25,9 @@ import {
 import { checkSwapInstructions, parseMessage, reviewedFloor, signTransaction, simulationError, slippageFor } from "./swap";
 import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMessage, onCurve } from "./send";
 import { scrub } from "./guard";
-import { AUDIO_BYTES, MAX_AUDIO_MS, SOCIAL_BYTES, TINY_BYTES, adKeyword, adText, adUrl, postWait, username, waitText } from "./limits";
+import { AUDIO_BYTES, MAX_AUDIO_MS, MAX_POST, SOCIAL_BYTES, TINY_BYTES, adKeyword, adText, adUrl, postWait, username, waitText } from "./limits";
 import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
-import { type AdCreative, type AdOrder, TIMELINE_PAGE, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, payOrder, postPayment, resetSocial, saveAd } from "./db";
+import { type AdCreative, type AdOrder, SCHEMA, TIMELINE_PAGE, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, payOrder, postPayment, resetSocial, saveAd } from "./db";
 import { MAX_CALLOUTS, calloutsIn, isTicker, resolveTickers } from "./callouts";
 import { apiRouter } from "../routes/api";
 import { adFor, adMarkup, flushAds, reloadAds } from "./ads";
@@ -816,11 +816,11 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     assert.equal(((await call("GET", "/api/social/me")).json?.me as { nextPost: number }).nextPost, first.nextPost);
 
-    const selfComment = await call("POST", "/api/social/comment", { post: postId, text: "myself" });
-    assert.equal(selfComment.status, 200);
+    const selfReply = await call("POST", "/api/social/reply", { post: postId, text: "myself" });
+    assert.equal(selfReply.status, 200);
 
     const own = await call("GET", "/api/social/notes");
-    assert.equal((own.json?.notes as unknown[]).length, 0, "commenting on your own post notifies nobody");
+    assert.equal((own.json?.notes as unknown[]).length, 0, "replying to your own post notifies nobody");
 
     const beforeLogout = jar;
     await call("POST", "/api/social/logout", {});
@@ -901,9 +901,9 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(same.status, 304);
     assert.equal(await same.text(), "");
 
-    const comment = await call("POST", "/api/social/comment", { post: postId, text: "nice @ada" });
-    assert.equal(comment.status, 200);
-    // The comment count moved, so the same snapshot is out of date.
+    const reply = await call("POST", "/api/social/reply", { post: postId, text: "nice @ada" });
+    assert.equal(reply.status, 200);
+    // The reply count moved, and the reply is on the timeline, so the same snapshot is out of date.
     assert.equal((await check(snapshot)).status, 200);
     const lookup = await call("GET", "/api/social/users?q=ad");
     assert.equal(lookup.status, 200);
@@ -949,7 +949,8 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const notes = noted.json?.notes as { from: string; post: string; avatarRev: number; at: number; seen: boolean }[];
     assert.equal(notes.length, 1);
     assert.equal(notes[0].from, "ben");
-    assert.equal(notes[0].post, postId);
+    // The note opens the reply, which its page draws under ada's post.
+    assert.equal(notes[0].post, (reply.json?.reply as { id: string }).id);
     assert.equal(typeof notes[0].avatarRev, "number");
     assert.equal(typeof notes[0].at, "number");
     assert.equal(notes[0].seen, false);
@@ -1256,7 +1257,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     );
     const noted2 = await call("GET", "/api/social/notes");
     const kinds = (noted2.json?.notes as { kind: string; from: string }[]).map((note) => note.kind).sort();
-    assert.deepEqual(kinds, ["comment", "repost"]);
+    assert.deepEqual(kinds, ["reply", "repost"]);
     const noteSeen = await call("POST", "/api/social/notes/seen", {});
     assert.equal(noteSeen.status, 200);
     assert.equal((noteSeen.json?.me as { unseen: number }).unseen, 0);
@@ -1267,11 +1268,11 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const opened = await call("POST", "/api/social/open", { post: postId });
     assert.equal(opened.status, 200, opened.text);
     assert.equal((opened.json?.me as { name: string }).name, "ada");
-    assert.equal((opened.json?.post as { views: number; comments: number }).views, 1);
-    assert.equal((opened.json?.post as { comments: number }).comments, 2);
-    const openedComments = opened.json?.comments as { avatarRev: number }[];
-    assert.equal(openedComments.length, 2);
-    assert.equal(typeof openedComments[0].avatarRev, "number");
+    assert.equal((opened.json?.post as { views: number }).views, 1);
+    assert.equal((opened.json?.post as { replies: number }).replies, 2);
+    const openedReplies = opened.json?.replies as { avatarRev: number; text: string }[];
+    assert.deepEqual(openedReplies.map((r) => r.text), ["myself", "nice @ada"], "oldest first");
+    assert.equal(typeof openedReplies[0].avatarRev, "number");
     const openedAgain = await call("POST", "/api/social/open", { post: postId });
     assert.equal((openedAgain.json?.post as { views: number }).views, 2);
 
@@ -1299,7 +1300,8 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
       `/api/social/timeline?before=${cursor.at}&id=${encodeURIComponent(cursor.id)}`,
     );
     const secondPosts = secondPage.json?.posts as { id: string }[];
-    assert.equal(secondPosts.length, 3);
+    // The three there were, and the two replies, which are on the timeline too.
+    assert.equal(secondPosts.length, 5);
     assert.equal(secondPage.json?.next, null);
     const seenIds = new Set(firstPosts.map((post) => post.id));
     for (const post of secondPosts) assert.equal(seenIds.has(post.id), false);
@@ -1908,6 +1910,141 @@ test("the timeline filters in the query, and pages through what is left", async 
     assert.deepEqual((await ada("GET", "/api/social/rail")).json.assets, { count: 0, tokens: [] });
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test("a reply is a post on the timeline, under what it answers and the thread's first post", async () => {
+  await useTestDatabase();
+  await ensureSchema();
+  await resetSocial();
+  const app = express();
+  app.set("trust proxy", true);
+  app.use("/api/social", socialRouter);
+  const server: Server = await new Promise((resolve) => {
+    const listening = createServer(app);
+    listening.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const base = `http://127.0.0.1:${address.port}`;
+  let ip = 0;
+
+  async function join(name: string) {
+    let jar = "";
+    const call = async (method: string, urlPath: string, body?: Record<string, unknown>) => {
+      const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": `10.4.0.${++ip % 250}` };
+      if (jar) headers.Cookie = jar;
+      if (body) headers["Content-Type"] = "application/json";
+      const res = await fetch(base + urlPath, { method, headers, body: body && JSON.stringify(body) });
+      for (const cookie of res.headers.getSetCookie?.() ?? []) jar = cookie.split(";")[0];
+      const text = await res.text();
+      return { status: res.status, json: JSON.parse(text) as Record<string, any>, text };
+    };
+    const joined = await call("POST", "/api/social/register", { username: name, password: "password1", terms: true });
+    assert.equal(joined.status, 200, joined.text);
+    await addPasskey(call, joined.json?.passkeySetup, base);
+    return call;
+  }
+  type Card = { id: string; text: string; replies: number; replyTo: string | null; root: string | null; repost: string | null; context?: Card[] };
+  const ids = (cards: Card[] | undefined) => (cards ?? []).map((card) => card.text);
+
+  try {
+    const amy = await join("amy");
+    const bob = await join("bob");
+    const top = (await amy("POST", "/api/social/post", { text: "top" })).json.post as Card;
+    const reply = async (call: typeof amy, to: string, text: string) => {
+      // A millisecond apart at least, so the timeline's order is the order they were made in.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const made = await call("POST", "/api/social/reply", { post: to, text });
+      assert.equal(made.status, 200, made.text);
+      return made.json.reply as Card;
+    };
+    // A thread four deep, and replies wait for nothing: no ten minutes between them.
+    const one = await reply(bob, top.id, "one");
+    const two = await reply(amy, one.id, "two");
+    const three = await reply(bob, two.id, "three");
+    assert.equal(one.replyTo, top.id);
+    assert.equal(three.replyTo, two.id);
+    assert.equal(three.root, top.id, "every reply knows the post its thread started from");
+
+    // Each reply is on the timeline under what it answers, and under the
+    // first post once it is further down than that.
+    const feed = (await amy("GET", "/api/social/timeline")).json.posts as Card[];
+    assert.deepEqual(ids(feed), ["three", "two", "one", "top"]);
+    const byText = (text: string) => feed.find((card) => card.text === text);
+    assert.deepEqual(ids(byText("one")?.context), ["top"]);
+    assert.deepEqual(ids(byText("two")?.context), ["top", "one"]);
+    assert.deepEqual(ids(byText("three")?.context), ["top", "two"], "the first post, then the one it answers");
+    assert.equal(byText("three")?.context?.[1].replyTo, one.id, "which is how the page knows to break the line");
+    assert.equal(byText("top")?.context, undefined);
+    assert.equal(byText("top")?.replies, 1, "a post counts its own replies, not its thread's");
+    // So is a profile.
+    const profile = (await amy("GET", "/api/social/u/bob")).json.user.posts as Card[];
+    assert.deepEqual(ids(profile.find((card) => card.text === "three")?.context), ["top", "two"]);
+
+    // A reply's page: the thread above it, first post first, then its own replies.
+    const opened = (await amy("POST", "/api/social/open", { post: two.id })).json;
+    assert.deepEqual(ids(opened.above), ["top", "one"]);
+    assert.deepEqual(ids(opened.replies), ["three"]);
+    assert.deepEqual((await amy("POST", "/api/social/open", { post: top.id })).json.above, []);
+
+    // A reply to a re-post answers the original, and the re-post's page shows the original's.
+    assert.equal((await bob("POST", "/api/social/repost", { post: top.id })).status, 200);
+    const shared = ((await bob("GET", "/api/social/timeline")).json.posts as Card[]).find((card) => card.repost === top.id);
+    assert.ok(shared);
+    const viaRepost = await reply(amy, shared.id, "via the re-post");
+    assert.equal(viaRepost.replyTo, top.id);
+    const sharedPage = (await bob("POST", "/api/social/open", { post: shared.id })).json;
+    assert.deepEqual(ids(sharedPage.replies), ["one", "via the re-post"]);
+    assert.equal(sharedPage.post.replies, 2);
+
+    // Bob is told of the reply to his, and the note opens the reply.
+    const notes = (await bob("GET", "/api/social/notes")).json.notes as { kind: string; post: string; from: string }[];
+    assert.deepEqual(
+      notes.filter((note) => note.kind === "reply").map((note) => note.post),
+      [two.id],
+      "amy's reply to bob's; amy's own posts tell bob nothing",
+    );
+
+    // Words up to MAX_POST, on a post and a reply alike, and never empty on a reply.
+    const long = "a".repeat(MAX_POST);
+    assert.equal((await amy("POST", "/api/social/reply", { post: top.id, text: long })).status, 200);
+    assert.equal((await amy("POST", "/api/social/reply", { post: top.id, text: `${long}a` })).status, 400);
+    assert.equal((await amy("POST", "/api/social/reply", { post: top.id, text: "   " })).status, 400);
+    assert.equal((await amy("POST", "/api/social/reply", { post: "nope", text: "hi" })).status, 404);
+    const longPost = await bob("POST", "/api/social/post", { text: "é".repeat(MAX_POST) });
+    assert.equal(longPost.status, 200, longPost.text);
+    assert.equal(longPost.json.post.text.length, MAX_POST);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test("comments from before replies become replies, once", async () => {
+  await useTestDatabase();
+  await ensureSchema();
+  await resetSocial();
+  const rows = new Client({ connectionString: process.env.DATABASE_URL });
+  await rows.connect();
+  try {
+    await rows.query(
+      "INSERT INTO users (name, uid, pass_salt, pass_hash, phrase_salt, phrase_iv, phrase_tag, phrase_ct, address, created) VALUES ('old', 'u-old', '', '', '', '', '', '', 'addr-old', 0)",
+    );
+    await rows.query("INSERT INTO posts (id, by_name, text, at) VALUES ('p1', 'old', 'post', 1), ('p2', 'old', 'post', 2)");
+    await rows.query("INSERT INTO posts (id, by_name, text, at, repost) VALUES ('p3', 'old', 'post', 3, 'p1')");
+    await rows.query("CREATE TABLE comments (id text PRIMARY KEY, post text NOT NULL, by_name text NOT NULL, text text NOT NULL, at bigint NOT NULL)");
+    await rows.query("INSERT INTO comments VALUES ('c1', 'p1', 'old', 'first', 10), ('c2', 'p3', 'old', 'on the re-post', 11)");
+    // ensureSchema runs once a process; this is the next boot, and the one after.
+    await rows.query(SCHEMA);
+    await rows.query(SCHEMA);
+    const replies = await rows.query("SELECT id, text, reply_to, root FROM posts WHERE reply_to IS NOT NULL ORDER BY at");
+    assert.deepEqual(replies.rows, [
+      { id: "c1", text: "first", reply_to: "p1", root: "p1" },
+      { id: "c2", text: "on the re-post", reply_to: "p1", root: "p1" },
+    ]);
+    assert.equal((await rows.query("SELECT to_regclass('comments') AS t")).rows[0].t, null, "the old table is gone");
+  } finally {
+    await rows.end();
   }
 });
 

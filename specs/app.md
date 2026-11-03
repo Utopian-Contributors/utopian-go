@@ -109,6 +109,21 @@ already filtered, and each combination is a range on its own index: `posts_at_id
 partial copies without photos, without audio, or without both; `posts_by_at_id` per friend;
 `saves_by_post` for Saved.
 
+**Replies.** A reply is a post of its own (`reply_to`, and `root`, the post its thread
+started from), so it is on the timeline, a profile, Saved and the filters like any other.
+It is words only, without the ten-minute wait, and a post takes 100 of them. A reply to a
+re-post answers the original. On a timeline or a profile a reply is drawn under the post it
+answers, and under the thread's first post as well when it is further down than the first
+reply. A line runs from each face down to the next, broken where posts between two were left
+out. A post's page shows the thread above it (the nearest 30, after the first post), the post,
+the reply box, then its replies, oldest first, and opens scrolled to show the post and the box.
+On a phone the bottom tabs go on a post's page: the reply box takes their place along the
+bottom of the screen, rides up on the keyboard, and Back stays along the top.
+
+**See more.** Posts and replies hold 4,000 characters. Past 256 a card shows the words up to
+the last space before that, then **… See more**, which opens the rest in place. A post open
+on its own page is shown whole.
+
 ### API / Interface
 
 #### Pages
@@ -129,10 +144,10 @@ GET /icon/<mint>              token thumbnail, image/webp, 64 px
 GET /social                   timeline
 GET /social/saved             the timeline with Saved on (Saved was a page before it was a filter)
 GET /social/friends           friends, and search for people
-GET /social/notifications     comments on your posts and re-posts of them: New, then Earlier
+GET /social/notifications     replies to your posts and re-posts of them: New, then Earlier
 GET /social/u/<name>          profile: card left, posts right (stacked on phones)
 GET /social/edit              edit profile: photo, bio, location, passkey, recovery phrase
-GET /social/p/<id>            one post with its comments
+GET /social/p/<id>            one post: the thread above it, the post whole, its reply box, its replies
 GET /social/c                 Messenger: chats left, "pick a chat" right
 GET /social/c/<handle>        Messenger with that conversation open
 GET /social/ads               your ads, or the editor when you have none
@@ -268,11 +283,13 @@ Every write requires a matching `Origin`. Errors have the form `{error: string}`
 type Me = { name: string; address: string; bio: string; loc: string;
             avatarRev: number; passkey: boolean; wait: number; unseen: number; unread: number };
 type Note = { id: string; from: string; avatarRev: number; post: string; at: number;
-             kind: "comment" | "repost"; seen: boolean };
+             kind: "reply" | "repost"; seen: boolean };   // "comment" on notes from before replies
 type Card = { id: string; by: string; text: string; at: number; views: number;
-              comments: number; saved: boolean; reposted: boolean; repost: string | null;
+              replies: number; saved: boolean; reposted: boolean; repost: string | null;
+              replyTo: string | null; root: string | null; context?: Card[];
               repostBy: string | null; originalRev: number; avatarRev: number; photos: number;
               audio: number; wave: string };   // audio: memo length in ms, 0 without one
+              // context: on a timeline or a profile, what a reply is drawn under
 
 POST /api/social/register      {username, password}          → {name, address}
 POST /api/social/login         {username, password}          → {name} | {passkey: {challenge, id}}
@@ -287,9 +304,9 @@ GET  /api/social/timeline?before&id&friends=1&saved=1&images=0&audio=0
                                       friends and saved are ignored signed out
 GET  /api/social/rail               → {people: {name, bio, avatarRev, posts}[], assets: RailAssets}
 GET  /api/social/u/<name>           → {me, user: {name, address, bio, loc, avatarRev, posts: Card[]}}
-POST /api/social/open    {post}     → {me, post: Card, comments}
+POST /api/social/open    {post}     → {me, post: Card, above: Card[], replies: Card[]}
 POST /api/social/post    {text} | application/octet-stream (text + up to 4 photos + a voice memo) → {post: Card}
-POST /api/social/comment {post, text} → {comment}
+POST /api/social/reply   {post, text} → {reply: Card}
 POST /api/social/plus    {post}     → {saved}
 POST /api/social/repost  {post}     → {ok}
 GET  /api/social/notes              → {me, notes: Note[]}   every note kept, newest first
@@ -331,7 +348,8 @@ fetching the file; the audio loads only when play is pressed. Only `/social` pag
 allowed the microphone (`Permissions-Policy`), and `media-src blob:` lets the composer
 play a memo back before it is posted.
 
-**Notifications.** A comment on your post, or a re-post of it, by anyone but you is a note.
+**Notifications.** A reply to your post, or a re-post of it, by anyone but you is a note.
+A reply's note opens the reply, under what it answers.
 The newest 100 are kept. The Notifications tab carries the count not yet seen (`Me.unseen`)
 on every page, and its page lists every kept note, newest first: the ones not seen before
 under **New**, the rest under **Earlier**. Each row shows the sender's timeline picture, what
@@ -515,8 +533,8 @@ The Postgres tables are defined once, in `SCHEMA` in `src/social/db.ts`, and now
 users    name PK, uid, pass_salt, pass_hash, phrase_salt/iv/tag/ct, address UNIQUE, bio, loc,
          avatar_rev, last_post, created, passkey_id UNIQUE, passkey_cose, passkey_alg,
          passkey_count, epoch, key_iv/tag/ct
-posts    id PK, by_name, text, at, views, photos, audio, wave, repost → posts.id  (UNIQUE repost, by_name)
-comments id PK, post, by_name, text, at
+posts    id PK, by_name, text, at, views, photos, audio, wave, repost → posts.id  (UNIQUE repost, by_name),
+         reply_to → posts.id, root → posts.id            (a reply; comments became these)
 notes    id PK, to_name, from_name, post, at, seen, kind            (newest 100 per person)
 saves    post, by_name, at                                          (PK post, by_name)
 friends  owner, friend                                              (PK owner, friend)
@@ -568,12 +586,12 @@ The limits live in `src/social/limits.ts`:
 
 | What | Limit |
 |---|---|
-| Post | 256 characters, one line |
-| Comment, bio | 160 characters, one line |
+| Post, reply | 4,000 characters, one line; a card shows 256 before See more |
+| Bio | 160 characters, one line |
 | Location | 40 characters |
 | Photos per post | 4 |
 | Voice memo | 1 per post, 3 minutes, 640 KB |
-| Comments per post | 100 |
+| Replies per post | 100 |
 | Friends | 200 |
 | Time between posts | 10 minutes |
 | Message | 500 characters, 4 photos, 1 voice memo |
@@ -771,7 +789,7 @@ already exists for that action.
 **User input**
 
 Everything a person types, uploads or puts in a URL is untrusted. That covers posts,
-comments, chat messages, bio, location, usernames, search queries, `?q=`, `?buy=` and
+replies, chat messages, bio, location, usernames, search queries, `?q=`, `?buy=` and
 `?lang=`. It is also true of what comes back from Brave, Helius and Jupiter. None of it is
 ever executed or parsed as markup in the browser.
 
