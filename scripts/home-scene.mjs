@@ -14,8 +14,8 @@
  * Run by hand (`npm run build:scene`), not on every client build — the same
  * arrangement as og-image.mjs and app-icons.mjs. The output is checked in;
  * `copyStatic` in build-client.mjs ships it to public/. It prints the
- * measurements app.css positions the frames by; when a frame changes, those
- * numbers change with it (see body.home::before in app.css).
+ * measurements forest.css positions the frames by; when a frame changes, those
+ * numbers change with it (see body.home::before in client/forest.css).
  *
  * What it fixes on the way:
  *
@@ -312,7 +312,7 @@ async function save(frame, name) {
   console.log(`${name.padEnd(24)} ${w}×${h}  ${(buf.length / 1024).toFixed(1)} KB`);
 }
 
-/** A length in the frame's pixels as app.css spells it: a share of its height, in vh. */
+/** A length in the frame's pixels as forest.css spells it: a share of its height, in vh. */
 const vh = (px, H) => `${((px / H) * 100).toFixed(2)}vh`;
 
 /**

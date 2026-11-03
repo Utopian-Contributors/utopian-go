@@ -1,0 +1,98 @@
+/*
+ * The forest, on the home page and the login page (body.au, client/auth.html):
+ * built into each one's sheet after its own (build-client.mjs), so the two
+ * draw the one scene the same way. Search's other pages and Social never
+ * carry it.
+ */
+
+/*
+ * The forest around the column.
+ *
+ * The page keeps its own background down a column in the middle and the
+ * rainforest is everything either side of it: a waterfall into the river on
+ * the left, the treehouse and the frog on the right. The frame comes with its
+ * column cut out (scripts/home-scene.mjs), and its leaves reach into the
+ * column's edge on their own.
+ *
+ * It is drawn at the window's height, so it is always the whole scene, canopy
+ * to river, and split down its middle into two fixed boxes, one a side, so the
+ * two halves can move apart. They do so only as far as they must: just enough
+ * that across the band the contents sit in — measured by the script, and in
+ * the frame's own units here, shares of its height in vh — the art stays out
+ * of a 616px column, the contents' 584px and 16px either side. Anywhere else
+ * the leaves still hang over it. On a window wide enough for the whole frame
+ * and that column, each half pins to its own edge of the window instead and
+ * the column only gets wider; on a narrower one, it is the outer edges of the
+ * scene that go.
+ *
+ *   --w        the frame's width
+ *   --split    where it is cut in two, its middle
+ *   --reach-l  the furthest the left art reaches into the column, in the band
+ *   --reach-r  the furthest the right art does, from the other side
+ *
+ * Behind everything the page draws, and never a target. Only the matching
+ * rule's file is fetched, so the page pays for one frame and not two. Desktop
+ * only: a phone has no room beside its column, so it gets no forest.
+ */
+@media (min-width: 901px) {
+  body.home,
+  body.au {
+    --w: 177.68vh;
+    --split: 88.84vh;
+    --reach-l: 63.44vh;
+    --reach-r: 116.47vh;
+    /* The frame's column, centred on the page's, and how far each half moves
+       out to make it 616px wide where it is narrower. */
+    --mid: calc((var(--reach-l) + var(--reach-r)) / 2);
+    --gap: max(0px, (616px - (var(--reach-r) - var(--reach-l))) / 2);
+    /* Where each half's frame starts: centred and moved out, or pinned to the
+       window's edge if that is further out still. */
+    --x-l: min(0px, 50vw - var(--mid) - var(--gap));
+    --x-r: max(50vw - var(--mid) + var(--gap), 100vw - var(--w));
+  }
+
+  body.home::before,
+  body.home::after,
+  body.au::before,
+  body.au::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    z-index: -1;
+    height: 100vh;
+    background: url("/home-light.webp") no-repeat;
+    background-size: auto 100%;
+    pointer-events: none;
+  }
+
+  body.home::before,
+  body.au::before {
+    left: 0;
+    width: calc(var(--x-l) + var(--split));
+    background-position: var(--x-l) top;
+  }
+
+  body.home::after,
+  body.au::after {
+    left: calc(var(--x-r) + var(--split));
+    right: 0;
+    background-position: calc(var(--split) * -1) top;
+  }
+}
+
+@media (min-width: 901px) and (prefers-color-scheme: dark) {
+  body.home,
+  body.au {
+    --w: 177.58vh;
+    --split: 88.74vh;
+    --reach-l: 63.97vh;
+    --reach-r: 116.05vh;
+  }
+
+  body.home::before,
+  body.home::after,
+  body.au::before,
+  body.au::after {
+    background-image: url("/home-dark.webp");
+  }
+}

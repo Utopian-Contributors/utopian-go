@@ -703,11 +703,12 @@ async function prunedCss(sheets, bundles, doc) {
 
 /**
  * The login page's sheet: base.css and header.css (the wordmark) around its
- * own, pruned to what the page writes. It has no header row and no account
- * control, so the rest of header.css, and acct.css, never match.
+ * own, then the home page's forest, pruned to what the page writes. It has no
+ * header row and no account control, so the rest of header.css, and acct.css,
+ * never match.
  */
 function buildAuthCss() {
-  return prunedCss(["base.css", "auth.css", "header.css"], ["auth.js"], "auth.html");
+  return prunedCss(["base.css", "auth.css", "header.css", "forest.css"], ["auth.js"], "auth.html");
 }
 
 async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, installHash) {
@@ -1053,7 +1054,7 @@ async function buildAssets() {
     esbuild.build(notesOpts),
     esbuild.build(editOpts),
     esbuild.build(authOpts),
-    buildCss("app.css", "ad.css", "chart.css"),
+    buildCss("app.css", "forest.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
   const [css, walletCss] = built.slice(-2);

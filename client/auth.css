@@ -1,7 +1,8 @@
 /*
  * The login page, /login and /register (client/auth.html) — its own sheet,
- * built as base.css + this + header.css and pruned to what the page writes
- * (build-client.mjs), then inlined so the page paints off the first flight.
+ * built as base.css + this + header.css + forest.css (the home page's forest,
+ * on a wide screen) and pruned to what the page writes (build-client.mjs),
+ * then inlined so the page paints off the first flight.
  *
  * The palette is app.css's, repeated as wallet.css repeats it: a handful of
  * custom properties, cheaper restated than fetched.
@@ -92,6 +93,13 @@ a:hover {
   display: flex;
   justify-content: center;
   margin-bottom: 32px;
+}
+
+/* On a wide screen the home page's forest stands either side, and the column is the form's alone. */
+@media (min-width: 901px) {
+  .au-w > .lg {
+    display: none;
+  }
 }
 
 @media (max-width: 620px) {
