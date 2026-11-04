@@ -1650,6 +1650,18 @@ a.back.chat-back { display: none; }
 }
 .msg.mine p a { color: inherit; text-decoration: underline; }
 
+/* After dark, the buttons' and wordmark's bioluminescent --buy, lit the same way. */
+@media (prefers-color-scheme: dark) {
+  .msg.mine p {
+    --bub: linear-gradient(#b4ffdc, #75ffbe 55%, #52e6a2);
+    --bub-edge: #1f8a5c;
+    border-color: var(--bub-edge);
+    background: var(--bub);
+    color: var(--buy-ink);
+    text-shadow: 0 1px 0 rgb(255 255 255 / 40%);
+  }
+}
+
 /* The gloss: a sheen over the top half, its foot curved like the card's. */
 .msg p::before {
   content: "";
@@ -1757,6 +1769,14 @@ a.back.chat-back { display: none; }
   color: #173a10;
 }
 .msg.mine .memo-go:not(:disabled) { background: #173a10; color: #c4e8ad; }
+@media (prefers-color-scheme: dark) {
+  .msg.mine .memo {
+    border-color: #1f8a5c;
+    background: linear-gradient(#b4ffdc, #75ffbe 55%, #52e6a2);
+    color: var(--buy-ink);
+  }
+  .msg.mine .memo-go:not(:disabled) { background: var(--buy-ink); color: var(--buy); }
+}
 .msg.mine .wave i { background: currentColor; }
 .msg.mine .memo-t { color: inherit; }
 /* A sealed memo while it is fetched and opened. */
