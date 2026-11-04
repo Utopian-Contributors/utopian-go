@@ -1854,6 +1854,9 @@ a.back.chat-back { display: none; }
   body.chat #m > * { margin-inline: 0; padding-inline: var(--gut); }
   body.chat.open #sd { display: none; }
   body.chat.open #m { display: flex; }
+  /* No rubber band in Messenger either: the chats, the conversation and the
+     message box stop dead at their ends, as the page around them does. */
+  body.chat :is(.pn, .msgs, .chat-compose textarea) { overscroll-behavior: none; }
   .msg { max-width: 85%; }
 
   .msgs {
