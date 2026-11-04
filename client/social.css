@@ -2222,6 +2222,19 @@ a.back.chat-back { display: none; }
     border-top: 1px solid var(--ln);
     border-bottom: 0;
     background: var(--bg);
+    /* Taps only: a drag that starts on the tabs has nothing to move. */
+    touch-action: none;
+  }
+
+  /*
+   * Pinned to the screen. iOS rubber-bands the document under a drag on
+   * anything that is not its own scroll box (the header, the tabs), whatever
+   * its overflow or overscroll-behavior; a fixed body gives it nothing to
+   * pull. The lists inside still scroll, each in its own box.
+   */
+  body.soc {
+    position: fixed;
+    inset: 0 0 auto;
   }
 
   /* The home-screen app runs to the bottom edge, the home indicator over it;
