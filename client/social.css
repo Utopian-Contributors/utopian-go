@@ -1591,16 +1591,6 @@ a.back.chat-back { display: none; }
   padding: 12px 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /*
-   * Canvas under the bubbles: a weave of faint warp and weft threads in the
-   * theme's ink, and a grain over it. No image to fetch; scrolls with the
-   * conversation.
-   */
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .1 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E"),
-    repeating-linear-gradient(0deg, rgba(var(--rgb), 0.022) 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(90deg, rgba(var(--rgb), 0.022) 0 1px, transparent 1px 3px);
-  background-attachment: local;
 }
 
 .msg {
@@ -1810,8 +1800,6 @@ a.back.chat-back { display: none; }
   body.chat #mn { grid-template-columns: var(--list) minmax(0, 1fr); }
   body.chat #sd { grid-column: 1; }
   body.chat #m { grid-column: 2; }
-  /* The canvas runs under #m's left pad too, and leaves the bubbles a margin on the right. */
-  body.chat #m > .msgs { margin-left: -20px; padding-inline: 20px 16px; }
 
   /* No rules between the columns; the same pad either side. */
   body.chat .pn {
@@ -1838,6 +1826,19 @@ a.back.chat-back { display: none; }
   body.chat.open #sd { display: none; }
   body.chat.open #m { display: flex; }
   .msg { max-width: 85%; }
+
+  .msgs {
+    /*
+     * Canvas under the bubbles, on phones only: faint warp and weft threads
+     * in the theme's ink, and a grain over it. No image to fetch; scrolls
+     * with the conversation.
+     */
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .1 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E"),
+      repeating-linear-gradient(0deg, rgba(var(--rgb), 0.022) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(90deg, rgba(var(--rgb), 0.022) 0 1px, transparent 1px 3px);
+    background-attachment: local;
+  }
 
   /*
    * One line for the conversation's head: Back at the left, the person's
