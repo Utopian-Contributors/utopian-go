@@ -1242,10 +1242,19 @@ body.soc { --feed: 72ch; }
  */
 body.soc {
   height: 100dvh;
+  /* app.css's 100vh floor is the toolbar-hidden height on iOS: taller than this box, so the page could still slide. */
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
+
+/*
+ * No rubber band on the page itself: a drag on the header or the tabs would
+ * otherwise pull the whole frame with it on iOS. Only the root's value counts,
+ * so it is set on <html>; the lists inside keep their own bounce.
+ */
+html:has(> body.soc) { overscroll-behavior: none; }
 
 body.soc .chrome { flex: none; }
 
