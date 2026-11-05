@@ -2,14 +2,15 @@
  * Pinball. One table drawn on a canvas, played with two buttons (or Z and /,
  * the arrow keys, Shift), and a leaderboard of each account's best game.
  *
- * The table is in its own units, W × H, and drawn scaled to fit. Its art that
- * never changes (the playfield, the rails, the slingshots) is painted once per
- * size into an offscreen canvas; each frame copies that and draws what moves
- * or lights over it. The physics runs in fixed substeps so a fast ball cannot
- * pass through a rail.
+ * The table is in its own units, W × H. Its art (art.js) is pixel art on a
+ * grid half that size: what never moves is painted once per colour scheme,
+ * and each frame copies it, draws what moves or lights over it, and scales
+ * the result up without smoothing. The physics runs in fixed substeps so a
+ * fast ball cannot pass through a rail.
  */
 import { noZoom } from "../js/device.js";
 import { onName, readName } from "../js/me.js";
+import { AH, AW, paintFrame, paintStill, palette } from "./art.js";
 
 const W = 400;
 const H = 720;
@@ -447,391 +448,52 @@ function litRing() {
 
 /* ---------- Drawing ---------- */
 
-/** The playfield's art at the current size, painted once per resize. */
+/** Each frame is drawn at art-pixel size here, then scaled up without smoothing. */
+const buf = document.createElement("canvas");
+buf.width = AW;
+buf.height = AH;
+const bctx = /** @type {CanvasRenderingContext2D} */ (buf.getContext("2d"));
 let still = document.createElement("canvas");
-let scale = 1;
-let dpr = 1;
+let pal = palette();
 
-/** The shape of the playfield, under the glass. */
-function fieldPath(g) {
-  g.beginPath();
-  g.moveTo(16, H);
-  g.lineTo(16, 196);
-  g.arc(200, 196, 184, Math.PI, Math.PI * 2);
-  g.lineTo(384, H);
-  g.closePath();
-}
+/** What the art reads off the table and the game. */
+const scene = { ball, flippers, BUMPERS, ROLLS, TARGETS, SLINGS, SAUCER, RING, game, rails, FLIP_LEN, LANE_X, PLUNGE_X, PLUNGER_Y, showBall: true };
 
-/** A chrome rail along a line of points. */
-function rail(g, pts, width = 6) {
-  g.lineCap = "round";
-  g.lineJoin = "round";
-  const path = () => {
-    g.beginPath();
-    pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
-  };
-  path();
-  g.strokeStyle = "rgba(0,0,0,0.55)";
-  g.lineWidth = width + 4;
-  g.save();
-  g.translate(2, 3);
-  g.stroke();
-  g.restore();
-  g.strokeStyle = "#2d3a31";
-  g.lineWidth = width + 2;
-  g.stroke();
-  g.strokeStyle = "#a9b8ad";
-  g.lineWidth = width;
-  g.stroke();
-  g.strokeStyle = "rgba(255,255,255,0.75)";
-  g.lineWidth = width / 3;
-  g.save();
-  g.translate(-0.8, -0.8);
-  g.stroke();
-  g.restore();
-}
-
-/** A small pseudo-random sequence, so the stars stand where they stood. */
-function seeded(seed) {
-  return () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-}
-
-/** @param {CanvasRenderingContext2D} g */
-function paintStill(g) {
-  // The cabinet's wood around the dome.
-  g.fillStyle = "#0b140e";
-  g.fillRect(0, 0, W, H);
-
-  g.save();
-  fieldPath(g);
-  g.clip();
-  const field = g.createRadialGradient(184, 380, 20, 184, 380, 480);
-  field.addColorStop(0, "#176b2c");
-  field.addColorStop(0.45, "#0b3a19");
-  field.addColorStop(1, "#03140a");
-  g.fillStyle = field;
-  g.fillRect(0, 0, W, H);
-
-  // Nebulae.
-  for (const [x, y, r, c] of [
-    [70, 150, 120, "rgba(0,170,150,0.22)"],
-    [320, 330, 140, "rgba(60,195,22,0.2)"],
-    [90, 470, 110, "rgba(150,255,90,0.12)"],
-    [300, 90, 90, "rgba(200,255,160,0.12)"],
-  ]) {
-    const n = g.createRadialGradient(x, y, 0, x, y, r);
-    n.addColorStop(0, c);
-    n.addColorStop(1, "rgba(0,0,0,0)");
-    g.fillStyle = n;
-    g.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-
-  // Stars.
-  const rnd = seeded(7);
-  for (let i = 0; i < 160; i++) {
-    const x = rnd() * W;
-    const y = rnd() * H;
-    const s = rnd();
-    g.fillStyle = `rgba(230,255,220,${0.25 + s * 0.6})`;
-    g.fillRect(x, y, s > 0.9 ? 2 : 1, s > 0.9 ? 2 : 1);
-  }
-
-  // Energy lines out from the saucer, like cracks of light under the glass.
-  g.strokeStyle = "rgba(140,255,110,0.16)";
-  g.lineWidth = 1;
-  for (let i = 0; i < 14; i++) {
-    let x = SAUCER.x;
-    let y = SAUCER.y;
-    const a0 = (i / 14) * Math.PI * 2;
-    g.beginPath();
-    g.moveTo(x, y);
-    for (let k = 0; k < 7; k++) {
-      const a = a0 + (rnd() - 0.5) * 0.9;
-      x += Math.cos(a) * 26;
-      y += Math.sin(a) * 26;
-      g.lineTo(x, y);
-    }
-    g.stroke();
-  }
-
-  // The starburst between the flippers.
-  g.save();
-  g.translate(184, 720);
-  const burst = g.createRadialGradient(0, 0, 4, 0, 0, 120);
-  burst.addColorStop(0, "#c8ff9e");
-  burst.addColorStop(0.5, "#3cc316");
-  burst.addColorStop(1, "rgba(20,92,8,0)");
-  g.fillStyle = burst;
-  g.beginPath();
-  for (let i = 0; i <= 12; i++) {
-    const a = Math.PI + (i / 12) * Math.PI;
-    const r = i % 2 ? 46 : 120;
-    g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-  }
-  g.fill();
-  g.restore();
-
-  // The shooter lane: a darker metal channel.
-  const lane = g.createLinearGradient(LANE_X, 0, 384, 0);
-  lane.addColorStop(0, "#0c1a10");
-  lane.addColorStop(0.5, "#1e3324");
-  lane.addColorStop(1, "#0c1a10");
-  g.fillStyle = lane;
-  g.fillRect(LANE_X, 250, 384 - LANE_X, H);
-
-  // Inlane arrows, pointing up the table.
-  g.fillStyle = "rgba(157,255,110,0.35)";
-  for (const [x, y] of [[60, 600], [308, 600], [184, 520], [184, 345]]) {
-    g.beginPath();
-    g.moveTo(x, y - 8);
-    g.lineTo(x + 7, y + 4);
-    g.lineTo(x - 7, y + 4);
-    g.fill();
-  }
-
-  // Lettering.
-  g.fillStyle = "rgba(60,195,22,0.75)";
-  g.font = "italic 800 13px system-ui, sans-serif";
-  g.fillText("UTOPIAN", 26, 700);
-  g.textAlign = "right";
-  g.fillText("GO", 342, 700);
-  g.textAlign = "center";
-  g.fillStyle = "rgba(200,255,170,0.12)";
-  g.font = "italic 900 64px system-ui, sans-serif";
-  g.fillText("GO", 184, 520 + 22);
-  g.restore();
-
-  // The saucer's hole and its rim.
-  const hole = g.createRadialGradient(SAUCER.x, SAUCER.y - 3, 1, SAUCER.x, SAUCER.y, 14);
-  hole.addColorStop(0, "#000");
-  hole.addColorStop(0.7, "#071209");
-  hole.addColorStop(1, "#4e6455");
-  g.fillStyle = hole;
-  g.beginPath();
-  g.arc(SAUCER.x, SAUCER.y, 14, 0, Math.PI * 2);
-  g.fill();
-  g.strokeStyle = "#b9c8bd";
-  g.lineWidth = 2;
-  g.stroke();
-
-  // Slingshots: green plastic, a white rubber band on the kicking face.
-  for (const pts of SLINGS) {
-    const [a, b, c] = pts;
-    const plastic = g.createLinearGradient(a[0], a[1], c[0], c[1]);
-    plastic.addColorStop(0, "#7cf04a");
-    plastic.addColorStop(1, "#1d7a0b");
-    g.fillStyle = plastic;
-    g.beginPath();
-    g.moveTo(a[0], a[1]);
-    g.lineTo(b[0], b[1]);
-    g.lineTo(c[0], c[1]);
-    g.closePath();
-    g.fill();
-    rail(g, [a, b, c, a], 4);
-  }
-
-  // Stand-up target housings.
-  for (const t of TARGETS) {
-    g.fillStyle = "#2d3a31";
-    g.fillRect(14, t.y - 15, 12, 30);
-  }
-
-  for (const pts of rails) rail(g, pts);
-  // Posts at the top of the rollover guides.
-  for (const x of [124, 164, 204, 244]) {
-    const post = g.createRadialGradient(x - 1, 61, 0.5, x, 62, 5);
-    post.addColorStop(0, "#fff");
-    post.addColorStop(1, "#5e6b63");
-    g.fillStyle = post;
-    g.beginPath();
-    g.arc(x, 62, 5, 0, Math.PI * 2);
-    g.fill();
-  }
-}
-
-/** A lamp under the glass: dim, or lit with a glow. */
-function lamp(g, x, y, r, on, color = "125,255,74") {
-  const grad = g.createRadialGradient(x - r / 3, y - r / 3, 0, x, y, on ? r * 2.2 : r);
-  if (on) {
-    grad.addColorStop(0, "#fff");
-    grad.addColorStop(0.3, `rgb(${color})`);
-    grad.addColorStop(0.46, `rgba(${color},0.45)`);
-    grad.addColorStop(1, `rgba(${color},0)`);
-  } else {
-    grad.addColorStop(0, "#3c5e40");
-    grad.addColorStop(1, "#0a1d0e");
-  }
-  g.fillStyle = grad;
-  g.beginPath();
-  g.arc(x, y, on ? r * 2.2 : r, 0, Math.PI * 2);
-  g.fill();
-}
-
-function draw(now) {
-  const g = ctx;
-  g.setTransform(1, 0, 0, 1, 0, 0);
-  g.drawImage(still, 0, 0);
-  g.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
-
-  const blink = Math.floor(now / 260) % 2 === 0;
-
-  // The ring round the saucer.
-  for (let i = 0; i < RING; i++) {
-    const a = (i / RING) * Math.PI * 2 - Math.PI / 2;
-    lamp(g, SAUCER.x + Math.cos(a) * 40, SAUCER.y + Math.sin(a) * 40, 5, i < game.ring || (game.held > 0 && blink));
-  }
-  // Rollovers.
-  g.font = "800 11px system-ui, sans-serif";
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  for (const r of ROLLS) {
-    lamp(g, r.x, r.y, 8, r.lit, "157,255,110");
-    g.fillStyle = r.lit ? "#0b3a05" : "#9fdc86";
-    g.fillText(r.ch, r.x, r.y + 0.5);
-  }
-  // Targets.
-  for (const t of TARGETS) {
-    g.fillStyle = t.lit ? "#c8ff9e" : "#2b7a14";
-    g.fillRect(17, t.y - 12, 7, 24);
-    g.fillStyle = "rgba(255,255,255,0.5)";
-    g.fillRect(17, t.y - 12, 2, 24);
-    lamp(g, 40, t.y, 4, t.lit);
-  }
-  // Slingshots light when they kick.
-  SLINGS.forEach(([a, b, c], i) => {
-    if (game.sling[i] <= 0) return;
-    g.strokeStyle = "rgba(220,255,200,0.9)";
-    g.lineWidth = 4;
-    g.beginPath();
-    g.moveTo(c[0], c[1]);
-    g.lineTo(a[0], a[1]);
-    g.stroke();
-  });
-
-  // Bumpers: a chrome skirt, a domed green cap, white when struck.
-  for (const b of BUMPERS) {
-    g.fillStyle = "rgba(0,0,0,0.45)";
-    g.beginPath();
-    g.arc(b.x + 3, b.y + 5, b.r + 2, 0, Math.PI * 2);
-    g.fill();
-    const skirt = g.createRadialGradient(b.x - 6, b.y - 8, 2, b.x, b.y, b.r + 2);
-    skirt.addColorStop(0, "#ffffff");
-    skirt.addColorStop(0.6, "#a3b2a8");
-    skirt.addColorStop(1, "#3a463f");
-    g.fillStyle = skirt;
-    g.beginPath();
-    g.arc(b.x, b.y, b.r + 1, 0, Math.PI * 2);
-    g.fill();
-    const lit = b.flash > 0;
-    const cap = g.createRadialGradient(b.x - 4, b.y - 6, 1, b.x, b.y, b.r * 0.8);
-    cap.addColorStop(0, lit ? "#ffffff" : "#d6ffb8");
-    cap.addColorStop(0.45, lit ? "#c8ff9e" : "#3cc316");
-    cap.addColorStop(1, lit ? "#3cc316" : "#145c08");
-    g.fillStyle = cap;
-    g.beginPath();
-    g.arc(b.x, b.y, b.r * 0.72, 0, Math.PI * 2);
-    g.fill();
-    g.fillStyle = lit ? "#145c08" : "rgba(255,255,255,0.9)";
-    g.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const a = -Math.PI / 2 + (i * Math.PI) / 5;
-      const r = i % 2 ? 2.6 : 6.5;
-      g.lineTo(b.x + Math.cos(a) * r, b.y + Math.sin(a) * r);
-    }
-    g.fill();
-    if (lit) lamp(g, b.x, b.y, b.r, true, "200,255,160");
-  }
-
-  // The plunger: a spring and a knob, drawn back as it is pulled.
-  const face = PLUNGER_Y + game.pull * 26;
-  g.strokeStyle = "#8d9b91";
-  g.lineWidth = 2;
-  g.beginPath();
-  const coils = 7;
-  for (let i = 0; i <= coils * 2; i++) {
-    const y = face + 6 + ((H - face - 6) * i) / (coils * 2);
-    g.lineTo(i % 2 ? PLUNGE_X + 9 : PLUNGE_X - 9, y);
-  }
-  g.stroke();
-  const knob = g.createLinearGradient(PLUNGE_X - 13, 0, PLUNGE_X + 13, 0);
-  knob.addColorStop(0, "#145c08");
-  knob.addColorStop(0.4, "#9dff6e");
-  knob.addColorStop(1, "#145c08");
-  g.fillStyle = knob;
-  g.fillRect(PLUNGE_X - 13, face, 26, 8);
-
-  // Flippers: ivory plastic with a green rubber edge.
-  for (const f of flippers) {
-    g.save();
-    g.translate(f.x, f.y);
-    g.rotate(f.a);
-    g.fillStyle = "rgba(0,0,0,0.4)";
-    capsule(g, 3, 5);
-    g.fill();
-    const body = g.createLinearGradient(0, -10, 0, 10);
-    body.addColorStop(0, "#fffdf2");
-    body.addColorStop(0.6, "#e3ddc4");
-    body.addColorStop(1, "#a9a28a");
-    g.fillStyle = body;
-    capsule(g, 0, 0);
-    g.fill();
-    g.strokeStyle = "#2fa312";
-    g.lineWidth = 3;
-    g.stroke();
-    g.fillStyle = "#b9c8bd";
-    g.beginPath();
-    g.arc(0, 0, 3.5, 0, Math.PI * 2);
-    g.fill();
-    g.restore();
-  }
-
-  // The ball, chrome, its highlight fixed to the light above the table.
-  if (game.state !== "over" || inLane()) {
-    g.fillStyle = "rgba(0,0,0,0.4)";
-    g.beginPath();
-    g.arc(ball.x + 2.5, ball.y + 4, R, 0, Math.PI * 2);
-    g.fill();
-    const chrome = g.createRadialGradient(ball.x - 3, ball.y - 4, 0.5, ball.x, ball.y, R);
-    chrome.addColorStop(0, "#ffffff");
-    chrome.addColorStop(0.35, "#d8e2dc");
-    chrome.addColorStop(0.75, "#6c7a71");
-    chrome.addColorStop(1, "#1d2621");
-    g.fillStyle = chrome;
-    g.beginPath();
-    g.arc(ball.x, ball.y, R, 0, Math.PI * 2);
-    g.fill();
-  }
-}
-
-/** A flipper's outline about its pivot: round at both ends, narrower at the tip. */
-function capsule(g, ox, oy) {
-  const r0 = 10;
-  const r1 = 6;
-  const k = Math.asin((r0 - r1) / FLIP_LEN);
-  g.beginPath();
-  g.arc(ox, oy, r0, Math.PI / 2 + k, Math.PI * 1.5 - k);
-  g.arc(ox + FLIP_LEN, oy, r1, -Math.PI / 2 - k, Math.PI / 2 + k);
-  g.closePath();
-}
-
-function fit() {
-  const w = box.clientWidth;
-  const h = box.clientHeight;
-  // The frame's border is 5px each side.
-  scale = Math.max(0.2, Math.min((w - 10) / W, (h - 10) / H));
-  dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cw = Math.round(W * scale);
-  const ch = Math.round(H * scale);
-  canvas.style.width = `${cw}px`;
-  canvas.style.height = `${ch}px`;
-  canvas.width = Math.round(cw * dpr);
-  canvas.height = Math.round(ch * dpr);
+/** The art that never moves, for the scheme the page is in. */
+function repaint() {
+  pal = palette();
   still = document.createElement("canvas");
-  still.width = canvas.width;
-  still.height = canvas.height;
-  const g = /** @type {CanvasRenderingContext2D} */ (still.getContext("2d"));
-  g.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
-  paintStill(g);
+  still.width = AW;
+  still.height = AH;
+  paintStill(/** @type {CanvasRenderingContext2D} */ (still.getContext("2d")), pal, scene);
+}
+
+/** @param {number} now */
+function draw(now) {
+  scene.showBall = game.state !== "over" || inLane();
+  paintFrame(bctx, still, pal, scene, now);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
+}
+
+/**
+ * Size the canvas to its box. Whole device pixels per art pixel where that
+ * loses little, so every pixel of the art is drawn the same size; where it
+ * would shrink the table by more than a tenth, as near as fits instead.
+ */
+function fit() {
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  // Less the frame round the glass.
+  const w = (box.clientWidth - 18) * dpr;
+  const h = (box.clientHeight - 18) * dpr;
+  const exact = Math.max(0.5, Math.min(w / AW, h / AH));
+  const whole = Math.floor(exact);
+  const k = whole >= 1 && whole / exact > 0.9 ? whole : exact;
+  canvas.width = Math.round(AW * k);
+  canvas.height = Math.round(AH * k);
+  canvas.style.width = `${canvas.width / dpr}px`;
+  canvas.style.height = `${canvas.height / dpr}px`;
+  draw(performance.now());
 }
 
 /* ---------- The loop ---------- */
@@ -1047,6 +709,8 @@ async function postScore(score) {
 /* ---------- Start ---------- */
 
 noZoom();
+repaint();
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", repaint);
 new ResizeObserver(fit).observe(box);
 fit();
 paintCounters();

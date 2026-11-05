@@ -76,8 +76,9 @@ Anything that is only needed after a click is a lazy bundle.
 | Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js`, `ads.js` |
 | Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |
 
-**Pinball** is the home page's third row, and the one page anyone may open signed out. One
-table on a canvas, played with two buttons along the bottom edge (or Z and /); either one
+**Pinball** is the home page's third row (a pop bumper, skeu-icons' `target`), and the one
+page anyone may open signed out. One pixel-art table on a canvas, drawn after the home page's
+rainforest by day or by night, with the rainforest itself behind it on a wide screen, played with two buttons along the bottom edge (or Z and /); either one
 also pulls and lets go of the plunger. On a wide screen the table is centred and the
 backbox and the leaderboard stand at its right; on a phone the backbox is a strip over the
 table and the leaderboard shows over it between games. Each account's best game is one row

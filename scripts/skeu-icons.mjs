@@ -37,7 +37,7 @@ const MARKS = {
   "ic-friend": "user-check",
   "ic-home": "house",
   "ic-image": "image",
-  "ic-pinball": "joystick",
+  "ic-pinball": "target",
   "ic-link": "link",
   "ic-minus": "minus",
   "ic-more": "ellipsis",
