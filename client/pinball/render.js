@@ -361,62 +361,6 @@ function seeded(seed) {
   return () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 }
 
-/** A leaf: a pointed blade with a lit midrib and veins. */
-function leaf(f, x, y, len, ang, w, c1, c2) {
-  f.save();
-  f.translate(x, y);
-  f.rotate(ang);
-  const grad = f.createLinearGradient(0, -w, 0, w);
-  grad.addColorStop(0, c2);
-  grad.addColorStop(0.5, c1);
-  grad.addColorStop(1, c2);
-  f.fillStyle = grad;
-  f.beginPath();
-  f.moveTo(0, 0);
-  f.bezierCurveTo(len * 0.25, -w, len * 0.7, -w * 0.8, len, 0);
-  f.bezierCurveTo(len * 0.7, w * 0.8, len * 0.25, w, 0, 0);
-  f.fill();
-  f.strokeStyle = "rgba(220,255,200,0.18)";
-  f.lineWidth = 0.8;
-  f.beginPath();
-  f.moveTo(0, 0);
-  f.lineTo(len * 0.95, 0);
-  for (let i = 1; i < 7; i++) {
-    const vx = (len * i) / 8;
-    const vw = w * 0.75 * Math.sin((Math.PI * i) / 8);
-    f.moveTo(vx, 0);
-    f.lineTo(vx + len * 0.08, -vw);
-    f.moveTo(vx, 0);
-    f.lineTo(vx + len * 0.08, vw);
-  }
-  f.stroke();
-  f.restore();
-}
-
-/** A fern frond: leaflets either side of a curving spine. */
-function frond(f, x, y, len, ang, c1, c2, rnd) {
-  let a = ang;
-  const bend = (rnd() - 0.5) * 0.03;
-  let px = x;
-  let py = y;
-  f.strokeStyle = c2;
-  f.lineWidth = 1.2;
-  for (let i = 0; i < len; i += 3) {
-    const nx = px + Math.cos(a) * 3;
-    const ny = py + Math.sin(a) * 3;
-    f.beginPath();
-    f.moveTo(px, py);
-    f.lineTo(nx, ny);
-    f.stroke();
-    const l = (1 - i / len) * len * 0.28 + 2;
-    leaf(f, nx, ny, l, a - 1.1, l * 0.22, c1, c2);
-    leaf(f, nx, ny, l, a + 1.1, l * 0.22, c1, c2);
-    px = nx;
-    py = ny;
-    a += bend;
-  }
-}
-
 function text(f, s, x, y, size, color, o = {}) {
   f.save();
   f.translate(x, y);
@@ -465,18 +409,6 @@ function paintFloor() {
     n.addColorStop(1, "rgba(0,0,0,0)");
     f.fillStyle = n;
     f.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-
-  // Leaves, back to front: dark shapes in the deep, bright ones at the edges.
-  for (let i = 0; i < 70; i++) {
-    const edge = rnd();
-    const x = edge < 0.5 ? 20 + rnd() * 70 : 280 + rnd() * 70;
-    const y = 100 + rnd() * 600;
-    leaf(f, x, y, 30 + rnd() * 50, (edge < 0.5 ? -0.6 : Math.PI + 0.6) + (rnd() - 0.5) * 1.6, 8 + rnd() * 10, "rgba(20,90,50,0.55)", "rgba(5,40,25,0.55)");
-  }
-  for (let i = 0; i < 12; i++) {
-    const left = i % 2 === 0;
-    frond(f, left ? 18 + rnd() * 20 : 336 + rnd() * 16, 120 + rnd() * 560, 60 + rnd() * 50, left ? -0.9 + rnd() * 0.4 : Math.PI + 0.9 - rnd() * 0.4, "rgba(40,140,70,0.7)", "rgba(10,60,30,0.8)", rnd);
   }
 
   // The orbit lane and the shooter lane, painted in.
@@ -796,7 +728,7 @@ function paintStill() {
           grad.addColorStop(1, "#0d5a3e");
           return grad;
         }, (i) => (i === 2 ? "#f2f6ee" : null));
-        // A gold rim, and a leaf printed on the plastic.
+        // A gold rim round the plastic.
         poly(s.map(([x, y]) => [x, y, 20]));
         g.strokeStyle = GOLD;
         g.lineWidth = Math.max(1, F * 0.0018);

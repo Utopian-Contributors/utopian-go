@@ -166,6 +166,14 @@ body:not(.pb-on) .pb-board {
   transform: translate(-50%, -50%);
 }
 
+.pb-board h2 + ol:empty {
+  display: none;
+}
+
+.pb-board h2:not(:first-child) {
+  margin-top: 16px;
+}
+
 .pb-board h2 {
   margin: 0 0 8px;
   font: 700 15px var(--ff);

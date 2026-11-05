@@ -1,7 +1,8 @@
 /**
  * Pinball: the page around the table. The header (Back, the balls left, the
  * score), the two flipper buttons, the keys, sound, messages over the table,
- * and the leaderboard.
+ * and the scores. It is offline first: once loaded it plays with no network,
+ * and its scores live on the device (scores.js).
  *
  * The table itself is table.js (layout, physics, rules) and render.js (how
  * it is drawn, in 3D).
@@ -9,6 +10,7 @@
 import { noZoom } from "../js/device.js";
 import { onName, readName } from "../js/me.js";
 import { ASPECT, draw, fit } from "./render.js";
+import { board, mine, record, sync } from "./scores.js";
 import { flip, game, newGame, onEvents, pull, update, waiting } from "./table.js";
 
 /** @param {string} id */
@@ -21,7 +23,9 @@ const ballsOut = $("pb-bn");
 const multOut = $("pb-x");
 const scoreOut = $("pb-sc");
 const msgOut = $("pb-msg");
-const board = $("pb-lb");
+const myList = $("pb-my");
+const myNote = $("pb-mn");
+const boardList = $("pb-lb");
 const meOut = $("pb-me");
 
 const fmt = (n) => n.toLocaleString("en-US");
@@ -105,7 +109,7 @@ onEvents({
   change: paintCounters,
   over: (score) => {
     document.body.classList.remove("pb-on");
-    postScore(score);
+    gameOver(score);
   },
 });
 
@@ -219,70 +223,85 @@ $("pb-bk").addEventListener("click", () => {
   else location.href = "/";
 });
 
-/* ---------- The leaderboard ---------- */
+/* ---------- Scores: this device's first, the shared board when the network answers ---------- */
 
-const API = "/api/social/pinball";
-
-/** @param {{top?: {name: string, score: number}[], best?: number} | null} data */
-function paintBoard(data) {
-  const me = readName();
-  const top = data?.top ?? [];
-  board.replaceChildren(
-    ...top.map((row) => {
+/** @param {HTMLElement} list @param {{name?: string, score: number, at?: number}[]} rows @param {string} [me] */
+function paintList(list, rows, me) {
+  list.replaceChildren(
+    ...rows.map((row) => {
       const li = document.createElement("li");
-      if (row.name === me) li.className = "me";
+      if (me && row.name === me) li.className = "me";
       const name = document.createElement("span");
-      name.textContent = row.name;
+      name.textContent = row.name ?? new Date(row.at ?? 0).toLocaleDateString(undefined, { month: "short", day: "numeric" });
       const score = document.createElement("b");
       score.textContent = fmt(row.score);
       li.append(name, score);
       return li;
     }),
   );
-  if (!data) meOut.textContent = "The leaderboard is unavailable right now.";
-  else if (!top.length && me) meOut.textContent = "No games yet. Be the first.";
-  else if (me) meOut.textContent = data.best ? `Your best: ${fmt(data.best)}` : "";
-  else loginLine(top.length ? "" : "No games yet. ");
 }
 
-/** @param {string} lead */
-function loginLine(lead) {
-  meOut.textContent = lead;
-  const a = document.createElement("a");
-  a.href = "/login?next=/pinball";
-  a.textContent = "Log in";
-  meOut.append(a, " to put your score on the board.");
+/** @param {{board: import("./scores.js").Board | null, live: boolean, refused: boolean}} [state] */
+function paintBoards(state = { board: board(), live: false, refused: false }) {
+  const games = mine().games;
+  paintList(myList, games);
+  myNote.textContent = games.length ? "" : "Your games are kept on this device.";
+  const me = readName();
+  const b = state.board;
+  paintList(boardList, (b?.top ?? []).slice(0, 10), me);
+  const pending = mine().pending;
+  if (!me || state.refused) {
+    meOut.textContent = "";
+    const a = document.createElement("a");
+    a.href = "/login?next=/pinball";
+    a.textContent = "Log in";
+    meOut.append(a, " to put your best on the board.");
+  } else if (pending) meOut.textContent = `${fmt(pending)} goes on the board when you are back online.`;
+  else if (!b) meOut.textContent = "The board shows once you are online.";
+  else if (!state.live) meOut.textContent = `As of ${new Date(b.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.`;
+  else meOut.textContent = b.top.length ? "" : "No games on the board yet.";
 }
 
-async function loadBoard() {
+let syncing = false;
+
+async function syncBoards() {
+  if (syncing) return;
+  syncing = true;
   try {
-    const res = await fetch(API, { headers: { Accept: "application/json" } });
-    paintBoard(res.ok ? await res.json() : null);
-  } catch {
-    paintBoard(null);
+    paintBoards(await sync(!!readName()));
+  } finally {
+    syncing = false;
   }
 }
 
 /** @param {number} score */
-async function postScore(score) {
-  if (!readName()) {
-    loginLine("");
-    return;
-  }
-  try {
-    const res = await fetch(API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ score }),
-    });
-    if (res.status === 401 || res.status === 403) {
-      loginLine("");
-      return;
-    }
-    paintBoard(res.ok ? await res.json() : null);
-  } catch {
-    paintBoard(null);
-  }
+function gameOver(score) {
+  record(score, !!readName());
+  paintBoards();
+  syncBoards();
+}
+
+/* ---------- Offline ---------- */
+
+/**
+ * The game is the page and one bundle, and the worker keeps both. On a first
+ * visit the page arrived before any worker was in charge of it, so it hands
+ * the worker what it fetched (the same message client/offline sends), and the
+ * next visit opens without a network.
+ */
+function keepOffline() {
+  const sw = navigator.serviceWorker;
+  if (!sw) return;
+  const first = !sw.controller;
+  sw.register("/sw.js").catch(() => {});
+  if (!first) return;
+  sw.ready.then((reg) => {
+    const urls = performance
+      .getEntriesByType("resource")
+      .map((entry) => entry.name)
+      .filter((name) => name.startsWith(location.origin) && !name.includes("/api/"));
+    reg.active?.postMessage({ ugSeed: [location.href, ...urls], page: location.href });
+  });
 }
 
 /* ---------- Start ---------- */
@@ -294,5 +313,8 @@ resize();
 paintCounters();
 say("Press a button to play", 0);
 raf = requestAnimationFrame(frame);
-loadBoard();
-onName(loadBoard);
+paintBoards();
+syncBoards();
+onName(syncBoards);
+window.addEventListener("online", syncBoards);
+keepOffline();

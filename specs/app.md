@@ -87,8 +87,15 @@ cabinet in perspective (`client/pinball/render.js`) over a rules engine of its o
 save, extra ball, multiball), mushroom bumpers powered by the G·O·! lanes, drop targets that
 step a ×2–×10 multiplier, stand-up targets, a spinner and orbit, a kickback, skill shot, timed
 quests that promote a rank, and an end-of-ball bonus. Its bundle is not held to the first-flight
-budget; its document is. Each account's best game is one row in `pinball`, posted when a game
-ends (`/api/social/pinball`).
+budget; its document is.
+
+Pinball is offline first. It registers the service worker itself and, on a first visit, hands it
+the page and its bundle (the same `ugSeed` message client/offline sends), so once loaded it opens
+and plays with no network. Scores live on the device (`ug.pb`: its ten best games), and that is
+the list the page shows first. Signed in, the device's best that is not yet on the shared board
+waits as pending and is posted to `/api/social/pinball` when the network answers: on load, after
+a game, or on the browser's `online`. The board itself is kept as last read (`ug.pbb`) and shown
+with its date when offline. The server keeps one row per account in `pinball`, its best.
 
 Every page wears the same header as search: the wordmark, the search field, and the
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet

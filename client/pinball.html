@@ -35,8 +35,13 @@
         <canvas id="pb-c" aria-label="Pinball table"></canvas>
         <p class="pb-msg" id="pb-msg" role="status" aria-live="polite"></p>
       </div>
-      <section class="pb-board" aria-labelledby="pb-bh">
-        <h2 id="pb-bh">High scores</h2>
+      <!-- This device's games first: they need no network and no account.
+           Then the shared board, as last read when offline. -->
+      <section class="pb-board" aria-label="Scores">
+        <h2>Your best</h2>
+        <ol id="pb-my"></ol>
+        <p class="pb-me" id="pb-mn"></p>
+        <h2>Everyone</h2>
         <ol id="pb-lb"></ol>
         <p class="pb-me" id="pb-me"></p>
       </section>
