@@ -793,84 +793,8 @@ function paintStill() {
   decor();
 }
 
-/**
- * A ball of stone, lit from above and to the left; `tall` stretches it
- * upright, for a body.
- */
-function sphere(x, y, z, r, color, tall = 1) {
-  const [cx, cy, k] = P(x, y, z);
-  const rr = r * k;
-  const grad = g.createRadialGradient(cx - rr * 0.35, cy - rr * 0.45 * tall, rr * 0.1, cx, cy, rr * 1.05);
-  grad.addColorStop(0, shade(color, 1.35));
-  grad.addColorStop(0.55, shade(color, 0.95));
-  grad.addColorStop(1, shade(color, 0.45));
-  g.fillStyle = grad;
-  g.beginPath();
-  g.ellipse(cx, cy, rr, rr * tall, 0, 0, Math.PI * 2);
-  g.fill();
-}
-
-/** A small stone monkey, sitting on its plinth with its tail curled round, eyes of gold. */
-function monkey(x, y) {
-  const base = HC;
-  const MOSSY = "#8c9277";
-  prism(
-    [
-      [x - 13, y - 11],
-      [x + 13, y - 11],
-      [x + 13, y + 13],
-      [x - 13, y + 13],
-    ],
-    base,
-    base + 7,
-    STONE,
-    "#9a957a",
-  );
-  const z = base + 7;
-  const FACE = "#c4c3a6";
-  // The tail, along the plinth and curling up at its side.
-  g.strokeStyle = shade(MOSSY, 0.85);
-  g.lineWidth = Math.max(1.5, 2.2 * P(x, y, z)[2]);
-  g.lineCap = "round";
-  g.beginPath();
-  for (let i = 0; i <= 18; i++) {
-    const t = i / 18;
-    const a = t * Math.PI * 1.7;
-    const [sx, sy] = P(x + 6 + t * 5 + Math.sin(a) * 2.5 * t, y + 4 - t * 2, z + 1 + t * 12 + (1 - Math.cos(a)) * 2 * t);
-    if (i) g.lineTo(sx, sy);
-    else g.moveTo(sx, sy);
-  }
-  g.stroke();
-  // Haunches, then the body, upright.
-  sphere(x - 4.5, y + 2, z + 3.5, 4, MOSSY);
-  sphere(x + 4.5, y + 2, z + 3.5, 4, MOSSY);
-  sphere(x, y, z + 10, 6.2, MOSSY, 1.35);
-  sphere(x, y + 3, z + 9, 3.6, FACE, 1.2);
-  // Long arms from the shoulders to the hands on its feet.
-  for (const s of [-1, 1]) {
-    sphere(x + s * 5.6, y + 1, z + 14, 2.3, MOSSY);
-    sphere(x + s * 7.2, y + 3, z + 9, 2.1, MOSSY);
-    sphere(x + s * 6.4, y + 5.5, z + 4.5, 2, MOSSY);
-    sphere(x + s * 3.6, y + 7.5, z + 1.8, 2.3, MOSSY);
-    sphere(x + s * 4.6, y + 7.8, z + 2.6, 1.6, FACE);
-  }
-  // The head: ears out at the sides, the face's pale mask, muzzle, eyes of gold.
-  for (const s of [-1, 1]) {
-    sphere(x + s * 6.4, y + 0.5, z + 21, 2.4, MOSSY);
-    sphere(x + s * 6.4, y + 1.6, z + 21, 1.3, FACE);
-  }
-  sphere(x, y, z + 21.5, 5.4, MOSSY);
-  sphere(x - 1.7, y + 3.6, z + 22.4, 2.4, FACE);
-  sphere(x + 1.7, y + 3.6, z + 22.4, 2.4, FACE);
-  sphere(x, y + 4.6, z + 19.4, 2.8, FACE, 0.85);
-  sphere(x - 1.7, y + 5.4, z + 22.6, 0.85, GOLD);
-  sphere(x + 1.7, y + 5.4, z + 22.6, 0.85, GOLD);
-  sphere(x, y + 7, z + 18.6, 0.7, "#4a4d3e");
-}
-
-/** On the cabinet's top: a treehouse over the lane, a stone monkey in the far corner. */
+/** On the cabinet's top: a treehouse over the lane. */
 function decor() {
-  monkey(36, 26);
   // The treehouse, top right.
   const hx = [344, 384];
   const hy = [6, 40];
