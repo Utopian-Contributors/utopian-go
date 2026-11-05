@@ -77,12 +77,18 @@ Anything that is only needed after a click is a lazy bundle.
 | Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |
 
 **Pinball** is the home page's third row (a pop bumper, skeu-icons' `target`), and the one
-page anyone may open signed out. One pixel-art table on a canvas, drawn after the home page's
-rainforest by day or by night, with the rainforest itself behind it on a wide screen, played with two buttons along the bottom edge (or Z and /); either one
-also pulls and lets go of the plunger. On a wide screen the table is centred and the
-backbox and the leaderboard stand at its right; on a phone the backbox is a strip over the
-table and the leaderboard shows over it between games. Each account's best game is one row
-in `pinball`, posted when a game ends (`/api/social/pinball`).
+page anyone may open signed out. The page is flat, in the app's palette: a header with Back,
+the balls left and the score, the table edge to edge under it, and two flat buttons along the
+bottom edge (or Z and /); either button also pulls and lets go of the plunger. On a wide screen
+the table is as tall as the window, with the leaderboard at its right; on a phone the
+leaderboard shows over the table between games. Only the table is drawn as a solid thing: a
+cabinet in perspective (`client/pinball/render.js`) over a rules engine of its own
+(`client/pinball/table.js`): a vine ramp that climbs a temple ladder of awards (jackpot, ball
+save, extra ball, multiball), mushroom bumpers powered by the G·O·! lanes, drop targets that
+step a ×2–×10 multiplier, stand-up targets, a spinner and orbit, a kickback, skill shot, timed
+quests that promote a rank, and an end-of-ball bonus. Its bundle is not held to the first-flight
+budget; its document is. Each account's best game is one row in `pinball`, posted when a game
+ends (`/api/social/pinball`).
 
 Every page wears the same header as search: the wordmark, the search field, and the
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet

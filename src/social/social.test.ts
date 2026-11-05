@@ -754,7 +754,7 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(played.status, 200, played.text);
     assert.deepEqual(played.json, { top: [{ name: "ada", score: 12_340 }], best: 12_340 });
     assert.equal((await call("POST", "/api/social/pinball", { score: 500 })).json?.best, 12_340);
-    for (const score of [-10, 12_345, 1.5, "100", 1e9, null]) {
+    for (const score of [-10, 12_345, 1.5, "100", 3e9, null]) {
       assert.equal((await call("POST", "/api/social/pinball", { score })).status, 400, JSON.stringify(score));
     }
     assert.equal((await call("POST", "/api/social/pinball", { score: 20_000 })).json?.best, 20_000);

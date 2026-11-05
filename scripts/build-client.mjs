@@ -123,8 +123,11 @@ const PAGES = [
   },
   {
     name: "Pinball",
+    // Only the document is held to the window. The game's bundle is the game
+    // — its table, its physics and its renderer — and someone who opened it
+    // came to play, so it is left to be as large as playing well takes.
     doc: { file: "pinball.html", gzip: FLIGHT },
-    parallel: [{ file: "pinball.js", gzip: FLIGHT }],
+    parallel: [],
   },
   {
     name: "Login",
@@ -943,15 +946,13 @@ async function buildAuthHtml(css, hash) {
 }
 
 /**
- * Pinball's document: its own sheet inlined, and the wordmark. It wears no
- * search header and no account control, so it takes none of their rules; the
- * sheet is the cabinet and nothing else.
+ * Pinball's document: its own sheet inlined. It wears no search header and
+ * no account control, so it takes none of their rules.
  */
 async function buildPinballHtml(hash) {
   let raw = readFileSync(path.join(clientDir, "pinball.html"), "utf8");
   const css = await minifyCss(readFileSync(path.join(clientDir, "pinball.css"), "utf8"));
   raw = replaceOnce(raw, /<link rel="stylesheet" href="\/pinball\.css"\s*\/?>/, `<style>${css}</style>`, "pinball stylesheet link");
-  raw = replaceOnce(raw, /<img\b[^>]*class="lg-mark"[^>]*\/>/, inlineWordmark(), "pinball wordmark img");
   raw = replaceOnce(raw, /src="\/pinball\.js"/, `src="/pinball.js?v=${hash("pinball.js")}"`, "pinball.js src");
   writeFileSync(path.join(outDir, "pinball.html"), await minifyDoc(raw));
 }

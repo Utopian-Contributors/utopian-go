@@ -894,8 +894,8 @@ socialRouter.get(
   }),
 );
 
-/** Highest score a game can reach in practice, with room to spare; anything over it was not played. */
-const PINBALL_MAX = 99_999_990;
+/** Highest score a game can reach in practice, with room to spare; anything over it was not played. Fits a Postgres integer. */
+const PINBALL_MAX = 2_000_000_000;
 
 /** The pinball leaderboard, and the viewer's own best when signed in. */
 socialRouter.get(

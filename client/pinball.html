@@ -12,47 +12,38 @@
     <meta name="apple-mobile-web-app-title" content="UtopianGO" />
     <meta name="application-name" content="UtopianGO" />
     <meta name="theme-color" content="#fffff6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#06110b" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#292124" media="(prefers-color-scheme: dark)" />
     <link rel="stylesheet" href="/pinball.css" />
   </head>
   <body class="pb">
-    <header class="pb-top">
-      <a class="pb-home" href="/" aria-label="utopian-go home">
-        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- Back, as the app's other pages have it; the balls left and the score. -->
+    <header class="pb-hd">
+      <button type="button" class="pb-back" id="pb-bk">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
-        <img class="lg-mark" src="/go-wordmark.svg" alt="" width="94" height="32" decoding="async" />
-      </a>
+        Back
+      </button>
+      <span class="pb-balls" id="pb-bn" role="img" aria-label="3 balls left">●●●</span>
+      <span class="pb-x" id="pb-x" hidden>×2</span>
+      <output class="pb-sc" id="pb-sc" aria-label="Score">0</output>
     </header>
 
     <main class="pb-main">
-      <!-- The table. pinball/main.js sizes the canvas to fit this box. -->
+      <!-- The table. pinball/main.js sizes the canvas to this box. -->
       <div class="pb-tbl" id="pb-t">
         <canvas id="pb-c" aria-label="Pinball table"></canvas>
+        <p class="pb-msg" id="pb-msg" role="status" aria-live="polite"></p>
       </div>
-
-      <!-- The backbox: a strip over the table on a phone, a column at its
-           right on a wide screen, with the leaderboard under it there. -->
-      <aside class="pb-side">
-        <div class="pb-led" role="status" aria-live="polite">
-          <div class="pb-art" aria-hidden="true"><b>GO</b><i>Pinball</i></div>
-          <div class="pb-scr pb-row">
-            <span class="pb-k">Ball</span><span class="pb-v" id="pb-bn">1</span>
-            <span class="pb-k pb-k2">×</span><span class="pb-v" id="pb-x">1</span>
-          </div>
-          <div class="pb-scr pb-num" id="pb-sc">0</div>
-          <div class="pb-scr pb-msg" id="pb-msg">Press a button</div>
-        </div>
-        <section class="pb-board" aria-labelledby="pb-bh">
-          <h2 id="pb-bh">High scores</h2>
-          <ol id="pb-lb"></ol>
-          <p class="pb-me" id="pb-me"></p>
-        </section>
-      </aside>
+      <section class="pb-board" aria-labelledby="pb-bh">
+        <h2 id="pb-bh">High scores</h2>
+        <ol id="pb-lb"></ol>
+        <p class="pb-me" id="pb-me"></p>
+      </section>
     </main>
 
-    <!-- The flippers. Held down, they hold their flipper up; with the ball in
-         the shooter lane, either one pulls the plunger and lets it go. -->
+    <!-- The flippers. Held, they hold their flipper up; with a ball waiting
+         in the shooter lane, either one pulls the plunger and lets it go. -->
     <div class="pb-btns">
       <button type="button" class="pb-b" id="pb-l" aria-label="Left flipper"><span aria-hidden="true">Z</span></button>
       <button type="button" class="pb-b" id="pb-r" aria-label="Right flipper"><span aria-hidden="true">/</span></button>
