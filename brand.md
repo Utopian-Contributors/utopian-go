@@ -37,6 +37,7 @@ There are two documents, each with its own budget and its own bundle:
 |------|----------|--------|------|
 | Search | `index.html` (13,950 B — the rest is the server-injected price strip) | `app.js` | `swap.js`, `connect.js` |
 | Wallet | `wallet.html` | `wallet.js` | `connect.js` |
+| Pinball | `pinball.html` | `pinball.js` | — |
 
 The wallet page does not share the search shell. It has no search field, tabs, results
 list, knowledge panel or skeletons — most of `app.css` — so serving it that stylesheet to

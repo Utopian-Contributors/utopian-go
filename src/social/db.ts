@@ -298,6 +298,13 @@ ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS received bigint;
 ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS payer text;
 ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS matched text;
 CREATE INDEX IF NOT EXISTS ad_orders_open ON ad_orders (at) WHERE paid_at IS NULL;
+-- Pinball: each account's best game, and when it was played.
+CREATE TABLE IF NOT EXISTS pinball (
+  name text PRIMARY KEY REFERENCES users(name) ON DELETE CASCADE,
+  score integer NOT NULL,
+  at bigint NOT NULL
+);
+CREATE INDEX IF NOT EXISTS pinball_score ON pinball (score DESC, at);
 `;
 
 let ready: Promise<void> | null = null;
@@ -1080,6 +1087,31 @@ export async function searchUsers(
     avatarRev: row.avatar_rev,
     friend: row.friend,
   }));
+}
+
+export interface PinballRow {
+  name: string;
+  score: number;
+}
+
+/** The pinball leaderboard: best games first, the earlier of two equal ones ahead. */
+export async function pinballTop(limit = 10): Promise<PinballRow[]> {
+  return many<PinballRow>("SELECT name, score FROM pinball ORDER BY score DESC, at LIMIT $1", [limit]);
+}
+
+/** An account's best game; 0 before its first. */
+export async function pinballBest(name: string): Promise<number> {
+  return (await one<{ score: number }>("SELECT score FROM pinball WHERE name = $1", [name]))?.score ?? 0;
+}
+
+/** A finished game, kept only if it beats the account's best. */
+export async function pinballScore(name: string, score: number): Promise<void> {
+  await db().query(
+    `INSERT INTO pinball (name, score, at) VALUES ($1, $2, $3)
+     ON CONFLICT (name) DO UPDATE SET score = EXCLUDED.score, at = EXCLUDED.at
+     WHERE pinball.score < EXCLUDED.score`,
+    [name, score, Date.now()],
+  );
 }
 
 export async function findPeople(

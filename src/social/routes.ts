@@ -56,6 +56,9 @@ import {
   namesOf,
   notesFor,
   openPost,
+  pinballBest,
+  pinballScore,
+  pinballTop,
   orderOf,
   postPayment,
   postsBy,
@@ -888,6 +891,37 @@ socialRouter.get(
   wrap(async (req, res) => {
     const raw = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase().replace(/^@/, "") : "";
     res.json({ people: /^[a-z0-9_]{3,16}$/.test(raw) ? await findPeople(raw) : [] });
+  }),
+);
+
+/** Highest score a game can reach in practice, with room to spare; anything over it was not played. */
+const PINBALL_MAX = 99_999_990;
+
+/** The pinball leaderboard, and the viewer's own best when signed in. */
+socialRouter.get(
+  "/pinball",
+  readLimit,
+  wrap(async (_req, res) => {
+    const me = currentUser(res);
+    res.json({ top: await pinballTop(), best: me ? await pinballBest(me.name) : 0 });
+  }),
+);
+
+/** A finished game. Kept as the account's best if it is one. */
+socialRouter.post(
+  "/pinball",
+  requireAuth,
+  writeLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const score = req.body?.score;
+    if (!Number.isInteger(score) || score < 0 || score > PINBALL_MAX || score % 10) {
+      throw new SocialError(400, "That is not a score.");
+    }
+    await pinballScore(me.name, score);
+    res.json({ top: await pinballTop(), best: await pinballBest(me.name) });
   }),
 );
 

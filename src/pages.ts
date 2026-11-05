@@ -76,16 +76,17 @@ export function authPath(page: "/login" | "/register", to: string): string {
   return to === "/" ? page : `${page}?next=${encodeURIComponent(to).replace(/%2F/gi, "/")}`;
 }
 
-/** The home page's Wallet and Social rows (client/index.html). */
+/** The home page's Wallet, Social and Pinball rows (client/index.html). */
 export const HOME_NAV = /<nav id="hm-nv"[^>]*>[\s\S]*?<\/nav>/;
 
 /**
  * The home page's rows as someone signed in, or signed out, first sees them:
- * signed out, each goes by the login page and on to its own from there.
+ * signed out, Wallet and Social go by the login page and on to their own from
+ * there. Pinball is anyone's, so it goes straight there.
  */
 export function homeNav(html: string, signed: boolean): string {
   if (signed) return html;
-  return html.replace(HOME_NAV, (nav) => nav.replace(/ href="(\/[a-z]+)"/g, (_m, to: string) => ` href="${authPath("/login", to)}"`));
+  return html.replace(HOME_NAV, (nav) => nav.replace(/ href="(\/(?:wallet|social))"/g, (_m, to: string) => ` href="${authPath("/login", to)}"`));
 }
 
 /** The page a ?next= goes on to, as the login page names it; nothing, for anywhere else. */

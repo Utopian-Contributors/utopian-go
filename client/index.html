@@ -79,7 +79,8 @@
         <!-- Filled server-side with live prices; empty until then. -->
         <div id="hm-tk"></div>
 
-        <!-- Home only: where to go from here, one row each. Stands in for #ac on
+        <!-- Home only: where to go from here, one row each. Pinball needs no
+             account; the other two do. Stands in for #ac on
              this page. Signed out, each goes by the login page and on to its
              page from there: the server points them there from the session
              cookie (src/pages.ts homeNav), and app.js keeps them pointed right
@@ -92,6 +93,11 @@
           <a href="/social" data-to="/social">
             <img src="/ic-social.svg" alt="" width="30" height="30" />
             Social
+          </a>
+          <!-- Anyone's, signed in or not, so no data-to: it never goes by login. -->
+          <a href="/pinball">
+            <img src="/ic-pinball.svg" alt="" width="30" height="30" />
+            Pinball
           </a>
         </nav>
 

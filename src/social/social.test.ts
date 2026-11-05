@@ -745,6 +745,20 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     assert.equal(held.json?.passkey, false);
     const { privateKey, credId } = await addPasskey(call, ada.json?.passkeySetup, base, Buffer.from("credential-id-001"));
     assert.deepEqual(((await call("GET", "/api/social/me")).json?.me as { passkey: unknown }).passkey, { id: credId.toString("base64url") });
+
+    // Pinball: a game is kept only when it beats the account's best, and anything not a score is refused.
+    // From an address of its own, so these writes leave the rest of the test its allowance.
+    client = "10.0.7.7";
+    assert.deepEqual((await call("GET", "/api/social/pinball")).json, { top: [], best: 0 });
+    const played = await call("POST", "/api/social/pinball", { score: 12_340 });
+    assert.equal(played.status, 200, played.text);
+    assert.deepEqual(played.json, { top: [{ name: "ada", score: 12_340 }], best: 12_340 });
+    assert.equal((await call("POST", "/api/social/pinball", { score: 500 })).json?.best, 12_340);
+    for (const score of [-10, 12_345, 1.5, "100", 1e9, null]) {
+      assert.equal((await call("POST", "/api/social/pinball", { score })).status, 400, JSON.stringify(score));
+    }
+    assert.equal((await call("POST", "/api/social/pinball", { score: 20_000 })).json?.best, 20_000);
+    client = "10.0.0.1";
     /**
      * A password login, and the passkey step every password login takes now.
      * Counter 0 is an authenticator that does not count, which leaves the
@@ -2722,11 +2736,12 @@ test("the login page goes on only to a page on this site, and signed out the hom
   assert.equal(authPath("/login", "/social?a=1&b=2"), "/login?next=/social%3Fa%3D1%26b%3D2");
 
   const shell =
-    '<nav id="hm-nv" aria-label="Go to"><a href="/wallet" data-to="/wallet">Wallet</a><a href="/social" data-to="/social">Social</a></nav>' +
+    '<nav id="hm-nv" aria-label="Go to"><a href="/wallet" data-to="/wallet">Wallet</a><a href="/social" data-to="/social">Social</a><a href="/pinball">Pinball</a></nav>' +
     '<nav id="ac" aria-label="Account"><a class="ac-w ac-in" href="/wallet">Log in</a></nav>';
   assert.equal(homeNav(shell, true), shell);
   const out = homeNav(shell, false);
   assert.ok(out.includes('<a href="/login?next=/wallet" data-to="/wallet">Wallet</a><a href="/login?next=/social" data-to="/social">Social</a>'));
+  assert.ok(out.includes('<a href="/pinball">Pinball</a>'), "pinball needs no account");
   assert.ok(out.includes('class="ac-w ac-in" href="/wallet"'), "only the home rows");
 
   const page =

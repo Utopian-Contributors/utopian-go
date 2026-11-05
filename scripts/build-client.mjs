@@ -17,12 +17,12 @@
  *   (HTTP/2). Summing a document with its subresources measures a flight that
  *   never happens; each gets its own budget instead.
  *
- *   There are four documents. The search shell is one; the wallet page is a
+ *   There are five documents. The search shell is one; the wallet page is a
  *   second, with its own stylesheet and its own bundle, because it shares
  *   almost nothing with search and serving it app.css to use a tenth of it
  *   would cost more than the whole page weighs. Social is a third, for the
  *   same reason, and its document is capped at 14KB gzip. The login page is
- *   the fourth, and the smallest.
+ *   the fourth, and the smallest. Pinball is the fifth.
  */
 import * as esbuild from "esbuild";
 import { minify as minifyHtml } from "html-minifier-terser";
@@ -122,6 +122,11 @@ const PAGES = [
     parallel: [{ file: "social.js", gzip: FLIGHT }],
   },
   {
+    name: "Pinball",
+    doc: { file: "pinball.html", gzip: FLIGHT },
+    parallel: [{ file: "pinball.js", gzip: FLIGHT }],
+  },
+  {
     name: "Login",
     // The server renders a destination and two ?next= into it (src/pages.ts
     // renderAuth): a few dozen bytes, against a page that weighs a third of this.
@@ -169,7 +174,7 @@ const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
  * public/ waiting for something to serve it by mistake. The wallet page has no
  * per-request content at all, so for it the file *is* the response.
  */
-const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html"];
+const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "pinball.html"];
 
 const watch = process.argv.includes("--watch");
 
@@ -410,6 +415,13 @@ const authOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "auth", "main.js")],
   outfile: path.join(outDir, "auth.js"),
+};
+
+/** Pinball's bundle: the table, its physics, and the leaderboard. */
+const pinballOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "pinball", "main.js")],
+  outfile: path.join(outDir, "pinball.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -930,6 +942,20 @@ async function buildAuthHtml(css, hash) {
   writeFileSync(path.join(outDir, "auth.html"), await minifyDoc(raw));
 }
 
+/**
+ * Pinball's document: its own sheet inlined, and the wordmark. It wears no
+ * search header and no account control, so it takes none of their rules; the
+ * sheet is the cabinet and nothing else.
+ */
+async function buildPinballHtml(hash) {
+  let raw = readFileSync(path.join(clientDir, "pinball.html"), "utf8");
+  const css = await minifyCss(readFileSync(path.join(clientDir, "pinball.css"), "utf8"));
+  raw = replaceOnce(raw, /<link rel="stylesheet" href="\/pinball\.css"\s*\/?>/, `<style>${css}</style>`, "pinball stylesheet link");
+  raw = replaceOnce(raw, /<img\b[^>]*class="lg-mark"[^>]*\/>/, inlineWordmark(), "pinball wordmark img");
+  raw = replaceOnce(raw, /src="\/pinball\.js"/, `src="/pinball.js?v=${hash("pinball.js")}"`, "pinball.js src");
+  writeFileSync(path.join(outDir, "pinball.html"), await minifyDoc(raw));
+}
+
 /** Typeset the legal documents into public/ as PDFs. */
 function buildLegal() {
   for (const doc of LEGAL) {
@@ -953,7 +979,7 @@ function copyStatic() {
     if (!STATIC_EXT.has(ext)) continue;
     copyFileSync(path.join(clientDir, name), path.join(outDir, name));
   }
-  // Both stylesheets live inside their document now; drop anything an older
+  // Every stylesheet lives inside its document now; drop anything an older
   // build left behind, so nothing can be served a copy the page does not use.
   for (const base of ["app.css", "wallet.css"]) {
     for (const stale of [base, `${base}.br`, `${base}.gz`]) {
@@ -1054,6 +1080,7 @@ async function buildAssets() {
     esbuild.build(notesOpts),
     esbuild.build(editOpts),
     esbuild.build(authOpts),
+    esbuild.build(pinballOpts),
     buildCss("app.css", "forest.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
@@ -1073,6 +1100,7 @@ async function buildAssets() {
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
     buildSocialHtml(socialCss, hash),
     buildAuthHtml(authCss, hash),
+    buildPinballHtml(hash),
   ]);
   buildLegal();
   precompress();

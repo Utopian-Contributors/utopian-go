@@ -236,7 +236,7 @@ body.home #ac {
   display: none;
 }
 
-/* Home-only rows: Wallet, Social. Hidden elsewhere for the same reason as the
+/* Home-only rows: Wallet, Social, Pinball. Hidden elsewhere for the same reason as the
    price strip below. A column under the search field, each row a surface of
    its own (base.css) with the mark, the word and a chevron. */
 #hm-nv {

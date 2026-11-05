@@ -74,6 +74,14 @@ Anything that is only needed after a click is a lazy bundle.
 | Search | `/`, `/?q=` | `index.html` | `app.js` | `swap.js`, `connect.js`, `qr.js`, `login.js` |
 | Wallet | `/wallet` | `wallet.html` | `wallet.js` | `connect.js`, `swap.js`, `qr.js`, `keys.js`, `login.js` |
 | Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js`, `ads.js` |
+| Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |
+
+**Pinball** is the home page's third row, and the one page anyone may open signed out. One
+table on a canvas, played with two buttons along the bottom edge (or Z and /); either one
+also pulls and lets go of the plunger. On a wide screen the table is centred and the
+backbox and the leaderboard stand at its right; on a phone the backbox is a strip over the
+table and the leaderboard shows over it between games. Each account's best game is one row
+in `pinball`, posted when a game ends (`/api/social/pinball`).
 
 Every page wears the same header as search: the wordmark, the search field, and the
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet
