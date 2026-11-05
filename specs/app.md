@@ -76,7 +76,7 @@ Anything that is only needed after a click is a lazy bundle.
 | Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js`, `ads.js` |
 | Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |
 
-**Pinball** is the home page's third row (a pop bumper, skeu-icons' `target`), and the one
+**Pinball** is the home page's third row (a game controller, skeu-icons' `gamepad-2`), and the one
 page anyone may open signed out. The page is flat, in the app's palette: a header with Back,
 the balls left and the score, the table edge to edge under it, and two flat buttons along the
 bottom edge (or Z and /); either button also pulls and lets go of the plunger. On a wide screen

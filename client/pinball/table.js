@@ -23,9 +23,16 @@
 export const W = 400;
 export const H = 760;
 export const R = 8.5;
-const GRAVITY = 1150;
-const MAX_V = 2100;
-const STEPS = 10;
+/**
+ * The feel of the table, scaled to the ball. A ball on a tilted table is
+ * pulled down it at a steady rate; at this one it rolls the table's length
+ * from rest in about a second and a half. Nothing moves faster than 200 ball
+ * radii a second, and no step of the simulation moves a ball more than half
+ * its radius, so however fast it goes it cannot pass through a wall.
+ */
+const GRAVITY = 620;
+const MAX_V = R * 200;
+const MAX_STEP = R / 2;
 
 /** @typedef {[number, number]} Pt */
 
@@ -87,9 +94,11 @@ for (const x of [130, 170, 210, 250]) {
 
 // The left inlane's rail down to the flipper; on the right, a divider between
 // the inlane and the outlane, the one way off the table that is not the middle.
-wall([[50, 540], [50, 640], [116, 690]], { kind: "rail" });
+// Each inlane rail runs on into the line of its flipper's top edge at rest, so
+// a ball rolls off the rail onto the flipper with no notch to settle in.
+wall([[50, 540], [50, 641.5], [116, 677.5]], { kind: "rail" });
 post(50, 540, 6);
-wall([[330, 540], [330, 640], [264, 690]], { kind: "rail" });
+wall([[330, 540], [330, 641.5], [264, 677.5]], { kind: "rail" });
 post(330, 540, 5);
 
 /** Slingshots: the face toward the middle kicks. */
@@ -178,6 +187,13 @@ export const CENTER_POST = { x: 190, y: 744, r: 7, h: 0 };
 post(CENTER_POST.x, CENTER_POST.y, CENTER_POST.r, { on: () => game.post, e: 0.4 });
 
 export const FLIP_LEN = 58;
+/**
+ * How fast a flipper turns, radians a second: up through its whole swing in
+ * 60 ms, back down in 90. A flipper takes time to swing, and a shot's speed
+ * comes from how fast its tip is moving where it meets the ball.
+ */
+const FLIP_UP = 0.98 / 0.06;
+const FLIP_DOWN = 0.98 / 0.09;
 export const flippers = [
   { x: 118, y: 690, rest: 0.5, up: -0.48, a: 0.5, w: 0, on: false },
   { x: 262, y: 690, rest: Math.PI - 0.5, up: Math.PI + 0.48, a: Math.PI - 0.5, w: 0, on: false },
@@ -619,7 +635,7 @@ export function pull(on) {
 
 function launch(b, power, auto = false) {
   // ±10% of the shot is luck, as a real plunger's is.
-  b.vy = -(1250 + 700 * power) * (1 + (Math.random() - 0.5) * 0.1);
+  b.vy = -(1000 + 480 * power) * (1 + (Math.random() - 0.5) * 0.1);
   b.launched = true;
   b.sw.add("plunge");
   // The ball save runs from a plunge of the player's own, not from a ball it served back.
@@ -655,19 +671,20 @@ function touch(b, ax, ay, bx, by, l2, r0, r1) {
  * Rebound off a surface moving at (sx, sy): elasticity along the normal,
  * a little friction along it. Returns the speed of the impact.
  */
-function bounce(b, nx, ny, e, sx = 0, sy = 0) {
+function bounce(b, nx, ny, e, sx = 0, sy = 0, smooth = 0.96) {
   const rx = b.vx - sx;
   const ry = b.vy - sy;
   const vn = rx * nx + ry * ny;
   if (vn >= 0) return 0;
-  b.vx -= (1 + e) * vn * nx;
-  b.vy -= (1 + e) * vn * ny;
-  // Smoothness: the tangential part keeps most of itself.
-  const tx = -ny;
-  const ty = nx;
-  const vt = (b.vx - sx) * tx + (b.vy - sy) * ty;
-  b.vx -= vt * 0.02 * tx;
-  b.vy -= vt * 0.02 * ty;
+  // Along the surface the ball keeps its speed; into it, it comes back at e
+  // of what it hit with. A real impact also loses a little along the
+  // surface; a ball merely rolling against it, pressed there by the slope,
+  // loses nothing, which is what lets it roll smoothly down a rail.
+  const keep = vn < -40 ? smooth : 1;
+  const tx = rx - vn * nx;
+  const ty = ry - vn * ny;
+  b.vx = sx + tx * keep - vn * e * nx;
+  b.vy = sy + ty * keep - vn * e * ny;
   return -vn;
 }
 
@@ -712,7 +729,7 @@ function stepBall(b, dt) {
     const [, , z0] = rampAt(b.ramp);
     b.ramp += b.rampV * dt;
     const [x, y, z] = rampAt(b.ramp);
-    b.rampV = Math.max(420, b.rampV - (z - z0) * 30 * dt * 60);
+    b.rampV = Math.max(300, b.rampV - (z - z0) * 16 * dt * 60);
     b.x = x;
     b.y = y;
     b.z = z;
@@ -720,7 +737,7 @@ function stepBall(b, dt) {
       b.ramp = -1;
       b.z = 0;
       b.vx = 0;
-      b.vy = 380;
+      b.vy = 260;
       rampMade();
     }
     return;
@@ -730,8 +747,8 @@ function stepBall(b, dt) {
     b.x = TEMPLE.x;
     b.y = TEMPLE.y;
     if (b.held <= 0) {
-      b.vx = (Math.random() < 0.5 ? -1 : 1) * (110 + Math.random() * 80);
-      b.vy = 420;
+      b.vx = (Math.random() < 0.5 ? -1 : 1) * (80 + Math.random() * 60);
+      b.vy = 300;
       b.cool = 0.6;
       hooks.sound("kickout");
     }
@@ -754,9 +771,9 @@ function stepBall(b, dt) {
   if (crossed(b, m.a[0], m.a[1], m.b[0], m.b[1])) {
     const vin = b.vx * m.n[0] + b.vy * m.n[1];
     if (vin > 0) {
-      if (vin > 430) {
+      if (vin > 320) {
         b.ramp = 0;
-        b.rampV = Math.min(1100, Math.hypot(b.vx, b.vy));
+        b.rampV = Math.min(800, Math.hypot(b.vx, b.vy));
         return;
       }
       b.x = b.px;
@@ -771,11 +788,11 @@ function stepBall(b, dt) {
     if (s.tag === "gate" && (b.vy < 0 || b.x < LANE_X - R)) continue;
     const c = touch(b, s.ax, s.ay, s.bx, s.by, s.l2, 0, 0);
     if (!c) continue;
-    const speed = bounce(b, c.nx, c.ny, s.e ?? 0.42);
+    const speed = bounce(b, c.nx, c.ny, s.e ?? 0.5);
     const tag = s.tag;
     if (!tag || speed < 40) continue;
     if (tag[0] === "s" && speed > 70) {
-      kick(b, c.nx, c.ny, 640);
+      kick(b, c.nx, c.ny, 470);
       hitSling(Number(tag[1]));
     } else if (tag[0] === "d" && c.nx < 0) hitDrop(Number(tag[1]));
     else if (tag[0] === "t" && c.nx > 0) hitStandup(Number(tag[1]));
@@ -807,7 +824,7 @@ function stepBall(b, dt) {
     b.y = bm.y + ny * reach;
     const speed = bounce(b, nx, ny, 0.5);
     if (speed > 30 || bm.flash <= 0) {
-      kick(b, nx, ny, 560);
+      kick(b, nx, ny, 420);
       if (bm.flash <= 0) hitBumper();
       bm.flash = 0.15;
     }
@@ -818,7 +835,7 @@ function stepBall(b, dt) {
     const ty = f.y + Math.sin(f.a) * FLIP_LEN;
     const c = touch(b, f.x, f.y, tx, ty, FLIP_LEN * FLIP_LEN, 10, 6);
     if (!c) continue;
-    bounce(b, c.nx, c.ny, 0.28, -f.w * (c.py - f.y), f.w * (c.px - f.x));
+    bounce(b, c.nx, c.ny, 0.35, -f.w * (c.py - f.y), f.w * (c.px - f.x), 0.99);
   }
 
   // The plunger's face.
@@ -852,7 +869,7 @@ function stepBall(b, dt) {
   });
   // The kickback, at the foot of the outlane.
   if (game.kickback && b.x > 330 && b.x < LANE_X && b.y > 690) {
-    b.vy = -1250;
+    b.vy = -920;
     b.vx = -10;
     game.kickback = false;
     flash("kick", 1);
@@ -885,15 +902,28 @@ function stepBall(b, dt) {
     game.skill = -1;
   }
 
-  // Unstick a ball that has come to rest anywhere it should not.
-  if (!inLane(b) && Math.hypot(b.vx, b.vy) < 12) {
+  // A ball at rest anywhere but on a flipper or the plunger is stuck: after
+  // half a second it is tossed up at a random angle, gently; one that will not
+  // come free after twenty tries is taken off and served again.
+  const held = inLane(b) || (b.y > 620 && flippers.some((f) => Math.hypot(b.x - f.x, b.y - f.y) < FLIP_LEN + 14));
+  if (!held && Math.hypot(b.vx, b.vy) < 10) {
     b.still += dt;
-    if (b.still > 2.5) {
-      b.vy = -340;
-      b.vx = (Math.random() - 0.5) * 300;
+    if (b.still > 0.5) {
       b.still = 0;
+      b.stuck = (b.stuck || 0) + 1;
+      if (b.stuck > 20) {
+        balls.splice(balls.indexOf(b), 1);
+        newBall().auto = 0.6;
+        return;
+      }
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
+      b.vx = Math.cos(a) * 160;
+      b.vy = Math.sin(a) * 160;
     }
-  } else b.still = 0;
+  } else {
+    b.still = 0;
+    if (Math.hypot(b.vx, b.vy) > 200) b.stuck = 0;
+  }
 
   if (b.y > H + 30) drained(b);
 }
@@ -931,12 +961,17 @@ export function update(dt) {
   if (game.pulling) game.pull = Math.min(1, game.pull + dt / 0.9);
   else if (game.pull > 0) game.pull = Math.max(0, game.pull - dt * 8);
 
-  const sub = dt / STEPS;
-  for (let k = 0; k < STEPS; k++) {
+  // As many steps as keep every ball, and every flipper's tip, to half a
+  // ball radius per step.
+  let fastest = 0;
+  for (const b of balls) fastest = Math.max(fastest, Math.hypot(b.vx, b.vy), b.rampV || 0);
+  const steps = Math.min(48, Math.max(4, Math.ceil((Math.max(fastest, FLIP_UP * FLIP_LEN) * dt) / MAX_STEP)));
+  const sub = dt / steps;
+  for (let k = 0; k < steps; k++) {
     for (const f of flippers) {
       const prev = f.a;
       const goal = f.on ? f.up : f.rest;
-      const turn = (f.on ? 32 : 17) * sub;
+      const turn = (f.on ? FLIP_UP : FLIP_DOWN) * sub;
       const d = goal - f.a;
       f.a = Math.abs(d) <= turn ? goal : f.a + Math.sign(d) * turn;
       f.w = (f.a - prev) / sub;
