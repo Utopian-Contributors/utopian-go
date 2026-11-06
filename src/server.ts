@@ -615,6 +615,19 @@ app.get("/social.html", (req, res) => {
 });
 
 /**
+ * Games: the list of games, one static document for anyone, signed in or not.
+ */
+app.get("/games.html", (req, res) => {
+  const qs = req.originalUrl.slice(req.path.length);
+  res.redirect(308, `/games${qs}`);
+});
+
+app.get("/games", (req, _res, next) => {
+  req.url = "/games.html" + req.originalUrl.slice(req.path.length);
+  next();
+});
+
+/**
  * Pinball: one static document for anyone, signed in or not. The leaderboard
  * and the account it posts a score under are its script's, asked of the API.
  */
@@ -773,7 +786,7 @@ app.use(
       // `wallet.html`. Matching the bare name alone silently missed every
       // compressed response — which is every real one.
       const name = path.basename(filePath).replace(/\.(br|gz)$/, "");
-      if (name === "index.html" || name === "wallet.html" || name === "social.html" || name === "auth.html" || name === "pinball.html") {
+      if (name === "index.html" || name === "wallet.html" || name === "social.html" || name === "auth.html" || name === "games.html" || name === "pinball.html") {
         res.setHeader("Cache-Control", "no-cache");
       }
       // The service worker and the manifest keep one URL across deploys, so

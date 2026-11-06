@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Games</title>
+    <link rel="icon" href="/ic-games.png" sizes="64x64" type="image/png" />
+    <link rel="icon" href="/ic-games.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="UtopianGO" />
+    <meta name="application-name" content="UtopianGO" />
+    <meta name="theme-color" content="#fffff6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#292124" media="(prefers-color-scheme: dark)" />
+    <link rel="stylesheet" href="/games.css" />
+  </head>
+  <body class="gm">
+    <!-- Back home, as the app's other pages have it, and the page's name. -->
+    <header class="gm-hd">
+      <a class="gm-back" href="/">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Back
+      </a>
+      <h1>Games</h1>
+    </header>
+
+    <!-- The games: a list on a phone, a grid on a wider screen. Each is its
+         own page, anyone's, signed in or not. -->
+    <main>
+      <ul class="gm-list">
+        <li>
+          <a class="gm-card" href="/pinball">
+            <span class="gm-art"><img src="/game-pinball.svg" alt="" width="64" height="64" /></span>
+            <span class="gm-txt">
+              <strong>Pinball</strong>
+              <span>Flippers, ramps and multiball. Plays offline.</span>
+            </span>
+          </a>
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

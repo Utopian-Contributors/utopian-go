@@ -17,12 +17,13 @@
  *   (HTTP/2). Summing a document with its subresources measures a flight that
  *   never happens; each gets its own budget instead.
  *
- *   There are five documents. The search shell is one; the wallet page is a
+ *   There are six documents. The search shell is one; the wallet page is a
  *   second, with its own stylesheet and its own bundle, because it shares
  *   almost nothing with search and serving it app.css to use a tenth of it
  *   would cost more than the whole page weighs. Social is a third, for the
  *   same reason, and its document is capped at 14KB gzip. The login page is
- *   the fourth, and the smallest. Pinball is the fifth.
+ *   the fourth, and the smallest. Games, the list of games, is the fifth,
+ *   and Pinball the sixth.
  */
 import * as esbuild from "esbuild";
 import { minify as minifyHtml } from "html-minifier-terser";
@@ -122,6 +123,12 @@ const PAGES = [
     parallel: [{ file: "social.js", gzip: FLIGHT }],
   },
   {
+    name: "Games",
+    // The list of games: a document and nothing else, no script.
+    doc: { file: "games.html", gzip: FLIGHT },
+    parallel: [],
+  },
+  {
     name: "Pinball",
     // Only the document is held to the window. The game's bundle is the game
     // — its table, its physics and its renderer — and someone who opened it
@@ -177,7 +184,7 @@ const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
  * public/ waiting for something to serve it by mistake. The wallet page has no
  * per-request content at all, so for it the file *is* the response.
  */
-const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "pinball.html"];
+const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "games.html", "pinball.html"];
 
 const watch = process.argv.includes("--watch");
 
@@ -945,6 +952,14 @@ async function buildAuthHtml(css, hash) {
   writeFileSync(path.join(outDir, "auth.html"), await minifyDoc(raw));
 }
 
+/** The games list's document: its own sheet inlined, and nothing else. */
+async function buildGamesHtml() {
+  let raw = readFileSync(path.join(clientDir, "games.html"), "utf8");
+  const css = await minifyCss(readFileSync(path.join(clientDir, "games.css"), "utf8"));
+  raw = replaceOnce(raw, /<link rel="stylesheet" href="\/games\.css"\s*\/?>/, `<style>${css}</style>`, "games stylesheet link");
+  writeFileSync(path.join(outDir, "games.html"), await minifyDoc(raw));
+}
+
 /**
  * Pinball's document: its own sheet inlined. It wears no search header and
  * no account control, so it takes none of their rules.
@@ -1101,6 +1116,7 @@ async function buildAssets() {
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
     buildSocialHtml(socialCss, hash),
     buildAuthHtml(authCss, hash),
+    buildGamesHtml(),
     buildPinballHtml(hash),
   ]);
   buildLegal();

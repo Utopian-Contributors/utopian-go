@@ -217,10 +217,10 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-/** Back: where the visitor came from on this site, else home. */
+/** Back: where the visitor came from on this site, else the games list. */
 $("pb-bk").addEventListener("click", () => {
   if (history.length > 1 && document.referrer.startsWith(location.origin)) history.back();
-  else location.href = "/";
+  else location.href = "/games";
 });
 
 /* ---------- Scores: this device's first, the shared board when the network answers ---------- */

@@ -74,10 +74,17 @@ Anything that is only needed after a click is a lazy bundle.
 | Search | `/`, `/?q=` | `index.html` | `app.js` | `swap.js`, `connect.js`, `qr.js`, `login.js` |
 | Wallet | `/wallet` | `wallet.html` | `wallet.js` | `connect.js`, `swap.js`, `qr.js`, `keys.js`, `login.js` |
 | Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js`, `ads.js` |
+| Games | `/games` | `games.html` | — | — |
 | Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |
 
-**Pinball** is the home page's third row (a game controller, skeu-icons' `gamepad-2`), and the one
-page anyone may open signed out. The page is flat, in the app's palette: a header with Back,
+**Games** is the home page's third row (a game controller, skeu-icons' `gamepad-2`, `ic-games`,
+also the games page's and pinball's tab icon). It opens the games list: a header with Back and
+the title, then one row per game on a phone (art, name, a line about it), a grid of tiles on a
+wider screen. The document is all there is, its sheet inlined and no script. For now it lists
+one game.
+
+**Pinball** is the first game, and like the list a
+page anyone may open signed out. Its Back goes where the visitor came from, else to `/games`. The page is flat, in the app's palette: a header with Back,
 the balls left and the score, the table edge to edge under it, and two flat buttons along the
 bottom edge (or Z and /); either button also pulls and lets go of the plunger. On a wide screen
 the table is as tall as the window, with the leaderboard at its right; on a phone the

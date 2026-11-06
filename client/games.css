@@ -1,0 +1,168 @@
+/*
+ * Games: the list of games, each a page of its own. Flat, in the app's
+ * palette, the same as pinball.css. One column of rows on a phone; on a wider
+ * screen, a grid of tiles with the art above the name.
+ */
+:root {
+  --bg: #fffff6;
+  --t: #202124;
+  --f: #70757a;
+  --go: #39a11c;
+  --card: rgba(32, 33, 36, 0.06);
+  --card2: rgba(32, 33, 36, 0.1);
+  --ff: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #292124;
+    --t: #e8eaed;
+    --f: #9aa0a6;
+    --go: #75ffbe;
+    --card: rgba(232, 234, 237, 0.08);
+    --card2: rgba(232, 234, 237, 0.13);
+    color-scheme: dark;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--t);
+  font: 15px/1.3 var(--ff);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gm-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: max(8px, env(safe-area-inset-top)) 16px 8px;
+}
+
+/* The app's Back pill (header.css .hb). */
+.gm-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 15px 0 10px;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--go);
+  font: 600 14px var(--ff);
+  text-decoration: none;
+}
+
+.gm-back:active {
+  scale: 0.96;
+}
+
+.gm-hd h1 {
+  margin: 0;
+  font: 700 20px var(--ff);
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 8px 16px max(16px, env(safe-area-inset-bottom));
+}
+
+/* A phone: one row per game, the art beside the name. */
+.gm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gm-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 76px;
+  padding: 10px 16px 10px 10px;
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--t);
+  text-decoration: none;
+}
+
+.gm-card:hover {
+  background: var(--card2);
+}
+
+.gm-card:active {
+  scale: 0.98;
+}
+
+.gm-art {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.gm-art img {
+  width: 44px;
+  height: 44px;
+}
+
+.gm-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.gm-txt strong {
+  font: 600 16px/1.2 var(--ff);
+}
+
+.gm-txt span {
+  color: var(--f);
+  font-size: 13px;
+}
+
+/* Wider: a grid of tiles, the art on top. */
+@media (min-width: 600px) {
+  .gm-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+
+  .gm-card {
+    flex-direction: column;
+    align-items: stretch;
+    height: 100%;
+    padding: 10px 10px 14px;
+    box-sizing: border-box;
+  }
+
+  .gm-art {
+    width: auto;
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+
+  .gm-art img {
+    width: 40%;
+    height: auto;
+  }
+
+  .gm-txt {
+    padding: 0 4px;
+  }
+}
