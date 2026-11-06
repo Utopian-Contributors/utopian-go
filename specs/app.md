@@ -74,14 +74,20 @@ Anything that is only needed after a click is a lazy bundle.
 | Search | `/`, `/?q=` | `index.html` | `app.js` | `swap.js`, `connect.js`, `qr.js`, `login.js` |
 | Wallet | `/wallet` | `wallet.html` | `wallet.js` | `connect.js`, `swap.js`, `qr.js`, `keys.js`, `login.js` |
 | Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js`, `ads.js` |
-| Games | `/games` | `games.html` | — | — |
+| Games | `/games` | `games.html` | `games.js` | — |
 | Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |
 
 **Games** is the home page's third row (a game controller, skeu-icons' `gamepad-2`, `ic-games`,
 also the games page's and pinball's tab icon). It opens the games list: a header with Back and
 the title, then one row per game on a phone (art, name, a line about it), a grid of tiles on a
-wider screen. The document is all there is, its sheet inlined and no script. For now it lists
+wider screen. Its sheet is inlined; its one script, `games.js`, only keeps it offline. For now it lists
 one game.
+
+The games list is offline first, and so is every game on it. `games.js` registers the service
+worker and, on a first visit, hands it the page (`ugSeed`, as pinball does); and the worker's
+install fetches `/games` and each game's page (its `GAMES`), with the bundles and pictures they
+name, alongside the three shells. So once the worker is in, the list and the games open with no
+network, visited or not.
 
 **Pinball** is the first game, and like the list a
 page anyone may open signed out. Its Back goes where the visitor came from, else to `/games`. The page is flat, in the app's palette: a header with Back,

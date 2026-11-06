@@ -28,7 +28,8 @@
     </header>
 
     <!-- The games: a list on a phone, a grid on a wider screen. Each is its
-         own page, anyone's, signed in or not. -->
+         own page, anyone's, signed in or not. games.js keeps the list and
+         every game in it offline (client/sw GAMES). -->
     <main>
       <ul class="gm-list">
         <li>
@@ -42,5 +43,7 @@
         </li>
       </ul>
     </main>
+
+    <script src="/games.js" defer></script>
   </body>
 </html>

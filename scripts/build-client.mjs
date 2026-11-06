@@ -124,9 +124,9 @@ const PAGES = [
   },
   {
     name: "Games",
-    // The list of games: a document and nothing else, no script.
+    // The list of games: a document, and a script that only keeps it offline.
     doc: { file: "games.html", gzip: FLIGHT },
-    parallel: [],
+    parallel: [{ file: "games.js", gzip: FLIGHT }],
   },
   {
     name: "Pinball",
@@ -425,6 +425,13 @@ const authOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "auth", "main.js")],
   outfile: path.join(outDir, "auth.js"),
+};
+
+/** The games list's bundle: registers the service worker, and nothing more. */
+const gamesOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "games", "main.js")],
+  outfile: path.join(outDir, "games.js"),
 };
 
 /** Pinball's bundle: the table, its physics, and the leaderboard. */
@@ -952,11 +959,12 @@ async function buildAuthHtml(css, hash) {
   writeFileSync(path.join(outDir, "auth.html"), await minifyDoc(raw));
 }
 
-/** The games list's document: its own sheet inlined, and nothing else. */
-async function buildGamesHtml() {
+/** The games list's document: its own sheet inlined, and its one script fingerprinted. */
+async function buildGamesHtml(hash) {
   let raw = readFileSync(path.join(clientDir, "games.html"), "utf8");
   const css = await minifyCss(readFileSync(path.join(clientDir, "games.css"), "utf8"));
   raw = replaceOnce(raw, /<link rel="stylesheet" href="\/games\.css"\s*\/?>/, `<style>${css}</style>`, "games stylesheet link");
+  raw = replaceOnce(raw, /src="\/games\.js"/, `src="/games.js?v=${hash("games.js")}"`, "games.js src");
   writeFileSync(path.join(outDir, "games.html"), await minifyDoc(raw));
 }
 
@@ -1096,6 +1104,7 @@ async function buildAssets() {
     esbuild.build(notesOpts),
     esbuild.build(editOpts),
     esbuild.build(authOpts),
+    esbuild.build(gamesOpts),
     esbuild.build(pinballOpts),
     buildCss("app.css", "forest.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
@@ -1116,7 +1125,7 @@ async function buildAssets() {
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
     buildSocialHtml(socialCss, hash),
     buildAuthHtml(authCss, hash),
-    buildGamesHtml(),
+    buildGamesHtml(hash),
     buildPinballHtml(hash),
   ]);
   buildLegal();

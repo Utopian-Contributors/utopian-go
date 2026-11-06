@@ -17,7 +17,9 @@
  *    its own URL and under its section's shell (/, /social, /wallet), so a
  *    social or wallet route never visited still opens on the right page.
  *    The three shells, and the bundles they name, are fetched when the worker
- *    installs, so there is always an app to open offline.
+ *    installs, so there is always an app to open offline. So are the games
+ *    list and each game (GAMES), with their pictures, so they open offline
+ *    without having been visited first.
  *  - Assets with ?v=: cache first. The query is the content hash, so a cached
  *    copy is the file itself, for good. Same-origin assets without one (an
  *    icon, a banner) go network first like pages.
@@ -55,6 +57,14 @@ const KEEP = { [PAGES]: 40, [ASSETS]: 400, [API]: 150 };
 
 /** The app's three documents: kept from the moment a worker installs, so offline always has one to open. */
 const SHELLS = ["/", "/social", "/wallet"];
+
+/**
+ * The games list and every game on it: kept from the moment a worker installs,
+ * like the shells, but each only under its own address. A game needs no
+ * network once it has its page and its bundle, so it should not need a first
+ * visit either.
+ */
+const GAMES = ["/games", "/pinball"];
 
 /** Set on a page served from the cache, so client/offline knows at once. */
 const MARK = '<meta name="ug-offline" content="';
@@ -351,32 +361,38 @@ async function asset(event, hashed) {
 }
 
 /**
- * Fetch the shells and the bundles each names in a <script src>, so the app
- * opens offline even where nothing was ever visited through this worker: an
- * upgrade from a worker that kept nothing, say, whose last pages it never saw.
- * Best effort: an install while offline keeps whatever it got.
+ * Fetch the shells and the games, and the bundles each names in a <script
+ * src>, so the app opens offline even where nothing was ever visited through
+ * this worker: an upgrade from a worker that kept nothing, say, whose last
+ * pages it never saw. The games' pictures too (<img src>): the list is mostly
+ * pictures. Best effort: an install while offline keeps whatever it got.
  */
 async function precache() {
-  await Promise.all(
-    SHELLS.map(async (path) => {
-      try {
-        const response = await fetch(path, { credentials: "same-origin" });
-        if (!keepable(response)) return;
-        const html = await response.clone().text();
-        await keep(PAGES, path, response);
-        const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="(\/[^"]+)"/g)].map((m) => m[1]);
-        await Promise.all(
-          scripts.map(async (src) => {
-            if (await caches.match(src, { ...ANY, cacheName: ASSETS })) return;
-            const bundle = await fetch(src);
-            if (bundle.status === 200) await keep(ASSETS, src, bundle);
-          }),
-        );
-      } catch {
-        // Offline mid-install: the next visit fills it in.
-      }
-    }),
-  );
+  await Promise.all([
+    ...SHELLS.map((path) => precachePage(path, false)),
+    ...GAMES.map((path) => precachePage(path, true)),
+  ]);
+}
+
+/** @param {string} path @param {boolean} images */
+async function precachePage(path, images) {
+  try {
+    const response = await fetch(path, { credentials: "same-origin" });
+    if (!keepable(response)) return;
+    const html = await response.clone().text();
+    await keep(PAGES, path, response);
+    const srcs = [...html.matchAll(/<script\b[^>]*\bsrc="(\/[^"]+)"/g)].map((m) => m[1]);
+    if (images) srcs.push(...[...html.matchAll(/<img\b[^>]*\bsrc="(\/[^"]+)"/g)].map((m) => m[1]));
+    await Promise.all(
+      srcs.map(async (src) => {
+        if (await caches.match(src, { ...ANY, cacheName: ASSETS })) return;
+        const file = await fetch(src);
+        if (file.status === 200) await keep(ASSETS, src, file);
+      }),
+    );
+  } catch {
+    // Offline mid-install: the next visit fills it in.
+  }
 }
 
 self.addEventListener("install", (event) => {
