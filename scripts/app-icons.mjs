@@ -27,7 +27,7 @@
  *                               transparency with black and rounds the corners
  *                               itself, so it needs the full-bleed version too.
  *   ic-wallet.png, ic-social.png, ic-games.png
- *                               the wallet, social, games and pinball pages' tab icons, for
+ *                               the wallet, social, games, pinball and snake pages' tab icons, for
  *                               browsers that take no SVG icon: each page's own
  *                               drawing from ic-*.svg, as it is, at the 64 the
  *                               pages declare.

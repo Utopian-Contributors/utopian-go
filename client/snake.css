@@ -1,0 +1,298 @@
+/*
+ * Snake: the page is the app's own, flat, the same as pinball.css, and so is
+ * the board (snake/render.js), in the same light or dark. The whole page
+ * takes swipes, so nothing on it scrolls but the score lists.
+ */
+:root {
+  --bg: #fffff6;
+  --t: #202124;
+  --f: #70757a;
+  --go: #39a11c;
+  --btn: #3cc316;
+  --btn-on: #2f9e10;
+  --card: rgba(32, 33, 36, 0.06);
+  --line: rgba(32, 33, 36, 0.1);
+  --ff: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #292124;
+    --t: #e8eaed;
+    --f: #9aa0a6;
+    --go: #75ffbe;
+    --btn: #3cc316;
+    --btn-on: #5fe03a;
+    --card: rgba(232, 234, 237, 0.08);
+    --line: rgba(232, 234, 237, 0.12);
+    color-scheme: dark;
+  }
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg);
+  color: var(--t);
+  font: 15px/1.3 var(--ff);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sn-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+}
+
+/* The app's Back pill (header.css .hb). */
+.sn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 15px 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--go);
+  font: 600 14px var(--ff);
+  cursor: pointer;
+}
+
+.sn-back:active {
+  scale: 0.96;
+}
+
+.sn-best {
+  margin-left: auto;
+  color: var(--f);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sn-sc {
+  min-width: 2ch;
+  text-align: right;
+  font: 700 22px/1 var(--ff);
+  font-variant-numeric: tabular-nums;
+}
+
+.sn-main {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.sn-tbl {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+#sn-c {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* What the board says: a quiet pill over its top edge. */
+.sn-msg {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  z-index: 1;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 16, 12, 0.72);
+  color: #fff;
+  font: 600 13px/1.25 var(--ff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.sn-msg[hidden] {
+  display: none;
+}
+
+/* The leaderboard: over the board between games on a phone, beside it on a desktop. */
+.sn-board {
+  display: none;
+  box-sizing: border-box;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+body:not(.sn-on) .sn-board {
+  display: flex;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  width: min(300px, calc(100vw - 48px));
+  max-height: 78%;
+  transform: translate(-50%, -50%);
+}
+
+.sn-lists {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  touch-action: pan-y;
+}
+
+.sn-board h2 + ol:empty {
+  display: none;
+}
+
+.sn-board h2:not(:first-child) {
+  margin-top: 16px;
+}
+
+.sn-board h2 {
+  margin: 0 0 8px;
+  font: 700 15px var(--ff);
+}
+
+.sn-board ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: sn;
+}
+
+.sn-board li {
+  display: flex;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+  counter-increment: sn;
+}
+
+.sn-board li::before {
+  content: counter(sn);
+  width: 1.4em;
+  color: var(--f);
+  text-align: right;
+}
+
+.sn-board li span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sn-board li b {
+  font-weight: 600;
+}
+
+.sn-board li.me span {
+  color: var(--go);
+  font-weight: 700;
+}
+
+.sn-me {
+  margin: 8px 0 0;
+  color: var(--f);
+  font-size: 13px;
+}
+
+.sn-me:empty {
+  display: none;
+}
+
+.sn-me a {
+  color: var(--go);
+}
+
+/* The one button: flat, the logo's green, like pinball's. */
+.sn-go {
+  flex: none;
+  height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--btn);
+  color: #fff;
+  font: 700 16px var(--ff);
+  cursor: pointer;
+}
+
+.sn-go:active {
+  background: var(--btn-on);
+}
+
+.sn-go:focus {
+  outline: none;
+}
+
+.sn-go:focus-visible {
+  outline: 2px solid var(--go);
+  outline-offset: 2px;
+}
+
+body.sn-on .sn-go {
+  display: none;
+}
+
+/* A desktop: the board as tall as the window, centred, the leaderboard at its right. */
+@media (min-width: 900px) {
+  .sn-hd {
+    width: min(100%, 900px);
+    margin: 0 auto;
+    box-sizing: border-box;
+  }
+
+  .sn-main {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 24px;
+  }
+
+  .sn-tbl {
+    grid-column: 2;
+    height: 100%;
+    aspect-ratio: var(--sn-ar, 0.65);
+  }
+
+  .sn-board,
+  body:not(.sn-on) .sn-board {
+    grid-column: 3;
+    display: flex;
+    position: static;
+    align-self: start;
+    width: 260px;
+    max-height: calc(100vh - 80px);
+    margin-top: 8px;
+    transform: none;
+  }
+}

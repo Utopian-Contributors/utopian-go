@@ -305,6 +305,13 @@ CREATE TABLE IF NOT EXISTS pinball (
   at bigint NOT NULL
 );
 CREATE INDEX IF NOT EXISTS pinball_score ON pinball (score DESC, at);
+-- Snake: the same.
+CREATE TABLE IF NOT EXISTS snake (
+  name text PRIMARY KEY REFERENCES users(name) ON DELETE CASCADE,
+  score integer NOT NULL,
+  at bigint NOT NULL
+);
+CREATE INDEX IF NOT EXISTS snake_score ON snake (score DESC, at);
 `;
 
 let ready: Promise<void> | null = null;
@@ -1089,27 +1096,30 @@ export async function searchUsers(
   }));
 }
 
-export interface PinballRow {
+/** The games with a leaderboard. Each name is its table, so this list is all that ever reaches the SQL below. */
+export type Game = "pinball" | "snake";
+
+export interface GameRow {
   name: string;
   score: number;
 }
 
-/** The pinball leaderboard: best games first, the earlier of two equal ones ahead. */
-export async function pinballTop(limit = 10): Promise<PinballRow[]> {
-  return many<PinballRow>("SELECT name, score FROM pinball ORDER BY score DESC, at LIMIT $1", [limit]);
+/** A game's leaderboard: best games first, the earlier of two equal ones ahead. */
+export async function gameTop(game: Game, limit = 10): Promise<GameRow[]> {
+  return many<GameRow>(`SELECT name, score FROM ${game} ORDER BY score DESC, at LIMIT $1`, [limit]);
 }
 
 /** An account's best game; 0 before its first. */
-export async function pinballBest(name: string): Promise<number> {
-  return (await one<{ score: number }>("SELECT score FROM pinball WHERE name = $1", [name]))?.score ?? 0;
+export async function gameBest(game: Game, name: string): Promise<number> {
+  return (await one<{ score: number }>(`SELECT score FROM ${game} WHERE name = $1`, [name]))?.score ?? 0;
 }
 
 /** A finished game, kept only if it beats the account's best. */
-export async function pinballScore(name: string, score: number): Promise<void> {
+export async function gameScore(game: Game, name: string, score: number): Promise<void> {
   await db().query(
-    `INSERT INTO pinball (name, score, at) VALUES ($1, $2, $3)
+    `INSERT INTO ${game} (name, score, at) VALUES ($1, $2, $3)
      ON CONFLICT (name) DO UPDATE SET score = EXCLUDED.score, at = EXCLUDED.at
-     WHERE pinball.score < EXCLUDED.score`,
+     WHERE ${game}.score < EXCLUDED.score`,
     [name, score, Date.now()],
   );
 }

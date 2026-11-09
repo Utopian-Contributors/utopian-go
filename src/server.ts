@@ -641,6 +641,19 @@ app.get("/pinball", (req, _res, next) => {
   next();
 });
 
+/**
+ * Snake: the same, one static document for anyone.
+ */
+app.get("/snake.html", (req, res) => {
+  const qs = req.originalUrl.slice(req.path.length);
+  res.redirect(308, `/snake${qs}`);
+});
+
+app.get("/snake", (req, _res, next) => {
+  req.url = "/snake.html" + req.originalUrl.slice(req.path.length);
+  next();
+});
+
 app.get("/icon/:mint", (req, res) => {
   const file = iconFile(req.params.mint);
   if (!file) {
@@ -786,7 +799,7 @@ app.use(
       // `wallet.html`. Matching the bare name alone silently missed every
       // compressed response — which is every real one.
       const name = path.basename(filePath).replace(/\.(br|gz)$/, "");
-      if (name === "index.html" || name === "wallet.html" || name === "social.html" || name === "auth.html" || name === "games.html" || name === "pinball.html") {
+      if (name === "index.html" || name === "wallet.html" || name === "social.html" || name === "auth.html" || name === "games.html" || name === "pinball.html" || name === "snake.html") {
         res.setHeader("Cache-Control", "no-cache");
       }
       // The service worker and the manifest keep one URL across deploys, so

@@ -758,6 +758,17 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
       assert.equal((await call("POST", "/api/social/pinball", { score })).status, 400, JSON.stringify(score));
     }
     assert.equal((await call("POST", "/api/social/pinball", { score: 20_000 })).json?.best, 20_000);
+    // Snake: the same board of its own, and nothing over a full 15 by 23 grid's worth of apples.
+    assert.deepEqual((await call("GET", "/api/social/snake")).json, { top: [], best: 0 });
+    const slithered = await call("POST", "/api/social/snake", { score: 120 });
+    assert.equal(slithered.status, 200, slithered.text);
+    assert.deepEqual(slithered.json, { top: [{ name: "ada", score: 120 }], best: 120 });
+    assert.equal((await call("POST", "/api/social/snake", { score: 50 })).json?.best, 120);
+    for (const score of [-10, 125, 1.5, "100", 3_430, null]) {
+      assert.equal((await call("POST", "/api/social/snake", { score })).status, 400, JSON.stringify(score));
+    }
+    assert.equal((await call("POST", "/api/social/snake", { score: 3_420 })).json?.best, 3_420);
+    assert.equal((await call("GET", "/api/social/pinball")).json?.best, 20_000);
     client = "10.0.0.1";
     /**
      * A password login, and the passkey step every password login takes now.

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Snake</title>
+    <link rel="icon" href="/ic-games.png" sizes="64x64" type="image/png" />
+    <link rel="icon" href="/ic-games.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="UtopianGO" />
+    <meta name="application-name" content="UtopianGO" />
+    <meta name="theme-color" content="#fffff6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#292124" media="(prefers-color-scheme: dark)" />
+    <link rel="stylesheet" href="/snake.css" />
+  </head>
+  <body class="sn">
+    <!-- Back, as the app's other pages have it; this device's best and the score. -->
+    <header class="sn-hd">
+      <button type="button" class="sn-back" id="sn-bk">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Back
+      </button>
+      <span class="sn-best" id="sn-bs"></span>
+      <output class="sn-sc" id="sn-sc" aria-label="Score">0</output>
+    </header>
+
+    <main class="sn-main">
+      <!-- The board. snake/main.js sizes the canvas to this box. -->
+      <div class="sn-tbl" id="sn-t">
+        <canvas id="sn-c" aria-label="Snake board"></canvas>
+        <p class="sn-msg" id="sn-msg" role="status" aria-live="polite"></p>
+      </div>
+      <!-- This device's games first: they need no network and no account.
+           Then the shared board, as last read when offline. -->
+      <section class="sn-board" aria-label="Scores">
+        <div class="sn-lists">
+          <h2>Your best</h2>
+          <ol id="sn-my"></ol>
+          <p class="sn-me" id="sn-mn"></p>
+          <h2>Everyone</h2>
+          <ol id="sn-lb"></ol>
+          <p class="sn-me" id="sn-me"></p>
+        </div>
+        <button type="button" class="sn-go" id="sn-go">Play</button>
+      </section>
+    </main>
+
+    <script src="/snake.js" defer></script>
+  </body>
+</html>

@@ -48,6 +48,10 @@ import {
   findPeople,
   friendList,
   friendNames,
+  type Game,
+  gameBest,
+  gameScore,
+  gameTop,
   getAd,
   getUser,
   insertUser,
@@ -56,9 +60,6 @@ import {
   namesOf,
   notesFor,
   openPost,
-  pinballBest,
-  pinballScore,
-  pinballTop,
   orderOf,
   postPayment,
   postsBy,
@@ -894,36 +895,45 @@ socialRouter.get(
   }),
 );
 
-/** Highest score a game can reach in practice, with room to spare; anything over it was not played. Fits a Postgres integer. */
+/** Highest pinball score a game can reach in practice, with room to spare; anything over it was not played. Fits a Postgres integer. */
 const PINBALL_MAX = 2_000_000_000;
 
-/** The pinball leaderboard, and the viewer's own best when signed in. */
-socialRouter.get(
-  "/pinball",
-  readLimit,
-  wrap(async (_req, res) => {
-    const me = currentUser(res);
-    res.json({ top: await pinballTop(), best: me ? await pinballBest(me.name) : 0 });
-  }),
-);
+/** The most a snake can score: 10 an apple, on a 15 by 23 board it starts three long on (client/snake/game.js). */
+const SNAKE_MAX = (15 * 23 - 3) * 10;
 
-/** A finished game. Kept as the account's best if it is one. */
-socialRouter.post(
-  "/pinball",
-  requireAuth,
-  writeLimit,
-  readJson,
-  wrap(async (req, res) => {
-    assertSameOrigin(req);
-    const me = requireUser(res);
-    const score = req.body?.score;
-    if (!Number.isInteger(score) || score < 0 || score > PINBALL_MAX || score % 10) {
-      throw new SocialError(400, "That is not a score.");
-    }
-    await pinballScore(me.name, score);
-    res.json({ top: await pinballTop(), best: await pinballBest(me.name) });
-  }),
-);
+/** A game's leaderboard: reading it, and a finished game for it. */
+function gameBoard(game: Game, max: number): void {
+  /** The leaderboard, and the viewer's own best when signed in. */
+  socialRouter.get(
+    `/${game}`,
+    readLimit,
+    wrap(async (_req, res) => {
+      const me = currentUser(res);
+      res.json({ top: await gameTop(game), best: me ? await gameBest(game, me.name) : 0 });
+    }),
+  );
+
+  /** A finished game. Kept as the account's best if it is one. */
+  socialRouter.post(
+    `/${game}`,
+    requireAuth,
+    writeLimit,
+    readJson,
+    wrap(async (req, res) => {
+      assertSameOrigin(req);
+      const me = requireUser(res);
+      const score = req.body?.score;
+      if (!Number.isInteger(score) || score < 0 || score > max || score % 10) {
+        throw new SocialError(400, "That is not a score.");
+      }
+      await gameScore(game, me.name, score);
+      res.json({ top: await gameTop(game), best: await gameBest(game, me.name) });
+    }),
+  );
+}
+
+gameBoard("pinball", PINBALL_MAX);
+gameBoard("snake", SNAKE_MAX);
 
 socialRouter.get(
   "/friends",

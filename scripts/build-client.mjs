@@ -17,13 +17,13 @@
  *   (HTTP/2). Summing a document with its subresources measures a flight that
  *   never happens; each gets its own budget instead.
  *
- *   There are six documents. The search shell is one; the wallet page is a
+ *   There are seven documents. The search shell is one; the wallet page is a
  *   second, with its own stylesheet and its own bundle, because it shares
  *   almost nothing with search and serving it app.css to use a tenth of it
  *   would cost more than the whole page weighs. Social is a third, for the
  *   same reason, and its document is capped at 14KB gzip. The login page is
  *   the fourth, and the smallest. Games, the list of games, is the fifth,
- *   and Pinball the sixth.
+ *   Pinball the sixth, and Snake the seventh.
  */
 import * as esbuild from "esbuild";
 import { minify as minifyHtml } from "html-minifier-terser";
@@ -137,6 +137,11 @@ const PAGES = [
     parallel: [],
   },
   {
+    name: "Snake",
+    doc: { file: "snake.html", gzip: FLIGHT },
+    parallel: [{ file: "snake.js", gzip: FLIGHT }],
+  },
+  {
     name: "Login",
     // The server renders a destination and two ?next= into it (src/pages.ts
     // renderAuth): a few dozen bytes, against a page that weighs a third of this.
@@ -184,7 +189,7 @@ const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
  * public/ waiting for something to serve it by mistake. The wallet page has no
  * per-request content at all, so for it the file *is* the response.
  */
-const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "games.html", "pinball.html"];
+const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "games.html", "pinball.html", "snake.html"];
 
 const watch = process.argv.includes("--watch");
 
@@ -439,6 +444,13 @@ const pinballOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "pinball", "main.js")],
   outfile: path.join(outDir, "pinball.js"),
+};
+
+/** Snake's bundle: the rules, the board, and the leaderboard. */
+const snakeOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "snake", "main.js")],
+  outfile: path.join(outDir, "snake.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -980,6 +992,15 @@ async function buildPinballHtml(hash) {
   writeFileSync(path.join(outDir, "pinball.html"), await minifyDoc(raw));
 }
 
+/** Snake's document: like pinball's, its own sheet inlined and nothing else. */
+async function buildSnakeHtml(hash) {
+  let raw = readFileSync(path.join(clientDir, "snake.html"), "utf8");
+  const css = await minifyCss(readFileSync(path.join(clientDir, "snake.css"), "utf8"));
+  raw = replaceOnce(raw, /<link rel="stylesheet" href="\/snake\.css"\s*\/?>/, `<style>${css}</style>`, "snake stylesheet link");
+  raw = replaceOnce(raw, /src="\/snake\.js"/, `src="/snake.js?v=${hash("snake.js")}"`, "snake.js src");
+  writeFileSync(path.join(outDir, "snake.html"), await minifyDoc(raw));
+}
+
 /** Typeset the legal documents into public/ as PDFs. */
 function buildLegal() {
   for (const doc of LEGAL) {
@@ -1106,6 +1127,7 @@ async function buildAssets() {
     esbuild.build(authOpts),
     esbuild.build(gamesOpts),
     esbuild.build(pinballOpts),
+    esbuild.build(snakeOpts),
     buildCss("app.css", "forest.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
@@ -1127,6 +1149,7 @@ async function buildAssets() {
     buildAuthHtml(authCss, hash),
     buildGamesHtml(hash),
     buildPinballHtml(hash),
+    buildSnakeHtml(hash),
   ]);
   buildLegal();
   precompress();

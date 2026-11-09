@@ -19,7 +19,7 @@
  *    The three shells, and the bundles they name, are fetched when the worker
  *    installs, so there is always an app to open offline. So are the games
  *    list and each game (GAMES), with their pictures, so they open offline
- *    without having been visited first.
+ *    without having been visited first, and neither ever ages out.
  *  - Assets with ?v=: cache first. The query is the content hash, so a cached
  *    copy is the file itself, for good. Same-origin assets without one (an
  *    icon, a banner) go network first like pages.
@@ -64,7 +64,15 @@ const SHELLS = ["/", "/social", "/wallet"];
  * network once it has its page and its bundle, so it should not need a first
  * visit either.
  */
-const GAMES = ["/games", "/pinball"];
+const GAMES = ["/games", "/pinball", "/snake"];
+
+/**
+ * Whether a page or file is one of the games', which the caches never let go
+ * of. Everything else ages out as more arrives, and forty searches would
+ * otherwise cost a game nobody opened this week its place: exactly the game
+ * someone reaches for on a plane.
+ */
+const lasting = (path) => path.startsWith("/game-") || GAMES.some((game) => path === game || path === `${game}.js`);
 
 /** Set on a page served from the cache, so client/offline knows at once. */
 const MARK = '<meta name="ug-offline" content="';
@@ -146,16 +154,20 @@ const ANY = { ignoreVary: true };
  * Keep a copy, stamped with when it was fetched, and hold the cache to its
  * size by letting the oldest go. Deleting first moves a refreshed entry to the
  * back of the line, since a cache lists its keys in the order they went in.
+ * A game's bundle replaces its last build, whatever hash that had: nothing
+ * else would ever clear one out.
  */
 async function keep(name, key, response) {
   const headers = new Headers(response.headers);
   headers.set("ug-at", String(Date.now()));
   const copy = new Response(await response.blob(), { status: response.status, statusText: response.statusText, headers });
   const cache = await caches.open(name);
-  await cache.delete(key);
+  const path = new URL(key.url ?? key, self.location.origin).pathname;
+  await cache.delete(key, { ignoreSearch: name === ASSETS && lasting(path) });
   await cache.put(key, copy);
   const keys = await cache.keys();
-  await Promise.all(keys.slice(0, Math.max(0, keys.length - KEEP[name])).map((old) => cache.delete(old)));
+  const loose = keys.filter((old) => !lasting(new URL(old.url).pathname));
+  await Promise.all(loose.slice(0, Math.max(0, keys.length - KEEP[name])).map((old) => cache.delete(old)));
 }
 
 /** A cached page, marked as one so the page can say it is offline and since when. */
@@ -320,8 +332,12 @@ async function api(event) {
   }
   const fetching = fetchFor(request).then((r) => {
     if (r.status !== 304 || !spare) return r;
-    confirmed.add(spare);
-    return spare;
+    // Confirmed, the copy is as good as the server's answer, so it loses the
+    // stamp: `ug-at` on an answer tells the page it is reading an old copy.
+    const same = new Response(spare.body, spare);
+    same.headers.delete("ug-at");
+    confirmed.add(same);
+    return same;
   });
   const response = await race(
     event,
@@ -364,8 +380,9 @@ async function asset(event, hashed) {
  * Fetch the shells and the games, and the bundles each names in a <script
  * src>, so the app opens offline even where nothing was ever visited through
  * this worker: an upgrade from a worker that kept nothing, say, whose last
- * pages it never saw. The games' pictures too (<img src>): the list is mostly
- * pictures. Best effort: an install while offline keeps whatever it got.
+ * pages it never saw. The games' pictures too (<img src>, and a <picture>'s
+ * <source srcset> for the other theme): the list is mostly pictures. Best
+ * effort: an install while offline keeps whatever it got.
  */
 async function precache() {
   await Promise.all([
@@ -382,7 +399,7 @@ async function precachePage(path, images) {
     const html = await response.clone().text();
     await keep(PAGES, path, response);
     const srcs = [...html.matchAll(/<script\b[^>]*\bsrc="(\/[^"]+)"/g)].map((m) => m[1]);
-    if (images) srcs.push(...[...html.matchAll(/<img\b[^>]*\bsrc="(\/[^"]+)"/g)].map((m) => m[1]));
+    if (images) srcs.push(...[...html.matchAll(/<(?:img|source)\b[^>]*\b(?:src|srcset)="(\/[^"\s]+)"/g)].map((m) => m[1]));
     await Promise.all(
       srcs.map(async (src) => {
         if (await caches.match(src, { ...ANY, cacheName: ASSETS })) return;
