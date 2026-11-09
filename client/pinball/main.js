@@ -2,15 +2,17 @@
  * Pinball: the page around the table. The header (Back, the balls left, the
  * score), the two flipper buttons, the keys, sound, messages over the table,
  * and the scores. It is offline first: once loaded it plays with no network,
- * and its scores live on the device (scores.js).
+ * and its scores live on the device (../games/scores.js).
  *
  * The table itself is table.js (layout, physics, rules) and render.js (how
  * it is drawn, in 3D).
  */
+import { leaderboard } from "../games/board.js";
+import { keepOffline } from "../games/offline.js";
+import { scores } from "../games/scores.js";
+import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
-import { onName, readName } from "../js/me.js";
 import { ASPECT, draw, fit } from "./render.js";
-import { board, mine, record, sync } from "./scores.js";
 import { flip, game, newGame, onEvents, pull, update, waiting } from "./table.js";
 
 /** @param {string} id */
@@ -23,12 +25,17 @@ const ballsOut = $("pb-bn");
 const multOut = $("pb-x");
 const scoreOut = $("pb-sc");
 const msgOut = $("pb-msg");
-const myList = $("pb-my");
-const myNote = $("pb-mn");
-const boardList = $("pb-lb");
-const meOut = $("pb-me");
 
 const fmt = (n) => n.toLocaleString("en-US");
+
+/* ---------- Scores: this device's first, the shared board when the network answers ---------- */
+
+const finished = leaderboard(scores("ug.pb", "pinball"), "/pinball", {
+  myList: $("pb-my"),
+  myNote: $("pb-mn"),
+  boardList: $("pb-lb"),
+  meOut: $("pb-me"),
+});
 
 /* ---------- Messages and counters ---------- */
 
@@ -53,35 +60,7 @@ function paintCounters() {
   multOut.hidden = game.mult === 0;
 }
 
-/* ---------- Sound: short synthesized effects, once a press has allowed audio ---------- */
-
-/** @type {AudioContext | null} */
-let audio = null;
-
-function wakeAudio() {
-  if (audio) return;
-  try {
-    audio = new AudioContext();
-  } catch {
-    audio = null;
-  }
-}
-
-/** @param {number} freq @param {number} dur @param {OscillatorType} type @param {number} [to] @param {number} [vol] @param {number} [at] */
-function tone(freq, dur, type, to = freq * 0.5, vol = 0.05, at = 0) {
-  if (!audio) return;
-  const t = audio.currentTime + at;
-  const osc = audio.createOscillator();
-  const amp = audio.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, t);
-  osc.frequency.exponentialRampToValueAtTime(Math.max(20, to), t + dur);
-  amp.gain.setValueAtTime(vol, t);
-  amp.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(amp).connect(audio.destination);
-  osc.start(t);
-  osc.stop(t + dur);
-}
+/* ---------- Sound ---------- */
 
 /** @type {Record<string, () => void>} */
 const SOUNDS = {
@@ -109,7 +88,7 @@ onEvents({
   change: paintCounters,
   over: (score) => {
     document.body.classList.remove("pb-on");
-    gameOver(score);
+    finished(score);
   },
 });
 
@@ -223,87 +202,6 @@ $("pb-bk").addEventListener("click", () => {
   else location.href = "/games";
 });
 
-/* ---------- Scores: this device's first, the shared board when the network answers ---------- */
-
-/** @param {HTMLElement} list @param {{name?: string, score: number, at?: number}[]} rows @param {string} [me] */
-function paintList(list, rows, me) {
-  list.replaceChildren(
-    ...rows.map((row) => {
-      const li = document.createElement("li");
-      if (me && row.name === me) li.className = "me";
-      const name = document.createElement("span");
-      name.textContent = row.name ?? new Date(row.at ?? 0).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-      const score = document.createElement("b");
-      score.textContent = fmt(row.score);
-      li.append(name, score);
-      return li;
-    }),
-  );
-}
-
-/** @param {{board: import("./scores.js").Board | null, live: boolean, refused: boolean}} [state] */
-function paintBoards(state = { board: board(), live: false, refused: false }) {
-  const games = mine().games;
-  paintList(myList, games);
-  myNote.textContent = games.length ? "" : "Your games are kept on this device.";
-  const me = readName();
-  const b = state.board;
-  paintList(boardList, (b?.top ?? []).slice(0, 10), me);
-  const pending = mine().pending;
-  if (!me || state.refused) {
-    meOut.textContent = "";
-    const a = document.createElement("a");
-    a.href = "/login?next=/pinball";
-    a.textContent = "Log in";
-    meOut.append(a, " to put your best on the board.");
-  } else if (pending) meOut.textContent = `${fmt(pending)} goes on the board when you are back online.`;
-  else if (!b) meOut.textContent = "The board shows once you are online.";
-  else if (!state.live) meOut.textContent = `As of ${new Date(b.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.`;
-  else meOut.textContent = b.top.length ? "" : "No games on the board yet.";
-}
-
-let syncing = false;
-
-async function syncBoards() {
-  if (syncing) return;
-  syncing = true;
-  try {
-    paintBoards(await sync(!!readName()));
-  } finally {
-    syncing = false;
-  }
-}
-
-/** @param {number} score */
-function gameOver(score) {
-  record(score, !!readName());
-  paintBoards();
-  syncBoards();
-}
-
-/* ---------- Offline ---------- */
-
-/**
- * The game is the page and one bundle, and the worker keeps both. On a first
- * visit the page arrived before any worker was in charge of it, so it hands
- * the worker what it fetched (the same message client/offline sends), and the
- * next visit opens without a network.
- */
-function keepOffline() {
-  const sw = navigator.serviceWorker;
-  if (!sw) return;
-  const first = !sw.controller;
-  sw.register("/sw.js").catch(() => {});
-  if (!first) return;
-  sw.ready.then((reg) => {
-    const urls = performance
-      .getEntriesByType("resource")
-      .map((entry) => entry.name)
-      .filter((name) => name.startsWith(location.origin) && !name.includes("/api/"));
-    reg.active?.postMessage({ ugSeed: [location.href, ...urls], page: location.href });
-  });
-}
-
 /* ---------- Start ---------- */
 
 noZoom();
@@ -313,8 +211,4 @@ resize();
 paintCounters();
 say("Press a button to play", 0);
 raf = requestAnimationFrame(frame);
-paintBoards();
-syncBoards();
-onName(syncBoards);
-window.addEventListener("online", syncBoards);
 keepOffline();
