@@ -451,6 +451,8 @@ const snakeOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "snake", "main.js")],
   outfile: path.join(outDir, "snake.js"),
+  // The apple's drawing, ic-apple.svg, as text in the bundle: there with the game offline, never a request of its own.
+  loader: { ".svg": "text" },
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */

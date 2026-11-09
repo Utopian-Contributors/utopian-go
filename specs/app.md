@@ -126,11 +126,16 @@ one row per account. The page is pinball's: Back, the device's best and the scor
 the board under it, the leaderboard over the board between games on a phone and beside it on a
 wide screen, with a Play button. The board is a fixed 15 by 23 grid, the same for everyone, so
 every score on the board was played on the same one; drawn square-cornered, checked, in the
-system's light or dark, the snake the logo's green with yellow eyes (`client/snake/render.js`).
-The rules are the retro ones (`client/snake/game.js`): one cell a step, an apple grows it by
-one, scores 10 and speeds it up (170 ms a step down to 80), and a wall or its own body ends the
-game. Two quick turns inside one step both land, and can never add up to reversing into its
-neck. The server refuses a score that is not a multiple of 10 or is more than a full board's
+system's light or dark, the snake the logo's green with yellow eyes and the apple skeu-icons'
+`apple` (`ic-apple.svg`, read into the bundle as text so it needs no request offline)
+(`client/snake/render.js`). The rules are the retro ones (`client/snake/game.js`) but for the
+walls: one cell a step, an apple grows it by one, scores 10 and speeds it up (170 ms a step down
+to 80); off one edge it comes in at the opposite one, so only its own body ends the game. Two
+quick turns inside one step both land, and can never add up to reversing into its neck. It is
+drawn as one body part of the way through its step, so it slides from cell to cell and its tail
+draws out of the cell it leaves; that puts the picture up to a step behind the rules, which is
+what makes a turn show at the next cell's centre, where it happens. An apple eaten shrinks under
+the head as the next grows in, and the first step comes at once, so a swipe sets it off. The server refuses a score that is not a multiple of 10 or is more than a full board's
 worth (3,420). A phone steers by swipes anywhere on the page, a stroke that turns again without
 lifting; a keyboard by the arrows or WASD, with Space or P to pause. A swipe or arrow starts a
 game in its direction. Leaving the page pauses it; a tap or a direction goes on. For the moment

@@ -4,8 +4,8 @@
  * works the highest possible score out of it, and has to be told if it changes.
  *
  * The snake moves one cell a step. An apple grows it by one, scores 10 and
- * speeds it up; a wall or its own body ends the game. Filling the board ends
- * it too, the best way.
+ * speeds it up. Off one edge it comes back on at the opposite one, so only its
+ * own body ends the game. Filling the board ends it too, the best way.
  */
 
 export const COLS = 15;
@@ -44,6 +44,10 @@ export const game = {
   /** @type {Cell | null} */
   apple: null,
   score: 0,
+  /** The cell the tail left on the last step, so it can be drawn leaving it; none when the snake grew. @type {Cell | null} */
+  trail: null,
+  /** The apple the last step ate, so it can be drawn going down. @type {Cell | null} */
+  eaten: null,
 };
 
 /** @param {Cell} a @param {Cell} b */
@@ -74,6 +78,8 @@ export function lay(dir = "up", rand = Math.random) {
   game.dir = dir;
   game.turns = [];
   game.score = 0;
+  game.trail = null;
+  game.eaten = null;
   game.apple = place(rand);
 }
 
@@ -108,19 +114,22 @@ export function stepMs() {
 export function step(rand = Math.random) {
   game.dir = game.turns.shift() ?? game.dir;
   const [dx, dy] = DIRS[game.dir];
-  const head = { x: game.snake[0].x + dx, y: game.snake[0].y + dy };
+  // Over an edge and in at the opposite one.
+  const head = { x: (game.snake[0].x + dx + COLS) % COLS, y: (game.snake[0].y + dy + ROWS) % ROWS };
   const ate = !!game.apple && same(head, game.apple);
   // The tail moves out of the way, so its cell is free to step into, unless this step grows.
   const body = ate ? game.snake : game.snake.slice(0, -1);
-  if (head.x < 0 || head.y < 0 || head.x >= COLS || head.y >= ROWS || body.some((cell) => same(cell, head))) {
+  if (body.some((cell) => same(cell, head))) {
     game.state = "over";
     return "over";
   }
   game.snake.unshift(head);
+  game.eaten = ate ? game.apple : null;
   if (!ate) {
-    game.snake.pop();
+    game.trail = game.snake.pop() ?? null;
     return "move";
   }
+  game.trail = null;
   game.score += APPLE;
   game.apple = place(rand);
   if (game.apple) return "apple";

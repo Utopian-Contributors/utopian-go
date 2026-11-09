@@ -12,7 +12,7 @@ import { scores } from "../games/scores.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { COLS, ROWS, game, lay, newGame, step, stepMs, turn } from "./game.js";
-import { dark, draw, fit } from "./render.js";
+import { dark, draw, fit, ready } from "./render.js";
 
 /** @typedef {import("./game.js").Dir} Dir */
 
@@ -79,24 +79,28 @@ let paused = false;
 /** While the snake blinks, when it stops. */
 let dyingUntil = 0;
 
+/** How far through its step the snake is, so it is drawn sliding between cells; all the way when nothing moves. */
+const progress = () => (game.state === "play" ? Math.min(1, owed / stepMs()) : 1);
+
+/** @param {boolean} [hide] */
+const paint = (hide) => draw(ctx, progress(), hide);
+
 /** @param {number} now */
 function frame(now) {
   raf = 0;
-  // A long frame slows the game rather than jumping the snake into a wall.
+  // A long frame slows the game rather than jumping the snake into its tail.
   const dt = Math.min(100, now - (last || now));
   last = now;
   if (game.state === "play" && !paused) {
     owed += dt;
-    let moved = false;
     while (game.state === "play" && owed >= stepMs()) {
       owed -= stepMs();
-      moved = true;
       advance();
     }
-    if (moved) draw(ctx);
+    if (game.state === "play") paint();
   }
   if (dyingUntil) {
-    if (now < dyingUntil) draw(ctx, Math.floor((dyingUntil - now) / 100) % 2 === 1);
+    if (now < dyingUntil) paint(Math.floor((dyingUntil - now) / 100) % 2 === 1);
     else settle();
   }
   if ((game.state === "play" && !paused) || dyingUntil) run();
@@ -127,7 +131,7 @@ function advance() {
 /** The blinking is over: back to the scores, and ready for another game. */
 function settle() {
   dyingUntil = 0;
-  draw(ctx);
+  paint();
   document.body.classList.remove("sn-on");
   playBtn.textContent = "Play again";
   playBtn.focus({ preventScroll: true });
@@ -141,12 +145,13 @@ function start(dir) {
   wakeAudio();
   newGame(dir);
   document.body.classList.add("sn-on");
-  owed = 0;
+  // The first step is due at once, so the snake sets off with the swipe.
+  owed = stepMs();
   last = 0;
   paused = false;
   say("");
   paintCounters();
-  draw(ctx);
+  paint();
   run();
 }
 
@@ -271,10 +276,11 @@ function resize() {
   canvas.width = w;
   canvas.height = h;
   fit(w, h);
-  draw(ctx);
+  paint();
 }
 
-dark.addEventListener("change", () => draw(ctx));
+dark.addEventListener("change", () => paint());
+ready.then(() => paint());
 
 // Nobody is watching: a game waits for them to come back.
 window.addEventListener("blur", pause);

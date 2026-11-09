@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * The app's coloured marks: client/ic-*.svg, each one an icon out of the
- * skeu-icons package, written out as a file of its own.
+ * skeu-icons package, written out as a file of its own. Snake's apple is one
+ * too, read into its bundle (client/snake/render.js) rather than fetched.
  *
  * Run by hand (`npm run build:skeu`), not on every client build — the same
  * arrangement as app-icons.mjs, which it runs afterwards so the wallet and
@@ -24,6 +25,7 @@ const clientDir = path.join(__dirname, "..", "client");
 /** Each file the app points at, and the skeu-icons name drawn into it. */
 const MARKS = {
   "ic-add": "user-plus",
+  "ic-apple": "apple",
   "ic-audio": "audio-lines",
   "ic-bell": "bell",
   "ic-cash": "banknote",
