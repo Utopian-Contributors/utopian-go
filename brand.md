@@ -31,13 +31,14 @@ alone.
 > with no physics behind it. Each response's own gzip size against the window is now the
 > only per-file guardrail.
 
-There are two documents, each with its own budget and its own bundle:
+Each page is a document with its own budget and its own bundle:
 
 | Page | Document | Bundle | Lazy |
 |------|----------|--------|------|
 | Search | `index.html` (13,950 B — the rest is the server-injected price strip) | `app.js` | `swap.js`, `connect.js` |
 | Wallet | `wallet.html` | `wallet.js` | `connect.js` |
 | Pinball | `pinball.html` | `pinball.js` | — |
+| Snake | `snake.html` | `snake.js` | — |
 
 The wallet page does not share the search shell. It has no search field, tabs, results
 list, knowledge panel or skeletons — most of `app.css` — so serving it that stylesheet to

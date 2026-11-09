@@ -76,18 +76,24 @@ Anything that is only needed after a click is a lazy bundle.
 | Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js`, `ads.js` |
 | Games | `/games` | `games.html` | `games.js` | — |
 | Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |
+| Snake | `/snake` | `snake.html` | `snake.js` | — |
 
 **Games** is the home page's third row (a game controller, skeu-icons' `gamepad-2`, `ic-games`,
-also the games page's and pinball's tab icon). It opens the games list: a header with Back and
-the title, then one row per game on a phone (art, name, a line about it), a grid of tiles on a
-wider screen. Its sheet is inlined; its one script, `games.js`, only keeps it offline. For now it lists
-one game.
+also the tab icon of the games page and of every game). It opens the games list: a header with
+Back and the title, then each game as a screenshot of itself over its name and a line about it:
+big, one under the other, on a phone; a grid of tiles on a wider screen. The screenshots
+(`game-*.webp`, 4:5) are real frames of real games; Snake, drawn in the system's theme, has one
+for each (`game-snake.webp`, `game-snake-dark.webp`, picked by a `<picture>`). Its sheet is
+inlined; its one script, `games.js`, only keeps it offline. It lists two games.
 
 The games list is offline first, and so is every game on it. `games.js` registers the service
-worker and, on a first visit, hands it the page (`ugSeed`, as pinball does); and the worker's
+worker and, on a first visit, hands it the page (`ugSeed`, as the games do); and the worker's
 install fetches `/games` and each game's page (its `GAMES`), with the bundles and pictures they
 name, alongside the three shells. So once the worker is in, the list and the games open with no
-network, visited or not.
+network, visited or not. The worker's caches age everything else out as more arrives, but never
+the games' pages, bundles or pictures, so a game nobody opened for weeks still opens on a plane;
+a game's next bundle replaces its last instead. Each game registers the worker the same way
+(`client/games/offline.js`).
 
 **Pinball** is the first game, and like the list a
 page anyone may open signed out. Its Back goes where the visitor came from, else to `/games`. The page is flat, in the app's palette: a header with Back,
@@ -108,7 +114,27 @@ and plays with no network. Scores live on the device (`ug.pb`: its ten best game
 the list the page shows first. Signed in, the device's best that is not yet on the shared board
 waits as pending and is posted to `/api/social/pinball` when the network answers: on load, after
 a game, or on the browser's `online`. The board itself is kept as last read (`ug.pbb`) and shown
-with its date when offline. The server keeps one row per account in `pinball`, its best.
+with its date when offline: a board the worker answered from its copy carries that copy's
+`ug-at`, and only a fresh answer (or a copy the server confirmed with a 304) counts as live. The
+server keeps one row per account in `pinball`, its best. The scores, the board and its painting
+are shared with Snake (`client/games/scores.js`, `board.js`), each game under its own keys and route.
+
+**Snake** is the second game, as open as pinball and offline the same way: its page and bundle
+are precached, its scores live on the device (`ug.sn`, the board as last read `ug.snb`) and a
+signed-in best goes to `/api/social/snake` when the network answers, kept in a `snake` table,
+one row per account. The page is pinball's: Back, the device's best and the score in the header,
+the board under it, the leaderboard over the board between games on a phone and beside it on a
+wide screen, with a Play button. The board is a fixed 15 by 23 grid, the same for everyone, so
+every score on the board was played on the same one; drawn square-cornered, checked, in the
+system's light or dark, the snake the logo's green with yellow eyes (`client/snake/render.js`).
+The rules are the retro ones (`client/snake/game.js`): one cell a step, an apple grows it by
+one, scores 10 and speeds it up (170 ms a step down to 80), and a wall or its own body ends the
+game. Two quick turns inside one step both land, and can never add up to reversing into its
+neck. The server refuses a score that is not a multiple of 10 or is more than a full board's
+worth (3,420). A phone steers by swipes anywhere on the page, a stroke that turns again without
+lifting; a keyboard by the arrows or WASD, with Space or P to pause. A swipe or arrow starts a
+game in its direction. Leaving the page pauses it; a tap or a direction goes on. For the moment
+the snake blinks as it dies nothing starts another game, so a swipe still under way cannot.
 
 Every page wears the same header as search: the wordmark, the search field, and the
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet
