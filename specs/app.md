@@ -83,8 +83,9 @@ also the tab icon of the games page and of every game). It opens the games list:
 Back and the title, then each game as a screenshot of itself over its name and a line about it:
 big, one under the other, on a phone; a grid of tiles on a wider screen. The screenshots
 (`game-*.webp`, 4:5) are real frames of real games; Snake, drawn in the system's theme, has one
-for each (`game-snake.webp`, `game-snake-dark.webp`, picked by a `<picture>`). Its sheet is
-inlined; its one script, `games.js`, only keeps it offline. It lists two games.
+for each (`game-snake.webp`, `game-snake-dark.webp`, picked by a `<picture>`), each linked
+with its content hash like every other asset, so a new one is not held back by a week's caching.
+Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists two games.
 
 The games list is offline first, and so is every game on it. `games.js` registers the service
 worker and, on a first visit, hands it the page (`ugSeed`, as the games do); and the worker's
