@@ -79,25 +79,27 @@
         <!-- Filled server-side with live prices; empty until then. -->
         <div id="hm-tk"></div>
 
-        <!-- Home only: where to go from here, one row each. Games needs no
-             account; the other two do. Stands in for #ac on
-             this page. Signed out, each goes by the login page and on to its
-             page from there: the server points them there from the session
-             cookie (src/pages.ts homeNav), and app.js keeps them pointed right
-             (js/acct.js mountHomeNav). data-to is where each row is going. -->
+        <!-- Home only: where to go from here, as a grid of tiles under the
+             search field. Games needs no account; the other two do. Stands in
+             for #ac on this page. Signed out, each goes by the login page and
+             on to its page from there: the server points them there from the
+             session cookie (src/pages.ts homeNav), and app.js keeps them
+             pointed right (js/acct.js mountHomeNav). data-to is where each
+             tile is going. Wallet is the tall tile; the other two stack beside
+             it. The mark is decoration — the word names the tile. -->
         <nav id="hm-nv" aria-label="Go to">
-          <a href="/wallet" data-to="/wallet">
-            <img src="/ic-wallet.svg" alt="" width="30" height="30" />
-            Wallet
+          <a class="hm-t hm-wallet" href="/wallet" data-to="/wallet">
+            <img src="/ic-wallet.svg" alt="" width="32" height="32" />
+            <span>Wallet</span>
           </a>
-          <a href="/social" data-to="/social">
-            <img src="/ic-social.svg" alt="" width="30" height="30" />
-            Social
+          <a class="hm-t hm-social" href="/social" data-to="/social">
+            <img src="/ic-social.svg" alt="" width="32" height="32" />
+            <span>Social</span>
           </a>
           <!-- Anyone's, signed in or not, so no data-to: it never goes by login. -->
-          <a href="/games">
-            <img src="/ic-games.svg" alt="" width="30" height="30" />
-            Games
+          <a class="hm-t hm-games" href="/games">
+            <img src="/ic-games.svg" alt="" width="32" height="32" />
+            <span>Games</span>
           </a>
         </nav>
 

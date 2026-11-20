@@ -216,8 +216,6 @@ body.home .lg-mark {
   width: auto;
 }
 
-/* The forest either side of the column, on wide screens: client/forest.css. */
-
 body.home .sf {
   width: 100%;
 }
@@ -228,7 +226,7 @@ body.home #st {
 }
 
 /*
- * Home has no header row, and the rows under the price strip (#hm-nv) already
+ * Home has no header row, and the tiles under the price strip (#hm-nv) already
  * go to the wallet and to Social, so the control is left out here. Signed
  * out, those rows go by the login page (client/auth.html) on the way.
  */
@@ -236,67 +234,102 @@ body.home #ac {
   display: none;
 }
 
-/* Home-only rows: Wallet, Social, Games. Hidden elsewhere for the same reason as the
-   price strip below. A column under the search field, each row a surface of
-   its own (base.css) with the mark, the word and a chevron. */
+/*
+ * Home-only tiles: Wallet, Social, Games. Hidden elsewhere for the same reason
+ * as the price strip below.
+ *
+ * Two columns of square-ish rows: Wallet spans two rows on the left, Social
+ * and Games stack one each on the right. Each tile is painted in its mark's
+ * own colour — the wallet's leather, the figures' blue, the gamepad's red
+ * button — and the mark itself (client/ic-*.svg) is drawn large into the
+ * bottom-right corner, cut off by the tile's edge and faded into the colour
+ * towards the word, so it reads as the tile's ground rather than an icon
+ * sitting on it. The colours are the marks', not the theme's, so they hold in
+ * both themes.
+ */
 #hm-nv {
   display: none;
 }
 
 body.home #hm-nv {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 104px;
+  gap: 10px;
   width: 100%;
 }
 
-/* Narrower than the field on a wide screen, where the forest stands either
-   side of the column: the field clears it by 16px, and at the rows' height
-   the leaves reach in further, so a full-width row would brush them. */
-@media (min-width: 901px) {
-  body.home #hm-nv {
-    max-width: 512px;
-  }
-}
-
-body.home #hm-nv a {
+body.home .hm-t {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 56px;
-  padding: 0 18px 0 16px;
-  border-radius: 14px;
-  background: var(--wash);
-  color: var(--t);
-  font: 500 16px/1.2 var(--ff);
+  align-items: flex-start;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: linear-gradient(150deg, var(--hi), var(--lo));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.28),
+    inset 0 -1px 0 rgb(0 0 0 / 0.18),
+    0 1px 2px rgb(0 0 0 / 0.12);
+  color: #fff;
+  font: 650 19px/1.2 var(--ff);
+  letter-spacing: -0.01em;
   text-decoration: none;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
   /* A wide target: the pills' 0.96 would shrink it by a visible stride. */
   --press: 0.98;
 }
 
-body.home #hm-nv a:hover {
-  background: var(--wash2);
+body.home .hm-t:hover {
+  filter: brightness(1.06) saturate(1.05);
+  text-decoration: none;
 }
 
-/* Objects rather than glyphs — a leather wallet, two glossy figures, the
-   app's own marks (client/ic-*.svg) — so they keep their colours in both
-   themes, and sit on the row with a shadow. */
-body.home #hm-nv img {
-  width: 30px;
-  height: 30px;
-  flex: none;
-  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.25));
+body.home .hm-t:focus-visible {
+  outline: 2px solid var(--t);
+  outline-offset: 3px;
 }
 
-/* The chevron, pushed to the far end. */
-body.home #hm-nv a::after {
-  content: "";
-  width: 8px;
-  height: 8px;
-  margin-left: auto;
-  border: solid var(--f);
-  border-width: 0 1.6px 1.6px 0;
-  transform: rotate(-45deg);
+/* The mark, big, off the corner and melting into the tile towards the word. */
+body.home .hm-t img {
+  position: absolute;
+  z-index: -1;
+  right: -22px;
+  bottom: -30px;
+  width: auto;
+  height: 140px;
+  aspect-ratio: 1;
+  rotate: -12deg;
+  pointer-events: none;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.25));
+  -webkit-mask-image: radial-gradient(circle at 62% 62%, #000 30%, transparent 72%);
+  mask-image: radial-gradient(circle at 62% 62%, #000 30%, transparent 72%);
+}
+
+/* The tall tile's mark is as tall as the tile, off its right edge. Pixels
+   rather than shares of the tile, so a wide desktop tile crops it no harder
+   than a phone's does. */
+body.home .hm-wallet img {
+  height: 210px;
+  right: -48px;
+  bottom: -18px;
+}
+
+body.home .hm-wallet {
+  grid-row: span 2;
+  --hi: #b9824e;
+  --lo: #5c3418;
+}
+
+body.home .hm-social {
+  --hi: #5fb0ff;
+  --lo: #1c58b8;
+}
+
+body.home .hm-games {
+  --hi: #f2645a;
+  --lo: #a51f1f;
 }
 
 /* Home-only price strip. Hidden by default so it never becomes a flex item in
