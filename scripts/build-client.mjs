@@ -689,7 +689,7 @@ async function buildCss(name, ...extra) {
  * Social reuses the results layout — header, tabs, the two columns, the
  * panel, the footer — so it builds on app.css rather than keeping a copy that
  * would drift. Most of app.css is search's own (results, token card, images,
- * lightbox, the home forest), and inlining it would put about 3KB of gzip on
+ * lightbox, the home tiles), and inlining it would put about 3KB of gzip on
  * every social load for rules that cannot match. Pruning against what the
  * page actually writes keeps the one source and drops the dead weight. It
  * runs after every bundle the page can load is built, since those bundles are
@@ -746,7 +746,7 @@ async function prunedCss(sheets, bundles, doc) {
 
 /**
  * The login page's sheet: base.css and header.css (the wordmark) around its
- * own, then the home page's forest, pruned to what the page writes. It has no
+ * own, then the forest, pruned to what the page writes. It has no
  * header row and no account control, so the rest of header.css, and acct.css,
  * never match.
  */
@@ -1141,7 +1141,7 @@ async function buildAssets() {
     esbuild.build(gamesOpts),
     esbuild.build(pinballOpts),
     esbuild.build(snakeOpts),
-    buildCss("app.css", "forest.css", "ad.css", "chart.css"),
+    buildCss("app.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
   const [css, walletCss] = built.slice(-2);

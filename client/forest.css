@@ -1,8 +1,7 @@
 /*
- * The forest, on the home page and the login page (body.au, client/auth.html):
- * built into each one's sheet after its own (build-client.mjs), so the two
- * draw the one scene the same way. Search's other pages and Social never
- * carry it.
+ * The forest, on the login page (body.au, client/auth.html), built into its
+ * sheet after its own (build-client.mjs). The home page used to carry it too;
+ * it now has its tile grid (#hm-nv in app.css) on the plain page instead.
  */
 
 /*
@@ -35,7 +34,6 @@
  * only: a phone has no room beside its column, so it gets no forest.
  */
 @media (min-width: 901px) {
-  body.home,
   body.au {
     --w: 177.68vh;
     --split: 88.84vh;
@@ -51,8 +49,6 @@
     --x-r: max(50vw - var(--mid) + var(--gap), 100vw - var(--w));
   }
 
-  body.home::before,
-  body.home::after,
   body.au::before,
   body.au::after {
     content: "";
@@ -65,14 +61,12 @@
     pointer-events: none;
   }
 
-  body.home::before,
   body.au::before {
     left: 0;
     width: calc(var(--x-l) + var(--split));
     background-position: var(--x-l) top;
   }
 
-  body.home::after,
   body.au::after {
     left: calc(var(--x-r) + var(--split));
     right: 0;
@@ -81,7 +75,6 @@
 }
 
 @media (min-width: 901px) and (prefers-color-scheme: dark) {
-  body.home,
   body.au {
     --w: 177.58vh;
     --split: 88.74vh;
@@ -89,8 +82,6 @@
     --reach-r: 116.05vh;
   }
 
-  body.home::before,
-  body.home::after,
   body.au::before,
   body.au::after {
     background-image: url("/home-dark.webp");
