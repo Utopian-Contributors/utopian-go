@@ -160,9 +160,9 @@
  * header's box. Only the colour is drawn up: the header's own contents stay
  * at their size and place and fade in on it, and the rest of the page is
  * there at once, under the colour, with the page it came from gone at once,
- * so nothing moves or fades through. Going to a section's page from anywhere
- * swaps the same way (between the wallet and Social the header simply stays);
- * the other pages keep the plain cross-fade.
+ * so nothing moves or fades through. Leaving a section's page has no
+ * transition at all (js/plainswap.js), so one section's header is never
+ * morphed into another's; the other pages keep the plain cross-fade.
  */
 :root[data-sec] #hd {
   view-transition-name: hd;

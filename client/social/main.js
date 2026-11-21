@@ -18,6 +18,9 @@ import { readName, writeName } from "../js/me.js";
 import { openSwap, swapUrl } from "../js/swap.js";
 import { mountPwa } from "../js/pwa.js";
 import { UTCC, utccShort, utccText } from "../js/utcc.js";
+import { plainSwap } from "../js/plainswap.js";
+
+plainSwap();
 
 const main = $("m");
 /** A post, laid over the timeline (social.css #pv) so the timeline under it keeps its place. */

@@ -19,6 +19,9 @@ import { $ } from "../js/dom.js";
 import { NO_PASSKEY, canPasskey, enrol, register, why } from "../js/passkey.js";
 import { during } from "../js/progress.js";
 import { passkeyLogIn, send, submit } from "../js/signin.js";
+import { plainSwap } from "../js/plainswap.js";
+
+plainSwap();
 
 /** Each mode's title, the tab's as well as the heading's. */
 const TITLES = { login: "Log in", register: "Create account", recover: "Recover account", key: "Add a passkey" };

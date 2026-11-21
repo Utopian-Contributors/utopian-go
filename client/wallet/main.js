@@ -22,6 +22,9 @@ import { dirOf, figure, lineChart, paintMove, rangeTabs, since, when } from "../
 import { mountBreakdown } from "./breakdown.js";
 import { mountHistory } from "./history.js";
 import { icon, mountPanel } from "./panel.js";
+import { plainSwap } from "../js/plainswap.js";
+
+plainSwap();
 
 const total = $("wl-v");
 const delta = $("wl-d");
