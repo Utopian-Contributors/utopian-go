@@ -2183,9 +2183,8 @@ a.back.chat-back { display: none; }
     overflow: visible;
     border-top: 0.5px solid var(--sep);
     border-bottom: 0;
-    background: var(--mat);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
-    backdrop-filter: saturate(180%) blur(20px);
+    /* The panel's own colour, white by day, solid over the section's ground. */
+    background: var(--bg);
     /* Taps only: a drag that starts on the tabs has nothing to move. */
     touch-action: none;
   }
