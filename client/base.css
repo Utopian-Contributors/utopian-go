@@ -169,13 +169,18 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  /* The colour drawn up like a blind: the box eases in and out over half a
+     second, as the tile's flood came to rest, and clips the colour, which
+     keeps its full size from the top rather than being squashed. The
+     header's contents fade in over its first part, whole well before the
+     colour under them goes. */
   ::view-transition-group(hd) {
-    animation-duration: 0.36s;
-    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    overflow: clip;
+    animation-duration: 0.5s;
+    animation-timing-function: ease-in-out;
   }
 
   ::view-transition-old(hd) {
-    height: 100%;
     animation: none;
   }
 
@@ -184,6 +189,7 @@
      this one stays whole. */
   :root::view-transition-new(hd) {
     mix-blend-mode: normal;
+    animation-duration: 0.3s;
   }
 
   :root[data-sec]::view-transition-old(root) {
