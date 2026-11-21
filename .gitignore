@@ -9,3 +9,4 @@ public/
 video/
 # Generated art frames kept locally, never committed.
 assets/jungle-*.png
+.agents/skills
