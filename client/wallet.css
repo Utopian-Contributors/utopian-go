@@ -137,10 +137,34 @@ a:hover {
   padding-top: 18px;
 }
 
-/* Phones: a pad of its own under the header, which is a bar of colour. */
+/* The page's panel on the section's ground (base.css --panel), the footer
+   along its foot. The header is clear over the ground, so it does not stay
+   pinned as the page scrolls: the panel would show through it. */
+:root[data-sec] .chrome {
+  position: static;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root[data-sec] #wl {
+  border-radius: 20px 20px 0 0;
+  background: var(--panel);
+}
+
+:root[data-sec] #ft {
+  background: var(--bg);
+}
+
+/* Phones: a pad of its own under the header, and the panel down to the
+   footer whatever its height. */
 @media (max-width: 900px) {
   #wl {
     padding-top: 16px;
+  }
+
+  :root[data-sec] #wl {
+    flex: 1 0 auto;
   }
 
   /* Its margin parts it from the notice above; with none, it is the top. */

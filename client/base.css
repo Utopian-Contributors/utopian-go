@@ -115,14 +115,27 @@
   --buy-text: var(--sec-tint);
 }
 
+/*
+ * The section's colour is the page's ground, the mesh across the top of the
+ * window, and the header is clear over it; what the page holds sits on that
+ * ground as a panel with rounded top corners (--panel: white with the pale
+ * glow by day, the deep shade after dark), the way iOS lays a sheet on a
+ * coloured view. The pages lay out the panel (wallet.css, social.css,
+ * auth.css).
+ */
+:root[data-sec] {
+  --panel: var(--sec-glow) top / 100% 560px no-repeat, var(--bg);
+}
+
 :root[data-sec] body {
-  background: var(--sec-glow) top / 100% 560px no-repeat, var(--bg);
+  background: var(--sec-mesh);
+  background-size: 100% 100vh;
+  background-repeat: no-repeat;
 }
 
 /*
- * The header: the mesh, from one edge of the window to the other whatever
- * the shell's width, under everything in it. On it the inks are white, the
- * fields a white wash, and the search button stays the app's green.
+ * The header: clear over the mesh. On it the inks are white, the fields a
+ * white wash, and the search button stays the app's green.
  */
 :root[data-sec] #hd {
   position: relative;
@@ -139,18 +152,6 @@
   --buy-ink: #ffffff;
   --dn: #ffd3ce;
   color: var(--t);
-}
-
-:root[data-sec] #hd::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 100vw;
-  translate: -50% 0;
-  background: var(--sec-mesh);
 }
 
 /*
@@ -233,11 +234,11 @@
     --dn: #ffaba3;
   }
 
-  :root[data-sec] body {
-    background: var(--bg);
+  :root[data-sec] {
+    --panel: var(--bg);
   }
 
-  :root[data-sec] #hd::before {
+  :root[data-sec] body {
     background: var(--sec-bar);
   }
 

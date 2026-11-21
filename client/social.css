@@ -1934,7 +1934,16 @@ a.back.chat-back { display: none; }
   body.soc #hd {
     grid-column: 1 / -1;
     grid-row: 1;
-    border-bottom: 0.5px solid var(--sep);
+  }
+
+  /* The columns' panel on the section's ground (base.css --panel): a grid
+     item of its own across the row they share, under them. */
+  body.soc::before {
+    content: "";
+    grid-column: 1 / -1;
+    grid-row: 2;
+    border-radius: 20px 20px 0 0;
+    background: var(--panel);
   }
 
   body.soc #tb {
@@ -2155,6 +2164,12 @@ a.back.chat-back { display: none; }
   body.soc :is(#m, #pv) .back { display: none; }
   body.soc :is(#m, #pv) .detail-bar .back { display: inline-flex; }
   body.soc.deep:has(:is(#m, #pv) .detail-bar) .hb { display: none; }
+
+  /* The page's panel on the section's ground (base.css --panel). */
+  body.soc #mn {
+    border-radius: 20px 20px 0 0;
+    background: var(--panel);
+  }
 
   body.soc #tb {
     order: 1;
