@@ -559,8 +559,8 @@ function contentHash(buf) {
  *
  * Images are served for a week and Cloudflare holds them as long, on the
  * promise that a deploy changes the query string they are asked for by. A
- * url() with the bare name broke it: a new home-dark.webp under the old name
- * went on being served as the old frame for days after it shipped. Anything
+ * url() with the bare name broke it: a new image under the old name
+ * went on being served as the old one for days after it shipped. Anything
  * not in client/ (a route, say) is left as written.
  */
 function fingerprintUrls(source) {
@@ -746,12 +746,12 @@ async function prunedCss(sheets, bundles, doc) {
 
 /**
  * The login page's sheet: base.css and header.css (the wordmark) around its
- * own, then the forest, pruned to what the page writes. It has no
+ * own, pruned to what the page writes. It has no
  * header row and no account control, so the rest of header.css, and acct.css,
  * never match.
  */
 function buildAuthCss() {
-  return prunedCss(["base.css", "auth.css", "header.css", "forest.css"], ["auth.js"], "auth.html");
+  return prunedCss(["base.css", "auth.css", "header.css"], ["auth.js"], "auth.html");
 }
 
 async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, installHash) {
