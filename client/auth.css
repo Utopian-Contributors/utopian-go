@@ -65,6 +65,8 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
+  flex-direction: column;
+  justify-content: center;
   font: 14px/1.5 var(--ff);
   color: var(--t);
   background: var(--bg);
@@ -80,32 +82,60 @@ a:hover {
   text-decoration: underline;
 }
 
-/* One column, centred both ways: on a phone it starts near the top instead. */
+/* The wordmark over one column, the two centred as one in the window: on a
+   phone they start near the top instead. */
+.au-hd {
+  display: flex;
+  justify-content: center;
+  padding: 48px 16px 32px;
+}
+
 .au-w {
   width: 100%;
   max-width: 392px;
-  margin: auto;
-  padding: 48px 16px max(48px, env(safe-area-inset-bottom));
-}
-
-.au-w > .lg {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 32px;
+  margin: 0 auto;
+  padding: 0 16px max(48px, env(safe-area-inset-bottom));
 }
 
 @media (max-width: 620px) {
-  .au-w {
-    margin-top: 0;
-    padding-top: max(32px, env(safe-area-inset-top));
+  body {
+    justify-content: flex-start;
   }
 
-  .au-w > .lg {
-    margin-bottom: 24px;
+  .au-hd {
+    padding: max(32px, env(safe-area-inset-top)) 16px 24px;
   }
 
-  .au-w .lg-mark {
+  .au-hd .lg-mark {
     height: 34px;
+  }
+}
+
+/*
+ * On the way to a section (base.css :root[data-sec]) the wordmark is that
+ * section's header: a bar across the top in its colours, the mark white on
+ * it, carrying the header's view-transition name, so a home tile's colour
+ * draws up into it as it does into the wallet's or Social's own.
+ */
+:root[data-sec] body {
+  justify-content: flex-start;
+}
+
+:root[data-sec] .au-hd {
+  margin-bottom: 32px;
+  padding: max(14px, env(safe-area-inset-top)) 16px 14px;
+  background: var(--sec-mesh);
+  view-transition-name: hd;
+}
+
+:root[data-sec] .au-hd .lg-mark {
+  height: 30px;
+  fill: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-sec] .au-hd {
+    background: var(--sec-bar);
   }
 }
 

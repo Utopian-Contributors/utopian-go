@@ -26,7 +26,9 @@
        paints in its final shape; auth.css shows each [data-m] node in the
        modes it lists, and auth.js moves between them. -->
   <body class="au" data-m="login">
-    <main class="au-w">
+    <!-- The wordmark, over the form. On the way to a section it is that
+         section's header bar, the one a home tile's colour is drawn into. -->
+    <header class="au-hd">
       <a class="lg" href="/" aria-label="utopian-go home">
         <img
           class="lg-mark"
@@ -37,6 +39,8 @@
           decoding="async"
         />
       </a>
+    </header>
+    <main class="au-w">
 
       <!-- Should it ever be sent before auth.js is there to take it, it is
            posted to its own URL, which takes no POST and answers 404: never a
