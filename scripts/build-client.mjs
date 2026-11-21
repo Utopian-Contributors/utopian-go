@@ -987,21 +987,21 @@ async function buildAuthHtml(css, hash) {
 
 /**
  * The games list's document: its own sheet inlined, its one script
- * fingerprinted, and its screenshots too, for the reason fingerprintUrls
- * gives: a new game-snake.webp under the bare name went on being served as
- * the old one.
+ * fingerprinted, and the marks its tiles are drawn with too (ic-*.svg), for
+ * the reason fingerprintUrls gives: a new drawing under the bare name went on
+ * being served as the old one.
  */
 async function buildGamesHtml(hash) {
   let raw = readFileSync(path.join(clientDir, "games.html"), "utf8");
   const css = await minifyCss(readFileSync(path.join(clientDir, "games.css"), "utf8"));
   raw = replaceOnce(raw, /<link rel="stylesheet" href="\/games\.css"\s*\/?>/, `<style>${css}</style>`, "games stylesheet link");
   raw = replaceOnce(raw, /src="\/games\.js"/, `src="/games.js?v=${hash("games.js")}"`, "games.js src");
-  let shots = 0;
-  raw = raw.replace(/(src|srcset)="\/(game-[\w-]+\.webp)"/g, (match, attr, name) => {
-    shots++;
+  let marks = 0;
+  raw = raw.replace(/(src|srcset)="\/((?:game-[\w-]+\.webp)|(?:ic-[\w-]+\.svg))"/g, (match, attr, name) => {
+    marks++;
     return `${attr}="/${name}?v=${contentHash(readFileSync(path.join(clientDir, name)))}"`;
   });
-  if (!shots) throw new Error("games.html: no game screenshots to fingerprint");
+  if (!marks) throw new Error("games.html: no tile marks to fingerprint");
   writeFileSync(path.join(outDir, "games.html"), await minifyDoc(raw));
 }
 

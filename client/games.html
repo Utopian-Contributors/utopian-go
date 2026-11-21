@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-sec="games">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -11,8 +11,8 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-title" content="UtopianGO" />
     <meta name="application-name" content="UtopianGO" />
-    <meta name="theme-color" content="#fffff6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#292124" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#bd332d" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#6e1b17" media="(prefers-color-scheme: dark)" />
     <link rel="stylesheet" href="/games.css" />
   </head>
   <body class="gm">
@@ -27,31 +27,24 @@
       <h1>Games</h1>
     </header>
 
-    <!-- The games, each a screenshot of itself: big, one under the other on a
-         phone, a grid on a wider screen. A game drawn in the system's theme
-         has a shot in each. Each is its own page, anyone's, signed in or not.
-         games.js keeps the list and every game in it offline (client/sw GAMES). -->
+    <!-- The games as the home page draws its sections: a tile each in its own
+         colour, its mark large in the corner. Each is its own page, anyone's,
+         signed in or not. games.js keeps the list and every game in it
+         offline (client/sw GAMES, TILE_MARKS). -->
     <main>
       <ul class="gm-list">
         <li>
-          <a class="gm-card" href="/pinball">
-            <img class="gm-shot" src="/game-pinball.webp" alt="" width="800" height="1000" />
-            <span class="gm-txt">
-              <strong>Pinball</strong>
-              <span>Flippers, ramps and multiball. Plays offline.</span>
-            </span>
+          <a class="gm-card gm-pinball" href="/pinball">
+            <img src="/ic-flippers.svg" alt="" width="32" height="32" />
+            <strong>Pinball</strong>
+            <span>Flippers, ramps and multiball</span>
           </a>
         </li>
         <li>
-          <a class="gm-card" href="/snake">
-            <picture>
-              <source srcset="/game-snake-dark.webp" media="(prefers-color-scheme: dark)" />
-              <img class="gm-shot" src="/game-snake.webp" alt="" width="800" height="1000" />
-            </picture>
-            <span class="gm-txt">
-              <strong>Snake</strong>
-              <span>Eat, grow, mind your tail. Plays offline.</span>
-            </span>
+          <a class="gm-card gm-snake" href="/snake">
+            <img src="/ic-apple.svg" alt="" width="32" height="32" />
+            <strong>Snake</strong>
+            <span>Eat, grow, mind your tail</span>
           </a>
         </li>
       </ul>

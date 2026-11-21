@@ -14,6 +14,11 @@
  * an inline <svg>, and as files they cost the pages no script. A file is its
  * own document, so the package's gradient ids cannot meet another copy's and
  * need none of the per-instance renaming createElement() does.
+ *
+ * One mark is not the package's and not this script's: client/ic-flippers.svg,
+ * Pinball's on the games list. The package has no flipper, so it is drawn by
+ * hand in the package's manner (a top-lit gradient, a darker edge, a gloss)
+ * and checked in as it is; this script leaves it alone.
  */
 import { writeFileSync } from "fs";
 import path from "path";

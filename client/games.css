@@ -1,28 +1,32 @@
 /*
- * Games: the list of games, each a page of its own. Flat, in the app's
- * palette, the same as pinball.css. Each game is a screenshot over its name:
- * one big one under the other on a phone, a grid of tiles on a wider screen.
+ * Games: the list of games, each a page of its own, as a grid of tiles the
+ * way the home page draws its sections (app.css #hm-nv): each game in its own
+ * colour, its mark large in the corner, its name and a line about it.
  */
+/* The Games section's red, drawn as base.css draws a section's pages: a ramp
+   of the one hue, the bar (--bar, the header) in the tile's vivid shade, the
+   page a deep one, cards and buttons a step lighter, a press lighter again;
+   all of it deeper after dark. A tapped tile floods the screen with the page's
+   shade (js/tilezoom.js), so the colour stays. */
 :root {
-  --bg: #fffff6;
-  --t: #202124;
-  --f: #70757a;
-  --go: #39a11c;
-  --card: rgba(32, 33, 36, 0.06);
-  --card2: rgba(32, 33, 36, 0.1);
-  --ff: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color-scheme: light;
+  --bar: #bd332d;
+  --bg: #7e1a17;
+  --t: #ffffff;
+  --f: rgba(255, 255, 255, 0.78);
+  --go: #9cf5b0;
+  --a: #ffffff;
+  --card: #962421;
+  --card2: #ad302b;
+  --ff: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #292124;
-    --t: #e8eaed;
-    --f: #9aa0a6;
-    --go: #75ffbe;
-    --card: rgba(232, 234, 237, 0.08);
-    --card2: rgba(232, 234, 237, 0.13);
-    color-scheme: dark;
+    --bar: #6e1b17;
+    --bg: #240807;
+    --card: #3a0f0d;
+    --card2: #521714;
   }
 }
 
@@ -43,6 +47,43 @@ body {
   max-width: 960px;
   margin: 0 auto;
   padding: max(8px, env(safe-area-inset-top)) 16px 8px;
+  background: var(--bar);
+  box-shadow: 0 0 0 100vmax var(--bar);
+  clip-path: inset(0 -100vmax);
+}
+
+/* Opened from the home tile, the tile's flood is drawn into this bar as the
+   page arrives (base.css carries the reasoning). */
+.gm-hd {
+  view-transition-name: hd;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-group(hd) {
+    animation-duration: 0.36s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  ::view-transition-old(hd) {
+    height: 100%;
+    animation: none;
+  }
+
+  /* Laid over the colour rather than added to it: the browser's plus-lighter
+     blend is for two images fading through each other, and the colour under
+     this one stays whole. */
+  :root::view-transition-new(hd) {
+    mix-blend-mode: normal;
+  }
+
+  :root::view-transition-old(root) {
+    animation: none;
+    opacity: 0;
+  }
+
+  :root::view-transition-new(root) {
+    animation: none;
+  }
 }
 
 /* The app's Back pill (header.css .hb). */
@@ -54,7 +95,7 @@ body {
   padding: 0 15px 0 10px;
   border-radius: 999px;
   background: var(--card);
-  color: var(--go);
+  color: var(--a);
   font: 600 14px var(--ff);
   text-decoration: none;
 }
@@ -74,61 +115,95 @@ main {
   padding: 8px 16px max(16px, env(safe-area-inset-bottom));
 }
 
-/* A phone: one game under the other, each a big screenshot over its name. */
+/* Two to a row on a phone, more as the screen widens. */
 .gm-list {
   display: grid;
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
   margin: 0;
-  padding: 0;
+  padding: 8px 0 0;
   list-style: none;
 }
 
+/*
+ * A tile as the home page's are: lit from above in its own colour, the mark
+ * (client/ic-*.svg) cut off by the tile's corner and fading towards the words.
+ * Pinball in its table's felt green, Snake in a warm amber under the apple,
+ * both clear of the page's red. The colours are the marks', not the theme's,
+ * so they hold after dark.
+ */
 .gm-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-  border-radius: 16px;
-  background: var(--card);
-  color: var(--t);
+  gap: 4px;
+  aspect-ratio: 1;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: linear-gradient(150deg, var(--hi), var(--lo));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.28),
+    inset 0 -1px 0 rgb(0 0 0 / 0.18),
+    0 1px 2px rgb(0 0 0 / 0.2);
+  color: #fff;
   text-decoration: none;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  transition: filter 0.16s, scale 0.2s cubic-bezier(0.28, 1.4, 0.36, 1);
 }
 
 .gm-card:hover {
-  background: var(--card2);
+  filter: brightness(1.06) saturate(1.05);
 }
 
 .gm-card:active {
   scale: 0.98;
 }
 
-.gm-shot {
-  display: block;
-  width: 100%;
+.gm-card:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.gm-card img {
+  position: absolute;
+  z-index: -1;
+  right: -26px;
+  bottom: -30px;
+  width: 75%;
   height: auto;
-  aspect-ratio: 4 / 5;
-  object-fit: cover;
+  aspect-ratio: 1;
+  rotate: -12deg;
+  pointer-events: none;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.25));
+  -webkit-mask-image: radial-gradient(circle at 62% 62%, #000 34%, transparent 74%);
+  mask-image: radial-gradient(circle at 62% 62%, #000 34%, transparent 74%);
 }
 
-.gm-txt {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 12px 16px 14px;
+.gm-card strong {
+  font: 650 19px/1.2 var(--ff);
+  letter-spacing: -0.01em;
 }
 
-.gm-txt strong {
-  font: 600 17px/1.2 var(--ff);
+.gm-card span {
+  max-width: 70%;
+  font: 500 13px/1.3 var(--ff);
+  opacity: 0.92;
 }
 
-.gm-txt span {
-  color: var(--f);
-  font-size: 14px;
+.gm-pinball {
+  --hi: #4cc488;
+  --lo: #0f5c3b;
 }
 
-/* Wider: a grid of tiles. */
-@media (min-width: 600px) {
-  .gm-list {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+.gm-snake {
+  --hi: #ffc75a;
+  --lo: #c9681a;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
   }
 }

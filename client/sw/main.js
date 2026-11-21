@@ -66,13 +66,17 @@ const SHELLS = ["/", "/social", "/wallet"];
  */
 const GAMES = ["/games", "/pinball", "/snake"];
 
+/** The marks the games list's tiles are drawn with (client/games.html). */
+const TILE_MARKS = ["/ic-flippers.svg", "/ic-apple.svg"];
+
 /**
  * Whether a page or file is one of the games', which the caches never let go
  * of. Everything else ages out as more arrives, and forty searches would
  * otherwise cost a game nobody opened this week its place: exactly the game
  * someone reaches for on a plane.
  */
-const lasting = (path) => path.startsWith("/game-") || GAMES.some((game) => path === game || path === `${game}.js`);
+const lasting = (path) =>
+  TILE_MARKS.includes(path) || path.startsWith("/game-") || GAMES.some((game) => path === game || path === `${game}.js`);
 
 /** Set on a page served from the cache, so client/offline knows at once. */
 const MARK = '<meta name="ug-offline" content="';
