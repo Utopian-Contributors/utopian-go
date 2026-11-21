@@ -314,7 +314,8 @@ export function mount(ctx) {
     enterkeyhint: "go",
   });
   const hits = el("ul", { class: "hits", hidden: true });
-  const list = el("ul", { class: "chats" });
+  // In outline until the first page of chats (social.js skRows); its rows fade in over it.
+  const list = el("ul", { class: "chats" }, el("li", {}, ctx.skRows(4, "")));
   const listErr = el("p", { class: "err list-err" });
   let findWait = 0;
   let findGen = 0;
@@ -363,6 +364,7 @@ export function mount(ctx) {
     if (!sorted.length && !listNext) kids.push(el("li", { class: "empty" }, nil("ic-chat", "No chats yet", "Type a handle above to start a conversation.")));
     else if (q && !shown.length && !listNext) kids.push(el("li", { class: "muted empty", text: "No chat with that name yet." }));
     if (listNext) kids.push(el("li", { class: "more" }));
+    if (list.querySelector(".skl")) for (const kid of kids) kid.classList.add("fi");
     list.replaceChildren(...kids);
     armList();
   }

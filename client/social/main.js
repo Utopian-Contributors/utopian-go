@@ -26,6 +26,110 @@ const main = $("m");
 /** A post, laid over the timeline (social.css #pv) so the timeline under it keeps its place. */
 const pv = $("pv");
 
+/*
+ * Loading. Every page draws its placeholder the moment it is asked for: grey
+ * bars (.skl) in the shape and at the height of what will come, so the page
+ * is laid out from its first paint and nothing moves when the answer lands.
+ * What replaces a placeholder fades in (.fi), and so does a face or a photo
+ * once its file has decoded (img.fd). The rules come with this file rather
+ * than social.css: social.html, which inlines that, sits at its guardrail.
+ */
+document.head.append(
+  el("style", {
+    text:
+      ".skl{pointer-events:none;animation:skl 1.6s ease-in-out infinite}" +
+      ".skl i{display:block;flex:none;max-width:100%;border-radius:6px;background:var(--ch)}" +
+      "@keyframes skl{50%{opacity:.5}}" +
+      ".fi{animation:fi .32s ease-out both}@keyframes fi{from{opacity:0}}" +
+      "img.fd{transition:opacity .32s ease-out}img.fd:not(.ok){opacity:0}" +
+      ":is(#bal,#badge,#mbadge):not([hidden]){animation:fi .32s ease-out}" +
+      ".se:empty{animation:skl 1.6s ease-in-out infinite;background:var(--ch)}" +
+      "@media (max-width:900px){body.profile .skl i{margin-inline:auto}}" +
+      "@media (prefers-reduced-motion:reduce){.skl,.fi,.se:empty,#bal,#badge,#mbadge{animation:none}img.fd{transition:none}}",
+  }),
+);
+
+/** A grey bar `w` wide (any CSS length), `h` px tall and `t` px under what is above it. */
+const bar = (w, h, t = 0) => el("i", { style: `width:${w};height:${h}px;margin-top:${t}px` });
+/** A placeholder block, with the classes of what it stands in for so it sits where that will. */
+const skl = (cls, ...kids) => el("div", { class: `${cls} skl`, "aria-hidden": "true" }, ...kids);
+const many = (n, make) => Array.from({ length: n }, make);
+/** A post of a line or two, with its face and its row of actions. */
+const skPost = () =>
+  skl("post", el("div", { class: "post-row" }, bar("40px", 40), el("div", { class: "post-main" }, bar("30%", 14, 3), bar("92%", 13, 14), bar("60%", 13, 8), bar("132px", 24, 24))));
+/** A person's row, as Friends, Notifications and Messenger list them. */
+const skRow = () => el("div", { class: "friend" }, bar("40px", 40), el("div", { class: "friend-main" }, bar("35%", 14, 4), bar("70%", 12, 10)));
+/** `n` rows in a list's own box, so they keep its gutters. */
+const skRows = (n, cls = "friends") => skl(cls, ...many(n, skRow));
+/** Find a person, as Friends and Messenger have it above their lists. */
+const skFind = () => skl("find", bar("100%", 41, 4));
+/** A post's page: its bar with Back, then the post. */
+const skDetail = () => [skl("detail-bar", bar("76px", 32, 2)), skPost()];
+
+/** What a page shows while it loads, in #m. The timeline draws its own (frameTimeline). */
+function skeleton(page) {
+  if (page === "profile") return many(3, skPost);
+  if (page === "friends") return [skFind(), skRows(4)];
+  if (page === "notifications") return [skRows(5)];
+  if (page === "edit")
+    return [
+      skl("detail-bar", bar("76px", 32, 2)),
+      skl("sec", bar("80px", 16, 4), bar("140px", 140, 14), bar("100%", 80, 32), bar("100%", 41, 40), bar("80px", 36, 40)),
+    ];
+  return [];
+}
+
+/** A profile's card: picture, name, a line about them, and the row of actions. */
+const skCard = () => skl("", bar("200px", 200), bar("45%", 22, 12), bar("80%", 13, 14), bar("100%", 88, 14));
+
+/** The rail (client/rail), until its answer: people to add, then the trending list. */
+const skRail = () =>
+  skl(
+    "",
+    bar("50%", 16, 4),
+    ...many(2, () => el("div", { style: "display:flex;gap:10px;margin-top:14px" }, bar("36px", 36), bar("40%", 14, 4))),
+    bar("60%", 16, 36),
+    ...many(5, () => el("div", { style: "display:flex;gap:10px;margin-top:14px" }, bar("28px", 28), bar("30%", 14, 2))),
+  );
+
+/**
+ * Whatever replaces a placeholder in `box` fades in: a page's own render or a
+ * bundle's (Friends, Notifications, Edit profile, Messenger) alike, so none of
+ * them has to know. Watching rather than calling: a bundle may empty the box
+ * first and fill it after an await, so a placeholder gone marks the box until
+ * something comes. A record runs before the next paint, so nothing shows
+ * before its fade starts. What still holds a placeholder (a list drawn ahead
+ * of its rows) comes as it is; its rows fade when they land.
+ */
+function fadeInto(box) {
+  let waiting = false;
+  new MutationObserver((records) => {
+    for (const record of records) {
+      if ([...record.removedNodes].some((node) => node.classList?.contains("skl"))) waiting = true;
+      if (!waiting) continue;
+      for (const node of record.addedNodes) {
+        if (!(node instanceof Element) || node.matches(".skl")) continue;
+        waiting = false;
+        if (!node.querySelector(".skl")) node.classList.add("fi");
+      }
+    }
+  }).observe(box, { childList: true });
+}
+fadeInto(main);
+fadeInto(pv);
+fadeInto($("side"));
+// Done fading, the class goes, so a card moved later does not fade in again.
+addEventListener("animationend", (e) => e.animationName === "fi" && /** @type {Element} */ (e.target).classList.remove("fi"));
+
+/** A face or a photo comes in with a fade once its file has decoded, rather than in pieces. */
+function fadeImg(img) {
+  img.classList.add("fd");
+  const ok = () => img.classList.add("ok");
+  img.addEventListener("load", ok, { once: true });
+  img.addEventListener("error", ok, { once: true });
+  return img;
+}
+
 /** @type {null | {name: string, address: string, bio: string, loc: string, avatarRev: number, passkey: false | {id: string}, nextPost: number, wait: number, unseen: number}} */
 let me = null;
 /** Object URLs of photos in an open composer, freed when the page is redrawn. */
@@ -257,7 +361,7 @@ function linkedText(text, coins) {
  */
 function photo(name, rev) {
   if (!rev) return null;
-  return el("img", { class: "pfp", src: `/social/a/${name}?v=${rev}`, alt: "", width: "200", height: "200" });
+  return fadeImg(el("img", { class: "pfp", src: `/social/a/${name}?v=${rev}`, alt: "", width: "200", height: "200" }));
 }
 
 /**
@@ -508,7 +612,7 @@ function postActions(post, inDetail, replies) {
 /** Timeline face: the small file, 40px wide, a square until the file loads. */
 function face(name, rev) {
   if (!rev) return null;
-  return el("img", { class: "mini", src: `/social/t/${name}?v=${rev}`, alt: "", width: "40", height: "40" });
+  return fadeImg(el("img", { class: "mini", src: `/social/t/${name}?v=${rev}`, alt: "", width: "40", height: "40" }));
 }
 
 function thumb(name, rev) {
@@ -554,6 +658,7 @@ function gallery(post) {
     const pic = el("picture", { class: "ld" }, el("source", { media: "(max-width: 900px)", srcset: `${full[i]}?m=1` }), img);
     const size = post.sizes?.[i];
     if (size) pic.style.aspectRatio = n === 1 && size[0] / size[1] < 4 / 5 ? "4 / 5" : `${size[0]} / ${size[1]}`;
+    fadeImg(img);
     const done = () => pic.classList.remove("ld");
     img.addEventListener("load", done, { once: true });
     img.addEventListener("error", () => (done(), pic.classList.add("bad")), { once: true });
@@ -936,6 +1041,10 @@ async function showOver(here) {
     closePost();
   } else {
     const loaded = progress.start();
+    // The post's page is up at once, in outline, and the post fades in over it.
+    pv.replaceChildren(...skDetail());
+    pv.hidden = false;
+    pv.scrollTop = 0;
     try {
       await renderPostPage(here.id);
     } catch (cause) {
@@ -976,10 +1085,18 @@ pv.addEventListener("click", openPost);
  * page paints once; otherwise it takes this box's place when it comes.
  */
 function composer() {
-  if (!me) return null;
-  const box = el("div");
-  load("cp", "__compose").then((c) => box.isConnected && box.replaceWith(c.composer(kit)), () => {});
-  return box;
+  if (!me && !readName()) return null;
+  // As tall as the composer, so the posts under it stay where they are when
+  // it comes. Its insides hide on a phone (social.css), as the composer's do.
+  return skl("composer", el("div", { class: "compose-top", style: "height:87.5px" }, bar("40px", 40, 6), bar("40%", 16, 16)));
+}
+
+/** Once the timeline's answer says who is signed in: the composer in its placeholder's place, or, signed out after all, neither. */
+function fillComposer() {
+  const box = main.querySelector(":scope > .composer.skl");
+  if (!box) return;
+  if (!me) return box.remove();
+  load("cp", "__compose").then((c) => box.isConnected && me && box.replaceWith(c.composer(kit)), () => {});
 }
 
 /**
@@ -1045,7 +1162,12 @@ async function loadMore(gen) {
     if (gen !== feedGen) return;
     sentinel.replaceChildren();
     const seen = new Set([...main.querySelectorAll("article.post[id]")].map((node) => node.id));
-    for (const post of data.posts) if (!seen.has(`p-${post.id}`)) sentinel.before(entry(post));
+    for (const post of data.posts) {
+      if (seen.has(`p-${post.id}`)) continue;
+      const card = entry(post);
+      card.classList.add("fi");
+      sentinel.before(card);
+    }
     feedNext = data.next || null;
     if (!feedNext) sentinel.remove();
     armMore(gen);
@@ -1068,8 +1190,8 @@ function railSide() {
   useSide(false);
   if (!WIDE.matches) return;
   useSide(true);
-  $("side").replaceChildren();
-  load("rl", "__rail").then((rail) => rail.mount(kit), () => {});
+  $("side").replaceChildren(skRail());
+  load("rl", "__rail").then((rail) => rail.mount(kit), () => $("side").replaceChildren());
 }
 WIDE.addEventListener("change", () => document.body.classList.contains("tl") && railSide());
 
@@ -1113,12 +1235,22 @@ WIDE.addEventListener("change", () => showBalance(true));
 // Someone may have paid you while the page was in another tab.
 document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && showBalance(true));
 
+/**
+ * The timeline before its posts: the composer's place, the filters (real
+ * already, they need no answer) and posts in outline. Returns the feed, for
+ * paintFeed to fill.
+ */
+function frameTimeline() {
+  railSide();
+  const feed = el("div", { class: "feed" }, ...many(4, skPost));
+  main.replaceChildren(...[composer(), filterBar(feed), feed].filter(Boolean));
+  return feed;
+}
+
 function renderTimeline(data) {
   const gen = feedGen;
-  railSide();
-  const feed = el("div", { class: "feed" });
-  main.replaceChildren(...[composer(), filterBar(feed), feed].filter(Boolean));
-  paintFeed(feed, data, gen);
+  paintFeed(frameTimeline(), data, gen);
+  fillComposer();
 }
 
 /** Why the timeline has nothing on it, by the filters that are on. Signed out, the server ignores friends and saved. */
@@ -1143,30 +1275,35 @@ function paintFeed(feed, data, gen, error) {
   const cards = data.posts.map(entry);
   // The first page's ad, after the second post.
   if (data.ad) cards.splice(2, 0, adPost(data.ad));
-  feed.replaceChildren(
-    ...cards,
-    ...[
-      !data.posts.length && (error ? el("p", { class: "err", text: error }) : emptyFeed()),
-      feedNext && el("div", { class: "more" }),
-    ].filter(Boolean),
-  );
+  const none = !data.posts.length && (error ? el("p", { class: "err", text: error }) : emptyFeed());
+  // Fresh posts fade in, over the outline or the ones a filter took off.
+  for (const card of [...cards, none]) card && card.classList.add("fi");
+  feed.replaceChildren(...[...cards, none, feedNext && el("div", { class: "more" })].filter(Boolean));
   armMore(gen);
+  // Drawn before the answer said who is signed in; now it has.
+  for (const paint of chips) paint();
 }
+
+/** The filter chips' painters, so the bar drawn ahead of the answer can catch up with it. */
+let chips = [];
 
 /** Toggles under the composer. A press asks again and redraws only the posts, so a draft above keeps. */
 function filterBar(feed) {
+  chips = [];
   return el(
     "div",
     { class: "flt", role: "group", "aria-label": "Show" },
     ...FILTERS.map(([key, text, id, onText, onId], i) => {
       const button = el("button", { type: "button" });
       const paint = () => {
-        const on = shown[key] && (!!me || i > 1);
+        // Before the answer, whoever this browser remembers.
+        const on = shown[key] && (!!(me || readName()) || i > 1);
         button.setAttribute("aria-pressed", on);
         button.innerHTML = icon((on && onId) || id);
         button.append((on && onText) || text);
       };
       paint();
+      chips.push(paint);
       button.addEventListener("click", async () => {
         if (i < 2 && !me) return openAuth("login");
         shown[key] = !shown[key];
@@ -1260,6 +1397,8 @@ const kit = {
   renderSide,
   load,
   drafts,
+  /** `n` people's rows in outline, for a list still on its way (Messenger's). */
+  skRows,
   /** The loading bar (client/js/progress.js), for a bundle's own loads: start() returns its finish. */
   progress,
 };
@@ -1279,17 +1418,35 @@ async function show() {
   document.body.classList.toggle("ads", here.page === "ads");
   document.body.classList.toggle("newpost", here.page === "new");
   setDetail(here.page === "post");
-  // The loading bar along the top while the page loads, not a placeholder in it.
-  main.replaceChildren();
+  // The loading bar along the top, and the page in outline under it (skeleton).
+  main.replaceChildren(...skeleton(here.page));
   closePost();
+  const side = $("side");
+  if (here.page === "post") {
+    pv.replaceChildren(...skDetail());
+    pv.hidden = false;
+    railSide();
+  }
+  // A profile's card in outline, unless it is the one the server drew (src/pages.ts profileCard).
+  if (here.page === "profile" && side.querySelector(".name h2")?.textContent !== here.name) {
+    useSide(true);
+    side.replaceChildren(skCard());
+  }
+  if (here.page === "chat") {
+    useSide(true);
+    side.replaceChildren(skFind(), skRows(4, "chats"));
+  }
   const loaded = progress.start();
   try {
     if (here.page === "timeline") {
-      // Remembered as signed in, the composer comes beside the posts, so they paint together.
+      const gen = feedGen;
+      const feed = frameTimeline();
+      // Remembered as signed in, the composer comes beside the posts, so they land together.
       const cp = readName() && load("cp", "__compose").catch(() => {});
       const data = await pull(`/api/social/timeline?${feedQuery()}`);
       await cp;
-      renderTimeline(data);
+      paintFeed(feed, data, gen);
+      fillComposer();
     } else if (here.page === "friends") {
       const [data, friends] = await Promise.all([pull("/api/social/friends"), load("fr", "__friends")]);
       friends.mount(data, kit);
@@ -1302,7 +1459,6 @@ async function show() {
     else if (here.page === "post") {
       // Reached by its address: over a timeline that was never drawn.
       await renderPostPage(here.id);
-      railSide();
     } else if (here.page === "new") {
       // The composer as a page of its own (client/compose), a phone's +.
       if (!me) await pull("/api/social/me");
@@ -1317,6 +1473,8 @@ async function show() {
     }
   } catch (cause) {
     detail = null;
+    // A post's outline would lie over the error.
+    closePost();
     if ((here.page === "friends" || here.page === "notifications") && me) useSide(false);
     else renderSide(me);
     main.replaceChildren(el("p", { class: "err", text: cause.message }));

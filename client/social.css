@@ -1409,6 +1409,9 @@ body.soc .pn {
   /* No top pad on phones: the header's own bottom pad is gap enough. */
   body.soc #mn { padding-top: 0; }
 
+  /* The timeline's rail is for wide screens (client/social/main.js railSide). */
+  body.tl #sd { display: none; }
+
   body.soc #sd {
     order: -1;
     flex: none;

@@ -129,8 +129,9 @@ function assets(trending) {
 }
 
 /**
- * Appends the column to `side` and fills it when the answer comes. Whatever
- * redraws the side first takes the box with it, and the late answer is dropped.
+ * Puts the column in `side`, in its outline's place, when the answer comes.
+ * Whatever redraws the side first takes the outline with it, and the late
+ * answer is dropped.
  * @param {{
  *   side: HTMLElement,
  *   pull: (path: string) => Promise<any>,
@@ -142,15 +143,15 @@ function assets(trending) {
  */
 function mount(ctx) {
   injectStyles("rl-css", CSS);
-  const box = el("div", { class: "rl", "aria-busy": "true" });
-  ctx.side.append(box);
+  // social.js's outline of this column (railSide): the column takes its
+  // place, fading in, once it has something to show.
+  const held = ctx.side.firstElementChild;
   ctx.pull("/api/social/rail").then(
     (data) => {
-      if (!box.isConnected) return;
-      box.removeAttribute("aria-busy");
-      box.replaceChildren(...[people(data.people, ctx), assets(data.assets)].filter(Boolean));
+      if (!held?.isConnected) return;
+      held.replaceWith(el("div", { class: "rl" }, ...[people(data.people, ctx), assets(data.assets)].filter(Boolean)));
     },
-    () => box.remove(),
+    () => held?.isConnected && held.remove(),
   );
 }
 
