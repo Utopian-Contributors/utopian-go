@@ -179,6 +179,43 @@ function webLink(url) {
   });
 }
 
+/** Where this site's search answers: its own domain, and wherever this page is served from. */
+const SEARCH_HOSTS = new Set(["utopiango.com", "www.utopiango.com", location.host]);
+
+/**
+ * The first link in `text` to a search on this site, as {q, t, lang}, or
+ * null. A search page is `/?q=…` (`/search?q=…` redirects there), with the
+ * tab in `t` and the language in `lang` (client/js/url.js).
+ */
+function searchIn(text) {
+  for (const match of text.matchAll(LINK)) {
+    if (!match[1]) continue;
+    const raw = trimUrl(match[0]);
+    let url;
+    try {
+      url = new URL(/^www\./i.test(raw) ? `https://${raw}` : raw);
+    } catch {
+      continue;
+    }
+    if (!SEARCH_HOSTS.has(url.host.toLowerCase()) || !/^\/(search\/?)?$/.test(url.pathname)) continue;
+    const q = (url.searchParams.get("q") || "").trim().slice(0, 400);
+    if (q) return { q, t: url.searchParams.get("t") || "web", lang: (url.searchParams.get("lang") || "").slice(0, 16) };
+  }
+  return null;
+}
+
+/**
+ * The search a post's words link to, as its tabs and first results: their
+ * own bundle (client/serp), which fills this box, or takes it away when the
+ * search finds nothing.
+ */
+function serp(found) {
+  if (!found) return null;
+  const box = el("div", { class: "se" });
+  load("se", "__serp").then((s) => s.fill(box, found), () => box.remove());
+  return box;
+}
+
 /** `coins` are a post's callouts: a ticker that got a card is blue, and opens its chart as the card does. */
 function linkedText(text, coins) {
   const frag = document.createDocumentFragment();
@@ -715,6 +752,7 @@ function renderPost(post, inDetail) {
         gallery(post),
         memo(post),
         coins(post),
+        serp(post.text ? searchIn(post.text) : null),
         postActions(post, inDetail, replies),
       ),
     ),
@@ -723,7 +761,7 @@ function renderPost(post, inDetail) {
     // The rest of the card opens the post too. Handing the click to the link,
     // modifier keys and all, keeps Cmd-click opening a new tab.
     block.addEventListener("click", (event) => {
-      if (!event.target.closest("a, button, form, input, .gallery, .memo")) replies.dispatchEvent(new MouseEvent("click", event));
+      if (!event.target.closest("a, button, form, input, .gallery, .memo, .se")) replies.dispatchEvent(new MouseEvent("click", event));
     });
   }
   return block;
@@ -1196,6 +1234,8 @@ const kit = {
   LINK,
   trimUrl,
   webLink,
+  searchIn,
+  serp,
   memoPlayer,
   adPost,
   useSide,

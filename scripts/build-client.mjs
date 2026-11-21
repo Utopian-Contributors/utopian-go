@@ -395,6 +395,17 @@ const coinsOpts = {
 };
 
 /**
+ * A search linked from a post, drawn under it as its tabs and first results:
+ * fetched by social.js the first time a post or a draft links to one. It
+ * brings its own rules, as the ticker cards do.
+ */
+const serpOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "serp", "main.js")],
+  outfile: path.join(outDir, "serp.js"),
+};
+
+/**
  * A post's photos, large, in a carousel: fetched by social.js the first time
  * a photo is tapped. It brings its own rules, as the ticker cards do.
  */
@@ -715,6 +726,7 @@ const SOCIAL_LAZY = {
   lg: "login.js",
   cp: "compose.js",
   cc: "coins.js",
+  se: "serp.js",
   pv: "photos.js",
   sw: "swap.js",
   fr: "friends.js",
@@ -1133,6 +1145,7 @@ async function buildAssets() {
     esbuild.build(chatOpts),
     esbuild.build(composeOpts),
     esbuild.build(coinsOpts),
+    esbuild.build(serpOpts),
     esbuild.build(photosOpts),
     esbuild.build(friendsOpts),
     esbuild.build(notesOpts),

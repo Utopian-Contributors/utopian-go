@@ -581,6 +581,24 @@ dialog textarea { resize: none; }
   background: var(--ch);
 }
 
+/*
+ * A search a post links to, as its tabs and first results; client/serp draws
+ * and styles what is inside. The box shows at once, so the post settles near
+ * its height before the results come.
+ */
+.se {
+  display: block;
+  width: min(100%, 520px);
+  min-height: 160px;
+  margin: 8px 0 0;
+  border: 1px solid var(--ln);
+  border-radius: 16px;
+  overflow: hidden;
+  cursor: auto;
+}
+
+.composer .se { margin-left: 52px; width: min(calc(100% - 52px), 520px); }
+
 /* A ticker a post called out, in the blue it had in the composer. */
 a.cashtag,
 a.cashtag:hover { color: var(--a); }

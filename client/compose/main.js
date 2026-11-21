@@ -68,6 +68,8 @@ function packPost(text, shots, memo) {
  *   load: (attr: string, global: string) => Promise<any>,
  *   drafts: string[],
  *   LINK: RegExp, trimUrl: (raw: string) => string, webLink: (url: string) => HTMLElement | null,
+ *   searchIn: (text: string) => null | {q: string, t: string, lang: string},
+ *   serp: (found: null | {q: string, t: string, lang: string}) => HTMLElement | null,
  * }} kit `drafts` takes the composer's object URLs, which social.js frees on the next redraw
  */
 /** The draft so far, kept for the tab, so Cancel, or the + on another page, loses nothing. */
@@ -97,7 +99,7 @@ const PHONE = matchMedia("(max-width: 900px)");
  * reply.
  */
 function composer(kit, page = false, reply = null) {
-  const { me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, trimUrl, webLink } = kit;
+  const { me: who, pull, show, thumb, memoPlayer, load, drafts, LINK, trimUrl, webLink, searchIn, serp } = kit;
   const me = who();
   // A deadline rather than a count, so the button wakes when the wait is over.
   // nextPost is a time, right however old the answer it came in; wait was a
@@ -119,6 +121,10 @@ function composer(kit, page = false, reply = null) {
   const shots = [];
   // A textarea holds no anchors, so the addresses in it are drawn under it, as the post will draw them.
   const links = el("div", { class: "compose-links", hidden: true });
+  // A link to a search on this site, drawn as the post will draw it: its tabs and first results (client/serp).
+  const search = el("div", { hidden: true });
+  /** The search last drawn, so a keystroke that changes no link asks nothing. */
+  let searched = "";
   const strip = el("div", { class: "shots", hidden: true });
   const file = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true });
   const add = el("button", { type: "button", class: "tool", "aria-label": "Add photos" });
@@ -155,6 +161,16 @@ function composer(kit, page = false, reply = null) {
       .filter(Boolean);
     links.replaceChildren(...found);
     links.hidden = !found.length;
+  }
+
+  function paintSearch() {
+    const found = searchIn(area.value);
+    const key = found ? JSON.stringify(found) : "";
+    if (key === searched) return;
+    searched = key;
+    const box = serp(found);
+    search.replaceChildren(...(box ? [box] : []));
+    search.hidden = !box;
   }
 
   function paintShade() {
@@ -317,7 +333,10 @@ function composer(kit, page = false, reply = null) {
     sync();
     paintLinks();
     clearTimeout(settle);
-    settle = setTimeout(lookUp, SETTLE_MS);
+    settle = setTimeout(() => {
+      lookUp();
+      paintSearch();
+    }, SETTLE_MS);
   });
   area.addEventListener("keydown", (e) => {
     // Enter starts a new line, which the post keeps; with Cmd or Ctrl it sends.
@@ -356,6 +375,7 @@ function composer(kit, page = false, reply = null) {
     reply ? null : cancel,
     el("div", { class: "compose-top" }, thumb(me.name, me.avatarRev), el("div", { class: "draft" }, shade, area)),
     links,
+    search,
     strip,
     voiceRow,
     // After the photos and the memo, where the post will put them.
