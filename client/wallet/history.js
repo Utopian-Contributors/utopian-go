@@ -9,7 +9,7 @@
  * was never true.
  */
 import { coinIcon } from "../js/coin.js";
-import { $, el } from "../js/dom.js";
+import { $, el, nil } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { amount } from "../js/num.js";
 
@@ -201,7 +201,11 @@ export function mountHistory(root) {
 
       if (after) say("");
       else if (!list.querySelector(".wl-hr")) {
-        say(hidden ? `Nothing to show: ${left()}.` : "Nothing has happened in this wallet yet.");
+        say(
+          hidden
+            ? nil("ic-clock", "Nothing to show", `Left out: ${left()}.`)
+            : nil("ic-clock", "No activity yet", "Sends, receipts and trades from this wallet will be listed here, newest first."),
+        );
       } else say(hidden ? `Not shown: ${left()}.` : "");
     } catch (err) {
       if (id !== run) return;

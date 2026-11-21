@@ -6,7 +6,7 @@
  * trade dialog stands in when nobody is signed in. /api/holdings answers about
  * any public address, so neither needs a wallet prompt to paint.
  */
-import { $, el } from "../js/dom.js";
+import { $, el, nil } from "../js/dom.js";
 import { LOGIN, logOutButton, mountAccount, openLogin } from "../js/acct.js";
 import { noZoom } from "../js/device.js";
 import { load } from "../js/lazy.js";
@@ -502,11 +502,13 @@ async function paintTop() {
     }
     topList.replaceChildren(...rows.map(topRow));
     topNote.hidden = rows.length > 0;
-    topNote.textContent = q
-      ? "No token by that name."
-      : cat === "trending"
-        ? "Nothing is trending right now."
-        : "Nothing on this list right now.";
+    topNote.replaceChildren(
+      q
+        ? nil("ic-swap", "No token by that name", "Check the spelling, or try its ticker instead.")
+        : cat === "trending"
+          ? nil("ic-up", "Nothing is trending right now", "Tokens show up here as their trading picks up. Check back soon.")
+          : nil("ic-swap", "Nothing on this list right now", "Tokens join it as they qualify. Try another list meanwhile."),
+    );
     if (!q) chooseFirst(rows[0]?.mint);
     watch(q ? "" : data.after);
   } catch {
@@ -766,7 +768,11 @@ function paint(data) {
   paintTotal();
 
   if (!data.items.length) {
-    setNote(data.unpriced ? omitted(data) : "This wallet holds nothing we can price.");
+    setNote(
+      data.unpriced
+        ? nil("ic-wallet", "Nothing we can price", omitted(data))
+        : nil("ic-wallet", "This wallet is empty", "Tokens you receive or buy show up here with their value. Press Receive for your address."),
+    );
     return;
   }
 

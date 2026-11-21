@@ -22,7 +22,7 @@
  * `ctx` rather than carrying copies of them; the photo scaler is its own,
  * since social.js no longer carries one.
  */
-import { el } from "../js/dom.js";
+import { el, nil } from "../js/dom.js";
 import { B64, clock } from "../js/memo.js";
 import { b64u, needPasskey, register, u8, why } from "../js/passkey.js";
 import { shrink } from "../js/shrink.js";
@@ -360,7 +360,7 @@ export function mount(ctx) {
     const sorted = [...chats.values()].sort((a, b) => b.at - a.at || (a.with < b.with ? 1 : -1));
     const shown = sorted.filter((c) => !q || c.with.startsWith(q));
     const kids = shown.map(row);
-    if (!sorted.length && !listNext) kids.push(el("li", { class: "muted empty", text: "No chats yet. Type a handle above to start one." }));
+    if (!sorted.length && !listNext) kids.push(el("li", { class: "empty" }, nil("ic-chat", "No chats yet", "Type a handle above to start a conversation.")));
     else if (q && !shown.length && !listNext) kids.push(el("li", { class: "muted empty", text: "No chat with that name yet." }));
     if (listNext) kids.push(el("li", { class: "more" }));
     list.replaceChildren(...kids);
@@ -1088,7 +1088,7 @@ export function mount(ctx) {
     box = el("div", { class: "msgs", role: "log", "aria-live": "polite" });
     older = data.next || null;
     if (older) box.append(el("div", { class: "more" }));
-    if (!data.messages.length) box.append(el("p", { class: "muted pad hello", text: "No messages yet. Say hello." }));
+    if (!data.messages.length) box.append(el("div", { class: "hello" }, nil("ic-chat", "No messages yet", `Say hello to ${who} to start the conversation.`)));
     for (const m of data.messages) {
       box.append(bubble(who, m));
       newest = { at: m.at, id: m.id };

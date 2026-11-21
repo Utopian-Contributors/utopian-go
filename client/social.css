@@ -1548,6 +1548,11 @@ body.chat .find {
 }
 
 .chats .empty { padding: 8px; font-size: 13px; }
+/* The chat list is a narrow column beside the open chat: a smaller mark, less air. */
+.chats .nil { padding: 32px 12px; }
+.chats .nil::before { width: 64px; height: 64px; }
+/* An empty chat: the note in the middle of the thread, not at its top. */
+.msgs > .hello { margin: auto 0; }
 .list-err { margin: 4px 0 0; min-height: 0; }
 
 a.crow {

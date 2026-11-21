@@ -201,3 +201,35 @@ export function clearResults() {
   $("rs").replaceChildren();
   setStatus("");
 }
+
+/**
+ * nil()'s rules, added to the document the first time one is drawn rather
+ * than inlined into every page: most visits never see an empty list, and
+ * Social's document sits at its guardrail. The mark is grey at low opacity,
+ * so it sits quietly on either theme's ground rather than reading as a
+ * button; the title and line are flex items, so they need no display:block.
+ */
+const NIL_CSS =
+  ".nil{display:flex;flex-direction:column;align-items:center;gap:6px;margin:0 auto;padding:56px 24px;max-width:340px;" +
+  "text-align:center;color:var(--f);font-size:14px;line-height:1.45}" +
+  '.nil:before{content:"";width:88px;height:88px;margin-bottom:12px;background:var(--nil) center/contain no-repeat;' +
+  "opacity:.16;filter:grayscale(1)}" +
+  ".nil-t{color:var(--t);font-size:17px}";
+
+/**
+ * Where a list would be when there is nothing on it: the section's mark,
+ * faded into the page behind the words, what is empty, and why. Spans
+ * throughout, so it can stand in a <p>, an <li> or a <div>.
+ * @param {string} icon a client/ic-*.svg, without the extension
+ * @param {string} title
+ * @param {string | (string | Node)[]} [why]
+ */
+export function nil(icon, title, why) {
+  if (!document.getElementById("nil-css")) document.head.append(el("style", { id: "nil-css", text: NIL_CSS }));
+  return el(
+    "span",
+    { class: "nil", role: "status", style: `--nil:url(/${icon}.svg)` },
+    el("b", { class: "nil-t", text: title }),
+    why && why.length ? el("span", {}, ...[].concat(why)) : null,
+  );
+}

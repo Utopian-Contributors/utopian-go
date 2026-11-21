@@ -4,7 +4,7 @@
  * Its own bundle, fetched by social.js on /social/notifications only, beside
  * the notes it shows. Handed social.js's helpers so it carries no copies.
  */
-import { el } from "../js/dom.js";
+import { el, nil } from "../js/dom.js";
 
 /**
  * The ones you have not seen under New, the rest under Earlier, newest first.
@@ -44,7 +44,7 @@ function mount(data, { main, send, face, useSide }) {
   main.replaceChildren(
     data.notes.length
       ? el("div", { class: "friends" }, group("New", fresh), group("Earlier", data.notes.filter((note) => note.seen)))
-      : el("p", { class: "muted", text: "No notifications yet." }),
+      : nil("ic-bell", "No notifications yet", "When someone replies to or re-posts one of your posts, you'll see it here."),
   );
   if (fresh.length) {
     // The answer's `me` has nothing unseen, which takes the badge down.

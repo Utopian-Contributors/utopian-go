@@ -5,7 +5,7 @@
  * Its own bundle, fetched by social.js on /social/friends only, beside the
  * list it shows. Handed social.js's helpers so it carries no copies.
  */
-import { el } from "../js/dom.js";
+import { el, nil } from "../js/dom.js";
 
 /**
  * Search, then the people already added. No profile card on this page.
@@ -70,7 +70,7 @@ function mount(data, { main, me: who, pull, send, thumb, face, useSide }) {
   function paint(friends) {
     if (!friends.length)
       return list.replaceChildren(
-        el("p", { class: "muted", text: "No friends yet." }),
+        nil("ic-friend", "No friends yet", "Find someone by name above and add them. Their posts show under Friends, and you can chat with them."),
       );
     const letter = (name) =>
       /^[a-z]/.test(name) ? name[0].toUpperCase() : "#";

@@ -9,7 +9,7 @@
  * Log in dialog.
  */
 import { logOut } from "../js/acct.js";
-import { $, el } from "../js/dom.js";
+import { $, el, nil } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { B64, clock } from "../js/memo.js";
 import { noZoom } from "../js/device.js";
@@ -1118,6 +1118,17 @@ function renderTimeline(data) {
   paintFeed(feed, data, gen);
 }
 
+/** Why the timeline has nothing on it, by the filters that are on. Signed out, the server ignores friends and saved. */
+function emptyFeed() {
+  if (me && shown.saved)
+    return nil("ic-save", "Nothing saved yet", "Press the plus on a post to keep it here for later.");
+  if (me && shown.friends)
+    return nil("ic-friend", "No posts from friends yet", "With Friends on, only people you've added show here. Add someone, or switch back to All.");
+  if (!shown.images || !shown.audio)
+    return nil("ic-social", "No posts match", "The filters above hide everything there is. Turn Images or Audio back on to see more.");
+  return nil("ic-social", "No posts yet", me ? "Nobody has posted yet. Write the first one above." : "Nobody has posted yet. Log in to write the first one.");
+}
+
 /**
  * The posts, then the marker that fetches the next page; or why there are
  * none. A newer filter's answer wins.
@@ -1132,7 +1143,7 @@ function paintFeed(feed, data, gen, error) {
   feed.replaceChildren(
     ...cards,
     ...[
-      !data.posts.length && el("p", error ? { class: "err", text: error } : { class: "muted", text: "No posts here." }),
+      !data.posts.length && (error ? el("p", { class: "err", text: error }) : emptyFeed()),
       feedNext && el("div", { class: "more" }),
     ].filter(Boolean),
   );
@@ -1183,7 +1194,11 @@ function renderProfile(data) {
   renderSide(user);
   const posts = user.posts.length
     ? user.posts.map(entry)
-    : [el("p", { class: "muted", text: "No posts yet." })];
+    : [
+        user.name === me?.name
+          ? nil("ic-edit", "No posts yet", "What you post shows up here, for anyone who opens your profile.")
+          : nil("ic-person", `${user.name} hasn't posted yet`, "Their posts will show up here once they write one."),
+      ];
   main.replaceChildren(...posts);
 }
 
