@@ -18,7 +18,9 @@ dialog.dlg{position:fixed}
 .dlg-x .mk{width:13px;height:13px}
 dialog.dlg h2{margin-right:36px}
 @media (max-width:620px){dialog.dlg{width:100%;max-width:none;max-height:calc(100% - 24px);
- margin:auto 0 0;border-bottom:0;border-radius:24px 24px 0 0}}
+ margin:auto 0 0;border-bottom:0;border-radius:24px 24px 0 0}
+ dialog.dlg::before{content:"";position:absolute;top:6px;left:50%;width:36px;height:5px;margin-left:-18px;
+ border-radius:3px;background:var(--sep,rgba(60,60,67,.3))}}
 @media (max-width:620px) and (display-mode:standalone){dialog.dlg{border-bottom:24px solid transparent}}
 `;
 

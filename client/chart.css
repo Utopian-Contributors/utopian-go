@@ -103,37 +103,43 @@
 }
 
 /*
- * The ranges, the width of the chart in equal parts. The one on show sits in
- * a pill one step off the surface — base.css's wash, which is that step on
- * any surface; a neutral grey at the same strength where it is not defined —
- * and the rest are just their names.
+ * The ranges, as an iOS segmented control: a grey track the width of the
+ * chart, the range on show on a raised thumb. The thumb is white by day and
+ * a lighter grey after dark, as UISegmentedControl draws it.
  */
 .pc-r {
   display: grid;
   grid-auto-columns: 1fr;
   grid-auto-flow: column;
-  gap: 4px;
+  gap: 0;
   margin-top: 12px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--wash, rgba(118, 118, 128, 0.12));
 }
 
 .pc-r button {
-  min-height: 36px;
+  min-height: 30px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 7px;
   background: none;
-  color: var(--f);
-  font: 600 14px/1 var(--ff);
-  cursor: pointer;
-}
-
-.pc-r button:hover {
   color: var(--t);
+  font: 500 13px/1 var(--ff);
+  cursor: pointer;
+  --press: 1;
 }
 
 .pc-r button[aria-pressed="true"] {
-  background: var(--wash2, rgba(128, 128, 128, 0.16));
-  color: var(--t);
+  background: var(--thumb, #fff);
+  box-shadow: 0 3px 8px rgb(0 0 0 / 12%), 0 3px 1px rgb(0 0 0 / 4%);
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pc-r button[aria-pressed="true"] {
+    background: var(--thumb, #636366);
+  }
 }
 
 .pc-r button:focus-visible {

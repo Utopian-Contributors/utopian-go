@@ -52,8 +52,9 @@ body.res .chrome {
   position: sticky;
   top: 0;
   z-index: 40;
-  background: var(--bg);
-  /* Full-bleed bg so results don’t show through while scrolling */
+  background: var(--mat);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
   width: 100%;
 }
 
@@ -134,7 +135,7 @@ body.res #hd {
      where they are used, because the account control is positioned off all
      three and they are the only numbers in this row it may rely on. */
   --lg-h: 40px;
-  --hd-pt: 16px;
+  --hd-pt: 8px;
   --hd-pb: 8px;
   /* The containing block for #ac; see there. */
   position: relative;
@@ -215,13 +216,29 @@ body.res .sf {
  * stays the one place that green is written, which is where og-image.mjs
  * reads it from to keep the social card the same colour as the header.
  *
- * The night value is the luminescence out of the home page's night forest —
- * the mushrooms and the fireflies — rather than a dimmer leaf green, so the
- * mark lifts off #202124 instead of sinking into it.
+ * The night value is iOS's dark systemGreen, the same green the buttons
+ * take after dark, so the mark and the controls stay one green on black.
  */
 @media (prefers-color-scheme: dark) {
   .lg-mark {
-    fill: #75ffbe;
+    fill: #30d158;
+  }
+}
+
+/* On a section's page (base.css, :root[data-sec]) the mark is the section's
+   tint by day, white on the header's mesh, and white after dark, as
+   everything on that colour is. */
+:root[data-sec] .lg-mark {
+  fill: var(--sec-tint);
+}
+
+:root[data-sec] #hd .lg-mark {
+  fill: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-sec] .lg-mark {
+    fill: #fff;
   }
 }
 
@@ -447,7 +464,7 @@ body.res .sf {
     border: 0;
     border-radius: 999px;
     background: var(--wash);
-    color: var(--go);
+    color: var(--a);
     font: 600 14px var(--ff);
     cursor: pointer;
   }

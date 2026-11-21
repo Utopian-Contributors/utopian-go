@@ -63,22 +63,46 @@
   text-decoration: none;
 }
 
+/*
+ * Wallet and Get Social go to a section, so each is filled with that
+ * section's colour (base.css --c-*), white on it, flat. The same in either
+ * theme and on any page, the section's own included.
+ * Log in keeps the page's tint.
+ */
+.ac-w:not(.ac-in),
+.ac-w:not(.ac-in):hover {
+  background: var(--c-wallet);
+  color: #fff;
+}
+
+.ac-soc,
+.ac-soc:hover {
+  background: var(--c-social);
+  color: #fff;
+}
+
+.ac-w:not(.ac-in):hover,
+.ac-soc:hover {
+  filter: brightness(1.08);
+}
+
 /* Log out, last in the control: on Social, and on the wallet page while signed
-   in. A filled pill in the down colour, so it does not read as a link. No
-   display of its own, so the hidden attribute still hides it. */
+   in. iOS's destructive button: the red as its label, on a grey fill, so it
+   does not read as a link and does not shout either. No display of its own,
+   so the hidden attribute still hides it. */
 .ac-out {
   height: 36px;
   border: 0;
   border-radius: 999px;
   padding: 0 15px;
-  background: var(--dn);
-  color: var(--bg);
-  font: 500 14px/1 var(--ff);
+  background: var(--wash);
+  color: var(--dn);
+  font: 600 15px/1 var(--ff);
   cursor: pointer;
 }
 
 .ac-out:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--wash2);
 }
 
 .ac-out:disabled {
@@ -110,10 +134,10 @@
   margin-top: 12px;
   border: 0;
   border-radius: 999px;
-  padding: 11px 18px;
+  padding: 11px 20px;
   background: var(--buy);
   color: var(--buy-ink);
-  font: 500 14px/1 var(--ff);
+  font: 600 15px/1 var(--ff);
   cursor: pointer;
 }
 

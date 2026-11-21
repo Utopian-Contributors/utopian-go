@@ -4,19 +4,48 @@
  * where it was, in app.css and wallet.css; this only adds what buttons, chips
  * and fields are drawn with.
  *
- * Controls sit on the page as surfaces rather than outlines: a chip, a field
- * or a quiet button is the page's own ink let down to a few percent, with no
- * edge, and a few percent more under the pointer or while it has focus. Alpha
- * rather than a fixed grey, so the cream shows through by day and the plum
- * after dark, and the same rule gives a control one step off whatever it sits
- * on — the page, a card, a dialog.
+ * Controls sit on the page as surfaces rather than outlines, as iOS draws
+ * them: a chip, a field or a quiet button is iOS's grey fill, with no edge,
+ * and the next fill up under the pointer or while it has focus. Alpha rather
+ * than a fixed grey, so the same rule gives a control one step off whatever
+ * it sits on — the page, a card, a dialog.
  */
 :root {
-  /* The page's ink, --t, as channels: #202124 by day, #e8eaed after dark.
-     Written out because Safari 14, still a build target, has no color-mix(). */
-  --rgb: 32, 33, 36;
-  --wash: rgba(var(--rgb), 0.06);
-  --wash2: rgba(var(--rgb), 0.1);
+  /* The page's ink, --t, as channels. --wash and --wash2 are iOS's tertiary
+     and secondary system fills, --sep its separator, and --mat the bar
+     material a translucent header or tab bar is drawn in. Written out because
+     Safari 14, still a build target, has no color-mix(). */
+  --rgb: 0, 0, 0;
+  --wash: rgba(118, 118, 128, 0.12);
+  --wash2: rgba(118, 118, 128, 0.2);
+  --sep: rgba(60, 60, 67, 0.29);
+  --mat: rgba(255, 255, 255, 0.78);
+  /* The home tiles, and the sections they open. --c-* is a section's own
+     colour, the fill of the header's Wallet and Get Social buttons (acct.css),
+     the same in either theme; --mesh-* the section's header by day (below);
+     and --fill-* what a tapped tile settles into, which is what the header of
+     the page it opens looks like: the mesh by day, the bar's shade after dark,
+     the games' red bar in either. Set
+     once here, as every sheet with a wordmark, an account control or a tile
+     starts with this one (games.css and the games repeat the red, having no
+     base.css). */
+  --c-wallet: #8c5528;
+  --c-social: #2563c4;
+  --mesh-wallet:
+    radial-gradient(120% 140% at 0% 0%, #c08750 0%, transparent 55%),
+    radial-gradient(90% 120% at 100% 0%, #d0904a 0%, transparent 55%),
+    radial-gradient(100% 140% at 70% 100%, #5c3418 0%, transparent 65%),
+    radial-gradient(80% 120% at 25% 100%, #7d4a22 0%, transparent 60%),
+    #8a5528;
+  --mesh-social:
+    radial-gradient(120% 140% at 0% 0%, #5fa8ff 0%, transparent 55%),
+    radial-gradient(90% 120% at 100% 0%, #38a9f5 0%, transparent 55%),
+    radial-gradient(100% 140% at 70% 100%, #163f99 0%, transparent 65%),
+    radial-gradient(80% 120% at 25% 100%, #2a62d0 0%, transparent 60%),
+    #2563c4;
+  --fill-wallet: var(--mesh-wallet);
+  --fill-social: var(--mesh-social);
+  --fill-games: #bd332d;
   /*
    * Two curves. --out decelerates into place, for anything arriving. --spring
    * overshoots a little and settles, for anything let go of — a button coming
@@ -28,9 +57,218 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --rgb: 232, 234, 237;
-    --wash: rgba(var(--rgb), 0.09);
-    --wash2: rgba(var(--rgb), 0.14);
+    --rgb: 255, 255, 255;
+    --wash: rgba(118, 118, 128, 0.24);
+    --wash2: rgba(118, 118, 128, 0.32);
+    --sep: rgba(84, 84, 88, 0.65);
+    --mat: rgba(22, 22, 24, 0.78);
+    --fill-wallet: #4a2b15;
+    --fill-social: #163f80;
+    --fill-games: #6e1b17;
+  }
+}
+
+/*
+ * A section's pages: the wallet's, Social's, and the login page on its way
+ * to either (data-sec on <html>, in the document or from src/pages.ts
+ * renderAuth).
+ *
+ * By day the page is white, as iOS's are, and the section's colour is in
+ * three places: its tint (links, what is chosen, a filled button), the header,
+ * which is a mesh of the tile's colours edge to edge with white on it, and a
+ * pale glow of the same mesh under the header, fading into the white. The
+ * meshes are the home tiles' own (--mesh-*, above), so a tapped tile's flood
+ * (js/tilezoom.js) settles into the header's colours.
+ *
+ * After dark the page is the colour instead, as a ramp of solid shades of the
+ * one hue, each with its job: the header in the vivid shade, the page a deep
+ * one, cards, fields and chips a step lighter, a press or the segment on show
+ * lighter again, a sheet between page and card. What is chosen is white with
+ * the deep shade as its label; text is white, its second ink 78% of it, which
+ * clears 4.4:1 on every shade. A selector on the root outranks every page's
+ * own :root, in either theme.
+ */
+:root[data-sec="wallet"] {
+  --sec-tint: #8c5528;
+  --sec-mesh: var(--mesh-wallet);
+  --sec-glow:
+    radial-gradient(60% 100% at 8% 0%, rgba(201, 138, 79, 0.3), transparent 70%),
+    radial-gradient(50% 90% at 92% 0%, rgba(217, 154, 78, 0.24), transparent 70%),
+    radial-gradient(80% 80% at 50% 0%, rgba(140, 85, 40, 0.12), transparent 75%);
+}
+
+:root[data-sec="social"] {
+  --sec-tint: #2563c4;
+  --sec-mesh: var(--mesh-social);
+  --sec-glow:
+    radial-gradient(60% 100% at 8% 0%, rgba(95, 168, 255, 0.3), transparent 70%),
+    radial-gradient(50% 90% at 92% 0%, rgba(56, 182, 255, 0.22), transparent 70%),
+    radial-gradient(80% 80% at 50% 0%, rgba(37, 99, 196, 0.12), transparent 75%);
+}
+
+:root[data-sec] {
+  --a: var(--sec-tint);
+  --a-ink: #ffffff;
+  --l: var(--sec-tint);
+  --buy: var(--sec-tint);
+  --buy-ink: #ffffff;
+  --buy-text: var(--sec-tint);
+}
+
+:root[data-sec] body {
+  background: var(--sec-glow) top / 100% 560px no-repeat, var(--bg);
+}
+
+/*
+ * The header: the mesh, from one edge of the window to the other whatever
+ * the shell's width, under everything in it. On it the inks are white, the
+ * fields a white wash, and the search button stays the app's green.
+ */
+:root[data-sec] #hd {
+  position: relative;
+  isolation: isolate;
+  --t: #ffffff;
+  --f: rgba(255, 255, 255, 0.8);
+  --wash: rgba(255, 255, 255, 0.2);
+  --wash2: rgba(255, 255, 255, 0.3);
+  --in-ink: #ffffff;
+  --in-ph: rgba(255, 255, 255, 0.8);
+  --a: #ffffff;
+  --l: #ffffff;
+  --buy: #34c759;
+  --buy-ink: #ffffff;
+  --dn: #ffd3ce;
+  color: var(--t);
+}
+
+:root[data-sec] #hd::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  translate: -50% 0;
+  background: var(--sec-mesh);
+}
+
+/*
+ * Opened from a home tile (js/tilezoom.js): the tile floods the screen in the
+ * header's own colour and carries the header's view-transition name, so as
+ * the page arrives the browser draws that colour straight up into the
+ * header's box. Only the colour is drawn up: the header's own contents stay
+ * at their size and place and fade in on it, and the rest of the page is
+ * there at once, under the colour, with the page it came from gone at once,
+ * so nothing moves or fades through. Going to a section's page from anywhere
+ * swaps the same way (between the wallet and Social the header simply stays);
+ * the other pages keep the plain cross-fade.
+ */
+:root[data-sec] #hd {
+  view-transition-name: hd;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-group(hd) {
+    animation-duration: 0.36s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  ::view-transition-old(hd) {
+    height: 100%;
+    animation: none;
+  }
+
+  /* Laid over the colour rather than added to it: the browser's plus-lighter
+     blend is for two images fading through each other, and the colour under
+     this one stays whole. */
+  :root::view-transition-new(hd) {
+    mix-blend-mode: normal;
+  }
+
+  :root[data-sec]::view-transition-old(root) {
+    animation: none;
+    opacity: 0;
+  }
+
+  :root[data-sec]::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-sec] {
+    color-scheme: dark;
+    --bg: var(--sec-bg);
+    --pn: var(--sec-pn);
+    --mat: var(--sec-bar);
+    --t: #ffffff;
+    --m: rgba(255, 255, 255, 0.86);
+    --f: rgba(255, 255, 255, 0.78);
+    --b: rgba(255, 255, 255, 0.28);
+    --ln: rgba(255, 255, 255, 0.14);
+    --sep: rgba(255, 255, 255, 0.18);
+    --rgb: 255, 255, 255;
+    --wash: var(--sec-1);
+    --wash2: var(--sec-2);
+    --hover: var(--sec-1);
+    --ch: var(--sec-1);
+    --in: var(--sec-1);
+    --in-ink: #ffffff;
+    --in-ph: rgba(255, 255, 255, 0.6);
+    --thumb: var(--sec-2);
+    --a: #ffffff;
+    --a-ink: var(--sec-bg);
+    --l: #ffffff;
+    --buy: #ffffff;
+    --buy-ink: var(--sec-bg);
+    --buy-text: #ffffff;
+    --go: #8ff0a4;
+    --dn: #ffaba3;
+  }
+
+  :root[data-sec] body {
+    background: var(--bg);
+  }
+
+  :root[data-sec] #hd::before {
+    background: var(--sec-bar);
+  }
+
+  :root[data-sec="wallet"] {
+    --sec-bar: #4a2b15;
+    --sec-bg: #1c100a;
+    --sec-1: #2e1c10;
+    --sec-2: #422817;
+    --sec-pn: #26170d;
+  }
+
+  :root[data-sec="social"] {
+    --sec-bar: #163f80;
+    --sec-bg: #07142b;
+    --sec-1: #0f2449;
+    --sec-2: #18346a;
+    --sec-pn: #0c1d3b;
+  }
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+  accent-color: var(--a, #007aff);
+}
+
+/*
+ * Going from one of the app's pages to another fades the one into the other,
+ * where the browser can (Chrome, Safari 18.2): the home tiles' colour into the
+ * page they open (js/tilezoom.js), and every other page change as softly.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
   }
 }
 
@@ -38,7 +276,7 @@
  * Scrollbars, the page's and every box's that scrolls: the thumb alone, on no
  * track, so a scrolling column reads as part of the page rather than as a box
  * with a bar down its side. A neutral grey part-way through, so the one rule
- * reads on cream and on plum.
+ * reads on white and on black.
  *
  * scrollbar-color is the standard, and wins wherever it is understood; it
  * inherits, so set on the root it reaches every scroller, the viewport's
@@ -153,3 +391,4 @@ button,
   .ptr { animation: none; }
   .ptr.boot { animation: none; width: 60%; }
 }
+

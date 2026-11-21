@@ -78,14 +78,42 @@ Anything that is only needed after a click is a lazy bundle.
 | Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |
 | Snake | `/snake` | `snake.html` | `snake.js` | — |
 
+**Each section is its home tile's colour.** The app is iOS's system palette, and the pages a
+home tile opens wear that tile's colour: the wallet brown, Social blue, the games list and every
+game red. By day the wallet's and Social's pages (and the feed) are white, and the colour is in
+three places: the tint (links, what is chosen, a filled button), the header, a mesh of the
+tile's colours edge to edge with white on it (`--mesh-*`), and a pale glow of the same mesh under
+the header that fades into the white. After dark, and on the games in either theme, the page is
+the colour instead, a ramp of solid shades of its one hue with a job for each, as iOS draws an
+app in its own colour: the header (and Social's tab bar) in the tile's vivid shade, the page a
+deep one under it, cards, fields and chips a step lighter, a press or the segment on show
+lighter again, a sheet between page and card; what is chosen is white with the deep shade as its
+label, text is white and its second ink 78% of it, which clears 4.4:1 on every shade. The
+wallet's filled buttons stay green, where green means buy; elsewhere a filled button is the
+tint by day and white after dark.
+The document says which section it is (`data-sec` on `<html>`, read by `client/base.css`; the
+games' sheets hold their red themselves). The login page wears the colour of the page it is
+gating, from `?next=` (`renderAuth`), and is neutral when it gates nothing. The header's Wallet
+and Get Social buttons are always their tile, small. A tap on a tile grows it over the screen,
+settling into the section's colours (the header's mesh by day, the deep page after dark) before
+the page loads (`client/js/tilezoom.js`), so the
+colour it ends on is the page; where the browser does cross-document view transitions the page's
+content fades in over it. With reduced motion asked for, the tile is a plain link.
+
+**The wallet is an account's only.** Signed out, `/wallet` answers with a redirect to the login
+page (`src/server.ts`), which comes back to it once someone is in. A session that ends while the
+page is open, or a copy the service worker kept, sends the page there itself
+(`client/wallet/main.js`); offline, the session kept on the device still counts as signed in.
+
 **Games** is the home page's third row (a game controller, skeu-icons' `gamepad-2`, `ic-games`,
 also the tab icon of the games page and of every game). It opens the games list: a header with
-Back and the title, then each game as a screenshot of itself over its name and a line about it:
-big, one under the other, on a phone; a grid of tiles on a wider screen. The screenshots
-(`game-*.webp`, 4:5) are real frames of real games; Snake, drawn in the system's theme, has one
-for each (`game-snake.webp`, `game-snake-dark.webp`, picked by a `<picture>`), each linked
-with its content hash like every other asset, so a new one is not held back by a week's caching.
-Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists two games.
+Back and the title, then the games as the home page draws its sections, a tile each in its own
+colour with its mark large in the corner, its name and a line about it: Pinball in its table's
+felt green with a pair of flippers and the ball (`ic-flippers.svg`, drawn by hand in the
+skeu-icons manner, as the package has no flipper), Snake in amber under its apple (`ic-apple`).
+Two to a row on a phone, more as the screen widens. The marks are linked with their content hash
+and kept by the worker for good (`TILE_MARKS`), like the games themselves. The old screenshots
+(`game-*.webp`) are no longer shown. Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists two games.
 
 The games list is offline first, and so is every game on it. `games.js` registers the service
 worker and, on a first visit, hands it the page (`ugSeed`, as the games do); and the worker's

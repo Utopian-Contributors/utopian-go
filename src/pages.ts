@@ -103,7 +103,10 @@ function destination(to: string): string {
  */
 export function renderAuth(html: string, mode: "login" | "register", to: string): string {
   const where = destination(to);
+  // The section it goes on to, so the page wears that section's colour (client/base.css, :root[data-sec]).
+  const sec = where.toLowerCase();
   const swaps: [string, string][] = [
+    ['<html lang="en">', sec ? `<html lang="en" data-sec="${sec}">` : '<html lang="en">'],
     ['<body class="au" data-m="login">', `<body class="au" data-m="${mode}">`],
     ["<title>Log in</title>", `<title>${mode === "register" ? "Create account" : "Log in"}</title>`],
     ['<p class="au-to" id="au-to"></p>', `<p class="au-to" id="au-to">${where && `to continue to ${where}`}</p>`],

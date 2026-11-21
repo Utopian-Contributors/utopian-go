@@ -8,35 +8,35 @@
  */
 :root {
   color-scheme: light dark;
-  --bg: #fffff6;
-  --t: #202124;
-  --m: #4d5156;
-  --f: #70757a;
+  --bg: #ffffff;
+  --t: #000000;
+  --m: #3c3c43;
+  --f: #8a8a8e;
   /* A green to read and a green to press; see the note in app.css. */
-  --go: #39a11c;
-  --buy: #3cc316;
-  --buy-ink: #fefefe;
-  --buy-text: #167c3c;
-  --dn: #d93025;
-  --in-ink: #202124;
-  --in-ph: #70757a;
-  --ff: system-ui, Helvetica, Arial, sans-serif;
+  --go: #248a3d;
+  --buy: #34c759;
+  --buy-ink: #ffffff;
+  --buy-text: #007aff;
+  --dn: #ff3b30;
+  --in-ink: #000000;
+  --in-ph: #8a8a8e;
+  --ff: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #282124;
-    --t: #e8eaed;
-    --m: #bdc1c6;
-    --f: #9aa0a6;
-    /* Bioluminescent after dark, and the fill's ink flips with it; app.css carries the reasoning. */
-    --go: #75ffbe;
-    --buy: #75ffbe;
-    --buy-ink: #202124;
-    --buy-text: #75ffbe;
-    --dn: #f28b82;
-    --in-ink: #e8eaed;
-    --in-ph: #9aa0a6;
+    --bg: #000000;
+    --t: #ffffff;
+    --m: #c7c7cc;
+    --f: #8d8d93;
+    /* iOS's dark variants; app.css carries the reasoning. */
+    --go: #30d158;
+    --buy: #30d158;
+    --buy-ink: #ffffff;
+    --buy-text: #0a84ff;
+    --dn: #ff453a;
+    --in-ink: #ffffff;
+    --in-ph: #8d8d93;
   }
 }
 

@@ -9,31 +9,37 @@
  *
  * The palette is app.css's, repeated rather than shared: a handful of custom
  * properties, and a second request to fetch them would cost far more than
- * restating them does.
+ * restating them does. Over it, the page wears the Wallet's section colours
+ * (base.css, :root[data-sec]); --buy stays green there, where it means buying.
  */
+:root[data-sec="wallet"] {
+  --buy: #34c759;
+  --buy-ink: #ffffff;
+}
+
 :root {
   color-scheme: light dark;
-  --bg: #fffff6;
-  --t: #202124;
-  --m: #4d5156;
-  --f: #70757a;
-  --l: #1a0dab;
-  --b: #dfe1e5;
-  --a: #1a73e8;
+  --bg: #ffffff;
+  --t: #000000;
+  --m: #3c3c43;
+  --f: #8a8a8e;
+  --l: #007aff;
+  --b: #c6c6c8;
+  --a: #007aff;
   /* A green to read and a green to press; see the note in app.css. */
-  --go: #39a11c;
-  --go-ink: #fff;
-  --buy: #3cc316;
-  --buy-ink: #fefefe;
-  --buy-text: #167c3c;
-  --dn: #d93025;
-  --pn: #fff;
-  --hover: #f1f3f4;
+  --go: #248a3d;
+  --go-ink: #ffffff;
+  --buy: #34c759;
+  --buy-ink: #ffffff;
+  --buy-text: #007aff;
+  --dn: #ff3b30;
+  --pn: #ffffff;
+  --hover: #f2f2f7;
   /* Fields: white by day, #202124 after dark; see the note in app.css. */
-  --in: #fff;
-  --in-ink: #202124;
-  --in-ph: #70757a;
-  --ff: system-ui, Helvetica, Arial, sans-serif;
+  --in: #eeeef0;
+  --in-ink: #000000;
+  --in-ph: #8a8a8e;
+  --ff: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   /* --shell and --pad are the header's (header.css): one width for every page. */
   /* The header's spacer (header.css) sizes itself off these, as on search. */
   --side: 480px;
@@ -54,26 +60,25 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #292124;
-    --t: #e8eaed;
-    --m: #bdc1c6;
-    --f: #9aa0a6;
-    --l: #8ab4f8;
-    --b: #5f6368;
-    --a: #8ab4f8;
-    /* Bioluminescent after dark, both of them, and the fill's ink flips with
-       it — again, app.css carries the reasoning. */
-    --go: #75ffbe;
-    --go-ink: #202124;
-    --buy: #75ffbe;
-    --buy-ink: #202124;
-    --buy-text: #75ffbe;
-    --dn: #f28b82;
-    --pn: #303134;
-    --hover: #2c2c2e;
-    --in: #202124;
-    --in-ink: #e8eaed;
-    --in-ph: #9aa0a6;
+    --bg: #000000;
+    --t: #ffffff;
+    --m: #c7c7cc;
+    --f: #8d8d93;
+    --l: #0a84ff;
+    --b: #38383a;
+    --a: #0a84ff;
+    /* iOS's dark variants — again, app.css carries the reasoning. */
+    --go: #30d158;
+    --go-ink: #ffffff;
+    --buy: #30d158;
+    --buy-ink: #ffffff;
+    --buy-text: #0a84ff;
+    --dn: #ff453a;
+    --pn: #1c1c1e;
+    --hover: #1c1c1e;
+    --in: #1c1c1e;
+    --in-ink: #ffffff;
+    --in-ph: #8d8d93;
     --k-stocks: #3987e5;
     --k-memes: #d95926;
     --k-rwas: #199e70;
@@ -160,7 +165,7 @@ a:hover {
 /* —— The number the page exists for —— */
 
 .wl-tot {
-  border-bottom: 1px solid var(--b);
+  border-bottom: 0.5px solid var(--sep);
   padding-bottom: 18px;
   margin-bottom: 4px;
 }
@@ -298,7 +303,7 @@ a:hover {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   column-gap: 10px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--b);
+  border-bottom: 0.5px solid var(--sep);
 }
 
 .wl-bk-r {
@@ -391,8 +396,20 @@ a:hover {
   /* The rule runs the column's width; the cells sit in from it by the
      breakdown's own inset, so the names and buttons of every list on the
      left line up. */
+  position: relative;
   padding: 9px 8px;
-  border-bottom: 1px solid var(--b);
+}
+
+/* An iOS list's separator: a hairline that starts where the ticker does,
+   past the 20px logo and its 9px gap, and runs to the column's edge. */
+.wl-r::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 37px;
+  border-bottom: 0.5px solid var(--sep);
+  pointer-events: none;
 }
 
 /* Ticker and name, linking to the token's own card — where the price, the
@@ -639,7 +656,7 @@ body.hist .wl-top {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--b);
+  border-bottom: 0.5px solid var(--sep);
 }
 
 /* The header's Back (header.css .hb), in the page: top left, at every width. */
@@ -653,7 +670,7 @@ body.hist .wl-top {
   padding: 0 12px 0 0;
   border: 0;
   background: none;
-  color: var(--go);
+  color: var(--a);
   font: 600 15px var(--ff);
   cursor: pointer;
 }
@@ -676,7 +693,7 @@ body.hist .wl-top {
   align-items: center;
   gap: 12px;
   padding: 10px 8px;
-  border-bottom: 1px solid var(--b);
+  border-bottom: 0.5px solid var(--sep);
   color: var(--t);
 }
 
@@ -799,7 +816,6 @@ body.hist .wl-top {
     position: sticky;
     top: 0;
     z-index: 1;
-    background: var(--bg);
   }
 }
 
@@ -879,13 +895,14 @@ body.hist .wl-top {
 /* Chips on a wash with no edge (base.css); the one on show in the text colour. */
 .wl-cats button {
   flex: none;
-  height: 32px;
-  padding: 0 11px;
+  height: 34px;
+  padding: 0 14px;
   border: 0;
   border-radius: 999px;
   background: var(--wash);
   color: var(--t);
-  font: 500 13px/1 var(--ff);
+  font: 500 15px/1 var(--ff);
+  letter-spacing: -0.2px;
   cursor: pointer;
 }
 
@@ -893,9 +910,10 @@ body.hist .wl-top {
   background: var(--wash2);
 }
 
-.wl-cats button[aria-pressed="true"] {
-  background: var(--t);
-  color: var(--bg);
+.wl-cats button[aria-pressed="true"],
+.wl-cats button[aria-pressed="true"]:hover {
+  background: var(--a);
+  color: var(--a-ink, #fff);
 }
 
 .wl-cats button:focus-visible {
@@ -1105,7 +1123,7 @@ body.hist .wl-top {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 20px;
   padding: 14px;
-  border-top: 1px solid var(--b);
+  border-top: 0.5px solid var(--sep);
   border-radius: 0 0 16px 16px;
   background: var(--wash);
 }
@@ -1197,7 +1215,7 @@ body.hist .wl-top {
 
 .ks {
   width: min(420px, calc(100vw - 32px));
-  border: 1px solid var(--b);
+  border: 0;
   border-radius: 24px;
   padding: 20px;
   background: var(--pn);
@@ -1359,7 +1377,7 @@ body.hist .wl-top {
 /* A token we do not list (keys/main.js tokens): one card each, a rule between. */
 .ks-tk {
   padding: 14px 0 2px;
-  border-top: 1px solid var(--b);
+  border-top: 0.5px solid var(--sep);
 }
 
 .ks-th {
@@ -1467,8 +1485,8 @@ body.hist .wl-top {
   border-radius: 999px;
   padding: 11px 20px;
   background: var(--a);
-  color: var(--bg);
-  font: 500 14px/1.2 var(--ff);
+  color: var(--a-ink, #fff);
+  font: 600 15px/1.2 var(--ff);
   cursor: pointer;
 }
 
@@ -1536,7 +1554,7 @@ body.hist .wl-top {
     top: 0;
     z-index: 1;
     padding-bottom: 2px;
-    background: var(--bg);
+    backdrop-filter: blur(4px);
   }
 
   .wl-cats {

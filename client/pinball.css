@@ -5,30 +5,36 @@
  * every other pixel: edge to edge on a phone, as tall as the window on a
  * desktop with the leaderboard beside it.
  */
+/* The Games section's red, drawn as base.css draws a section's pages: a ramp
+   of the one hue, the bar (--bar, the header) in the tile's vivid shade, the
+   page a deep one, cards and buttons a step lighter, a press lighter again;
+   all of it deeper after dark. A tapped tile floods the screen with the page's
+   shade (js/tilezoom.js), so the colour stays:
+   the big buttons too. */
 :root {
-  --bg: #fffff6;
-  --t: #202124;
-  --f: #70757a;
-  --go: #39a11c;
-  --btn: #3cc316;
-  --btn-on: #2f9e10;
-  --card: rgba(32, 33, 36, 0.06);
-  --line: rgba(32, 33, 36, 0.1);
-  --ff: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color-scheme: light;
+  --bar: #bd332d;
+  --bg: #7e1a17;
+  --t: #ffffff;
+  --f: rgba(255, 255, 255, 0.78);
+  --go: #9cf5b0;
+  --a: #ffffff;
+  --sheet: #8a1f1b;
+  --btn: #ad302b;
+  --btn-on: #c93a33;
+  --card: #962421;
+  --line: rgba(255, 255, 255, 0.14);
+  --ff: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #292124;
-    --t: #e8eaed;
-    --f: #9aa0a6;
-    --go: #75ffbe;
-    --btn: #3cc316;
-    --btn-on: #5fe03a;
-    --card: rgba(232, 234, 237, 0.08);
-    --line: rgba(232, 234, 237, 0.12);
-    color-scheme: dark;
+    --bar: #6e1b17;
+    --bg: #240807;
+    --sheet: #2e0b0a;
+    --card: #3a0f0d;
+    --btn: #521714;
+    --btn-on: #6e1b17;
   }
 }
 
@@ -59,6 +65,9 @@ body {
   align-items: center;
   gap: 12px;
   padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  background: var(--bar);
+  box-shadow: 0 0 0 100vmax var(--bar);
+  clip-path: inset(0 -100vmax);
 }
 
 /* The app's Back pill (header.css .hb). */
@@ -71,7 +80,7 @@ body {
   border: 0;
   border-radius: 999px;
   background: var(--card);
-  color: var(--go);
+  color: var(--a);
   font: 600 14px var(--ff);
   cursor: pointer;
 }
@@ -150,8 +159,8 @@ body {
   display: none;
   padding: 14px 16px 12px;
   border-radius: 16px;
-  background: var(--bg);
-  box-shadow: 0 0 0 1px var(--line);
+  background: var(--sheet);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 18%);
 }
 
 body:not(.pb-on) .pb-board {
@@ -228,7 +237,7 @@ body:not(.pb-on) .pb-board {
 }
 
 .pb-me a {
-  color: var(--go);
+  color: var(--a);
 }
 
 /* The two buttons along the bottom edge: flat, the logo's green. */
@@ -307,5 +316,11 @@ body:not(.pb-on) .pb-board {
 
   .pb-btns {
     width: min(100%, 520px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
   }
 }

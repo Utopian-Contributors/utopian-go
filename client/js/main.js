@@ -4,6 +4,7 @@
  * Home (centered search) ↔ results (tabs + list + knowledge panel).
  * Source is modular; `scripts/build-client.mjs` bundles + minifies to public/.
  */
+import { mountTileZoom } from "./tilezoom.js";
 import { $, clearResults, hideSkeleton, setLoading, setStatus, showSkeleton } from "./dom.js";
 import { mountAccount, mountHomeNav } from "./acct.js";
 import { noZoom } from "./device.js";
@@ -61,6 +62,7 @@ function syncClearButton() {
 // runs. Nothing here fetches, and nothing here waits on a search.
 mountAccount($("ac"), { loginAlone: true });
 mountHomeNav($("hm-nv"));
+mountTileZoom($("hm-nv"));
 paintSaved();
 noZoom();
 mountPwa();

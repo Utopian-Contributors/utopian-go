@@ -108,7 +108,7 @@ textarea.av-in { resize: none; }
 
 /* How it is doing: what it has been shown and spent, or what a new one buys. */
 .av-sts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-.av-st { flex: 1 1 120px; padding: 12px 14px; border: 1px solid var(--b); border-radius: 12px; }
+.av-st { flex: 1 1 120px; padding: 12px 14px; border-radius: 12px; background: var(--wash); }
 .av-st b { display: block; font: 700 20px/1.2 var(--ff); font-variant-numeric: tabular-nums; }
 .av-st span { font-size: 12px; color: var(--f); }
 
@@ -122,7 +122,7 @@ textarea.av-in { resize: none; }
   align-items: center;
   gap: 16px;
   padding: 14px 0 16px;
-  border-top: 1px solid var(--ln);
+  border-top: 0.5px solid var(--sep);
   background: var(--bg);
 }
 .av-sum b { display: block; font: 700 22px/1.2 var(--ff); font-variant-numeric: tabular-nums; }
@@ -159,10 +159,11 @@ textarea.av-in { resize: none; }
 
 /* —— the list —— */
 .av-l { padding: 16px 0 24px; }
-.av-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: var(--ch); }
-.av-tabs a { padding: 7px 16px; border-radius: 999px; color: var(--m); font: 600 14px/1 var(--ff); }
-.av-tabs a:hover { color: var(--t); text-decoration: none; }
-.av-tabs a.on { background: var(--t); color: var(--bg); }
+.av-tabs { display: flex; gap: 0; padding: 2px; border-radius: 9px; background: var(--wash); }
+.av-tabs a { padding: 7px 16px; border-radius: 7px; color: var(--t); font: 500 13px/1 var(--ff); }
+.av-tabs a:hover { text-decoration: none; }
+.av-tabs a.on { background: var(--thumb, var(--pn)); box-shadow: 0 3px 8px rgb(0 0 0 / 12%), 0 3px 1px rgb(0 0 0 / 4%); font-weight: 600; }
+@media (prefers-color-scheme: dark) { .av-tabs a.on { background: var(--thumb, #636366); } }
 .av-none { margin: 24px 0; color: var(--f); }
 .av-wait { color: var(--a); font-weight: 600; }
 .av-sub { display: block; color: var(--f); font-size: 12px; }
@@ -193,8 +194,8 @@ textarea.av-in { resize: none; }
 .av-new:hover { color: var(--buy-ink); text-decoration: none; filter: brightness(1.08); }
 .av-new .mk { width: 20px; height: 20px; }
 .av-t { width: 100%; border-collapse: collapse; font-size: 14px; }
-.av-t th { padding: 10px 12px; border-bottom: 1px solid var(--b); color: var(--f); font-size: 12px; font-weight: 600; text-align: left; }
-.av-t td { padding: 12px; border-bottom: 1px solid var(--ln); vertical-align: middle; }
+.av-t th { padding: 10px 12px; border-bottom: 0.5px solid var(--sep); color: var(--f); font-size: 12px; font-weight: 600; text-align: left; }
+.av-t td { padding: 12px; border-bottom: 0.5px solid var(--sep); vertical-align: middle; }
 .av-t th:first-child, .av-t td:first-child { padding-left: 0; }
 .av-t th:last-child, .av-t td:last-child { padding-right: 0; text-align: right; }
 .av-t .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }

@@ -1,49 +1,44 @@
 /* utopian-go shell — system UI, light/dark, no web fonts */
 :root {
   color-scheme: light dark;
-  --bg: #fffff6;
-  --t: #202124;
-  --m: #4d5156;
-  --f: #70757a;
-  --l: #1a0dab;
-  --b: #dfe1e5;
-  --a: #1a73e8;
-  --go: #39a11c;
+  --bg: #ffffff;
+  --t: #000000;
+  --m: #3c3c43;
+  --f: #8a8a8e;
+  --l: #007aff;
+  --b: #c6c6c8;
+  --a: #007aff;
+  --go: #248a3d;
   /*
-   * The greens, and why there are three.
+   * The palette is iOS's system colours: the page is systemBackground, the
+   * inks are label, secondaryLabel and tertiaryLabel, links and selection
+   * take the systemBlue tint, and the greens are systemGreen.
    *
    * --go is a green to read: the up arrow, a settled trade, a price that rose.
-   * --buy is a green to press — every filled button — and it is the wordmark's
-   * own #3CC316 (client/go-wordmark.svg), so the buttons and the mark are one
-   * green. White on it would be 2.3:1, too faint to read, so its ink is a deep
-   * green instead, 6.6:1, the way it turns near-black after dark. Each names
-   * the ink that goes on it, so a theme can move the fill and the label
-   * together instead of leaving white on top of whatever lands.
-   * --buy-text is that same press set as text on the page — a link's hover, an
-   * outlined button's label — where the wordmark green would be as faint as
-   * white is on it. It is the darker green the buttons were before.
+   * It is Apple's higher-contrast systemGreen, since the plain one is 2.2:1 as
+   * text on white. --buy is a green to press, every filled button, in plain
+   * systemGreen with white on it as iOS sets it. That is the same 2.2:1, so
+   * labels on it are set at 600 or heavier. --buy-text is a press set as text
+   * (a link, an outlined button's label), which on iOS is the tint.
    */
-  --go-ink: #fff;
-  --buy: #3cc316;
-  --buy-ink: #fefefe;
-  --buy-text: #167c3c;
-  --dn: #d93025;
-  --ln: #ebebeb;
-  --pn: #fff;
-  --ch: #f1f3f4;
-  --hover: #f1f3f4;
+  --go-ink: #ffffff;
+  --buy: #34c759;
+  --buy-ink: #ffffff;
+  --buy-text: #007aff;
+  --dn: #ff3b30;
+  --ln: #e5e5ea;
+  --pn: #ffffff;
+  --ch: #eeeef0;
+  --hover: #f2f2f7;
   /*
-   * A place to type: white by day, #202124 after dark, a step off the page
-   * either way. Fields used to take --bg, the page's own colour, and so never
-   * stood off it. After dark the field goes darker than the page rather than
-   * lighter, so it reads as a well cut into the surface. Not --pn, which is
-   * lighter at night and is the panel colour dialogs already use. The
-   * placeholder is named with them so it can follow the surface, not the text.
+   * A place to type: iOS's tertiary fill by day and secondarySystemBackground
+   * after dark, a step off the page either way. The placeholder is named with
+   * them so it can follow the surface, not the text.
    */
-  --in: #fff;
-  --in-ink: #202124;
-  --in-ph: #70757a;
-  --ff: system-ui, Helvetica, Arial, sans-serif;
+  --in: #eeeef0;
+  --in-ink: #000000;
+  --in-ph: #8a8a8e;
+  --ff: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   /* Gap below the nav before results start. #sd cancels it so the knowledge
      panel's rule meets the nav's bottom border. */
   --main-gap: 16px;
@@ -56,39 +51,28 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #282124;
-    --t: #e8eaed;
-    --m: #bdc1c6;
-    --f: #9aa0a6;
-    --l: #8ab4f8;
-    --b: #5f6368;
-    --a: #8ab4f8;
-    /*
-     * Both greens go bioluminescent after dark — the light off the mushrooms
-     * and the fireflies in the home page's night forest, and the same #75FFBE
-     * the wordmark takes (see .lg-mark). A leaf green is a colour lit from
-     * outside; on an unlit page there is nothing to light it, and #34a853 sat
-     * on #202124 like paint in a dark room. This one is the thing giving off
-     * the light, which is the only kind of green a night scene has.
-     *
-     * All three converge here: as text on this page the green reads as well
-     * as it does on a button, and the button's ink is the page's own
-     * near-black, so it reads as a lit panel with the label cut out of it —
-     * 13:1, against 6.6:1 by day.
-     */
-    --go: #75ffbe;
-    --go-ink: #202124;
-    --buy: #75ffbe;
-    --buy-ink: #202124;
-    --buy-text: #75ffbe;
-    --dn: #f28b82;
-    --ln: #3c4043;
-    --pn: #303134;
-    --ch: #3c4043;
-    --hover: #2c2c2e;
-    --in: #202124;
-    --in-ink: #e8eaed;
-    --in-ph: #9aa0a6;
+    --bg: #000000;
+    --t: #ffffff;
+    --m: #c7c7cc;
+    --f: #8d8d93;
+    --l: #0a84ff;
+    --b: #38383a;
+    --a: #0a84ff;
+    /* iOS's dark variants: systemGreen and systemBlue lift, the page goes to
+       true black and panels to secondarySystemBackground. */
+    --go: #30d158;
+    --go-ink: #ffffff;
+    --buy: #30d158;
+    --buy-ink: #ffffff;
+    --buy-text: #0a84ff;
+    --dn: #ff453a;
+    --ln: #2c2c2e;
+    --pn: #1c1c1e;
+    --ch: #2c2c2e;
+    --hover: #1c1c1e;
+    --in: #1c1c1e;
+    --in-ink: #ffffff;
+    --in-ph: #8d8d93;
   }
 }
 
@@ -332,6 +316,26 @@ body.home .hm-games {
   --lo: #a51f1f;
 }
 
+/* The copy of a tile that grows over the screen on a tap (js/tilezoom.js). */
+body.home .hm-t.hm-zoom {
+  position: fixed;
+  z-index: 100;
+  margin: 0;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+/* What it settles into: its section's colours (base.css --fill-*). */
+body.home .hm-fill {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+body.home .hm-wallet .hm-fill { background: var(--fill-wallet); }
+body.home .hm-social .hm-fill { background: var(--fill-social); }
+body.home .hm-games .hm-fill { background: var(--fill-games); }
+
 /* Home-only price strip. Hidden by default so it never becomes a flex item in
    the results header, where it would throw off the centred search field. */
 #hm-tk {
@@ -432,38 +436,44 @@ body.ld .sp {
 /* —— Tabs —— */
 #tb {
   display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--ln);
+  gap: 8px;
+  padding-block: 2px 10px;
+  border-bottom: 0.5px solid var(--sep);
   overflow-x: auto;
+  scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
 
+#tb::-webkit-scrollbar {
+  display: none;
+}
+
 /*
- * One weight on and off, so the row never shifts as the rule moves along it,
- * and a 2px rule under the one that is on. The bottom pad takes back the pixel
- * the rule gave up, which keeps the nav at 44px.
+ * iOS filter capsules: a grey fill, and the one that is on filled with the
+ * tint. One weight on and off, so the row never shifts as the selection moves.
  */
 .tab {
   border: 0;
-  background: transparent;
-  color: var(--f);
-  font: 500 14px var(--ff);
-  padding: 12px 14px 11px;
-  min-height: 44px;
+  border-radius: 999px;
+  background: var(--wash);
+  color: var(--t);
+  font: 500 15px var(--ff);
+  letter-spacing: -0.2px;
+  padding: 0 16px;
+  min-height: 34px;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
   white-space: nowrap;
   flex-shrink: 0;
-  --press: 0.985;
 }
 
 .tab:hover:not(:disabled) {
-  color: var(--t);
+  background: var(--wash2);
 }
 
-.tab.on {
-  color: var(--a);
-  border-bottom-color: var(--a);
+.tab.on,
+.tab.on:hover:not(:disabled) {
+  background: var(--a);
+  color: var(--a-ink, #fff);
 }
 
 .tab:disabled {
@@ -520,7 +530,7 @@ body.ld .sp {
 }
 
 #st.err {
-  color: #d93025;
+  color: var(--dn);
 }
 
 [hidden] {
@@ -1102,9 +1112,9 @@ body:not(.home) #bm {
   padding: 9px 18px;
   border-radius: 999px;
   background: var(--a);
-  color: var(--bg);
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--a-ink, #fff);
+  font-size: 15px;
+  font-weight: 600;
   /*
    * "Buy ${ticker}" is as long as the ticker is, and an unbreakable label sets
    * the card's min-content — one long-named token and the card is wider than
@@ -1618,7 +1628,7 @@ body.lb-on {
 
 .fq {
   margin-top: 14px;
-  border-top: 1px solid var(--ln);
+  border-top: 0.5px solid var(--sep);
   padding-top: 10px;
 }
 
