@@ -137,10 +137,10 @@ a:hover {
   padding-top: 18px;
 }
 
-/* Phones: straight under the header, whose bottom pad is gap enough. */
+/* Phones: a pad of its own under the header, which is a bar of colour. */
 @media (max-width: 900px) {
   #wl {
-    padding-top: 0;
+    padding-top: 16px;
   }
 
   /* Its margin parts it from the notice above; with none, it is the top. */
