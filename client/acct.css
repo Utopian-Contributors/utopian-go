@@ -124,12 +124,6 @@
     white-space: nowrap;
     border: 0;
   }
-
-  /* The mark alone: its pads swapped, so the mark, whose figures lean left,
-     sits in the middle of the pill to the eye. */
-  body.res .ac-soc {
-    padding: 0 9px 0 12px;
-  }
 }
 
 /* The in-page Log in button: the same filled pill on every page that offers
