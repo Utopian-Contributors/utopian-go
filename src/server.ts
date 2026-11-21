@@ -15,7 +15,7 @@ import {
 import { iconFile } from "./lib/tokens/icons";
 import { startTokenIndex } from "./lib/tokens/store";
 import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
-import { ACCOUNT_NAV, HOME_NAV, accountNav, authPath, homeNav, nextPath, profileCard, renderAuth, renderPage } from "./pages";
+import { ACCOUNT_NAV, HOME_NAV, accountNav, authPath, homeNav, nextPath, frameSocial, profileCard, renderAuth, renderPage, socialFrame } from "./pages";
 import { apiRouter } from "./routes/api";
 import { startAdPayments } from "./social/adPay";
 import { adFor, flushAds, startAds } from "./social/ads";
@@ -691,10 +691,13 @@ const SIDE_SLOT = '<div class="pn" id="side"></div>';
 
 async function renderSocial(req: express.Request, res: express.Response, doc: Record<"in" | "out", string>) {
   const session = readSession(req);
-  const html = doc[session ? "in" : "out"];
+  const html = frameSocial(doc[session ? "in" : "out"], req.path);
+  // One cached encoding per frame, as each is a different document.
+  const frame = socialFrame(req.path);
+  const key = `social:${!!session}:${frame.cls}:${frame.side}`;
   const name = req.path.match(PROFILE_PATH)?.[1];
   if (!name) {
-    sendDoc(req, res, html, `social:${!!session}`);
+    sendDoc(req, res, html, key);
     return;
   }
   let card = "";
@@ -711,15 +714,11 @@ async function renderSocial(req: express.Request, res: express.Response, doc: Re
     console.warn("[social] profile card:", err);
   }
   if (!card) {
-    sendDoc(req, res, html, `social:${!!session}`);
+    sendDoc(req, res, html, key);
     return;
   }
-  sendDoc(
-    req,
-    res,
-    html.replace('<body class="res soc"', '<body class="res soc profile"').replace(SIDE_SLOT, () => `<div class="pn" id="side">${card}</div>`),
-    null,
-  );
+  // body.profile is socialFrame's already.
+  sendDoc(req, res, html.replace(SIDE_SLOT, () => `<div class="pn" id="side">${card}</div>`), null);
 }
 
 // Negotiated compression for everything generated per request (API JSON).

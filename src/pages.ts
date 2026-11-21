@@ -144,3 +144,37 @@ export function profileCard(user: Pick<User, "name" | "address" | "bio" | "loc" 
     `<div class="pacts">${pay}${add}${last}</div>`
   );
 }
+
+/**
+ * A Social page's frame as client/social/main.js show() leaves it, so the
+ * first paint is already laid out the way the page will stay: the body's
+ * classes (the grid each page sits on) and, for a page with no card beside
+ * it, the side column gone and #mn one column (useSide(false)). Without this,
+ * the script set them only once it ran, and the columns moved under the page.
+ * Mirrors route() there; a path it does not know keeps the plain frame.
+ */
+export function socialFrame(path: string): { cls: string; side: boolean } {
+  const p = path.replace(/\/+$/, "") || "/social";
+  if (/^\/social\/ads(?:\/|$)/.test(p)) return { cls: "ads", side: false };
+  if (p === "/social" || p === "/social/saved") return { cls: "tl", side: true };
+  if (/^\/social\/p\/[A-Za-z0-9_-]{1,32}$/.test(p)) return { cls: "tl detail", side: true };
+  if (/^\/social\/u\/[a-z0-9_]{3,16}$/.test(p)) return { cls: "profile", side: true };
+  if (p === "/social/c" || /^\/social\/c\/[a-z0-9_]{3,16}$/.test(p)) return { cls: "chat", side: true };
+  if (p === "/social/new") return { cls: "newpost", side: false };
+  if (p === "/social/friends" || p === "/social/notifications" || p === "/social/edit") return { cls: "", side: false };
+  return { cls: "", side: true };
+}
+
+/** `html` (social.html) in the frame socialFrame gives `path`. Throws if the build moved what it rewrites. */
+export function frameSocial(html: string, path: string): string {
+  const { cls, side } = socialFrame(path);
+  const swaps: [string, string][] = [];
+  if (cls) swaps.push(['<body class="res soc"', `<body class="res soc ${cls}"`]);
+  if (!side) swaps.push(['<div id="mn">', '<div id="mn" class="solo">'], ['<aside id="sd">', '<aside id="sd" hidden>']);
+  let out = html;
+  for (const [from, into] of swaps) {
+    if (!out.includes(from)) throw new Error(`no ${from}`);
+    out = out.replace(from, () => into);
+  }
+  return out;
+}

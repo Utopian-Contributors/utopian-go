@@ -40,7 +40,7 @@ import { type RawTx, readTx } from "../lib/history";
 import { averageEntries, follows } from "../lib/entries";
 import { encodeTicks } from "../lib/tokens/ticks";
 import { stateTags } from "../state";
-import { authPath, homeNav, nextPath, renderAuth } from "../pages";
+import { authPath, frameSocial, homeNav, nextPath, renderAuth, socialFrame } from "../pages";
 import type { Activity, PriceSeries, TokenKind, TokenQuote, TokenRecord } from "../types";
 import { WORDLIST } from "./wordlist";
 
@@ -2765,4 +2765,23 @@ test("the login page goes on only to a page on this site, and signed out the hom
   assert.ok(reg.includes('href="/register?next=/social%3Fa%3D1%26b%3D2" id="au-tr"'));
   assert.ok(renderAuth(page, "login", "/").includes('<p class="au-to" id="au-to"></p><a href="/register" id="au-tr">'), "nowhere to name, no ?next=");
   assert.throws(() => renderAuth(page.replace(' id="au-tl"', ""), "login", "/"), /au-tl/);
+});
+
+test("a Social page paints in the frame its script leaves it in", () => {
+  assert.deepEqual(socialFrame("/social"), { cls: "tl", side: true });
+  assert.deepEqual(socialFrame("/social/"), { cls: "tl", side: true });
+  assert.deepEqual(socialFrame("/social/p/AbC_12-x"), { cls: "tl detail", side: true });
+  assert.deepEqual(socialFrame("/social/u/ludwig"), { cls: "profile", side: true });
+  assert.deepEqual(socialFrame("/social/c/ludwig"), { cls: "chat", side: true });
+  assert.deepEqual(socialFrame("/social/ads/new"), { cls: "ads", side: false });
+  assert.deepEqual(socialFrame("/social/friends"), { cls: "", side: false });
+  assert.deepEqual(socialFrame("/social/nope"), { cls: "", side: true });
+
+  const doc = '<body class="res soc" data-x="1"><div id="mn"><div id="m"></div><aside id="sd"><div class="pn" id="side"></div></aside></div>';
+  assert.ok(frameSocial(doc, "/social").startsWith('<body class="res soc tl" data-x="1"><div id="mn"><div id="m"></div><aside id="sd">'));
+  const friends = frameSocial(doc, "/social/notifications");
+  assert.ok(friends.includes('<body class="res soc" data-x="1"><div id="mn" class="solo">'));
+  assert.ok(friends.includes('<aside id="sd" hidden>'));
+  assert.equal(frameSocial(doc, "/social/nope"), doc);
+  assert.throws(() => frameSocial(doc.replace('<aside id="sd">', "<aside>"), "/social/edit"), /sd/);
 });
