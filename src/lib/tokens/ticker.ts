@@ -1,40 +1,69 @@
-import { lookupToken } from "./store";
+import { authPath } from "../../pages";
+import { TopToken } from "../../types";
+import { iconTint } from "./icons";
+import { lookupToken, quoteMints } from "./store";
 
 /**
- * Home-page price strip, rendered server-side into index.html.
+ * The home page's watchlist tiles, rendered server-side into index.html.
  *
  * The home page otherwise issues no requests at all, so fetching these would
  * cost a whole extra round trip on the most-visited page — and a client-side
  * render would cost one anyway, since app.js only arrives on the second trip.
  * Baking the markup into the shell means prices are on screen at first paint,
  * with zero requests and zero client JS.
+ *
+ * Which three show is a cookie the menu writes (client/watch/main.js), mints
+ * joined by dots, so the next visit paints them. The menu offers every token
+ * the index ranks, busiest on Jupiter first (/api/watch), and draws the tile
+ * of one picked from it itself, the same markup as here.
  */
 
-/** Display label → the query the matcher already knows how to resolve. */
-const STRIP = [
-  { label: "BTC", query: "btc" },
-  { label: "ETH", query: "eth" },
-  { label: "SOL", query: "sol" },
-];
+/** How many tiles the row holds. */
+export const WATCH_SLOTS = 3;
+
+/** The row as it stands for anyone who has not chosen: what these find. */
+const DEFAULT_WATCH = ["btc", "eth", "sol"];
+
+/** The cookie the menu keeps the choice in: mints, joined by dots. */
+export const WATCH_COOKIE = "wl";
+
+const MINT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+/** The mints a cookie names, well-formed ones only, once each, at most three, in its order; the default without one. */
+export function watchKeys(raw: string | null): string[] {
+  if (raw == null) return DEFAULT_WATCH.map((q) => lookupToken(q)?.mint ?? "").filter(Boolean);
+  return [...new Set(raw.split(".").filter((m) => MINT.test(m)))].slice(0, WATCH_SLOTS);
+}
+
+/** A symbol as a tile labels it: Jupiter's, without the "$" some carry. Its own case: cbBTC is not CBBTC. */
+function label(symbol: string): string {
+  return symbol.replace(/^\$/, "");
+}
+
+/** Symbols are Jupiter's, so anyone's who listed a token: escaped. */
+function esc(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+const SUBSCRIPTS = "₀₁₂₃₄₅₆₇₈₉";
 
 /**
- * Compact USD price, following the same tiers as the client formatter for
- * values at or above $1 — which is all these majors ever are. Sub-dollar
- * values fall back to 3 significant digits rather than zero-subscript, since
- * nothing on this strip can reach that range.
+ * A price as client/js/num.js tokenPrice writes it, but whole dollars from
+ * $1,000 up: a third of a phone's width has no room for a bitcoin's cents,
+ * and nobody reads a home-screen tile for them.
  */
 function price(v: number): string {
   const a = Math.abs(v);
   if (!Number.isFinite(a) || a <= 0) return "--";
-  if (a >= 1000) {
-    return `$${a.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  }
+  if (a >= 1000) return `$${Math.round(a).toLocaleString("en-US")}`;
   if (a >= 100) return `$${a.toFixed(0)}`;
   if (a >= 1) return `$${a.toFixed(1)}`;
-  return `$${Number(a.toPrecision(3))}`;
+  const zeros = Math.max(0, -Math.floor(Math.log10(a)) - 1);
+  if (zeros < 3) return `$${Number(a.toPrecision(3)).toFixed(Math.min(8, zeros + 3))}`;
+  // 0.00000206 → $0.0₅20, two significant digits, as num.js does.
+  const digits = String(Math.round(a * 10 ** (zeros + 2))).slice(0, 2);
+  const sub = [...String(zeros)].map((d) => SUBSCRIPTS[Number(d)]).join("");
+  return `$0.0${sub}${digits}`;
 }
 
 /** Signed 24h change. Zero is never signed. */
@@ -48,29 +77,47 @@ function change(v: number): string {
 }
 
 /**
- * Markup for the strip. Every value is produced by Number formatting against a
- * fixed label set, so there is no untrusted text to escape.
+ * Markup for the chosen tiles, in their order, and an empty slot for each one
+ * short of three (a mint the index has dropped leaves one). Each goes to the
+ * wallet page open on its token (/wallet?t=), by the login page for anyone
+ * signed out. Numbers are our own formatting, a mint is base58 and a tint is
+ * hex; the symbol is escaped.
  */
-export function renderHomeTicker(): string {
-  const cells: string[] = [];
+export function renderHomeTicker(mints: string[], signed: boolean): string {
+  const quotes = new Map(quoteMints(mints).map((t) => [t.mint, t]));
+  const tiles = mints.flatMap((m) => {
+    const t = quotes.get(m);
+    return t ? [tile(t, signed)] : [];
+  });
+  const empty = '<button class="hm-add" type="button" aria-label="Add an asset"></button>';
+  return tiles.join("") + empty.repeat(Math.max(0, WATCH_SLOTS - tiles.length));
+}
 
-  for (const { label, query } of STRIP) {
-    const quote = lookupToken(query);
-    // Index not warm yet, or no confident match — drop the cell rather than
-    // render a placeholder that shifts when it fills in.
-    if (!quote) continue;
+function tile(t: TopToken, signed: boolean): string {
+  const to = `/wallet?t=${t.mint}`;
+  const c = t.change24h;
+  const delta = c != null ? `<i class="${c > 0 ? "up" : c < 0 ? "dn" : ""}">${change(c)}</i>` : "";
+  const tint = t.icon ? iconTint(t.mint) : null;
+  return (
+    `<a class="hm-t hm-a" href="${signed ? to : authPath("/login", to)}" data-to="${to}" data-m="${t.mint}" data-n="${esc(t.name)}"` +
+    `${tint ? ` style="${tint}"` : ""}>` +
+    (t.icon ? `<img src="/icon/${t.mint}" alt="" width="64" height="64" decoding="async">` : "") +
+    `<b>${esc(label(t.symbol))}</b><span>${price(t.price)}</span>${delta}</a>`
+  );
+}
 
-    const delta =
-      quote.change24h != null
-        ? `<i class="${quote.change24h > 0 ? "up" : quote.change24h < 0 ? "dn" : ""}">${change(quote.change24h)}</i>`
-        : "";
-
-    cells.push(
-      `<a href="/?q=${label.toLowerCase()}"><b>${label}</b>${price(quote.price)}${delta}</a>`,
-    );
+/**
+ * Reads the tiles' colours off their logos ahead of the first visitor, who
+ * would otherwise get graphite tiles while they are read. Tried again as the
+ * index and its thumbnails arrive after a cold boot; a colour already read
+ * costs nothing.
+ */
+export function warmHomeTiles(): void {
+  for (const ms of [2_000, 15_000, 60_000, 300_000]) {
+    setTimeout(() => {
+      for (const mint of watchKeys(null)) iconTint(mint);
+    }, ms).unref();
   }
-
-  return cells.join("");
 }
 
 /** The tokens the buy dialog can spend or receive on the non-token side. */

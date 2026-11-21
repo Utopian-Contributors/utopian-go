@@ -276,6 +276,8 @@ export interface TopToken {
   /** 24h traded volume, USD. */
   volume: number;
   icon?: true;
+  /** Its logo's colours as a tile's `--hi` and `--lo` (the home watchlist's menu only). */
+  tint?: string;
 }
 
 /** One page of a wallet page list. */

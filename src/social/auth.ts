@@ -274,7 +274,7 @@ export function clearSession(res: Response, secure: boolean): void {
   res.setHeader("Set-Cookie", cookie("", 0, secure));
 }
 
-function readCookie(header: string, name: string): string | null {
+export function readCookie(header: string, name: string): string | null {
   for (const part of header.split(";")) {
     const i = part.indexOf("=");
     if (i === -1) continue;

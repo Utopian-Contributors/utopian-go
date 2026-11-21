@@ -13,6 +13,7 @@ import { rateLimit } from "../lib/rateLimit";
 import { isSignature, signatureStatus } from "../lib/txStatus";
 import { MAX_ASSETS, fetchAssets } from "../lib/tokens/asset";
 import { tokenDetail } from "../lib/tokens/detail";
+import { tintOf } from "../lib/tokens/icons";
 import { isChartRange, priceSeries } from "../lib/tokens/history";
 import {
   isTokenList,
@@ -22,6 +23,7 @@ import {
   lookupTokens,
   quoteMints,
   searchTokens,
+  watchTokens,
   topTokens,
 } from "../lib/tokens/store";
 import {
@@ -548,6 +550,27 @@ apiRouter.get("/api/tokens", searchLimit, (req: Request, res: Response) => {
   res.setHeader("Cache-Control", "public, max-age=60");
   res.json(page);
 });
+
+/**
+ * What the home watchlist's menu offers (client/watch/main.js), a page at a
+ * time from `after`, busiest on Jupiter first, each with its logo's colours
+ * so a tile picked from it paints as the server would have painted it.
+ */
+apiRouter.get(
+  "/api/watch",
+  searchLimit,
+  wrap(async (req: Request, res: Response) => {
+    const page = watchTokens(asString(req.query.after).slice(0, 128), TOKEN_TOP_COUNT);
+    const tokens = await Promise.all(
+      page.tokens.map(async (t) => {
+        const tint = t.icon ? await tintOf(t.mint) : null;
+        return tint ? { ...t, tint } : t;
+      }),
+    );
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.json({ ...page, tokens });
+  }),
+);
 
 /** A timeline page names at most 20 posts' three tickers. */
 const MAX_QUOTES = 60;

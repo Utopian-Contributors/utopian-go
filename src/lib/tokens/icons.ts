@@ -326,3 +326,94 @@ export async function syncIcons(list: TokenRecord[]): Promise<void> {
     running = false;
   }
 }
+
+/**
+ * A logo's colour, as the two ends of a tile's gradient (`--hi`, `--lo`), for
+ * the home page's asset tiles to be painted in the way its app tiles are
+ * painted in their marks' colours. Read once per mint from the thumbnail on
+ * disk and kept; null until it has been, which the first render that asks
+ * starts.
+ */
+const tints = new Map<string, string>();
+const tinting = new Map<string, Promise<string>>();
+
+export function iconTint(mint: string): string | null {
+  const tint = tints.get(mint);
+  if (tint != null) return tint || null;
+  void tintOf(mint);
+  return null;
+}
+
+/**
+ * The same, waited for: the watchlist menu's rows carry it, so a tile picked
+ * from one is painted at once. A 24px read of a 64px file, a few
+ * milliseconds; null for a mint with no logo on disk.
+ */
+export async function tintOf(mint: string): Promise<string | null> {
+  const held = tints.get(mint);
+  if (held != null) return held || null;
+  const file = iconFile(mint);
+  if (!file) return null;
+  let task = tinting.get(mint);
+  if (!task) {
+    task = readTint(file)
+      .catch(() => "")
+      .then((t) => {
+        tints.set(mint, t);
+        tinting.delete(mint);
+        return t;
+      });
+    tinting.set(mint, task);
+  }
+  return (await task) || null;
+}
+
+/**
+ * The logo's strongest hue, by its opaque pixels' chroma, at two lightnesses
+ * dark enough to carry white type. A logo with no colour to speak of (black,
+ * white, grey) gets a graphite one rather than whatever hue its noise lands on.
+ */
+async function readTint(file: string): Promise<string> {
+  const { data } = await sharp(file).resize(24, 24, { fit: "fill" }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const bins = new Float64Array(36);
+  const sat = new Float64Array(36);
+  let chroma = 0;
+  let count = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 200) continue;
+    const r = data[i] / 255;
+    const g = data[i + 1] / 255;
+    const b = data[i + 2] / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const c = max - min;
+    // A black or white ground (Solana's stripes sit on black) says nothing
+    // about how colourful the mark on it is.
+    if (max < 0.2 || min > 0.9) continue;
+    count += 1;
+    chroma += c;
+    if (c < 0.08) continue;
+    const h = max === r ? ((g - b) / c + 6) % 6 : max === g ? (b - r) / c + 2 : (r - g) / c + 4;
+    const l = (max + min) / 2;
+    const bin = Math.floor(h * 6) % 36;
+    bins[bin] += c;
+    sat[bin] += c / (1 - Math.abs(2 * l - 1) || 1);
+  }
+  if (!count || chroma / count < 0.1) return "--hi:#6e6e76;--lo:#2a2a2f";
+  let best = 0;
+  for (let i = 1; i < 36; i++) if (bins[i] > bins[best]) best = i;
+  const hue = best * 10 + 5;
+  const s = Math.min(0.85, Math.max(0.4, sat[best] / bins[best]));
+  return `--hi:${hsl(hue, s, 0.54)};--lo:${hsl(hue, s, 0.27)}`;
+}
+
+function hsl(h: number, s: number, l: number): string {
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))))
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}

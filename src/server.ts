@@ -14,12 +14,12 @@ import {
 } from "./config";
 import { iconFile } from "./lib/tokens/icons";
 import { startTokenIndex } from "./lib/tokens/store";
-import { renderFundPrices, renderHomeTicker } from "./lib/tokens/ticker";
+import { WATCH_COOKIE, renderFundPrices, renderHomeTicker, warmHomeTiles, watchKeys } from "./lib/tokens/ticker";
 import { ACCOUNT_NAV, HOME_NAV, accountNav, authPath, homeNav, nextPath, frameSocial, profileCard, renderAuth, renderPage, socialFrame } from "./pages";
 import { apiRouter } from "./routes/api";
 import { startAdPayments } from "./social/adPay";
 import { adFor, flushAds, startAds } from "./social/ads";
-import { readSession } from "./social/auth";
+import { readCookie, readSession } from "./social/auth";
 import { addedBy, ensureSchema, getUser } from "./social/db";
 import { sessionAccount } from "./social/guard";
 import { sendAvatar, sendBanner, sendPostAudio, sendPostPhoto, socialRouter } from "./social/routes";
@@ -852,7 +852,7 @@ function sendIndex(
   let html = replaceSlot(
     homeNav((variant === "res" ? resShell : shell).replace(ACCOUNT_NAV, () => accountNav("index", signed)), signed),
     TICKER_SLOT,
-    `<div id="hm-tk"${renderFundPrices()}>${renderHomeTicker()}</div>`,
+    `<div id="hm-tk"${renderFundPrices()}>${renderHomeTicker(watchKeys(readCookie(req.headers.cookie ?? "", WATCH_COOKIE)), signed)}</div>`,
   );
   if (variant === "res") html = replaceSlot(html, INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);
   // Tagged by what it shows, the ad left out (src/state.ts): a check from the
@@ -960,6 +960,7 @@ const server = app.listen(PORT, () => {
     );
   }
   startTokenIndex();
+  warmHomeTiles();
 });
 
 // Social's tables, made ready ahead of the first request. Search never waits

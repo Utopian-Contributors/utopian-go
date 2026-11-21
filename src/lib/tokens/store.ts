@@ -41,6 +41,8 @@ let index: TokenIndex = {
 let updatedAt = 0;
 /** Verified records by 24h volume, highest first. Volume only changes on a rebuild. */
 let ranked: TokenRecord[] = [];
+/** What the home watchlist offers: everything ranked but stablecoins, whose tile would read $1.00 forever. */
+let watchable: TokenRecord[] = [];
 /** The wallet page's lists, each already in ranked order, so any page of one is a slice. */
 let lists = new Map<TokenList, TokenRecord[]>();
 
@@ -79,6 +81,7 @@ function adopt(list: TokenRecord[]): void {
   index = buildIndex(list);
   ranked = list.filter((r) => r.verified && (r.volume24h ?? 0) > 0).sort(byVolume);
   lists = buildLists(ranked, list.filter((r) => TOKEN_PINNED_MINTS.has(r.mint)));
+  watchable = ranked.filter((r) => !isStable(r));
   updatedAt = Date.now();
 }
 
@@ -490,6 +493,11 @@ export function listTokens(key: TokenList, after: string, limit: number): TokenP
   // buildLists puts the pinned mints at the top of Trending, and only there.
   if (key === "trending") while (head < list.length && TOKEN_PINNED_MINTS.has(list[head].mint)) head += 1;
   return pageOf(list, after, limit, head);
+}
+
+/** A page of what the home watchlist's menu offers, busiest on Jupiter first. */
+export function watchTokens(after: string, limit: number): TokenPage {
+  return pageOf(watchable, after, limit);
 }
 
 /** How long every list is. */

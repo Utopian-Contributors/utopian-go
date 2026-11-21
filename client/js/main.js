@@ -13,6 +13,7 @@ import { readUrlState, writeUrl } from "./url.js";
 import { langParam, mountLang, setLang } from "./lang.js";
 import { createRenderer } from "./render.js";
 import { paintSaved } from "./saved.js";
+import { mountWatch } from "./watch.js";
 
 /** @typedef {import('../../src/types').SearchApiResponse} SearchApiResponse */
 
@@ -63,6 +64,11 @@ function syncClearButton() {
 mountAccount($("ac"), { loginAlone: true });
 mountHomeNav($("hm-nv"));
 mountTileZoom($("hm-nv"));
+// The watchlist's tiles go to the wallet as the Wallet tile does: by the
+// login page signed out, and opening the same way.
+mountHomeNav($("hm-tk"));
+mountTileZoom($("hm-tk"));
+mountWatch($("hm-wl"));
 paintSaved();
 noZoom();
 mountPwa();

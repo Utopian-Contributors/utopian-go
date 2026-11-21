@@ -336,53 +336,141 @@ body.home .hm-wallet .hm-fill { background: var(--fill-wallet); }
 body.home .hm-social .hm-fill { background: var(--fill-social); }
 body.home .hm-games .hm-fill { background: var(--fill-games); }
 
-/* Home-only price strip. Hidden by default so it never becomes a flex item in
-   the results header, where it would throw off the centred search field. */
-#hm-tk {
+/*
+ * Home-only watchlist: three assets as tiles like the ones above, under an
+ * iOS section header with its Edit button (js/watch.js opens the menu).
+ * Hidden by default so it never becomes a flex item in the results header,
+ * where it would throw off the centred search field.
+ *
+ * Each tile is painted in its logo's colour (--hi, --lo, read from the logo
+ * by src/lib/tokens/icons.ts iconTint), the logo itself large off the top
+ * right corner and faded into it towards the figures. The change is the iOS
+ * Stocks pill: green or red whatever colour the tile is.
+ */
+#hm-wl {
   display: none;
 }
 
-body.home #hm-tk {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px 22px;
+body.home #hm-wl {
+  position: relative;
+  display: block;
+  width: 100%;
   margin-top: -8px;
-  font-size: 13px;
+}
+
+body.home .hm-wh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 8px 4px;
+}
+
+body.home .hm-wh h2 {
+  margin: 0;
+  font: 700 20px/1.2 var(--ff);
+  letter-spacing: -0.02em;
+}
+
+body.home #hm-ed {
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--l);
+  font: 17px/1.2 var(--ff);
+  cursor: pointer;
+}
+
+body.home #hm-tk {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 104px;
+  gap: 10px;
   font-variant-numeric: tabular-nums;
 }
 
-body.home #hm-tk a {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  color: var(--m);
+body.home .hm-a {
+  --hi: #6e6e76;
+  --lo: #2a2a2f;
+  flex-direction: column;
+  padding: 12px 14px 13px;
+  font-size: 15px;
 }
 
-body.home #hm-tk a:hover {
-  color: var(--t);
-  text-decoration: none;
+body.home .hm-t[hidden] {
+  display: none;
 }
 
-body.home #hm-tk b {
-  font-weight: 600;
+body.home .hm-a span {
+  margin-top: auto;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+body.home .hm-a i {
+  margin-top: 5px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.22);
+  font: 600 12px/1 var(--ff);
+  text-shadow: none;
+}
+
+body.home .hm-a i.up {
+  background: #30b94f;
+}
+
+body.home .hm-a i.dn {
+  background: #f0453a;
+}
+
+body.home .hm-a img {
+  top: -16px;
+  right: -20px;
+  bottom: auto;
+  height: 96px;
+  border-radius: 50%;
+  rotate: none;
+  filter: none;
+  /* Tight enough that the chain badge some logos wear in their lower right
+     corner fades out with the rest. */
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 30%, transparent 62%);
+  mask-image: radial-gradient(circle at 50% 45%, #000 30%, transparent 62%);
+}
+
+body.home .hm-a .hm-fill {
+  background: var(--fill-wallet);
+}
+
+/* A slot nobody has filled: the tile's outline, with a plus that opens the menu. */
+body.home .hm-add {
+  position: relative;
+  border: 1.5px dashed var(--sep);
+  border-radius: 18px;
+  background: none;
   color: var(--f);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  cursor: pointer;
 }
 
-body.home #hm-tk i {
-  font-style: normal;
-  font-size: 12px;
-  color: var(--f);
+body.home .hm-add:hover {
+  background: var(--wash);
 }
 
-body.home #hm-tk i.up {
-  color: var(--go);
+body.home .hm-add::before,
+body.home .hm-add::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 2px;
+  margin: -1px 0 0 -11px;
+  border-radius: 1px;
+  background: currentColor;
 }
 
-body.home #hm-tk i.dn {
-  color: var(--dn);
+body.home .hm-add::after {
+  rotate: 90deg;
 }
 
 .sp {

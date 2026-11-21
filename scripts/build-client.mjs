@@ -62,15 +62,16 @@ const INIT_WINDOW = 14_600;
  * Vary, Connection, Keep-Alive. ~300 B on this server's responses, rounded up.
  * HTTP/2 squeezes these with HPACK; budget the worse case.
  *
- * TICKER_RESERVE — the shell measured here still has an empty price strip.
- * renderHomeTicker fills it per request with three cells, and renderFundPrices
- * hangs the quote tokens' USD prices off the same tag for the buy dialog to
- * convert with: ~250 B raw and under 60 B once it compresses against the rest
- * of the document. Reserved with slack so a build that passes here also passes
- * on the wire.
+ * TICKER_RESERVE — the shell measured here still has an empty watchlist.
+ * renderHomeTicker fills it per request with the three chosen tiles, and
+ * renderFundPrices hangs the quote tokens' USD prices off the same tag for the
+ * buy dialog to convert with. Each tile names its mint four times, and base58
+ * compresses badly against the rest of the document: ~510 B gzipped,
+ * measured. Reserved with slack so a build that passes here also passes on
+ * the wire.
  */
 const HEADER_RESERVE = 350;
-const TICKER_RESERVE = 300;
+const TICKER_RESERVE = 700;
 
 /**
  * AD_RESERVE — a results page can carry one ad, rendered in per request by
@@ -257,6 +258,16 @@ const qrOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "qr", "main.js")],
   outfile: path.join(outDir, "qr.js"),
+};
+
+/**
+ * The home watchlist's menu (client/js/watch.js). Its own bundle so app.js
+ * stays inside its window: only someone changing the three assets fetches it.
+ */
+const watchOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "watch", "main.js")],
+  outfile: path.join(outDir, "watch.js"),
 };
 
 /** The wallet page's recovery-phrase dialog. */
@@ -766,7 +777,7 @@ function buildAuthCss() {
   return prunedCss(["base.css", "auth.css", "header.css"], ["auth.js"], "auth.html");
 }
 
-async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, installHash) {
+async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, installHash, watchHash) {
   let raw = readFileSync(path.join(clientDir, "index.html"), "utf8");
   verifyLoadingChrome(raw);
 
@@ -824,6 +835,12 @@ async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, 
     /data-pw="\/install\.js"/,
     `data-pw="/install.js?v=${installHash}"`,
     "install.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-wl="\/watch\.js"/,
+    `data-wl="/watch.js?v=${watchHash}"`,
+    "watch.js attribute",
   );
 
   writeFileSync(path.join(outDir, "index.html"), await minifyDoc(raw));
@@ -1135,6 +1152,7 @@ async function buildAssets() {
     esbuild.build(swapOpts),
     esbuild.build(connectOpts),
     esbuild.build(qrOpts),
+    esbuild.build(watchOpts),
     esbuild.build(walletOpts),
     esbuild.build(recOpts),
     esbuild.build(railOpts),
@@ -1169,7 +1187,7 @@ async function buildAssets() {
   const installHash = hash("install.js");
 
   await Promise.all([
-    buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, installHash),
+    buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, installHash, hash("watch.js")),
     buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
     buildSocialHtml(socialCss, hash),
     buildAuthHtml(authCss, hash),

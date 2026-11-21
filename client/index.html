@@ -38,7 +38,7 @@
        document: the server swaps it to "res" when the URL carries a query.
        Left to app.js it would land a round trip after first paint, and the
        whole header would jump into place in front of the reader. -->
-  <body class="home" data-fa="" data-sw="/swap.js" data-cn="/connect.js" data-qr="/qr.js" data-lg="/login.js" data-pw="/install.js">
+  <body class="home" data-fa="" data-sw="/swap.js" data-cn="/connect.js" data-qr="/qr.js" data-lg="/login.js" data-pw="/install.js" data-wl="/watch.js">
     <div class="chrome" id="chrome">
       <header id="hd">
         <a class="lg" href="/" id="lg" aria-label="utopian-go home">
@@ -76,9 +76,6 @@
           </div>
         </form>
 
-        <!-- Filled server-side with live prices; empty until then. -->
-        <div id="hm-tk"></div>
-
         <!-- Home only: where to go from here, as a grid of tiles under the
              search field. Games needs no account; the other two do. Stands in
              for #ac on this page. Signed out, each goes by the login page and
@@ -102,6 +99,19 @@
             <span>Games</span>
           </a>
         </nav>
+
+        <!-- Home only: three assets as tiles like the ones above, each going
+             to the wallet page open on it. The server renders every asset
+             there is to choose from into #hm-tk, live prices and all, and
+             shows the three the "wl" cookie names (src/lib/tokens/ticker.ts);
+             Edit opens the menu that chooses them (js/watch.js). -->
+        <section id="hm-wl" aria-labelledby="hm-wh">
+          <div class="hm-wh">
+            <h2 id="hm-wh">Watchlist</h2>
+            <button id="hm-ed" type="button" aria-haspopup="menu" aria-expanded="false">Edit</button>
+          </div>
+          <div id="hm-tk"></div>
+        </section>
 
         <!-- The account control. The server renders it from the session cookie
              (src/pages.ts), Wallet or Log in, so it paints with the page; app.js
