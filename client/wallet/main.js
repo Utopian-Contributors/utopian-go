@@ -7,7 +7,7 @@
  * any public address, so neither needs a wallet prompt to paint.
  */
 import { $, el, nil } from "../js/dom.js";
-import { LOGIN, logOutButton, mountAccount, openLogin } from "../js/acct.js";
+import { loginPath, logOutButton, mountAccount } from "../js/acct.js";
 import { noZoom } from "../js/device.js";
 import { load } from "../js/lazy.js";
 import { account as whoami } from "../js/me.js";
@@ -782,17 +782,16 @@ function paint(data) {
   chooseFirst(data.items[0].mint);
 }
 
-/** Nobody signed in: an offer, not an error. */
+/**
+ * Nobody signed in: the wallet is an account's only (src/server.ts), so off to
+ * the login page, which comes back here once someone is. The server sends a
+ * signed-out visitor there before this page is ever served; this is for a
+ * session that ended while the page was open or kept (a copy the service
+ * worker had). Offline the session kept on the device still answers owner(),
+ * so this is never a network failure.
+ */
 function offer() {
-  reset();
-  firstPainted();
-  shown = null;
-  historyButton.hidden = true;
-  paintHead();
-  paintTotal();
-  total.textContent = "—";
-  setNote("Log in to see your wallet.");
-  extra.append(el("button", { class: "ac-go", type: "button", text: LOGIN, onclick: () => openLogin(switched) }));
+  location.replace(loginPath(location.pathname + location.search));
 }
 
 /**
