@@ -1,9 +1,16 @@
 /*
  * A search under a post (client/serp): the query, the search page's tabs, a
  * few results. The box itself is social.css's .se, drawn before this bundle
- * comes; these are its insides. The tabs and result cards are search's own
- * (.tab, .r, .ci, .vr in app.css), made smaller to sit in a post.
+ * comes at a height of its own; these are its insides. The tabs and result
+ * cards are search's own (.tab, .r, .ci, .vr in app.css), made smaller to sit
+ * in a post.
+ *
+ * The box never grows or shrinks with what it holds: the query, the tabs' row
+ * (held open before the tabs come) and See all results keep their heights, and
+ * the results take what is left, fading out at its foot when they run longer.
  */
+.se { display: flex; flex-direction: column; }
+.se > * { flex: none; }
 .se-q {
   display: flex;
   align-items: baseline;
@@ -38,6 +45,8 @@
 .se-tb {
   display: flex;
   gap: 6px;
+  /* A row of tabs, with its padding and rule, before the tabs come. */
+  min-height: 41px;
   padding: 2px 8px 8px;
   border-bottom: 0.5px solid var(--sep);
   overflow-x: auto;
@@ -52,11 +61,15 @@
   font-size: 13px;
 }
 
-.se-rs {
+.se > .se-rs {
+  flex: 1 1 0;
   display: grid;
+  align-content: start;
   gap: 2px;
+  min-height: 0;
   padding: 4px;
-  min-height: 120px;
+  overflow: hidden;
+  mask-image: linear-gradient(#000 calc(100% - 40px), transparent);
 }
 
 .se-rs .r { max-width: none; }

@@ -583,13 +583,13 @@ dialog textarea { resize: none; }
 
 /*
  * A search a post links to, as its tabs and first results; client/serp draws
- * and styles what is inside. The box shows at once, so the post settles near
- * its height before the results come.
+ * and styles what is inside. The box shows at once and at its full height,
+ * which its insides never change, so nothing under it moves as they come.
  */
 .se {
   display: block;
   width: min(100%, 520px);
-  min-height: 160px;
+  height: 400px;
   margin: 8px 0 0;
   border: 1px solid var(--ln);
   border-radius: 16px;
