@@ -43,6 +43,24 @@ export function writeAvatar(name: string, full: Buffer, tiny?: Buffer): void {
   else if (existsSync(small)) unlinkSync(small);
 }
 
+function badgePath(name: string): string {
+  const dir = path.join(socialDir(), "badges");
+  const file = path.join(dir, `${name}.png`);
+  if (!file.startsWith(dir + path.sep)) throw new Error("badge path");
+  return file;
+}
+
+/** Someone's own badge, a PNG (src/social/shop.ts), or null before their first. */
+export function badgeFile(name: string): string | null {
+  const file = badgePath(name);
+  return existsSync(file) ? file : null;
+}
+
+export function writeBadge(name: string, png: Buffer): void {
+  mkdirSync(path.join(socialDir(), "badges"), { recursive: true });
+  writeFileSync(badgePath(name), png, { mode: 0o600 });
+}
+
 function postDir(): string {
   return path.join(socialDir(), "posts");
 }

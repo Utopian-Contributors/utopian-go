@@ -14,10 +14,10 @@ import { el, nil } from "../js/dom.js";
  *   main: HTMLElement, me: () => null | { name: string },
  *   pull: (path: string, opts?: object) => Promise<any>, send: (path: string, body?: object) => Promise<any>,
  *   thumb: (name: string, rev: number) => HTMLElement | null, face: (name: string, rev: number) => HTMLElement | null,
- *   useSide: (on: boolean) => void,
+ *   useSide: (on: boolean) => void, marks: (name: string, mark?: string) => (HTMLElement | null)[],
  * }} kit
  */
-function mount(data, { main, me: who, pull, send, thumb, face, useSide }) {
+function mount(data, { main, me: who, pull, send, thumb, face, useSide, marks }) {
   const me = who();
   useSide(false);
   const input = el("input", {
@@ -49,11 +49,7 @@ function mount(data, { main, me: who, pull, send, thumb, face, useSide }) {
       el(
         "div",
         { class: "friend-main" },
-        el("a", {
-          class: "who",
-          href: `/social/u/${friend.name}`,
-          text: friend.name,
-        }),
+        el("a", { class: "who", href: `/social/u/${friend.name}` }, friend.name, ...marks(friend.name, friend.mark)),
         friend.loc ? el("div", { class: "muted", text: friend.loc }) : null,
         friend.bio ? el("div", { text: friend.bio }) : null,
       ),
@@ -141,7 +137,7 @@ function mount(data, { main, me: who, pull, send, thumb, face, useSide }) {
               "button",
               { type: "button", class: "hit", disabled: user.friend },
               face(user.name, user.avatarRev),
-              el("span", { class: "who", text: user.name }),
+              el("span", { class: "who" }, user.name, ...marks(user.name, user.mark)),
               user.loc ? el("span", { class: "muted", text: user.loc }) : null,
               el("span", { class: "tag", text: user.friend ? "Friends" : "Add" }),
             );

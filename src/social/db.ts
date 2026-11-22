@@ -6,6 +6,7 @@ import { Pool, type PoolClient, types } from "pg";
 import { type AdDevices, CHAT_PAGE, MAX_CHAT_KEEP, MAX_NOTES_KEEP, MAX_REPLIES, SocialError, postWait } from "./limits";
 import type { AudioKind } from "./audio";
 import type { Callout } from "./callouts";
+import type { Pack } from "./shop";
 import { jpegSize } from "./jpeg";
 import {
   postPhotoFile,
@@ -298,6 +299,42 @@ ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS received bigint;
 ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS payer text;
 ALTER TABLE ad_orders ADD COLUMN IF NOT EXISTS matched text;
 CREATE INDEX IF NOT EXISTS ad_orders_open ON ad_orders (at) WHERE paid_at IS NULL;
+-- The Shop (src/social/shop.ts). What a person wears after their name: a badge
+-- ('' for none, a colour, or 'u' and the revision of their own picture) and a
+-- status ('' or a fruit). badge_rev counts their uploads, 0 before the first.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS badge text NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS badge_rev integer NOT NULL DEFAULT 0;
+-- A checkout for one pack, kept as its receipt as an ad's is: the Solana Pay
+-- request, and the transfer that paid it. A paid order is the pack owned.
+CREATE TABLE IF NOT EXISTS shop_orders (
+  id text PRIMARY KEY,
+  name text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+  pack text NOT NULL,
+  reference text NOT NULL UNIQUE,
+  memo text NOT NULL,
+  pay_to text NOT NULL,
+  cents integer NOT NULL,
+  usdc bigint NOT NULL,
+  lamports bigint,
+  at bigint NOT NULL,
+  paid_at bigint,
+  signature text UNIQUE,
+  fund text,
+  received bigint,
+  payer text,
+  matched text
+);
+CREATE INDEX IF NOT EXISTS shop_orders_open ON shop_orders (at) WHERE paid_at IS NULL;
+CREATE INDEX IF NOT EXISTS shop_orders_name ON shop_orders (name, at DESC);
+-- One paid order per buyer and pack was unique once; a buyer may now pay for a pack again, as a gift.
+DROP INDEX IF EXISTS shop_orders_owned;
+-- Who the pack is for: the buyer, or the person it is a gift to. An admin's
+-- unlock (SHOP_ADMINS) is an order paid at once, for nothing, matched 'admin'.
+ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS for_name text REFERENCES users(name) ON DELETE CASCADE;
+UPDATE shop_orders SET for_name = name WHERE for_name IS NULL;
+ALTER TABLE shop_orders ALTER COLUMN for_name SET NOT NULL;
+CREATE INDEX IF NOT EXISTS shop_orders_for ON shop_orders (for_name, pack) WHERE paid_at IS NOT NULL;
 -- Pinball: each account's best game, and when it was played.
 CREATE TABLE IF NOT EXISTS pinball (
   name text PRIMARY KEY REFERENCES users(name) ON DELETE CASCADE,
@@ -412,6 +449,9 @@ type UserRow = {
   key_ct: string | null;
   terms_version: string | null;
   terms_at: number | null;
+  badge: string;
+  status: string;
+  badge_rev: number;
 };
 
 export interface Passkey {
@@ -443,6 +483,10 @@ export interface User {
   keyBox: KeyBox | null;
   /** The Terms of Service version accepted at sign-up, and when. Null only on accounts from before the checkbox. */
   terms: { version: string; at: number } | null;
+  /** What they wear after their name (src/social/shop.ts), and how many pictures of their own they have uploaded. Absent only on an account not yet written. */
+  badge?: string;
+  status?: string;
+  badgeRev?: number;
 }
 
 export interface Card {
@@ -469,6 +513,9 @@ export interface Card {
   repostBy: string | null;
   originalRev: number;
   avatarRev: number;
+  /** What the author wears after their name, and the original's author on a re-post (see MARK). Absent when nothing. */
+  mark?: string;
+  originalMark?: string;
   /** Pictures on this post, or on the original when this card is a re-post. */
   photos: number;
   /** Milliseconds of voice memo, or 0. Like photos, a re-post carries the original's. */
@@ -485,6 +532,7 @@ export interface NoteRow {
   id: string;
   from: string;
   avatarRev: number;
+  mark?: string;
   post: string;
   at: number;
   kind: string;
@@ -493,7 +541,7 @@ export interface NoteRow {
 
 const USER_COLS = `name, uid, pass_salt, pass_hash, phrase_salt, phrase_iv, phrase_tag, phrase_ct,
   address, bio, loc, avatar_rev, last_post, created, passkey_id, passkey_cose, passkey_alg, passkey_count, epoch,
-  key_iv, key_tag, key_ct, terms_version, terms_at`;
+  key_iv, key_tag, key_ct, terms_version, terms_at, badge, status, badge_rev`;
 
 function userFrom(row: UserRow): User {
   return {
@@ -515,6 +563,9 @@ function userFrom(row: UserRow): User {
     keyBox:
       row.key_iv && row.key_tag && row.key_ct ? { iv: row.key_iv, tag: row.key_tag, ct: row.key_ct } : null,
     terms: row.terms_version && row.terms_at != null ? { version: row.terms_version, at: Number(row.terms_at) } : null,
+    badge: row.badge,
+    status: row.status,
+    badgeRev: row.badge_rev,
     passkey:
       row.passkey_id && row.passkey_cose && row.passkey_alg != null && row.passkey_count != null
         ? { id: row.passkey_id, cose: row.passkey_cose, alg: row.passkey_alg, count: row.passkey_count }
@@ -605,6 +656,8 @@ type CardRow = {
   original_by: string | null;
   original_rev: number | null;
   avatar_rev: number;
+  mark: string | null;
+  original_mark: string | null;
   replies: number;
   reply_to: string | null;
   root: string | null;
@@ -633,6 +686,8 @@ function cardFrom(row: CardRow): Card {
     repostBy: row.original_by,
     originalRev: row.original_rev ?? 0,
     avatarRev: row.avatar_rev,
+    mark: row.mark ?? undefined,
+    originalMark: row.original_mark ?? undefined,
     photos: row.photos,
     audio: row.audio,
     wave: row.wave,
@@ -640,6 +695,13 @@ function cardFrom(row: CardRow): Card {
     sizes: row.sizes,
   };
 }
+
+/**
+ * What `u` wears after their name: the badge and the status, a word each with
+ * a space between ("blue mango", "blue ", " mango"), or null for neither. Null
+ * leaves the field out of the JSON, so most rows cost nothing.
+ */
+export const MARK = (u: string) => `NULLIF(${u}.badge || ' ' || ${u}.status, ' ')`;
 
 /** `$1` is the viewer, or null when nobody is logged in. `from` names the posts `p`. */
 function card(from: string): string {
@@ -653,8 +715,10 @@ function card(from: string): string {
          CASE WHEN p.repost IS NULL THEN p.reply_to ELSE op.reply_to END AS reply_to,
          CASE WHEN p.repost IS NULL THEN p.root ELSE op.root END AS root,
          u.avatar_rev,
+         ${MARK("u")} AS mark,
          op.by_name AS original_by,
          ou.avatar_rev AS original_rev,
+         ${MARK("ou")} AS original_mark,
          (SELECT count(*)::int FROM posts c WHERE c.reply_to = COALESCE(p.repost, p.id)) AS replies,
          EXISTS (SELECT 1 FROM saves s WHERE s.post = p.id AND s.by_name = $1) AS saved,
          EXISTS (SELECT 1 FROM posts r WHERE r.repost = p.id AND r.by_name = $1) AS reposted
@@ -784,12 +848,13 @@ export async function notesFor(name: string): Promise<NoteRow[]> {
     id: string;
     from_name: string;
     avatar_rev: number;
+    mark: string | null;
     post: string;
     at: number;
     kind: string;
     seen: boolean;
   }>(
-    `SELECT n.id, n.from_name, u.avatar_rev, n.post, n.at, n.kind, n.seen
+    `SELECT n.id, n.from_name, u.avatar_rev, ${MARK("u")} AS mark, n.post, n.at, n.kind, n.seen
      FROM notes n JOIN users u ON u.name = n.from_name
      WHERE n.to_name = $1
      ORDER BY n.at DESC LIMIT $2`,
@@ -799,6 +864,7 @@ export async function notesFor(name: string): Promise<NoteRow[]> {
     id: row.id,
     from: row.from_name,
     avatarRev: row.avatar_rev,
+    mark: row.mark ?? undefined,
     post: row.post,
     at: Number(row.at),
     kind: row.kind,
@@ -890,8 +956,8 @@ function insertPost(
   coins: Callout[],
 ): Promise<{ wait: number } | Card> {
   return tx(async (client) => {
-    const row = await one<{ last_post: number; avatar_rev: number }>(
-      "SELECT last_post, avatar_rev FROM users WHERE name = $1 FOR UPDATE",
+    const row = await one<{ last_post: number; avatar_rev: number; mark: string | null }>(
+      `SELECT last_post, avatar_rev, ${MARK("users")} AS mark FROM users WHERE name = $1 FOR UPDATE`,
       [by],
       client,
     );
@@ -907,7 +973,7 @@ function insertPost(
     return {
       id, by, text, at, views: 0, replies: 0, saved: false, reposted: false,
       repost: null, replyTo: null, root: null, repostBy: null, originalRev: 0, avatarRev: row.avatar_rev,
-      photos: sizes.length, audio: memo?.ms ?? 0, wave: memo?.wave ?? "", coins, sizes,
+      mark: row.mark ?? undefined, photos: sizes.length, audio: memo?.ms ?? 0, wave: memo?.wave ?? "", coins, sizes,
     };
   });
 }
@@ -1058,14 +1124,16 @@ export async function markSeen(name: string): Promise<void> {
   await db().query("UPDATE notes SET seen = true WHERE to_name = $1 AND seen = false", [name]);
 }
 
-export async function friendList(name: string): Promise<{ name: string; bio: string; loc: string; avatarRev: number }[]> {
-  const rows = await many<{ name: string; bio: string; loc: string; avatar_rev: number }>(
-    `SELECT u.name, u.bio, u.loc, u.avatar_rev
+export async function friendList(
+  name: string,
+): Promise<{ name: string; bio: string; loc: string; avatarRev: number; mark?: string }[]> {
+  const rows = await many<{ name: string; bio: string; loc: string; avatar_rev: number; mark: string | null }>(
+    `SELECT u.name, u.bio, u.loc, u.avatar_rev, ${MARK("u")} AS mark
      FROM friends f JOIN users u ON u.name = f.friend
      WHERE f.owner = $1 ORDER BY u.name`,
     [name],
   );
-  return rows.map((row) => ({ name: row.name, bio: row.bio, loc: row.loc, avatarRev: row.avatar_rev }));
+  return rows.map((row) => ({ name: row.name, bio: row.bio, loc: row.loc, avatarRev: row.avatar_rev, mark: row.mark ?? undefined }));
 }
 
 /**
@@ -1077,10 +1145,10 @@ export async function friendList(name: string): Promise<{ name: string; bio: str
 export async function searchUsers(
   owner: string,
   prefix: string,
-): Promise<{ name: string; loc: string; avatarRev: number; friend: boolean }[]> {
+): Promise<{ name: string; loc: string; avatarRev: number; mark?: string; friend: boolean }[]> {
   const pattern = `${prefix.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
-  const rows = await many<{ name: string; loc: string; avatar_rev: number; friend: boolean }>(
-    `SELECT u.name, u.loc, u.avatar_rev,
+  const rows = await many<{ name: string; loc: string; avatar_rev: number; mark: string | null; friend: boolean }>(
+    `SELECT u.name, u.loc, u.avatar_rev, ${MARK("u")} AS mark,
             EXISTS (SELECT 1 FROM friends f WHERE f.owner = $2 AND f.friend = u.name) AS friend
      FROM users u
      WHERE u.name LIKE $1 ESCAPE '\\' AND u.name <> $2
@@ -1092,6 +1160,7 @@ export async function searchUsers(
     name: row.name,
     loc: row.loc,
     avatarRev: row.avatar_rev,
+    mark: row.mark ?? undefined,
     friend: row.friend,
   }));
 }
@@ -1146,15 +1215,15 @@ export async function findPeople(
 export async function busiestPosters(
   since: number,
   limit: number,
-): Promise<{ name: string; bio: string; avatarRev: number; posts: number }[]> {
-  const rows = await many<{ name: string; bio: string; avatar_rev: number; posts: number }>(
-    `SELECT u.name, u.bio, u.avatar_rev, n.posts FROM (
+): Promise<{ name: string; bio: string; avatarRev: number; mark?: string; posts: number }[]> {
+  const rows = await many<{ name: string; bio: string; avatar_rev: number; mark: string | null; posts: number }>(
+    `SELECT u.name, u.bio, u.avatar_rev, ${MARK("u")} AS mark, n.posts FROM (
        SELECT by_name, count(*)::int AS posts, max(at) AS last FROM posts WHERE at > $1 GROUP BY by_name
      ) n JOIN users u ON u.name = n.by_name
      ORDER BY n.posts DESC, n.last DESC LIMIT $2`,
     [since, limit],
   );
-  return rows.map((row) => ({ name: row.name, bio: row.bio, avatarRev: row.avatar_rev, posts: row.posts }));
+  return rows.map((row) => ({ name: row.name, bio: row.bio, avatarRev: row.avatar_rev, mark: row.mark ?? undefined, posts: row.posts }));
 }
 
 /** The names someone has added. The friends key leads with the owner, so this is one index range. */
@@ -1315,6 +1384,7 @@ export interface Message {
 export interface Chat {
   with: string;
   avatarRev: number;
+  mark?: string;
   at: number;
   unread: number;
   pub: string | null;
@@ -1490,19 +1560,20 @@ export async function sendMessage(
  * all the sidebar needs to show a preview.
  */
 const CHAT_ROW = `
-  SELECT c.peer, c.unread, u.avatar_rev, k.pub, ${MESSAGE_COLS}
+  SELECT c.peer, c.unread, u.avatar_rev, ${MARK("u")} AS mark, k.pub, ${MESSAGE_COLS}
   FROM chats c
   JOIN users u ON u.name = c.peer
   JOIN messages m ON m.id = c.last
   LEFT JOIN chat_keys k ON k.name = c.peer AND k.v = CASE WHEN m.from_name = c.peer THEN m.kf ELSE m.kt END
 `;
 
-type ChatRow = MessageRow & { peer: string; unread: number; avatar_rev: number; pub: string | null };
+type ChatRow = MessageRow & { peer: string; unread: number; avatar_rev: number; mark: string | null; pub: string | null };
 
 function chatFrom(row: ChatRow): Chat {
   return {
     with: row.peer,
     avatarRev: row.avatar_rev,
+    mark: row.mark ?? undefined,
     at: Number(row.at),
     unread: row.unread,
     pub: row.pub,
@@ -1625,8 +1696,9 @@ export interface Ad {
   owner: string;
   /** The campaign's code: every payment for it carries this memo. */
   memo: string;
-  /** The owner's picture, for the ad as a post. */
+  /** The owner's picture and what they wear after their name, for the ad as a post. */
   ownerRev: number;
+  ownerMark?: string;
   status: "pending" | "active";
   cta: string;
   title: string;
@@ -1674,18 +1746,18 @@ export interface AdOrder {
 /** How a transfer paid an order. */
 export type Payment = Pick<AdOrder, "signature" | "fund" | "received" | "payer" | "matched">;
 
-type AdRow = Omit<Ad, "ownerRev"> & { owner_rev: number };
+type AdRow = Omit<Ad, "ownerRev" | "ownerMark"> & { owner_rev: number; owner_mark: string | null };
 
 const AD_SELECT = `
-  SELECT a.id, a.owner, a.memo, u.avatar_rev AS owner_rev, a.status, a.cta, a.title, a.body, a.url, a.devices, a.bid,
+  SELECT a.id, a.owner, a.memo, u.avatar_rev AS owner_rev, ${MARK("u")} AS owner_mark, a.status, a.cta, a.title, a.body, a.url, a.devices, a.bid,
          a.banner, a.created, a.at,
          COALESCE((SELECT json_agg(json_build_object('keyword', k.keyword, 'budget', k.budget,
                      'spent', k.spent, 'shown', k.shown, 'social', k.social) ORDER BY k.keyword)
                    FROM ad_keywords k WHERE k.ad = a.id), '[]') AS keywords
   FROM ads a JOIN users u ON u.name = a.owner`;
 
-function adFrom({ owner_rev, ...row }: AdRow): Ad {
-  return { ...row, ownerRev: owner_rev, created: Number(row.created), at: Number(row.at) };
+function adFrom({ owner_rev, owner_mark, ...row }: AdRow): Ad {
+  return { ...row, ownerRev: owner_rev, ownerMark: owner_mark ?? undefined, created: Number(row.created), at: Number(row.at) };
 }
 
 type OrderRow = {
@@ -1860,6 +1932,7 @@ export async function payOrder(id: string, paid: Payment, at: number): Promise<b
     const order = await one<{ ad: string; plan: AdPlan }>(
       `SELECT ad, plan FROM ad_orders WHERE id = $1 AND paid_at IS NULL
          AND NOT EXISTS (SELECT 1 FROM ad_orders u WHERE u.signature = $2)
+         AND NOT EXISTS (SELECT 1 FROM shop_orders u WHERE u.signature = $2)
        FOR UPDATE`,
       [id, paid.signature],
       client,
@@ -1949,6 +2022,150 @@ export async function sweepAds(before: number): Promise<void> {
     [before],
   );
   for (const row of rows) if (row.banner) removeBanner(row.id);
+}
+
+/** A checkout for one Shop pack (src/social/shop.ts), as a receipt. */
+export interface ShopOrder {
+  id: string;
+  /** Who checked out, and who the pack is for: the same, or a gift. */
+  name: string;
+  forName: string;
+  pack: Pack;
+  reference: string;
+  memo: string;
+  payTo: string;
+  cents: number;
+  usdc: number;
+  lamports: number | null;
+  at: number;
+  paidAt: number | null;
+}
+
+type ShopOrderRow = Omit<ShopOrder, "payTo" | "paidAt" | "forName"> & { pay_to: string; paid_at: number | null; for_name: string };
+
+const SHOP_ORDER = "SELECT id, name, for_name, pack, reference, memo, pay_to, cents, usdc, lamports, at, paid_at FROM shop_orders";
+
+function shopOrderFrom({ pay_to, paid_at, for_name, ...row }: ShopOrderRow): ShopOrder {
+  return {
+    ...row,
+    forName: for_name,
+    usdc: Number(row.usdc),
+    lamports: big(row.lamports),
+    at: Number(row.at),
+    payTo: pay_to,
+    paidAt: big(paid_at),
+  };
+}
+
+/** The packs `name` owns: bought, given, or unlocked by an admin. */
+export async function ownedPacks(name: string): Promise<Pack[]> {
+  const rows = await many<{ pack: Pack }>("SELECT DISTINCT pack FROM shop_orders WHERE for_name = $1 AND paid_at IS NOT NULL", [name]);
+  return rows.map((row) => row.pack);
+}
+
+/** Refused when `forName` is no one, or already owns `pack`. Run inside the order's transaction. */
+async function canHave(client: PoolClient, forName: string, pack: Pack, gift: boolean): Promise<void> {
+  // Locked, so two checkouts for the same person cannot both pass this.
+  const user = await one<{ name: string }>("SELECT name FROM users WHERE name = $1 FOR UPDATE", [forName], client);
+  if (!user) throw new SocialError(404, "No such person.");
+  const owned = await one<{ id: string }>(
+    "SELECT id FROM shop_orders WHERE for_name = $1 AND pack = $2 AND paid_at IS NOT NULL LIMIT 1",
+    [forName, pack],
+    client,
+  );
+  if (owned) throw new SocialError(409, gift ? `${forName} has this already.` : "You have this already.");
+}
+
+/**
+ * The order that pays for `pack`, for `forName` (a gift) or the buyer: an open
+ * one for the same made since `reuse` is shown again, as an ad's is, so a
+ * second press does not ask a second amount.
+ */
+export async function openShopOrder(input: {
+  name: string;
+  forName?: string;
+  pack: Pack;
+  cents: number;
+  codes: { reference: string; memo: string };
+  pay: { to: string; usdc: number; lamports: number | null };
+  reuse: number;
+  at: number;
+}): Promise<ShopOrder> {
+  const forName = input.forName ?? input.name;
+  return tx(async (client) => {
+    await canHave(client, forName, input.pack, forName !== input.name);
+    const same = await one<ShopOrderRow>(
+      `${SHOP_ORDER} WHERE name = $1 AND for_name = $2 AND pack = $3 AND paid_at IS NULL AND at >= $4 AND pay_to = $5
+       ORDER BY at DESC LIMIT 1`,
+      [input.name, forName, input.pack, input.reuse, input.pay.to],
+      client,
+    );
+    if (same) return shopOrderFrom(same);
+    const id = newId();
+    await client.query(
+      `INSERT INTO shop_orders (id, name, for_name, pack, reference, memo, pay_to, cents, usdc, lamports, at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, input.name, forName, input.pack, input.codes.reference, input.codes.memo, input.pay.to, input.cents, input.pay.usdc, input.pay.lamports, input.at],
+    );
+    const row = await one<ShopOrderRow>(`${SHOP_ORDER} WHERE id = $1`, [id], client);
+    return shopOrderFrom(row!);
+  });
+}
+
+/**
+ * An admin's unlock: `pack` owned by `forName` at once, kept as an order paid
+ * for nothing so ownership has one source and the unlock its receipt.
+ */
+export async function grantPack(admin: string, forName: string, pack: Pack, reference: string, at: number): Promise<void> {
+  await tx(async (client) => {
+    await canHave(client, forName, pack, forName !== admin);
+    await client.query(
+      `INSERT INTO shop_orders (id, name, for_name, pack, reference, memo, pay_to, cents, usdc, at, paid_at, payer, matched)
+       VALUES ($1,$2,$3,$4,$5,'',  '',0,0,$6,$6,$2,'admin')`,
+      [newId(), admin, forName, pack, reference, at],
+    );
+  });
+}
+
+/** Credit a paid Shop order, once: the pack is owned. False if the order or the transfer was already used. */
+export async function payShopOrder(id: string, paid: Payment, at: number): Promise<boolean> {
+  const res = await db().query(
+    `UPDATE shop_orders SET paid_at = $2, signature = $3, fund = $4, received = $5, payer = $6, matched = $7
+     WHERE id = $1 AND paid_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM ad_orders u WHERE u.signature = $3)
+       AND NOT EXISTS (SELECT 1 FROM shop_orders u WHERE u.signature = $3)`,
+    [id, at, paid.signature, paid.fund, paid.received, paid.payer, paid.matched],
+  );
+  return res.rowCount === 1;
+}
+
+/** Shop orders made since `since` and not yet paid. */
+export async function openShopOrders(since: number): Promise<ShopOrder[]> {
+  const rows = await many<ShopOrderRow>(`${SHOP_ORDER} WHERE paid_at IS NULL AND at >= $1 ORDER BY at DESC`, [since]);
+  return rows.map(shopOrderFrom);
+}
+
+/** One of `name`'s Shop orders, for the dialog waiting on it. */
+export async function shopOrderOf(id: string, name: string): Promise<ShopOrder | null> {
+  const row = await one<ShopOrderRow>(`${SHOP_ORDER} WHERE id = $1 AND name = $2`, [id, name]);
+  return row ? shopOrderFrom(row) : null;
+}
+
+/** What `name` wears after their name from now on; the caller has checked they own it. */
+export async function wear(name: string, badge: string, status: string): Promise<void> {
+  await db().query("UPDATE users SET badge = $2, status = $3 WHERE name = $1", [name, badge, status]);
+}
+
+/** A new picture of their own: its revision, which a badge already showing the old one moves to. */
+export async function bumpBadge(name: string): Promise<number> {
+  const row = await one<{ badge_rev: number }>(
+    `UPDATE users SET badge_rev = badge_rev + 1,
+       badge = CASE WHEN badge LIKE 'u%' THEN 'u' || (badge_rev + 1) ELSE badge END
+     WHERE name = $1 RETURNING badge_rev`,
+    [name],
+  );
+  if (!row) throw new SocialError(401, "Log in first.");
+  return row.badge_rev;
 }
 
 /**

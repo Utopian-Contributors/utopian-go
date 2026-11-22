@@ -10,8 +10,8 @@
  */
 import AD_CSS from "../ad.css";
 import { el } from "../js/dom.js";
-import { load } from "../js/lazy.js";
-import { dialog, injectStyles } from "../js/ui.js";
+import { decimal, payDialog, segment, usd } from "../js/solpay.js";
+import { injectStyles } from "../js/ui.js";
 import { injectFormStyles } from "../swap/ui.js";
 import CSS from "./ads.css";
 
@@ -22,24 +22,11 @@ const DEVICES = [
   ["mobile", "Mobile only"],
   ["desktop", "Desktop only"],
 ];
-/** How often checkout asks whether the transfer has been seen. */
-const POLL_MS = 3000;
 /** Each copy of a banner: width, and the byte ceiling the server holds it to. */
 const BANNER_SIZES = [
   [639, 14 * 1024],
   [1200, 48 * 1024],
 ];
-
-/** Base units as a decimal amount, without a float. */
-function decimal(units, places) {
-  const text = String(units).padStart(places + 1, "0");
-  const frac = text.slice(-places).replace(/0+$/, "");
-  return frac ? `${text.slice(0, -places)}.${frac}` : text.slice(0, -places);
-}
-
-function usd(cents) {
-  return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
-}
 
 /** As the server keeps a keyword: lower case, letters and digits, one space between. */
 function keywordOf(text) {
@@ -357,21 +344,6 @@ function receipts(main, list, pull) {
 }
 
 // —— the editor ——
-
-/** A segmented control: [key, label] options, the current one pressed. */
-function segment(box, options, current, choose) {
-  box.replaceChildren(
-    ...options.map(([key, label]) =>
-      el("button", {
-        type: "button",
-        text: label,
-        class: key === current ? "on" : "",
-        "aria-pressed": String(key === current),
-        onclick: () => choose(key),
-      }),
-    ),
-  );
-}
 
 /** One figure under the preview. */
 function stat(value, label) {
@@ -873,103 +845,19 @@ function editor({ main, ad, payable, back, pull, adPost, me }) {
 
 // —— checkout ——
 
-/**
- * The Solana Pay code, in SOL or USDC, until the server has seen the transfer
- * or the dialog is closed. SOL first: every wallet holds some, and a wallet
- * asked for a token it does not hold refuses the request. `paid` runs once it
- * is paid.
- */
-async function pay(order, pull, fresh, paid) {
-  injectFormStyles();
-  let open = true;
-  let fund = order.urls.sol ? "sol" : "usdc";
-  const { body, close, setTitle } = dialog(`Pay ${usd(order.cents)}`, () => {
-    open = false;
+/** The Solana Pay code for an ad's order (client/js/solpay.js). `paid` runs once it is paid. */
+function pay(order, pull, fresh, paid) {
+  return payDialog(order, {
+    pull,
+    check: `/api/social/ads/order/${order.id}`,
+    fine: "Pay exactly this amount: its last digits tell this payment apart, even when a wallet leaves out the memo. Budget that is paid for stays with the ad: it can be edited, not withdrawn. This checkout is kept under Receipts.",
+    done: {
+      title: fresh ? "Your ad is live" : "Budget added",
+      text: "It shows on search and in timelines for its keywords while its budget lasts.",
+    },
+    paid,
+    finish: () => location.assign("/social/ads"),
   });
-  const funds = el("div", { class: "swx-seg av-funds", role: "group", "aria-label": "Pay in" });
-  const sum = el("div", { class: "swx-note" });
-  const holder = el("div", { class: "swx-qr", role: "img", "aria-label": "Solana Pay QR code" });
-  const status = el("div", { class: "swx-note", role: "status", text: "Waiting for the payment…" });
-  body.replaceChildren(
-    order.urls.sol ? funds : null,
-    sum,
-    holder,
-    el("div", { class: "av-memo" }, el("span", { text: "Memo" }), el("code", { text: order.memo })),
-    el("p", {
-      class: "av-fine",
-      text: "Pay exactly this amount: its last digits tell this payment apart, even when a wallet leaves out the memo. Budget that is paid for stays with the ad: it can be edited, not withdrawn. This checkout is kept under Receipts.",
-    }),
-    status,
-  );
-  draw();
-
-  async function draw() {
-    segment(
-      funds,
-      [
-        ["sol", "SOL"],
-        ["usdc", "USDC"],
-      ],
-      fund,
-      (key) => {
-        fund = key;
-        draw();
-      },
-    );
-    sum.textContent =
-      fund === "sol"
-        ? `Scan with a Solana wallet to pay ${decimal(order.lamports, 9)} SOL (${usd(order.cents)}).`
-        : `Scan with a Solana wallet to pay ${decimal(order.usdc, 6)} USDC (${usd(order.cents)}).`;
-    try {
-      const qr = await load("qr", "__qr");
-      // Generated markup, built entirely by the encoder from the server's Solana Pay URL.
-      if (holder.isConnected) holder.innerHTML = qr.svg(order.urls[fund]);
-    } catch {
-      holder.replaceChildren(el("div", { class: "swx-note err", text: "Could not draw the code." }));
-    }
-  }
-
-  while (open) {
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-    if (!open) return;
-    try {
-      const state = await pull(`/api/social/ads/order/${order.id}`);
-      if (state.paid) return done();
-      if (!state.open) {
-        status.textContent = "This code has expired. Close it and check out again.";
-        status.className = "swx-note err";
-        return;
-      }
-    } catch {
-      // A missed answer; the next one tells.
-    }
-  }
-
-  function done() {
-    paid?.();
-    setTitle("Paid");
-    const disc = el("div", { class: "swx-check", role: "img", "aria-label": "Paid" });
-    const finish = el("button", {
-      class: "swx-go",
-      type: "button",
-      text: "Done",
-      onclick: () => {
-        close();
-        location.assign("/social/ads");
-      },
-    });
-    body.replaceChildren(
-      el(
-        "div",
-        { class: "swx-done" },
-        disc,
-        el("div", { class: "swx-done-t", text: fresh ? "Your ad is live" : "Budget added" }),
-        el("div", { class: "swx-done-s", text: "It shows on search and in timelines for its keywords while its budget lasts." }),
-      ),
-      finish,
-    );
-    finish.focus();
-  }
 }
 
 /**

@@ -2,13 +2,14 @@ import { randomBytes, randomInt } from "crypto";
 import { ADS_PAY_TO, HELIUS_RPC_URL, TX_VERSION } from "../config";
 import { lookupToken } from "../lib/tokens/store";
 import { reloadAds } from "./ads";
-import { type AdOrder, openOrders, payOrder, sweepAds } from "./db";
+import { type AdOrder, type ShopOrder, openOrders, openShopOrders, payOrder, payShopOrder, sweepAds } from "./db";
 import { base58, base58Decode } from "./keys";
 import { rpc, solanaPubkey } from "./pay";
 import { TOKEN, associatedTokenAccount } from "./send";
 
 /**
- * Advertising is paid by Solana Pay, in SOL or USDC, to ADS_PAY_TO. The
+ * Advertising, and the Shop's packs (src/social/shop.ts), are paid by Solana
+ * Pay, in SOL or USDC, to ADS_PAY_TO. The
  * request carries a reference and the campaign's memo, but a wallet may send
  * neither: Phantom's scanner sends a plain transfer of the amount. So each
  * order's amount is its own as well, a few base units under a cent that no
@@ -35,6 +36,15 @@ const MARK = 10_000;
 const SKEW_MS = 120_000;
 /** Crockford's base32: no I, L, O or U to misread. */
 const CODE = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/** What a transfer can pay: an ad's order or a Shop pack's. */
+export type Order = AdOrder | ShopOrder;
+
+/** Every order still open since `since`, of both kinds, so a new one's amount is told apart from all of them. */
+export async function openSince(since: number): Promise<Order[]> {
+  const [ads, shop] = await Promise.all([openOrders(since), openShopOrders(since)]);
+  return [...ads, ...shop];
+}
 
 /** Whether checkout can work at all: somewhere to pay, and a way to see it arrive. */
 export function adsPayable(): boolean {
@@ -64,7 +74,7 @@ export function dollars(cents: number): string {
  */
 export function orderAmounts(
   cents: number,
-  open: Pick<AdOrder, "usdc" | "lamports">[],
+  open: Pick<Order, "usdc" | "lamports">[],
 ): { usdc: number; lamports: number | null } {
   const mark = (base: number, taken: Set<number | null>) => {
     for (let i = 0; i < 100; i++) {
@@ -82,8 +92,9 @@ export function orderAmounts(
 
 /** The Solana Pay transfer request a QR code carries, in SOL or in USDC. */
 export function payUrl(
-  order: Pick<AdOrder, "usdc" | "lamports" | "reference" | "memo" | "payTo">,
+  order: Pick<Order, "usdc" | "lamports" | "reference" | "memo" | "payTo">,
   fund: "usdc" | "sol",
+  message = "UtopianGO ad",
 ): string {
   const params = [
     ...(fund === "sol"
@@ -91,7 +102,7 @@ export function payUrl(
       : [["amount", decimal(order.usdc, 6)], ["spl-token", USDC_MINT]]),
     ["reference", order.reference],
     ["label", "UtopianGO"],
-    ["message", "UtopianGO ad"],
+    ["message", message],
     ["memo", order.memo],
   ];
   return `solana:${order.payTo || ADS_PAY_TO}?${params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&")}`;
@@ -146,13 +157,13 @@ export function transfersIn(signature: string, at: number, tx: ParsedTx | null, 
  * of its campaign's by memo, the one asking exactly this, or the oldest it
  * covers; else the oldest asking exactly this. Null when it names none.
  */
-export function matchTransfer(
+export function matchTransfer<O extends Pick<Order, "at" | "usdc" | "lamports" | "reference" | "memo">>(
   t: Transfer,
-  open: AdOrder[],
-): { order: AdOrder; matched: "reference" | "memo" | "amount" } | null {
-  const asks = (o: AdOrder) => (t.fund === "sol" ? o.lamports : o.usdc);
-  const covers = (o: AdOrder) => (asks(o) ?? Infinity) <= t.received;
-  const timely = (o: AdOrder) => o.at <= t.at + SKEW_MS && t.at - o.at <= ORDER_OPEN_MS;
+  open: O[],
+): { order: O; matched: "reference" | "memo" | "amount" } | null {
+  const asks = (o: O) => (t.fund === "sol" ? o.lamports : o.usdc);
+  const covers = (o: O) => (asks(o) ?? Infinity) <= t.received;
+  const timely = (o: O) => o.at <= t.at + SKEW_MS && t.at - o.at <= ORDER_OPEN_MS;
   const oldest = [...open].sort((a, b) => a.at - b.at);
   const byReference = oldest.find((o) => t.keys.has(o.reference) && covers(o));
   if (byReference) return { order: byReference, matched: "reference" };
@@ -174,7 +185,7 @@ let swept = 0;
  * what pays an open order. The cursor moves past each transaction once it is
  * handled, so an RPC that fails mid-way is picked up where it stopped.
  */
-async function scan(address: string, since: number, open: AdOrder[]): Promise<boolean> {
+async function scan(address: string, since: number, open: Order[]): Promise<boolean> {
   const until = cursors.get(address);
   const found = (await rpc("getSignaturesForAddress", [
     address,
@@ -191,7 +202,8 @@ async function scan(address: string, since: number, open: AdOrder[]): Promise<bo
       for (const t of transfersIn(entry.signature, at, tx, ADS_PAY_TO)) {
         const hit = matchTransfer(t, open);
         const proof = { signature: t.signature, fund: t.fund, received: t.received, payer: t.payer };
-        if (hit && (await payOrder(hit.order.id, { ...proof, matched: hit.matched }, Date.now()))) {
+        const credit = hit && ("pack" in hit.order ? payShopOrder : payOrder);
+        if (hit && credit && (await credit(hit.order.id, { ...proof, matched: hit.matched }, Date.now()))) {
           open.splice(open.indexOf(hit.order), 1);
           paid = true;
         } else if (!hit) {
@@ -213,7 +225,7 @@ async function tick(): Promise<void> {
       swept = now;
       await sweepAds(now - 2 * ORDER_OPEN_MS);
     }
-    const open = await openOrders(now - ORDER_OPEN_MS);
+    const open = await openSince(now - ORDER_OPEN_MS);
     if (!open.length || (!open.some((o) => now - o.at < FRESH_MS) && now - lastLook < SLOW_MS)) return;
     lastLook = now;
     const since = Math.min(...open.map((o) => o.at));

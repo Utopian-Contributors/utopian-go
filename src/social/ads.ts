@@ -18,7 +18,7 @@ import { words } from "./limits";
 type Entry = { ad: Ad; keyword: string; words: string[]; left: number };
 
 /** An ad as a timeline draws it: client/social/main.js, adPost. */
-export type SocialAd = Pick<Ad, "id" | "owner" | "ownerRev" | "title" | "cta" | "url"> & {
+export type SocialAd = Pick<Ad, "id" | "owner" | "ownerRev" | "ownerMark" | "title" | "cta" | "url"> & {
   host: string;
   /** The banner, desktop and phone copy; empty without one. */
   img: string;
@@ -292,6 +292,7 @@ export function socialAdFor(req: Request, topic: string, viewer: string): Social
     id: ad.id,
     owner: ad.owner,
     ownerRev: ad.ownerRev,
+    ownerMark: ad.ownerMark,
     title: ad.title,
     cta: ad.cta,
     url: ad.url,

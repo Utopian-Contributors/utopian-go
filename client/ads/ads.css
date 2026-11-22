@@ -143,20 +143,6 @@ textarea.av-in { resize: none; }
 .av-go:hover:not(:disabled) { filter: brightness(1.08); }
 .av-go:disabled { opacity: 0.55; cursor: not-allowed; }
 
-/* —— checkout —— */
-.av-funds { width: max-content; margin: 0 auto 4px; }
-.av-memo {
-  display: flex;
-  justify-content: center;
-  align-items: baseline;
-  gap: 8px;
-  margin-top: 12px;
-  font-size: 12px;
-  color: var(--f);
-}
-.av-memo code { font: 600 15px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--t); letter-spacing: 0.04em; }
-.av-fine { margin: 10px 0 0; font-size: 12px; line-height: 1.45; text-align: center; color: var(--f); }
-
 /* —— the list —— */
 .av-l { padding: 16px 0 24px; }
 .av-tabs { display: flex; gap: 0; padding: 2px; border-radius: 9px; background: var(--wash); }

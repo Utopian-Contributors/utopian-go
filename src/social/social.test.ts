@@ -26,8 +26,10 @@ import { checkSwapInstructions, parseMessage, reviewedFloor, signTransaction, si
 import { ATA_PROGRAM, SOL_MINT, SYSTEM, TOKEN, associatedTokenAccount, compileMessage, onCurve } from "./send";
 import { scrub } from "./guard";
 import { AUDIO_BYTES, MAX_AUDIO_MS, MAX_POST, SOCIAL_BYTES, TINY_BYTES, adKeyword, adText, adUrl, postText, postWait, username, waitText } from "./limits";
-import { sendAvatar, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
-import { type AdCreative, type AdOrder, SCHEMA, TIMELINE_PAGE, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, payOrder, postPayment, resetSocial, saveAd } from "./db";
+import { sendAvatar, sendBadge, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
+import { badgeFor, isBadgePng, markOf, statusFor } from "./shop";
+import sharp from "sharp";
+import { type AdCreative, type AdOrder, SCHEMA, TIMELINE_PAGE, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, openShopOrder, payOrder, payShopOrder, postPayment, resetSocial, saveAd } from "./db";
 import { MAX_CALLOUTS, calloutsIn, isTicker, resolveTickers } from "./callouts";
 import { apiRouter } from "../routes/api";
 import { adFor, adMarkup, flushAds, reloadAds } from "./ads";
@@ -2604,6 +2606,183 @@ test("an ad runs once paid: the higher bid first, on search and in timelines, ea
     assert.ok(markup.includes('href="https://a.example.com/&#36;&amp;"'), markup);
   } finally {
     server.close();
+  }
+});
+
+test("a badge or a status is worn only from a pack owned, and a picture of one's own only as a 64px PNG", async () => {
+  assert.equal(badgeFor("blue", [], 0), null);
+  assert.equal(badgeFor("blue", ["checks"], 0), "blue");
+  assert.equal(badgeFor("teal", ["checks"], 0), null, "no such colour");
+  assert.equal(badgeFor("u", ["custom"], 0), null, "nothing uploaded yet");
+  assert.equal(badgeFor("u", ["custom"], 3), "u3");
+  assert.equal(badgeFor("", [], 0), "", "none is always yours");
+  assert.equal(statusFor("mango", ["checks"]), null);
+  assert.equal(statusFor("mango", ["fruit"]), "mango");
+  assert.equal(statusFor("toString", ["fruit"]), null);
+  assert.equal(markOf({ badge: "", status: "" }), undefined);
+  assert.equal(markOf({ badge: "blue", status: "" }), "blue ");
+  assert.equal(markOf({ badge: "", status: "mango" }), " mango");
+  const png = (px: number) => sharp({ create: { width: px, height: px, channels: 4, background: "#f00" } }).png().toBuffer();
+  assert.ok(isBadgePng(await png(64)));
+  assert.ok(!isBadgePng(await png(32)));
+  assert.ok(!isBadgePng(jpeg(64, 64)));
+});
+
+test("a Shop pack is owned once paid, and what is worn follows the name everywhere", async () => {
+  await useTestDatabase();
+  await ensureSchema();
+  await resetSocial();
+  const app = express();
+  app.set("trust proxy", true);
+  app.use("/api/social", socialRouter);
+  app.get("/social/k/:name", sendBadge);
+  const server: Server = await new Promise((resolve) => {
+    const listening = createServer(app);
+    listening.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const base = `http://127.0.0.1:${address.port}`;
+  let ip = 0;
+  async function join(name: string) {
+    let jar = "";
+    const call = async (method: string, urlPath: string, body?: Buffer | Record<string, unknown>) => {
+      const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": `10.5.0.${++ip % 250}` };
+      if (jar) headers.Cookie = jar;
+      if (body) headers["Content-Type"] = Buffer.isBuffer(body) ? "image/png" : "application/json";
+      const res = await fetch(base + urlPath, { method, headers, body: Buffer.isBuffer(body) ? body : body && JSON.stringify(body) });
+      for (const cookie of res.headers.getSetCookie?.() ?? []) jar = cookie.split(";")[0];
+      const text = await res.text();
+      let json: Record<string, any> = {};
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // A file, not JSON.
+      }
+      return { status: res.status, json, text };
+    };
+    const joined = await call("POST", "/api/social/register", { username: name, password: "password1", terms: true });
+    assert.equal(joined.status, 200, joined.text);
+    await addPasskey(call, joined.json?.passkeySetup, base);
+    return call;
+  }
+  let n = 0;
+  const order = (name: string, pack: "checks" | "fruit" | "custom", reuse = Date.now() - 15 * 60_000) =>
+    openShopOrder({
+      name,
+      pack,
+      cents: 500,
+      codes: { reference: `ref-${++n}`, memo: `UG-SHOP${n}` },
+      pay: { to: "Payee", usdc: 5_000_007, lamports: 600_000 },
+      reuse,
+      at: Date.now(),
+    });
+  const paid = async (name: string, pack: "checks" | "fruit" | "custom") => {
+    const o = await order(name, pack);
+    assert.ok(await payShopOrder(o.id, { signature: `sig-${o.id}`, fund: "usdc", received: o.usdc, payer: "Payer", matched: "amount" }, Date.now()));
+  };
+  try {
+    const amy = await join("amy");
+    const bob = await join("bob");
+    const shop = await amy("GET", "/api/social/shop");
+    assert.equal(shop.status, 200, shop.text);
+    assert.deepEqual(shop.json.owned, []);
+    assert.equal(shop.json.badge, "");
+    assert.equal((await amy("POST", "/api/social/shop/wear", { badge: "blue" })).status, 403, "not bought");
+    assert.equal((await amy("POST", "/api/social/shop/buy", { pack: "checks" })).status, 503, "no payee in tests");
+    assert.equal((await amy("POST", "/api/social/shop/buy", { pack: "hats" })).status, 400);
+
+    const first = await order("amy", "checks");
+    assert.equal((await order("amy", "checks")).id, first.id, "a second press shows the same checkout");
+    assert.notEqual((await order("amy", "checks", Date.now() + 1)).id, first.id, "after a while, a new one");
+    assert.deepEqual((await amy("GET", `/api/social/shop/order/${first.id}`)).json, { paid: false, open: true });
+    assert.equal((await bob("GET", `/api/social/shop/order/${first.id}`)).status, 404, "not bob's");
+    const proof = { signature: "sig-checks", fund: "usdc" as const, received: first.usdc, payer: "Payer", matched: "amount" as const };
+    assert.ok(await payShopOrder(first.id, proof, Date.now()));
+    assert.ok(!(await payShopOrder(first.id, { ...proof, signature: "sig-again" }, Date.now())), "paid once");
+    assert.deepEqual((await amy("GET", `/api/social/shop/order/${first.id}`)).json, { paid: true, open: false });
+    await assert.rejects(order("amy", "checks"), /already/);
+    const fruit = await order("amy", "fruit");
+    assert.ok(!(await payShopOrder(fruit.id, proof, Date.now())), "one transfer pays one order");
+    assert.deepEqual((await amy("GET", "/api/social/shop")).json.owned, ["checks"]);
+
+    assert.equal((await amy("POST", "/api/social/shop/wear", { badge: "blue" })).status, 200);
+    assert.equal((await amy("POST", "/api/social/shop/wear", { status: "mango" })).status, 403, "fruit not bought");
+    assert.ok(await payShopOrder(fruit.id, { ...proof, signature: "sig-fruit" }, Date.now()));
+    const worn = await amy("POST", "/api/social/shop/wear", { status: "mango" });
+    assert.equal(worn.status, 200, worn.text);
+    assert.deepEqual([worn.json.badge, worn.json.status], ["blue", "mango"], "a field left out stays");
+
+    const post = await createPost("amy", "hello", Date.now(), [], null, []);
+    assert.ok(!("wait" in post));
+    assert.equal(post.mark, "blue mango", "a new post carries it");
+    const feed = await bob("GET", "/api/social/timeline");
+    assert.equal(feed.json.posts[0].mark, "blue mango");
+    assert.equal((await bob("GET", "/api/social/u/amy")).json.user.mark, "blue mango");
+    assert.equal((await bob("GET", "/api/social/u/bob")).json.user.mark, undefined, "nothing worn, nothing sent");
+    await bob("POST", "/api/social/friends", { username: "amy" });
+    assert.equal((await bob("GET", "/api/social/friends")).json.friends[0].mark, "blue mango");
+    const reply = await bob("POST", "/api/social/repost", { post: post.id });
+    assert.ok(reply.status < 300, reply.text);
+    const notes = await amy("GET", "/api/social/notes");
+    assert.equal(notes.json.notes[0].mark, undefined, "bob wears nothing");
+    const reposted = (await amy("GET", "/api/social/timeline")).json.posts[0];
+    assert.equal(reposted.repostBy, "amy");
+    assert.equal(reposted.originalMark, "blue mango", "the original's author wears theirs on a re-post");
+    assert.equal(reposted.mark, undefined);
+
+    assert.equal((await amy("POST", "/api/social/shop/wear", { badge: "" })).json.badge, "");
+    assert.equal((await bob("GET", "/api/social/u/amy")).json.user.mark, " mango");
+
+    const pic = await png64();
+    assert.equal((await amy("POST", "/api/social/shop/badge", pic)).status, 403, "the pack first");
+    await paid("amy", "custom");
+    assert.equal((await amy("POST", "/api/social/shop/wear", { badge: "u" })).status, 403, "nothing uploaded yet");
+    assert.equal((await amy("POST", "/api/social/shop/badge", Buffer.from("not a png"))).status, 400);
+    assert.equal((await amy("POST", "/api/social/shop/badge", pic)).json.badgeRev, 1);
+    assert.equal((await amy("POST", "/api/social/shop/wear", { badge: "u" })).json.badge, "u1");
+    assert.equal((await amy("POST", "/api/social/shop/badge", pic)).json.badgeRev, 2);
+    assert.equal((await amy("GET", "/api/social/shop")).json.badge, "u2", "a badge worn moves to the new picture");
+    // A gift: amy checks out, bob owns it. The checkout is amy's to watch, the pack bob's to wear.
+    assert.equal((await amy("POST", "/api/social/shop/buy", { pack: "checks", for: "nobody here" })).status, 400);
+    await assert.rejects(openShopOrder({ name: "amy", forName: "zed", pack: "checks", cents: 500, codes: { reference: "ref-zed", memo: "UG-ZED" }, pay: { to: "Payee", usdc: 5_000_011, lamports: null }, reuse: 0, at: Date.now() }), /No such person/);
+    const gift = await openShopOrder({ name: "amy", forName: "bob", pack: "checks", cents: 500, codes: { reference: "ref-gift", memo: "UG-GIFT" }, pay: { to: "Payee", usdc: 5_000_009, lamports: null }, reuse: 0, at: Date.now() });
+    assert.equal(gift.forName, "bob");
+    assert.equal((await amy("GET", `/api/social/shop/order/${gift.id}`)).json.paid, false, "the buyer watches it");
+    assert.ok(await payShopOrder(gift.id, { ...proof, signature: "sig-gift" }, Date.now()));
+    assert.deepEqual((await bob("GET", "/api/social/shop")).json.owned, ["checks"], "bob owns what amy gave");
+    assert.equal((await bob("POST", "/api/social/shop/wear", { badge: "pink" })).status, 200);
+    await assert.rejects(openShopOrder({ name: "amy", forName: "bob", pack: "checks", cents: 500, codes: { reference: "ref-gift2", memo: "UG-GIFT2" }, pay: { to: "Payee", usdc: 5_000_013, lamports: null }, reuse: 0, at: Date.now() }), /bob has this already/);
+
+    // Admins (SHOP_ADMINS) unlock for themselves and others, for nothing; no one else can.
+    const had = process.env.SHOP_ADMINS;
+    process.env.SHOP_ADMINS = " Bob , someone";
+    try {
+      assert.equal((await amy("GET", "/api/social/shop")).json.admin, false);
+      assert.equal((await bob("GET", "/api/social/shop")).json.admin, true);
+      assert.equal((await amy("POST", "/api/social/shop/grant", { pack: "fruit", for: "bob" })).status, 403, "amy is no admin");
+      assert.equal((await bob("POST", "/api/social/shop/grant", { pack: "hats" })).status, 400);
+      assert.equal((await bob("POST", "/api/social/shop/grant", { pack: "fruit" })).status, 200, "for themselves");
+      assert.equal((await bob("POST", "/api/social/shop/grant", { pack: "fruit" })).status, 409, "once");
+      assert.equal((await bob("POST", "/api/social/shop/grant", { pack: "custom", for: "zed" })).status, 404);
+      assert.equal((await bob("POST", "/api/social/shop/grant", { pack: "checks", for: "amy" })).status, 409, "amy has it");
+      assert.deepEqual((await bob("GET", "/api/social/shop")).json.owned.sort(), ["checks", "fruit"]);
+      assert.equal((await bob("POST", "/api/social/shop/wear", { status: "lime" })).status, 200);
+    } finally {
+      if (had === undefined) delete process.env.SHOP_ADMINS;
+      else process.env.SHOP_ADMINS = had;
+    }
+
+    const file = await fetch(`${base}/social/k/amy?v=2`);
+    assert.equal(file.status, 200);
+    assert.equal(file.headers.get("content-type"), "image/png");
+    assert.equal((await fetch(`${base}/social/k/bob`)).status, 404);
+  } finally {
+    server.close();
+  }
+
+  async function png64() {
+    return sharp({ create: { width: 64, height: 64, channels: 4, background: "#0a0" } }).png().toBuffer();
   }
 });
 

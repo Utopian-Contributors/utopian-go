@@ -42,7 +42,7 @@ const CSS = `
 `;
 
 /** The most active people, less the viewer and whoever they already added. Add asks to log in first. */
-function people(list, { send, face, openAuth, me }) {
+function people(list, { send, face, openAuth, me, marks }) {
   if (!list.length) return null;
   const rows = list.map((person) => {
     const add = el("button", { type: "button", class: "rl-add", text: "Add", "aria-label": `Add ${person.name}` });
@@ -71,7 +71,7 @@ function people(list, { send, face, openAuth, me }) {
         el(
           "span",
           { class: "rl-id" },
-          el("b", { text: person.name }),
+          el("b", {}, person.name, ...marks(person.name, person.mark)),
           el("small", { text: person.posts === 1 ? "1 post this month" : `${person.posts} posts this month` }),
         ),
       ),

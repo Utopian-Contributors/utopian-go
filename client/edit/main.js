@@ -272,6 +272,12 @@ async function mount({ main, me: who, pull, send, show, photo, load, useSide, re
     el(
       "section",
       { class: "sec" },
+      el("h3", { text: "Shop" }),
+      el("div", { class: "rows" }, settingRow("Badge & status", "Shop", () => location.assign("/social/shop"))),
+    ),
+    el(
+      "section",
+      { class: "sec" },
       el("h3", { text: "Security" }),
       el(
         "div",

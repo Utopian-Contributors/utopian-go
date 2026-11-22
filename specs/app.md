@@ -257,6 +257,8 @@ GET /social/ads               your ads, or the editor when you have none
 GET /social/ads/new           the editor, for a new ad
 GET /social/ads/<id>          the editor, for one of your paid ads
 GET /social/b/<id>[?m=1]      an ad's banner; m=1 is the phone copy
+GET /social/shop              the Shop: badges and statuses
+GET /social/k/<name>?v=<rev>  someone's own badge, a 64px PNG
 GET /social/a/<name>          profile photo, full
 GET /social/t/<name>          profile photo, timeline copy
 GET /social/i/<id>/<n>[?m=1]  post photo n; m=1 is the phone copy
@@ -627,6 +629,46 @@ A saved ad is a u16 length and the JSON `{cta, url, title, body, devices, bid, b
 boolean, keywords: {keyword, add}[]}`, where `add` is the cents a keyword gains, then
 optionally a new banner as a post photo is sent: u32 phone length, u32 desktop length, the
 two JPEGs. `banner: true` without one keeps the current banner.
+
+#### Shop
+
+The Shop (a store, skeu-icons' `store`, `ic-shop`) sells what is worn after a name: one
+badge and one status at a time. It is a sidebar item beside Advertise, wide screens only;
+on a phone, Edit profile has a "Badge & status" row that opens it. Its page is its own
+bundle (`shop.js`). The catalogue is `src/social/shop.ts`, bundled into the client too.
+
+- **Packs.** Checkmarks ($5): `badge-check` in blue, green, red, orange, yellow, purple,
+  pink, black and white (`bd-<colour>.svg`). Your own badge ($3): upload a picture, drawn
+  whole onto a 64px square PNG in the browser, 20 KB at most. Fruit statuses ($5): ten
+  fixed ones (`st-<fruit>.svg`), such as Chilling Vanilla, Good Mango and Top Banana. Where
+  skeu-icons has no such fruit, `scripts/skeu-icons.mjs` repaints one it has (mango and
+  peach are its apple; lime is its citrus).
+- **Paying.** As for an ad: a Solana Pay order (`shop_orders`) to `ADS_PAY_TO`, with
+  its own reference, memo and amount, which the same payment loop matches and credits. A
+  paid order is the pack owned for good. The checkout dialog is `client/js/solpay.js`,
+  shared with Advertise.
+- **Gifts.** Every pack has Gift, which asks for a username and checks out the same way;
+  the order (`shop_orders.for_name`) makes the pack theirs once paid. The buyer watches
+  the checkout; a person who already owns the pack cannot be given it.
+- **Admins.** `SHOP_ADMINS`, comma-separated usernames, may unlock any pack for
+  themselves (Unlock beside Buy) or anyone (Unlock for them, in Gift), for nothing. An
+  unlock is kept as an order paid at once at $0, matched `admin`, with the admin as its
+  buyer, so ownership has one source and every unlock a record.
+- **Wearing.** `users.badge` ('' or a colour, or `u` and the upload's revision) and
+  `users.status`. Every row that carries a name carries `mark`, `"<badge> <status>"`
+  (left out when neither), and the client draws it after the name: posts (and a
+  re-post's original author, `originalMark`), the timeline ad, Friends, Notifications,
+  Messenger and the rail. On a profile the badge follows the name, and the status lies
+  as a pill along the foot of the picture.
+
+```
+GET  /api/social/shop                 → {packs, owned, badge, status, badgeRev, payable, admin}
+POST /api/social/shop/buy {pack, for?}   → {order}         Solana Pay, as an ad's; for: a gift
+POST /api/social/shop/grant {pack, for?} → {ok}            SHOP_ADMINS only
+GET  /api/social/shop/order/<id>      → {paid, open}
+POST /api/social/shop/wear {badge?, status?}  → {badge, status}   "" for none; "u" your own
+POST /api/social/shop/badge  64×64 PNG → {badgeRev}
+```
 
 ### Data Model
 

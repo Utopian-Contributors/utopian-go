@@ -23,7 +23,7 @@ import { adFor, flushAds, startAds } from "./social/ads";
 import { readCookie, readSession } from "./social/auth";
 import { addedBy, ensureSchema, getUser } from "./social/db";
 import { sessionAccount } from "./social/guard";
-import { sendAvatar, sendBanner, sendPostAudio, sendPostPhoto, socialRouter } from "./social/routes";
+import { sendAvatar, sendBadge, sendBanner, sendPostAudio, sendPostPhoto, socialRouter } from "./social/routes";
 import { isCheck, sameState, stateTag, stateTags } from "./state";
 import "./threads";
 
@@ -536,7 +536,7 @@ async function signedIn(req: express.Request): Promise<boolean> {
 const PRIVATE_PAGE = /^\/(wallet|social)(?:\/|$)/i;
 
 /** Social's files, not pages: search results show its avatars, and search ads its banners, to anyone. */
-const SOCIAL_FILE = /^\/social\/[abtiv]\//i;
+const SOCIAL_FILE = /^\/social\/[abtivk]\//i;
 
 /**
  * The wallet and Social, signed in only. Anyone else asking for one of their
@@ -701,6 +701,7 @@ app.get("/social/t/:name", sendAvatar);
 app.get("/social/i/:id/:n", sendPostPhoto);
 app.get("/social/v/:id", sendPostAudio);
 app.get("/social/b/:id", sendBanner);
+app.get("/social/k/:name", sendBadge);
 
 app.use((req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD") return next();

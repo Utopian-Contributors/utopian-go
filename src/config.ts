@@ -334,6 +334,15 @@ export const TERMS_VERSION = "2026-09-27";
  */
 export const ADS_PAY_TO = process.env.ADS_PAY_TO || "";
 
+/**
+ * Usernames, comma-separated, that may unlock Shop packs (src/social/shop.ts)
+ * for themselves or anyone without paying. Read per request, so it is the
+ * environment as the server was started with it.
+ */
+export function shopAdmins(): Set<string> {
+  return new Set((process.env.SHOP_ADMINS || "").split(",").map((name) => name.trim().toLowerCase()).filter(Boolean));
+}
+
 // —— Home news (40 Newsroom) ——
 
 /**

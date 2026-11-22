@@ -5,12 +5,13 @@
  * Everything the timeline does not draw on its first paint is a bundle of its
  * own, fetched by the page that needs it and handed this file's helpers
  * (`kit`) so it carries no copies: the composer, the ticker cards, Friends,
- * Notifications, Edit profile, Messenger, Advertise, the rail, Pay, and the
- * Log in dialog.
+ * Notifications, Edit profile, Messenger, Advertise, the Shop, the rail, Pay,
+ * and the Log in dialog.
  */
 import { logOut } from "../js/acct.js";
 import { $, el, nil } from "../js/dom.js";
 import { load } from "../js/lazy.js";
+import { marks, statusPill } from "../js/marks.js";
 import { B64, clock } from "../js/memo.js";
 import { noZoom } from "../js/device.js";
 import * as progress from "../js/progress.js";
@@ -33,6 +34,9 @@ const pv = $("pv");
  * What replaces a placeholder fades in (.fi), and so does a face or a photo
  * once its file has decoded (img.fd). The rules come with this file rather
  * than social.css: social.html, which inlines that, sits at its guardrail.
+ * So do the Shop's marks (img.wear, after a name) and a profile's status pill
+ * (.stp, on its picture's foot): the pill lies over the picture, and the one
+ * mark drawn before this runs (src/pages.ts profileCard) carries its size.
  */
 document.head.append(
   el("style", {
@@ -44,6 +48,8 @@ document.head.append(
       "img.fd{transition:opacity .32s ease-out}img.fd:not(.ok){opacity:0}" +
       ":is(#bal,#badge,#mbadge):not([hidden]){animation:fi .32s ease-out}" +
       ".se:empty{animation:skl 1.6s ease-in-out infinite;background:var(--ch)}" +
+      "img.wear{width:1em;height:1em;margin-left:.25em;vertical-align:-.12em}" +
+      ".stp{position:absolute;bottom:8px;left:50%;translate:-50%;display:flex;gap:4px;align-items:center;padding:2px 9px 2px 4px;border-radius:99px;background:var(--pn);color:var(--t);font:600 12px/18px var(--ff);white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.25)}" +
       "@media (max-width:900px){body.profile .skl i{margin-inline:auto}}" +
       "@media (prefers-reduced-motion:reduce){.skl,.fi,.se:empty,#bal,#badge,#mbadge{animation:none}img.fd{transition:none}}",
   }),
@@ -71,6 +77,7 @@ function skeleton(page) {
   if (page === "profile") return many(3, skPost);
   if (page === "friends") return [skFind(), skRows(4)];
   if (page === "notifications") return [skRows(5)];
+  if (page === "shop") return [skl("", bar("90px", 24, 4), bar("100%", 150, 18), bar("100%", 150, 28))];
   if (page === "edit")
     return [
       skl("detail-bar", bar("76px", 32, 2)),
@@ -149,7 +156,7 @@ function route() {
   const m = location.pathname
     .replace(/\/+$/, "")
     .match(
-      /^\/social(?:\/(saved|friends|notifications|edit|c|new)|\/p\/([A-Za-z0-9_-]{1,32})|\/u\/([a-z0-9_]{3,16})|\/c\/[a-z0-9_]{3,16})?$/,
+      /^\/social(?:\/(saved|friends|notifications|edit|shop|c|new)|\/p\/([A-Za-z0-9_-]{1,32})|\/u\/([a-z0-9_]{3,16})|\/c\/[a-z0-9_]{3,16})?$/,
     );
   if (!m) return { page: "missing" };
   if (m[1] === "c" || location.pathname.startsWith("/social/c/")) return { page: "chat" };
@@ -213,6 +220,7 @@ function markNav() {
     chat: "Messenger",
     notifications: "Notifications",
     ads: "Advertise",
+    shop: "Shop",
   };
   document.title = `${titles[page] || name || "Social"} | Social`;
 }
@@ -463,12 +471,13 @@ function renderSide(person) {
   // The card came with the page (src/pages.ts): keep its picture, so it is not drawn twice.
   const pic = photo(person.name, person.avatarRev);
   const had = $("side").querySelector("img.pfp");
+  const [badge, status] = (person.mark || "").split(" ");
   const bits = [
-    had && pic && had.getAttribute("src") === pic.getAttribute("src") ? had : pic,
+    pic && el("div", { class: "pfw" }, had && had.getAttribute("src") === pic.getAttribute("src") ? had : pic, statusPill(status)),
     el(
       "div",
       { class: "name" },
-      el("h2", { text: person.name }),
+      el("h2", {}, person.name, marks(person.name, badge)[0]),
       person.loc ? el("span", { class: "muted", text: `[${person.loc}]` }) : null,
     ),
     person.bio ? el("p", { class: "ld", text: person.bio }) : null,
@@ -507,7 +516,7 @@ function adPost(ad) {
       el(
         "div",
         { class: "post-main" },
-        el("div", { class: "who-row" }, el("span", { class: "who", text: ad.owner }), el("span", { class: "via", text: "Sponsored" })),
+        el("div", { class: "who-row" }, el("span", { class: "who" }, ad.owner, ...marks(ad.owner, ad.ownerMark)), el("span", { class: "via", text: "Sponsored" })),
         el("p", { text: ad.title }),
         ad.img
           ? el(
@@ -840,17 +849,18 @@ function renderPost(post, inDetail) {
         el(
           "div",
           { class: "who-row" },
-          el("a", {
-            class: "who",
-            href: `/social/u/${post.repostBy || post.by}`,
-            text: post.repostBy || post.by,
-          }),
+          el(
+            "a",
+            { class: "who", href: `/social/u/${post.repostBy || post.by}` },
+            post.repostBy || post.by,
+            ...marks(post.repostBy || post.by, post.repostBy ? post.originalMark : post.mark),
+          ),
           post.repostBy
             ? el(
                 "span",
                 { class: "via" },
                 " (re-posted by ",
-                el("a", { href: `/social/u/${post.by}`, text: post.by }),
+                el("a", { href: `/social/u/${post.by}` }, post.by, ...marks(post.by, post.mark)),
                 ")",
               )
             : null,
@@ -1360,6 +1370,14 @@ async function renderAds(id) {
   (await load("ad", "__ads")).mount({ ...kit, id });
 }
 
+/** The Shop is its own bundle, on a phone too: Edit profile links to it there. */
+async function renderShop() {
+  useSide(false);
+  if (!me) await pull("/api/social/me");
+  if (!me) throw new Error("Log in to shop.");
+  await (await load("sh", "__shop")).mount(kit);
+}
+
 /** Stops the open Messenger, which polls while it is on screen. */
 let leaveChat = null;
 
@@ -1384,6 +1402,7 @@ const kit = {
   face,
   thumb,
   photo,
+  marks,
   ago,
   linkedText,
   LINK,
@@ -1454,6 +1473,7 @@ async function show() {
       const [data, notes] = await Promise.all([pull("/api/social/notes"), load("nt", "__notes")]);
       notes.mount(data, kit);
     } else if (here.page === "edit") await (await load("ed", "__edit")).mount(kit);
+    else if (here.page === "shop") await renderShop();
     else if (here.page === "profile")
       renderProfile(await pull(`/api/social/u/${here.name}`));
     else if (here.page === "post") {
@@ -1608,7 +1628,7 @@ $("me").addEventListener("click", (e) => {
   e.preventDefault();
   openAuth("login");
 });
-for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data-nav="chat"], #tb [data-nav="notifications"], #tb [data-nav="ads"]')) {
+for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data-nav="chat"], #tb [data-nav="notifications"], #tb [data-nav="ads"], #tb [data-nav="shop"]')) {
   tab.addEventListener("click", (e) => {
     if (me || readName()) return;
     e.preventDefault();

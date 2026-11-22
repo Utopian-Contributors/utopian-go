@@ -1,10 +1,10 @@
 import { createPublicKey, randomBytes } from "crypto";
 import express, { NextFunction, Request, Response, Router } from "express";
-import { ADS_PAY_TO, SITE_URL, TERMS_VERSION, UTCC_MINT } from "../config";
+import { ADS_PAY_TO, SITE_URL, TERMS_VERSION, UTCC_MINT, shopAdmins } from "../config";
 import { rateLimit } from "../lib/rateLimit";
 import { railAssets } from "../lib/tokens/store";
 import { isCheck, unchanged } from "../state";
-import { FRESH_MS, ORDER_OPEN_MS, adsPayable, orderAmounts, orderCodes, payUrl } from "./adPay";
+import { FRESH_MS, ORDER_OPEN_MS, adsPayable, openSince, orderAmounts, orderCodes, payUrl } from "./adPay";
 import { matchesAd, reloadAds, socialAdFor } from "./ads";
 import { audioKind } from "./audio";
 import { calloutsIn } from "./callouts";
@@ -55,7 +55,12 @@ import {
   getAd,
   getUser,
   insertUser,
-  openOrders,
+  bumpBadge,
+  grantPack,
+  openShopOrder,
+  ownedPacks,
+  shopOrderOf,
+  wear,
   markSeen,
   namesOf,
   notesFor,
@@ -128,7 +133,8 @@ import {
 } from "./limits";
 import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
-import { avatarFile, bannerFile, chatAudioFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar } from "./store";
+import { BADGE_BYTES, PACKS, badgeFor, isBadgePng, isPack, markOf, statusFor } from "./shop";
+import { avatarFile, badgeFile, bannerFile, chatAudioFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar, writeBadge } from "./store";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
 
@@ -804,7 +810,7 @@ socialRouter.post(
       typeof req.query.post === "string" ? req.query.post : typeof req.body?.post === "string" ? req.body.post : "";
     const { text, photos, memo } = postBody(req);
     const reply = await addReply(me.name, me.avatarRev, postId, text, Date.now(), photos, memo, calloutsIn(text));
-    res.json({ reply });
+    res.json({ reply: { ...reply, mark: markOf(me) } });
   }),
 );
 
@@ -1042,6 +1048,7 @@ socialRouter.get(
         bio: user.bio,
         loc: user.loc,
         avatarRev: user.avatarRev,
+        mark: markOf(user),
         // Whether the viewer has added them, so the card offers Add only when it would do something.
         friend: added.includes(user.name),
         posts,
@@ -1542,7 +1549,9 @@ socialRouter.get(
     res.json({
       me: await publicMe(me),
       // Their address for the composer's Pay, as their profile publishes it.
-      peer: first ? { name: peer.name, avatarRev: peer.avatarRev, address: peer.address, keys: await chatKeys(peer.name) } : undefined,
+      peer: first
+        ? { name: peer.name, avatarRev: peer.avatarRev, mark: markOf(peer), address: peer.address, keys: await chatKeys(peer.name) }
+        : undefined,
       messages,
       next,
     });
@@ -1949,7 +1958,7 @@ async function saveFrom(req: Request, res: Response, id: string | null): Promise
   }
   if (input.plan.length && !adsPayable()) throw new SocialError(503, "Ads can’t be paid for right now.");
   const cents = input.plan.reduce((sum, item) => sum + item.cents, 0);
-  const pay = cents ? { to: ADS_PAY_TO, ...orderAmounts(cents, await openOrders(Date.now() - ORDER_OPEN_MS)) } : null;
+  const pay = cents ? { to: ADS_PAY_TO, ...orderAmounts(cents, await openSince(Date.now() - ORDER_OPEN_MS)) } : null;
   const { ad, order } = await saveAd({
     id,
     owner: me.name,
@@ -1985,6 +1994,175 @@ socialRouter.post(
     await saveFrom(req, res, req.params.id);
   }),
 );
+
+// —— the Shop (src/social/shop.ts) ——
+
+/** Every pack and its price, the ones you own, what you wear, and whether checkout can take money. */
+socialRouter.get(
+  "/shop",
+  requireAuth,
+  readLimit,
+  wrap(async (_req, res) => {
+    const me = requireUser(res);
+    res.json({
+      me: await publicMe(me),
+      packs: PACKS,
+      owned: await ownedPacks(me.name),
+      badge: me.badge ?? "",
+      status: me.status ?? "",
+      badgeRev: me.badgeRev ?? 0,
+      payable: adsPayable(),
+      // May unlock packs for nothing (SHOP_ADMINS).
+      admin: shopAdmins().has(me.name),
+    });
+  }),
+);
+
+/** Who a pack is for: `for` names someone else (a gift); left out, or your own name, it is yours. */
+function packFor(body: Record<string, unknown> | undefined, me: User): string {
+  if (body?.for === undefined || body.for === "") return me.name;
+  const name = username(body.for);
+  if (!name) throw new SocialError(400, "Usernames are 3–16 letters, numbers, or _.");
+  return name;
+}
+
+/**
+ * A checkout for one pack, for you or as a gift ({pack, for?}): a Solana Pay
+ * request, as an ad's is, which the payment loop credits to whoever it is for.
+ */
+socialRouter.post(
+  "/shop/buy",
+  requireAuth,
+  writeLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const pack = req.body?.pack;
+    if (!isPack(pack)) throw new SocialError(400, "No such pack.");
+    const forName = packFor(req.body, me);
+    if (!adsPayable()) throw new SocialError(503, "The Shop can’t take payments right now.");
+    const { cents } = PACKS[pack];
+    const order = await openShopOrder({
+      name: me.name,
+      forName,
+      pack,
+      cents,
+      codes: orderCodes(),
+      pay: { to: ADS_PAY_TO, ...orderAmounts(cents, await openSince(Date.now() - ORDER_OPEN_MS)) },
+      reuse: Date.now() - FRESH_MS,
+      at: Date.now(),
+    });
+    const gift = forName === me.name ? "UtopianGO shop" : "UtopianGO gift";
+    res.json({
+      order: {
+        id: order.id,
+        for: order.forName,
+        memo: order.memo,
+        cents: order.cents,
+        usdc: order.usdc,
+        lamports: order.lamports,
+        urls: {
+          usdc: payUrl(order, "usdc", gift),
+          sol: order.lamports ? payUrl(order, "sol", gift) : null,
+        },
+      },
+    });
+  }),
+);
+
+/** An admin's unlock, for themselves or anyone ({pack, for?}): owned at once, for nothing. */
+socialRouter.post(
+  "/shop/grant",
+  requireAuth,
+  writeLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    if (!shopAdmins().has(me.name)) throw new SocialError(403, "Only a Shop admin can unlock packs.");
+    const pack = req.body?.pack;
+    if (!isPack(pack)) throw new SocialError(400, "No such pack.");
+    const forName = packFor(req.body, me);
+    await grantPack(me.name, forName, pack, orderCodes().reference, Date.now());
+    console.log(`[shop] ${me.name} unlocked ${pack} for ${forName}`);
+    res.json({ ok: true, for: forName, pack });
+  }),
+);
+
+/** The checkout dialog asks until the payment loop has seen the transfer. */
+socialRouter.get(
+  "/shop/order/:id",
+  requireAuth,
+  readLimit,
+  wrap(async (req, res) => {
+    const me = requireUser(res);
+    const order = PAGE_ID.test(req.params.id) ? await shopOrderOf(req.params.id, me.name) : null;
+    if (!order) throw new SocialError(404, "No such order.");
+    res.json({ paid: order.paidAt != null, open: order.paidAt == null && Date.now() - order.at < ORDER_OPEN_MS });
+  }),
+);
+
+/**
+ * Wear a badge and a status: {badge?, status?}, each "" for none; a field left
+ * out keeps what is worn. The badge "u" is your own picture.
+ */
+socialRouter.post(
+  "/shop/wear",
+  requireAuth,
+  writeLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const owned = await ownedPacks(me.name);
+    const badge = req.body?.badge === undefined ? (me.badge ?? "") : badgeFor(req.body.badge, owned, me.badgeRev ?? 0);
+    const status = req.body?.status === undefined ? (me.status ?? "") : statusFor(req.body.status, owned);
+    if (badge == null || status == null) throw new SocialError(403, "That isn’t yours to wear yet.");
+    await wear(me.name, badge, status);
+    res.json({ me: await savedMe(me.name), badge, status });
+  }),
+);
+
+const badgeRaw = express.raw({ type: "image/png", limit: BADGE_BYTES });
+
+/** Your own badge: a 64px square PNG, for those who bought the pack. One worn already shows the new one. */
+socialRouter.post(
+  "/shop/badge",
+  requireAuth,
+  writeLimit,
+  (req, res, next) => {
+    badgeRaw(req, res, (err?: unknown) => {
+      if (err) {
+        res.status(413).json({ error: "The badge must be 20KB or smaller." });
+        return;
+      }
+      next();
+    });
+  },
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    if (!(await ownedPacks(me.name)).includes("custom")) throw new SocialError(403, "Buy Your own badge first.");
+    if (!Buffer.isBuffer(req.body) || !isBadgePng(req.body)) throw new SocialError(400, "The badge must be a 64×64 PNG.");
+    const rev = await bumpBadge(me.name);
+    writeBadge(me.name, req.body);
+    res.json({ badgeRev: rev, me: await savedMe(me.name) });
+  }),
+);
+
+/** Someone's own badge. Replaced under a new ?v=, so it caches like a photo. */
+export function sendBadge(req: Request, res: Response): void {
+  const name = username(req.params.name);
+  const file = name ? badgeFile(name) : null;
+  if (!file) {
+    res.status(404).type("text").send("Not found.");
+    return;
+  }
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.type("png").sendFile(file);
+}
 
 /** An ad's banner; ?m=1 is the phone copy. Replaced under a new ?v=, so it caches like a photo. */
 export function sendBanner(req: Request, res: Response): void {

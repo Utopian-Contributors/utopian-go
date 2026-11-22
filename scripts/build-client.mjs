@@ -458,6 +458,13 @@ const editOpts = {
   outfile: path.join(outDir, "edit.js"),
 };
 
+/** The Shop: badges and statuses, checkout, and choosing what to wear. Fetched by social.js on /social/shop only. */
+const shopOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "shop", "main.js")],
+  outfile: path.join(outDir, "shop.js"),
+};
+
 /** The login page's bundle (client/auth): the page's form, and signing in by it. */
 const authOpts = {
   ...jsOpts,
@@ -754,6 +761,7 @@ const SOCIAL_LAZY = {
   fr: "friends.js",
   nt: "notes.js",
   ed: "edit.js",
+  sh: "shop.js",
 };
 const SOCIAL_BUNDLES = ["social.js", ...Object.values(SOCIAL_LAZY)];
 
@@ -1179,6 +1187,7 @@ async function buildAssets() {
     esbuild.build(friendsOpts),
     esbuild.build(notesOpts),
     esbuild.build(editOpts),
+    esbuild.build(shopOpts),
     esbuild.build(authOpts),
     esbuild.build(gamesOpts),
     esbuild.build(pinballOpts),

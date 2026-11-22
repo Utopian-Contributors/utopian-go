@@ -680,7 +680,7 @@ a.cashtag:hover { color: var(--a); }
 
 .file:hover { background: var(--wash2); }
 .file:has(:focus-visible) { outline: 2px solid var(--a); outline-offset: 2px; }
-.file img.pfp { margin: 0; border-radius: 8px; }
+.file img.pfp { border-radius: 8px; }
 .file span { padding: 4px 7px; }
 
 .file input {
@@ -1045,7 +1045,6 @@ img.pfp {
   width: 200px;
   max-width: 100%;
   height: auto;
-  margin: 0 0 12px;
   border-radius: 0;
 }
 
@@ -1057,6 +1056,9 @@ img.pfp {
 }
 
 .name h2 { margin: 0; }
+
+/* A profile's picture, with its Shop status (.stp, in social.js) on its foot. */
+.pfw { position: relative; width: fit-content; max-width: 100%; margin: 0 0 12px; }
 
 /*
  * The profile's actions: one row of big tiles, the mark above the word, as on
@@ -1448,7 +1450,7 @@ body.soc .pn {
     text-align: center;
   }
 
-  body.profile img.pfp { margin-inline: auto; }
+  body.profile .pfw { margin-inline: auto; }
   body.profile .name { justify-content: center; }
 }
 

@@ -343,7 +343,7 @@ export function mount(ctx) {
       el(
         "span",
         { class: "crow-main" },
-        el("span", { class: "crow-top" }, el("b", { text: c.with }), el("time", { text: ctx.ago(c.at) })),
+        el("span", { class: "crow-top" }, el("b", {}, c.with, ...ctx.marks(c.with, c.mark)), el("time", { text: ctx.ago(c.at) })),
         preview(c),
       ),
     );
@@ -372,6 +372,7 @@ export function mount(ctx) {
   function learn(c) {
     const p = peerOf(c.with);
     p.avatarRev = c.avatarRev;
+    p.mark = c.mark;
     const theirV = ends(c.with, c.last).theirV;
     if (c.pub) p.keys.set(theirV, c.pub);
     since = Math.max(since, c.at);
@@ -430,7 +431,7 @@ export function mount(ctx) {
               "button",
               { type: "button", class: "hit" },
               ctx.face(u.name, u.avatarRev),
-              el("span", { class: "who", text: u.name }),
+              el("span", { class: "who" }, u.name, ...ctx.marks(u.name, u.mark)),
               el("span", { class: "tag", text: "Chat" }),
             );
             hit.addEventListener("click", () => go(u.name));
@@ -554,7 +555,7 @@ export function mount(ctx) {
         "span",
         { class: "chat-who" },
         ctx.face(who, peerOf(who).avatarRev),
-        el("a", { class: "who", href: `/social/u/${who}`, text: who }),
+        el("a", { class: "who", href: `/social/u/${who}` }, who, ...ctx.marks(who, peerOf(who).mark)),
       ),
     );
   }
@@ -1042,6 +1043,7 @@ export function mount(ctx) {
     if (!info) return;
     const p = peerOf(info.name);
     p.avatarRev = info.avatarRev;
+    p.mark = info.mark;
     p.address = info.address || "";
     for (const k of info.keys) p.keys.set(k.v, k.pub);
     p.cur = info.keys.length ? info.keys[info.keys.length - 1].v : 0;

@@ -13,9 +13,10 @@ import { el, nil } from "../js/dom.js";
  * @param {{
  *   main: HTMLElement, send: (path: string, body?: object) => Promise<any>,
  *   face: (name: string, rev: number) => HTMLElement | null, useSide: (on: boolean) => void,
+ *   marks: (name: string, mark?: string) => (HTMLElement | null)[],
  * }} kit
  */
-function mount(data, { main, send, face, useSide }) {
+function mount(data, { main, send, face, useSide, marks }) {
   useSide(false);
   const when = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
   const group = (title, notes) =>
@@ -32,7 +33,7 @@ function mount(data, { main, send, face, useSide }) {
               el(
                 "div",
                 { class: "friend-main" },
-                el("b", { text: note.from }),
+                el("b", {}, note.from, ...marks(note.from, note.mark)),
                 note.kind === "repost" ? " re-posted your post" : " replied to your post",
                 el("time", { datetime: new Date(note.at).toISOString(), text: when.format(note.at) }),
               ),

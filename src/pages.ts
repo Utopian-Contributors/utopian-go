@@ -10,6 +10,7 @@
  * row its script would fetch (client/social/main.js renderSide).
  */
 import type { User } from "./social/db";
+import { badgeSrc } from "./social/shop";
 
 export type Page = "index" | "wallet" | "social";
 
@@ -122,7 +123,11 @@ export function renderAuth(html: string, mode: "login" | "register", to: string)
 }
 
 /** A profile's card: picture, name, place, bio, and its row of action tiles. */
-export function profileCard(user: Pick<User, "name" | "address" | "bio" | "loc" | "avatarRev">, own: boolean, friend: boolean): string {
+export function profileCard(
+  user: Pick<User, "name" | "address" | "bio" | "loc" | "avatarRev" | "badge">,
+  own: boolean,
+  friend: boolean,
+): string {
   const name = esc(user.name);
   const pay = !user.address
     ? ""
@@ -137,9 +142,16 @@ export function profileCard(user: Pick<User, "name" | "address" | "bio" | "loc" 
   const last = own
     ? '<a class="pa" data-ic="edit" href="/social/edit">Edit profile</a>'
     : `<a class="pa" data-ic="msg" href="/social/c/${name}">Message</a>`;
+  // The badge after the name. The status on the picture's foot is renderSide's: it lies over the
+  // picture, so it moves nothing when it comes, and its rules ride in social.js.
+  const pic = user.avatarRev ? `<img class="pfp" src="/social/a/${name}?v=${user.avatarRev}" alt="" width="200" height="200">` : "";
+  // img.wear's rules are social.js's (social.html is at its guardrail): until it runs, the same size inline.
+  const badge = user.badge
+    ? `<img class="wear" src="${esc(badgeSrc(user.name, user.badge))}" alt="" width="16" height="16" style="width:1em;height:1em;margin-left:.25em;vertical-align:-.12em">`
+    : "";
   return (
-    (user.avatarRev ? `<img class="pfp" src="/social/a/${name}?v=${user.avatarRev}" alt="" width="200" height="200">` : "") +
-    `<div class="name"><h2>${name}</h2>${user.loc ? `<span class="muted">[${esc(user.loc)}]</span>` : ""}</div>` +
+    (pic ? `<div class="pfw">${pic}</div>` : "") +
+    `<div class="name"><h2>${name}${badge}</h2>${user.loc ? `<span class="muted">[${esc(user.loc)}]</span>` : ""}</div>` +
     (user.bio ? `<p class="ld">${esc(user.bio)}</p>` : "") +
     `<div class="pacts">${pay}${add}${last}</div>`
   );
@@ -161,7 +173,7 @@ export function socialFrame(path: string): { cls: string; side: boolean } {
   if (/^\/social\/u\/[a-z0-9_]{3,16}$/.test(p)) return { cls: "profile", side: true };
   if (p === "/social/c" || /^\/social\/c\/[a-z0-9_]{3,16}$/.test(p)) return { cls: "chat", side: true };
   if (p === "/social/new") return { cls: "newpost", side: false };
-  if (p === "/social/friends" || p === "/social/notifications" || p === "/social/edit") return { cls: "", side: false };
+  if (p === "/social/friends" || p === "/social/notifications" || p === "/social/edit" || p === "/social/shop") return { cls: "", side: false };
   return { cls: "", side: true };
 }
 
