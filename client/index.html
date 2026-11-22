@@ -113,6 +113,18 @@
           <div id="hm-tk"></div>
         </section>
 
+        <!-- Home only: the four busiest topics on 40 Newsroom as iOS cards
+             in a 2 × 2 grid, each with the headlines that have freshly come
+             up in it, each a link out to its story. The server renders them
+             into #hm-nw, refreshed every four hours (src/lib/news.ts); with
+             none, the section hides itself. -->
+        <section id="hm-ns" aria-labelledby="hm-nh">
+          <div class="hm-wh">
+            <h2 id="hm-nh">News</h2>
+          </div>
+          <div id="hm-nw"></div>
+        </section>
+
         <!-- The account control. The server renders it from the session cookie
              (src/pages.ts), Wallet or Log in, so it paints with the page; app.js
              then draws the same buttons from localStorage and keeps them right. -->

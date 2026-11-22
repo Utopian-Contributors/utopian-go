@@ -14,6 +14,7 @@ import {
 } from "./config";
 import { iconFile } from "./lib/tokens/icons";
 import { startTokenIndex } from "./lib/tokens/store";
+import { newsLink, newsPhoto, renderHomeNews, startNews } from "./lib/news";
 import { WATCH_COOKIE, renderFundPrices, renderHomeTicker, warmHomeTiles, watchKeys } from "./lib/tokens/ticker";
 import { ACCOUNT_NAV, HOME_NAV, accountNav, authPath, homeNav, nextPath, frameSocial, profileCard, renderAuth, renderPage, socialFrame } from "./pages";
 import { apiRouter } from "./routes/api";
@@ -48,6 +49,9 @@ app.disable("x-powered-by");
 
 /** Slot in the built shell that the price strip is injected into. */
 const TICKER_SLOT = '<div id="hm-tk"></div>';
+
+/** Slot in the built shell that the home news cards are injected into (src/lib/news.ts). */
+const NEWS_SLOT = '<div id="hm-nw"></div>';
 
 /** Slot a results page's ad is rendered into (src/social/ads.ts). */
 const AD_SLOT = '<div id="ad"></div>';
@@ -664,6 +668,34 @@ app.get("/icon/:mint", (req, res) => {
   res.type("webp").sendFile(file);
 });
 
+/**
+ * A home news headline, out to its story (src/lib/news.ts). The page links
+ * here rather than to the publisher so its bytes fit the first flight; the
+ * hop passes on no referrer, as the link itself would not have.
+ */
+app.get("/news/go/:id", (req, res) => {
+  const url = newsLink(req.params.id);
+  if (!url) {
+    res.redirect(302, "/");
+    return;
+  }
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.redirect(302, url);
+});
+
+/** A home news card's photo, shrunk from the publisher's (src/lib/news.ts). */
+app.get("/news/:file", (req, res) => {
+  const file = newsPhoto(req.params.file);
+  if (!file) {
+    res.status(404).type("text").send("Not found.");
+    return;
+  }
+  // Named by the article's id, so the bytes behind a name never change.
+  res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+  res.type("webp").sendFile(file);
+});
+
 app.get("/social/a/:name", sendAvatar);
 app.get("/social/t/:name", sendAvatar);
 app.get("/social/i/:id/:n", sendPostPhoto);
@@ -854,6 +886,11 @@ function sendIndex(
     TICKER_SLOT,
     `<div id="hm-tk"${renderFundPrices()}>${renderHomeTicker(watchKeys(readCookie(req.headers.cookie ?? "", WATCH_COOKIE)), signed)}</div>`,
   );
+  // The news cards, on the home variant only: a results page carries an ad
+  // instead, and the build reserves room for one or the other, not both
+  // (NEWS_RESERVE in build-client.mjs). A wordmark tap home from results shows
+  // no cards until the next load; the section hides itself while empty.
+  if (variant === "home") html = replaceSlot(html, NEWS_SLOT, `<div id="hm-nw">${renderHomeNews()}</div>`);
   if (variant === "res") html = replaceSlot(html, INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);
   // Tagged by what it shows, the ad left out (src/state.ts): a check from the
   // offline app holding this state gets a 304, and never an ad.
@@ -961,6 +998,7 @@ const server = app.listen(PORT, () => {
   }
   startTokenIndex();
   warmHomeTiles();
+  startNews();
 });
 
 // Social's tables, made ready ahead of the first request. Search never waits

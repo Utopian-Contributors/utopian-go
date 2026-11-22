@@ -67,7 +67,7 @@ function price(v: number): string {
 }
 
 /** Signed 24h change. Zero is never signed. */
-function change(v: number): string {
+export function change(v: number): string {
   const a = Math.abs(v);
   if (a === 0) return "0.00%";
   const sign = v < 0 ? "-" : "+";

@@ -74,6 +74,17 @@ const HEADER_RESERVE = 350;
 const TICKER_RESERVE = 700;
 
 /**
+ * NEWS_RESERVE — the home page's four news cards (src/lib/news.ts), rendered
+ * in per request on the home variant only: four topics, two headlines each,
+ * clipped to 100 characters and linked by a short /news/go/<id> rather than
+ * the publisher's URL. ~850 B gzipped measured; eight headlines at full
+ * length, some in non-Latin scripts, would come to about 1,200.
+ * Results pages carry an ad instead, never both, so the document reserves
+ * the larger of the two.
+ */
+const NEWS_RESERVE = 1200;
+
+/**
  * AD_RESERVE — a results page can carry one ad, rendered in per request by
  * src/social/ads.ts: about 300 B of markup around up to 224 characters of copy
  * and a 200-character link. Under 600 B once compressed, at the limits.
@@ -107,8 +118,8 @@ const PAGES = [
     name: "Search",
     doc: {
       file: "index.html",
-      // Less what the server injects per request; see TICKER_RESERVE and AD_RESERVE.
-      gzip: FLIGHT - TICKER_RESERVE - AD_RESERVE,
+      // Less what the server injects per request; see TICKER_RESERVE, AD_RESERVE and NEWS_RESERVE.
+      gzip: FLIGHT - TICKER_RESERVE - Math.max(AD_RESERVE, NEWS_RESERVE),
     },
     parallel: [{ file: "app.js", gzip: FLIGHT }],
   },

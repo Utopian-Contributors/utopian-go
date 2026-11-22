@@ -320,3 +320,39 @@ export const TERMS_VERSION = "2026-09-27";
  * drafted and previewed but not checked out.
  */
 export const ADS_PAY_TO = process.env.ADS_PAY_TO || "";
+
+// —— Home news (40 Newsroom) ——
+
+/**
+ * The 40 Newsroom key behind the home page's news cards (src/lib/news.ts).
+ * Unset, the cards are left out and the home page reads as it did.
+ * Indexed by string: a name that starts with a digit is no identifier.
+ */
+export const NEWS_API_KEY = process.env["40_NEWS_API_KEY"] || "";
+
+export const NEWS_API_BASE = "https://app40.utopiango.com";
+
+/** The cards and their photos, so a restart neither empties the row nor spends articles. */
+export const NEWS_FILE = path.join(CACHE_DIR, "news.json");
+export const NEWS_IMG_DIR = path.join(CACHE_DIR, "news");
+
+/**
+ * How often the cards are refreshed. Articles are a monthly quota of 10,000
+ * shared by every key on the account; a refresh spends at most
+ * NEWS_CARDS × NEWS_PER_TOPIC (12), only on what came out since the card's
+ * newest story and nothing for a quiet topic, so every four hours is at most
+ * ~2,200 a month, leaving the rest of the quota to the account's other keys.
+ */
+export const NEWS_REFRESH_MS = 4 * 60 * 60_000;
+
+/** Cards on the home page: a 2 × 2 grid. */
+export const NEWS_CARDS = 4;
+
+/** Articles asked for per topic and refresh: what came out since, newest first. */
+export const NEWS_PER_TOPIC = 3;
+
+/** Headlines a card shows: two lines each fit a half-width card twice. */
+export const NEWS_SHOWN = 2;
+
+/** Photos are drawn at about half the 584px column, so 640 wide covers a 2x screen. */
+export const NEWS_IMG_WIDTH = 640;

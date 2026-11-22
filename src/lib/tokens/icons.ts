@@ -176,7 +176,8 @@ function get(url: URL): Promise<Fetched> {
   });
 }
 
-async function download(start: string): Promise<Buffer> {
+/** A public https URL's bytes: redirects followed, private hosts refused, size and time bounded. The home news photos (src/lib/news.ts) come the same way. */
+export async function download(start: string): Promise<Buffer> {
   let url = new URL(start);
   for (let hop = 0; hop < 4; hop++) {
     if (!allowed(url)) throw new Error("host refused");
@@ -188,7 +189,7 @@ async function download(start: string): Promise<Buffer> {
 }
 
 /** Raster formats, by their first bytes. */
-function raster(buf: Buffer): boolean {
+export function raster(buf: Buffer): boolean {
   if (buf.length < 12) return false;
   const png = buf[0] === 0x89 && buf.toString("latin1", 1, 4) === "PNG";
   const jpeg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
