@@ -11,6 +11,18 @@ import { el } from "../js/dom.js";
 import { assertion, register, why } from "../js/passkey.js";
 import { dismissible } from "../js/sheet.js";
 import { bin, lens, shrink } from "../js/shrink.js";
+import { injectStyles } from "../js/ui.js";
+
+/*
+ * Here, not in social.html, which has no room under its size guardrail.
+ * An error line takes no room until it has words: empty, its min-height and
+ * a paragraph's margins left a hole under the photo and under Save. On a
+ * phone #m has no pad above, so the bar keeps off the panel's top edge.
+ */
+const CSS =
+  ".ed-err{margin:8px 0 0}" +
+  ".ed-err:empty{display:none}" +
+  "@media (max-width:900px){body.soc #m>.detail-bar:has(>.ed-h){margin-top:12px}}";
 
 /** 4…4, as an address or a credential id is shown in a row. */
 const short = (s) => (s.length > 12 ? `${s.slice(0, 4)}…${s.slice(-4)}` : s);
@@ -182,13 +194,14 @@ async function mount({ main, me: who, pull, send, show, photo, load, useSide, re
     return;
   }
   useSide(false);
+  injectStyles("ed-css", CSS);
   const bioInput = el("textarea", {
     id: "bio",
     maxlength: "160",
     text: me.bio,
   });
   const locInput = el("input", { id: "loc", maxlength: "40", value: me.loc });
-  const saveErr = el("p", { class: "err" });
+  const saveErr = el("p", { class: "err ed-err", role: "alert" });
   const save = el(
     "form",
     { class: "tools" },
@@ -219,7 +232,7 @@ async function mount({ main, me: who, pull, send, show, photo, load, useSide, re
     }
   });
 
-  const photoErr = el("p", { class: "err" });
+  const photoErr = el("p", { class: "err ed-err", role: "alert" });
   const file = el("input", { type: "file", accept: "image/*", id: "pic" });
   file.addEventListener("change", async () => {
     const picked = file.files && file.files[0];

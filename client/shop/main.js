@@ -18,7 +18,7 @@ import { injectFormStyles } from "../swap/ui.js";
 
 const CSS =
   ".sh{display:grid;gap:14px}" +
-  ".sh-me{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:16px;background:var(--wash);font:600 16px/1.3 var(--ff)}" +
+  ".sh-me{display:flex;align-items:center;gap:10px;padding:12px 15px;border-radius:16px;background:var(--wash);font:600 16px/1.3 var(--ff)}" +
   ".sh-me small{display:block;font-weight:400;font-size:12px;color:var(--f)}" +
   ".sh-p{padding:14px;border:1px solid var(--ln);border-radius:16px}" +
   ".sh-p h3{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0;font:600 15px/1.3 var(--ff)}" +
@@ -36,7 +36,13 @@ const CSS =
   ".sh-f{display:grid;gap:10px}" +
   ".sh-f label{font-size:13px;color:var(--f)}" +
   ".sh-in{width:100%;padding:10px 12px;border:1px solid var(--ln);border-radius:12px;background:var(--wash);color:var(--t);font:16px/1.3 var(--ff)}" +
-  ".sh-f .swx-go{width:100%}";
+  ".sh-f .swx-go{width:100%}" +
+  // The bar's Back only where the tabs leave no way back; on a desk it keeps
+  // its room, so the title stays centred.
+  ".sh>.detail-bar{margin:0}" +
+  "@media (min-width:901px){.sh>.detail-bar .back{visibility:hidden}}" +
+  "@media (max-width:900px){.sh{padding-top:12px}}" +
+  ".sh>.err{margin:0}.sh>.err:empty{display:none}";
 
 const cap = (word) => word[0].toUpperCase() + word.slice(1);
 
@@ -245,7 +251,13 @@ async function mount({ main, me, pull, send, face, marks, show }) {
       el(
         "div",
         { class: "sh" },
-        el("h2", { class: "ed-h", text: "Shop" }),
+        // Edit profile's bar: on a phone, where the tabs carry no Shop, that page is the way in.
+        el(
+          "div",
+          { class: "detail-bar" },
+          el("a", { class: "back", href: "/social/edit", text: "Back" }),
+          el("h2", { class: "ed-h", text: "Shop" }),
+        ),
         el(
           "div",
           { class: "sh-me" },
