@@ -17,7 +17,6 @@ import { UTCC } from "../js/utcc.js";
 import { amount, dollars, percent, tokenPrice } from "../js/num.js";
 import { onSession, readSession } from "../js/session.js";
 import { openSwap, swapUrl } from "../js/swap.js";
-import { KINDS } from "../js/kinds.js";
 import { dirOf, figure, lineChart, paintMove, rangeTabs, since, when } from "../js/chart.js";
 import { mountBreakdown } from "./breakdown.js";
 import { mountHistory } from "./history.js";
@@ -36,7 +35,6 @@ const topList = $("wl-tl");
 const topNote = $("wl-tn");
 const filter = /** @type {HTMLInputElement} */ ($("wl-q"));
 const side = $("wl-s");
-const pfHead = $("wl-pf-h");
 const chips = /** @type {HTMLButtonElement[]} */ ([...$("wl-cats").querySelectorAll("button")]);
 
 const actions = $("wl-acts");
@@ -151,15 +149,9 @@ function paintTotal() {
  * worth and day where the total's were, and narrows the holdings to it.
  */
 const breakdown = mountBreakdown($("wl-bk"), () => {
-  paintHead();
   paintTotal();
   paintRows();
 });
-
-function paintHead() {
-  const kind = shown ? breakdown.picked : "";
-  pfHead.textContent = kind ? `Portfolio · ${KINDS[kind] ?? kind}` : "Portfolio";
-}
 
 /** What the figure shows: the whole portfolio, or the kind picked from its breakdown. */
 function view() {
@@ -767,7 +759,6 @@ function paint(data) {
   const moved = signature(data) !== entriesFor;
   if (moved) entries = new Map();
   breakdown.paint(data);
-  paintHead();
   paintTotal();
 
   if (!data.items.length) {

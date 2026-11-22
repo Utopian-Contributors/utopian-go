@@ -125,14 +125,24 @@ function allowed(url: URL): boolean {
 
 type Fetched = { redirect: string } | { body: Buffer };
 
-function get(url: URL): Promise<Fetched> {
+/**
+ * What a download asks for and how much of it it takes. A page read for the
+ * icons its head names (src/lib/tokens/favicons.ts) asks for HTML and keeps
+ * its first bytes rather than failing on a long page.
+ */
+export type DownloadOptions = { accept?: string; maxBytes?: number; partial?: boolean };
+
+const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/avif,image/svg+xml";
+
+function get(url: URL, opts: DownloadOptions = {}): Promise<Fetched> {
+  const max = opts.maxBytes ?? TOKEN_ICON_MAX_BYTES;
   return new Promise((resolve, reject) => {
     const req = request(
       url,
       {
         lookup: publicLookup,
         headers: {
-          Accept: "image/png,image/jpeg,image/webp,image/gif,image/avif,image/svg+xml",
+          Accept: opts.accept ?? IMAGE_ACCEPT,
           "User-Agent": USER_AGENT,
         },
         timeout: TOKEN_ICON_TIMEOUT_MS,
@@ -148,7 +158,7 @@ function get(url: URL): Promise<Fetched> {
           res.destroy();
           return reject(new Error(`status ${status}`));
         }
-        if (Number(res.headers["content-length"]) > TOKEN_ICON_MAX_BYTES) {
+        if (!opts.partial && Number(res.headers["content-length"]) > max) {
           res.destroy();
           return reject(new Error("too large"));
         }
@@ -156,10 +166,11 @@ function get(url: URL): Promise<Fetched> {
         let size = 0;
         res.on("data", (chunk: Buffer) => {
           size += chunk.length;
-          if (size > TOKEN_ICON_MAX_BYTES) {
+          if (size > max) {
             res.destroy();
-            reject(new Error("too large"));
-            return;
+            if (!opts.partial) return reject(new Error("too large"));
+            chunks.push(chunk.subarray(0, chunk.length - (size - max)));
+            return resolve({ body: Buffer.concat(chunks) });
           }
           chunks.push(chunk);
         });
@@ -177,12 +188,17 @@ function get(url: URL): Promise<Fetched> {
 }
 
 /** A public https URL's bytes: redirects followed, private hosts refused, size and time bounded. The home news photos (src/lib/news.ts) come the same way. */
-export async function download(start: string): Promise<Buffer> {
+export async function download(start: string, opts: DownloadOptions = {}): Promise<Buffer> {
+  return (await downloadFrom(start, opts)).body;
+}
+
+/** The same, with the URL the bytes came from once redirects are followed, which a page's relative links resolve against. */
+export async function downloadFrom(start: string, opts: DownloadOptions = {}): Promise<{ body: Buffer; url: URL }> {
   let url = new URL(start);
   for (let hop = 0; hop < 4; hop++) {
     if (!allowed(url)) throw new Error("host refused");
-    const got = await get(url);
-    if ("body" in got) return got.body;
+    const got = await get(url, opts);
+    if ("body" in got) return { body: got.body, url };
     url = new URL(got.redirect, url);
   }
   throw new Error("too many redirects");
@@ -200,7 +216,7 @@ export function raster(buf: Buffer): boolean {
 }
 
 /** An SVG document, which may open with an XML declaration, a doctype or a comment. */
-function vector(buf: Buffer): boolean {
+export function vector(buf: Buffer): boolean {
   const head = buf.toString("utf8", 0, 1024).replace(/^\uFEFF/, "").trimStart().toLowerCase();
   return /^(<\?xml|<svg[\s>]|<!--|<!doctype svg)/.test(head) && /<svg[\s>]/.test(head);
 }
@@ -221,15 +237,15 @@ process.stdin.on("data", (c) => chunks.push(c));
 process.stdin.on("end", async () => {
   const svg = Buffer.concat(chunks);
   const { width, height } = await sharp(svg).metadata();
-  const density = Math.min(2400, Math.max(1, (72 * ${TOKEN_ICON_EDGE}) / Math.max(width, height)));
+  const density = Math.min(2400, Math.max(1, (72 * Number(process.argv[1])) / Math.max(width, height)));
   process.stdout.end(await sharp(svg, { density, limitInputPixels: ${TOKEN_ICON_MAX_PIXELS} }).png().toBuffer());
 });`;
 
-function drawSvg(svg: Buffer): Promise<Buffer> {
+function drawSvg(svg: Buffer, edge: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const child = execFile(
       process.execPath,
-      ["-e", DRAW_SVG],
+      ["-e", DRAW_SVG, String(edge)],
       { env: {}, encoding: "buffer", maxBuffer: TOKEN_ICON_MAX_BYTES, timeout: 5_000, killSignal: "SIGKILL" },
       (err, stdout) => (err ? reject(err) : resolve(stdout)),
     );
@@ -271,15 +287,20 @@ async function iconOf(rec: TokenRecord): Promise<Buffer> {
   throw last;
 }
 
-async function thumb(input: Buffer): Promise<Buffer> {
+function thumb(input: Buffer): Promise<Buffer> {
+  return shrink(input, TOKEN_ICON_EDGE);
+}
+
+/** Any raster or SVG drawn into a transparent square `edge` pixels on a side, as WebP. */
+export async function shrink(input: Buffer, edge: number): Promise<Buffer> {
   if (!raster(input)) {
     if (!vector(input)) throw new Error("not an image");
     if (input.length > TOKEN_ICON_MAX_SVG_BYTES) throw new Error("svg too large");
-    input = await drawSvg(input);
+    input = await drawSvg(input, edge);
   }
   return sharp(input, { limitInputPixels: TOKEN_ICON_MAX_PIXELS, animated: false })
     .timeout({ seconds: 5 })
-    .resize(TOKEN_ICON_EDGE, TOKEN_ICON_EDGE, {
+    .resize(edge, edge, {
       fit: "contain",
       background: { r: 0, g: 0, b: 0, alpha: 0 },
     })
@@ -374,7 +395,7 @@ export async function tintOf(mint: string): Promise<string | null> {
  * dark enough to carry white type. A logo with no colour to speak of (black,
  * white, grey) gets a graphite one rather than whatever hue its noise lands on.
  */
-async function readTint(file: string): Promise<string> {
+export async function readTint(file: string): Promise<string> {
   const { data } = await sharp(file).resize(24, 24, { fit: "fill" }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const bins = new Float64Array(36);
   const sat = new Float64Array(36);

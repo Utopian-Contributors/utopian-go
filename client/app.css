@@ -1073,7 +1073,6 @@ body.home #sc {
 #bm {
   width: 100%;
   max-width: 70ch;
-  margin-top: var(--lift, 0px);
   padding: 24px 0 48px;
 }
 

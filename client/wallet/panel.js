@@ -16,6 +16,44 @@ const LINKS = [
   ["discord", "Discord"],
 ];
 
+/** What a link's tile says under its name: where it goes, without the scheme or a trailing slash. */
+function where(key, href) {
+  const url = new URL(href);
+  const host = url.hostname.replace(/^www\./, "");
+  const path = url.pathname.replace(/\/+$/, "");
+  if (key === "twitter" && /^\/\w+$/.test(path)) return `@${path.slice(1)}`;
+  return host + path;
+}
+
+/**
+ * A link as a tile like the home page's: X on X's mark, the others on their
+ * site's icon (/api/tokens/<mint>/links/<key>, read from the site by the
+ * server), each big off the corner and faded into the tile, which takes the
+ * icon's colour once the server has read it.
+ */
+function linkTile(d, key, label) {
+  const href = d.links[key];
+  const mark = el("img", {
+    src: key === "twitter" ? "/ic-x.svg" : `/api/tokens/${encodeURIComponent(d.mint)}/links/${key}`,
+    alt: "",
+    width: 160,
+    height: 160,
+    loading: "lazy",
+    decoding: "async",
+  });
+  mark.addEventListener("error", () => mark.remove(), { once: true });
+  const tile = el(
+    "a",
+    { class: `tp-lt tp-lt-${key}`, href, target: "_blank", rel: "noopener noreferrer nofollow" },
+    mark,
+    el("strong", { text: label }),
+    el("span", { text: where(key, href) }),
+  );
+  // As properties, not a style attribute: the tint is the server's text.
+  for (const m of (d.linkTints?.[key] || "").matchAll(/(--hi|--lo):(#[0-9a-f]{6})/g)) tile.style.setProperty(m[1], m[2]);
+  return tile;
+}
+
 /** The synced thumbnail, or a coin the same size so the tickers stay in line. */
 export function icon(t, size = 20) {
   return coinIcon(t, size, "wl-ic", "wl-coin");
@@ -108,7 +146,7 @@ export function mountPanel(box, buy) {
     });
 
     const links = LINKS.filter(([key]) => /^https:\/\//.test(d.links?.[key] || "")).map(([key, label]) =>
-      el("a", { href: d.links[key], target: "_blank", rel: "noopener noreferrer nofollow", text: label }),
+      linkTile(d, key, label),
     );
     const sol = d.priceSol == null ? null : tokenPrice(d.priceSol);
 
@@ -116,7 +154,10 @@ export function mountPanel(box, buy) {
     // has been read (wallet.css). One of the two is ever shown, so it is not
     // read out twice.
 
-    box.replaceChildren(
+    // One card, which on a desktop scrolls in the right half (wallet.css).
+    const card = el("div", { class: "tp-card" });
+    box.replaceChildren(card);
+    card.replaceChildren(
       ...[
         el(
           "div",
@@ -125,7 +166,6 @@ export function mountPanel(box, buy) {
           el("div", { class: "tp-t" }, el("strong", { text: d.symbol }), el("span", { class: "wl-nm", text: d.name })),
           buy(d),
         ),
-        links.length ? el("div", { class: "tp-lk" }, ...links) : null,
         price,
         move,
         ranges && chartBox,
@@ -143,6 +183,7 @@ export function mountPanel(box, buy) {
         ),
         el("div", { class: "tp-tabs" }, ...tabs),
         body,
+        links.length ? el("div", { class: "tp-ls", role: "group", "aria-label": "Links" }, ...links) : null,
       ].filter(Boolean),
     );
     body.replaceChildren(...stats(d.windows?.["24h"]));

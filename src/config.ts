@@ -101,6 +101,19 @@ export const TOKEN_TRENDING_SHARE = 0.05;
 /** Thumbnails are a cache: kept across deploys, rebuilt by the next sync if lost. */
 export const TOKEN_ICON_DIR = path.join(CACHE_DIR, "icons");
 
+/**
+ * The icons of the sites a token links to (its website, Telegram, Discord),
+ * read from each site and kept by host name, drawn behind the wallet panel's
+ * link tiles (src/lib/tokens/favicons.ts).
+ */
+export const FAVICON_DIR = path.join(CACHE_DIR, "favicons");
+
+/** Edge of a stored site icon: drawn large in a tile, so larger than a token's. */
+export const FAVICON_EDGE = 160;
+
+/** How much of a page is read for the icons its head names. */
+export const FAVICON_PAGE_BYTES = 256 * 1024;
+
 /** Drawn at 24–32 CSS px, so 64 covers a 2x screen. */
 export const TOKEN_ICON_EDGE = 64;
 

@@ -329,6 +329,11 @@ export interface TokenDetail {
   icon?: true;
   /** https only. */
   links: { website?: string; twitter?: string; telegram?: string; discord?: string };
+  /**
+   * Each link's tile colours (`--hi:…;--lo:…`) from its site's icon, for the
+   * links whose icon has been read (src/lib/tokens/favicons.ts).
+   */
+  linkTints?: { website?: string; telegram?: string; discord?: string };
   windows: { "5m"?: TokenWindow; "1h"?: TokenWindow; "6h"?: TokenWindow; "24h"?: TokenWindow };
 }
 

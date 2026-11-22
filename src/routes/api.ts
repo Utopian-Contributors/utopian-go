@@ -13,6 +13,7 @@ import { rateLimit } from "../lib/rateLimit";
 import { isSignature, signatureStatus } from "../lib/txStatus";
 import { MAX_ASSETS, fetchAssets } from "../lib/tokens/asset";
 import { tokenDetail } from "../lib/tokens/detail";
+import { ensureFavicon, faviconFile } from "../lib/tokens/favicons";
 import { tintOf } from "../lib/tokens/icons";
 import { isChartRange, priceSeries } from "../lib/tokens/history";
 import {
@@ -629,6 +630,36 @@ apiRouter.get(
     }
     res.setHeader("Cache-Control", "public, max-age=30");
     res.json(detail);
+  }),
+);
+
+/**
+ * The icon of the site one of a token's links goes to, drawn behind its tile
+ * on the wallet panel. Only a link the token's own metadata names, so this is
+ * no fetcher for any URL; the site is read once a week at most, shared by
+ * everyone, and what comes back is always a WebP drawn here.
+ */
+const linkIconLimit = rateLimit({ perMinute: 120, burst: 40 });
+
+apiRouter.get(
+  "/api/tokens/:mint/links/:key",
+  linkIconLimit,
+  wrap(async (req: Request, res: Response) => {
+    const { mint, key } = req.params;
+    if (!isPubkey(mint) || !(key === "website" || key === "telegram" || key === "discord")) {
+      res.status(400).json({ error: "Invalid link." });
+      return;
+    }
+    const site = (await tokenDetail(mint))?.links[key];
+    const file = site && (await ensureFavicon(site)) ? faviconFile(site) : null;
+    if (!file) {
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.status(404).json({ error: "No icon for this link." });
+      return;
+    }
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.type("image/webp").sendFile(file);
   }),
 );
 

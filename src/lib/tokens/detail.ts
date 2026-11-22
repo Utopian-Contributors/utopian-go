@@ -1,6 +1,7 @@
 import { JUP_TOKENS_ENDPOINT, TOKEN_PRICE_TIMEOUT_MS } from "../../config";
 import { JupStats, JupToken, TokenDetail, TokenRecord, TokenWindow } from "../../types";
 import { JupiterBusy, jupFetch } from "../jupiterGate";
+import { faviconTint } from "./favicons";
 import { hasIcon } from "./icons";
 import { lookupMints, notePrice } from "./store";
 
@@ -110,6 +111,19 @@ export async function tokenDetail(mint: string): Promise<TokenDetail | null> {
     "6h": toWindow(jup?.stats6h),
     "24h": toWindow(jup?.stats24h) ?? (rec.change24h != null ? { change: rec.change24h } : undefined),
   };
+  const links: TokenDetail["links"] = {
+    website: https(jup?.website),
+    twitter: https(jup?.twitter),
+    telegram: https(jup?.telegram),
+    discord: https(jup?.discord),
+  };
+  // X's tile carries X's own mark; the others take their site's icon, whose
+  // fetch the first ask starts.
+  const linkTints: NonNullable<TokenDetail["linkTints"]> = {};
+  for (const key of ["website", "telegram", "discord"] as const) {
+    const tint = links[key] ? faviconTint(links[key]) : null;
+    if (tint) linkTints[key] = tint;
+  }
   return {
     mint,
     symbol: rec.symbol,
@@ -126,12 +140,8 @@ export async function tokenDetail(mint: string): Promise<TokenDetail | null> {
     tickHi: rec.tickHi,
     tickAt: rec.tickAt,
     ...(hasIcon(mint) ? { icon: true as const } : {}),
-    links: {
-      website: https(jup?.website),
-      twitter: https(jup?.twitter),
-      telegram: https(jup?.telegram),
-      discord: https(jup?.discord),
-    },
+    links,
+    linkTints,
     windows,
   };
 }
