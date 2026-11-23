@@ -19,6 +19,11 @@
  * Pinball's on the games list. The package has no flipper, so it is drawn by
  * hand in the package's manner (a top-lit gradient, a darker edge, a gloss)
  * and checked in as it is; this script leaves it alone.
+ *
+ * Nor are the badges won at the games (src/social/shop.ts GAME_BADGES):
+ * bd-sn1…5.svg, five snake heads seen from above, and bd-pb1…5.svg, five
+ * mushrooms after the pinball table's bumpers. The package has neither, so
+ * they too are drawn by hand in its manner and checked in.
  */
 import { writeFileSync } from "fs";
 import path from "path";

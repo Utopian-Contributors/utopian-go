@@ -13,8 +13,13 @@
  * A prize (won at Fruit Slots, src/social/slots.ts, or given by whoever held
  * it) shows on its pack: Unlock free makes the pack yours, Give passes the
  * prize on, for them to unlock here.
+ *
+ * Statuses are also had one at a time (`items`, 'st:<fruit>'): bought with
+ * Fruit Slots credits, or given. And each game with a board has a set of
+ * badges no one can buy (GAME_BADGES): a place in its top ten, at the end of
+ * a game, unlocks that place's badge and every commoner one, for good.
  */
-import { BADGES, BADGE_PX, PACKS, STATUSES, badgeSrc } from "../../src/social/shop.ts";
+import { BADGES, BADGE_PX, GAME_BADGES, PACKS, STATUSES, TIERS, badgeSrc } from "../../src/social/shop.ts";
 import { el } from "../js/dom.js";
 import { payDialog, usd } from "../js/solpay.js";
 import { dialog, injectStyles } from "../js/ui.js";
@@ -241,6 +246,8 @@ async function mount({ main, me, pull, send, face, marks, show }) {
     return (state.prizes || [])
       .filter((prize) => prize.pack === id)
       .map((prize) => {
+        const fruit = prize.item ? prize.item.slice(3) : "";
+        const had = prize.item ? owned || (state.items || []).includes(prize.item) : owned;
         const unlock = el("button", {
           type: "button",
           class: "go-pill",
@@ -252,12 +259,14 @@ async function mount({ main, me, pull, send, face, marks, show }) {
             }),
         });
         const give = el("button", { type: "button", class: "go-pill sh-2", text: "Give", onclick: () => givePrizeDialog(prize) });
+        const what = fruit ? `${STATUSES[fruit]}: ` : "";
         return el(
           "div",
           { class: "sh-b" },
-          owned ? null : unlock,
+          fruit ? el("img", { src: `/st-${fruit}.svg`, alt: "", width: "24", height: "24" }) : null,
+          had ? null : unlock,
           give,
-          el("p", { class: "hint", text: prize.givenBy ? `A gift from @${prize.givenBy}` : "You won this at Fruit Slots" }),
+          el("p", { class: "hint", text: `${what}${prize.givenBy ? `a gift from @${prize.givenBy}` : "won at Fruit Slots"}` }),
         );
       });
   }
@@ -301,7 +310,35 @@ async function mount({ main, me, pull, send, face, marks, show }) {
     );
   }
 
+  /** A game's won badges: each worn once unlocked, else the place that unlocks it. */
+  function won(game, title, href) {
+    const place = (t) => (t.from === t.to ? `#${t.from}` : `#${t.from}–${t.to}`);
+    const items = new Set(state.items || []);
+    return el(
+      "section",
+      { class: "sh-p" },
+      el("h3", {}, title, el("span", { text: "Top ten only" })),
+      el(
+        "div",
+        { class: "sh-g" },
+        ...GAME_BADGES[game].map((badge, i) => {
+          const have = items.has(`bd:${badge.id}`);
+          return tile(`/bd-${badge.id}.svg`, have ? badge.name : `${badge.name} · ${place(TIERS[i])}`, state.badge === badge.id, have, () =>
+            put("badge", badge.id),
+          );
+        }),
+      ),
+      el(
+        "div",
+        { class: "sh-b" },
+        el("a", { class: "go-pill sh-2", href, text: "Play" }),
+        el("p", { class: "hint", text: "Finish a synced game in the top ten to unlock that place’s badge and every one after it, for good." }),
+      ),
+    );
+  }
+
   function paint() {
+    const items = new Set(state.items || []);
     const mark = `${state.badge} ${state.status}`;
     const own = state.badgeRev > 0 ? badgeSrc(name, `u${state.badgeRev}`) : "/ic-image.svg";
     const pick = el("input", { type: "file", accept: "image/*", hidden: true, onchange: (e) => upload(e.target) });
@@ -340,8 +377,12 @@ async function mount({ main, me, pull, send, face, marks, show }) {
           ),
         ),
         pack("fruit", (owned) =>
-          Object.entries(STATUSES).map(([id, words]) => tile(`/st-${id}.svg`, words, state.status === id, owned, () => put("status", id))),
+          Object.entries(STATUSES).map(([id, words]) =>
+            tile(`/st-${id}.svg`, words, state.status === id, owned || items.has(`st:${id}`), () => put("status", id)),
+          ),
         ),
+        won("snake", "Snake badges", "/snake"),
+        won("pinball", "Pinball badges", "/pinball"),
         err,
       ),
     );

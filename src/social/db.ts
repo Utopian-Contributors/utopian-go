@@ -394,6 +394,36 @@ CREATE TABLE IF NOT EXISTS slot_prizes (
   unlocked_at bigint
 );
 CREATE INDEX IF NOT EXISTS slot_prizes_held ON slot_prizes (holder) WHERE unlocked_at IS NULL;
+-- Things owned one at a time rather than as a pack (src/social/shop.ts): a
+-- fruit status, 'st:<fruit>', bought with Fruit Slots credits or given; a
+-- game's badge, 'bd:<id>', won by a place on its board. how says which.
+CREATE TABLE IF NOT EXISTS unlocks (
+  name text NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+  item text NOT NULL,
+  how text NOT NULL,
+  at bigint NOT NULL,
+  PRIMARY KEY (name, item)
+);
+-- Changes to data that must happen once, by name.
+CREATE TABLE IF NOT EXISTS schema_steps (id text PRIMARY KEY, at bigint NOT NULL);
+-- The Snake and Pinball boards held whatever scores pages posted. From here
+-- only a game synced from start to end counts (src/social/play.ts), so the
+-- boards start again, once.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_steps WHERE id = 'boards-synced') THEN
+    DELETE FROM pinball;
+    DELETE FROM snake;
+    INSERT INTO schema_steps (id, at) VALUES ('boards-synced', (extract(epoch FROM now()) * 1000)::bigint);
+  END IF;
+END $$;
+-- Fruit Slots keeps one balance until it runs dry; peak is the highest it
+-- reached, which is its score on the board.
+ALTER TABLE slot_games ADD COLUMN IF NOT EXISTS peak integer NOT NULL DEFAULT 0;
+-- A prize is one fruit status ('st:<fruit>'), bought with credits for someone
+-- else; the first prizes, with no item, were the whole Fruit statuses pack.
+-- A prize bought with credits comes from no single game.
+ALTER TABLE slot_prizes ADD COLUMN IF NOT EXISTS item text;
+ALTER TABLE slot_prizes ALTER COLUMN game DROP NOT NULL;
 `;
 
 let ready: Promise<void> | null = null;
@@ -2226,13 +2256,15 @@ export interface SlotGame {
   stops: number[];
   bet: number;
   win: number;
+  /** The highest the balance has been: the game's score on the board. */
+  peak: number;
   at: number;
   endedAt: number | null;
 }
 
 type SlotGameRow = Omit<SlotGame, "stops" | "endedAt"> & { stops: string; ended_at: number | null };
 
-const SLOT_GAME = "SELECT id, seed, commit, credits, spins, stops, bet, win, at, ended_at FROM slot_games";
+const SLOT_GAME = "SELECT id, seed, commit, credits, spins, stops, bet, win, peak, at, ended_at FROM slot_games";
 
 function slotGameFrom({ stops, ended_at, ...row }: SlotGameRow): SlotGame {
   return { ...row, stops: stops ? stops.split(",").map(Number) : [], at: Number(row.at), endedAt: big(ended_at) };
@@ -2269,11 +2301,11 @@ export async function startSlotGame(input: {
     if (open) return { game: slotGameFrom(open), started: false };
     const played = await one<{ n: number }>("SELECT count(*)::int AS n FROM slot_games WHERE name = $1 AND day = $2", [input.name, input.day], client);
     if ((played?.n ?? 0) >= input.perDay) {
-      throw new SocialError(429, `That’s today’s ${input.perDay} games. More tomorrow.`, { left: 0 });
+      throw new SocialError(429, "You’ve had today’s fresh start. Another tomorrow.", { left: 0 });
     }
     const id = newId();
     await client.query(
-      `INSERT INTO slot_games (id, name, seed, commit, credits, day, at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      `INSERT INTO slot_games (id, name, seed, commit, credits, peak, day, at) VALUES ($1,$2,$3,$4,$5,$5,$6,$7)`,
       [id, input.name, input.seed, input.commit, input.credits, input.day, input.at],
     );
     const row = await one<SlotGameRow>(`${SLOT_GAME} WHERE id = $1`, [id], client);
@@ -2298,16 +2330,16 @@ async function slotScore(client: PoolClient, name: string, score: number, at: nu
  * press already answered, or one for a game it has not seen, and is refused
  * (409) rather than played twice. `play` turns the game's secret and the
  * spin's number into the new credits; the game row is locked while it runs,
- * so spins of one game never overlap. A game that reaches the top writes its
- * prize in the same transaction.
+ * so spins of one game never overlap. A balance higher than it has ever been
+ * goes on the board; one too small for another bet ends the game.
  */
 export async function spinSlotGame(input: {
   name: string;
   n: number;
   bet: number;
   at: number;
-  play: (game: SlotGame) => { stops: number[]; win: number; credits: number; over: boolean; prize: Pack | null };
-}): Promise<{ game: SlotGame; prize: string | null }> {
+  play: (game: SlotGame) => { stops: number[]; win: number; credits: number; over: boolean };
+}): Promise<SlotGame> {
   return tx(async (client) => {
     const row = await one<SlotGameRow>(`${SLOT_GAME} WHERE name = $1 AND ended_at IS NULL FOR UPDATE`, [input.name], client);
     if (!row) throw new SocialError(409, "Start a game first.");
@@ -2316,36 +2348,107 @@ export async function spinSlotGame(input: {
     if (input.bet > game.credits) throw new SocialError(400, "That bet is more than your credits.");
     const out = input.play(game);
     const endedAt = out.over ? input.at : null;
+    const peak = Math.max(game.peak, out.credits);
     await client.query(
-      `UPDATE slot_games SET credits = $2, spins = spins + 1, stops = $3, bet = $4, win = $5, ended_at = $6 WHERE id = $1`,
-      [game.id, out.credits, out.stops.join(","), input.bet, out.win, endedAt],
+      `UPDATE slot_games SET credits = $2, spins = spins + 1, stops = $3, bet = $4, win = $5, ended_at = $6, peak = $7 WHERE id = $1`,
+      [game.id, out.credits, out.stops.join(","), input.bet, out.win, endedAt, peak],
     );
-    let prize: string | null = null;
-    if (out.over) {
-      await slotScore(client, input.name, out.credits, input.at);
-      if (out.prize) {
-        prize = newId();
-        await client.query(
-          `INSERT INTO slot_prizes (id, game, pack, won_by, holder, won_at) VALUES ($1,$2,$3,$4,$4,$5)`,
-          [prize, game.id, out.prize, input.name, input.at],
-        );
-      }
-    }
-    const next: SlotGame = { ...game, credits: out.credits, spins: game.spins + 1, stops: out.stops, bet: input.bet, win: out.win, endedAt };
-    return { game: next, prize };
+    if (peak > game.peak) await slotScore(client, input.name, peak, input.at);
+    return { ...game, credits: out.credits, spins: game.spins + 1, stops: out.stops, bet: input.bet, win: out.win, peak, endedAt };
   });
 }
 
-/** Cash out: `name`'s open game ends where it stands, and its credits go on the board. */
-export async function cashOutSlotGame(name: string, n: number, at: number): Promise<SlotGame> {
+/** What `name` owns one at a time: 'st:<fruit>' and 'bd:<id>'. */
+export async function itemsOf(name: string): Promise<string[]> {
+  return (await many<{ item: string }>("SELECT item FROM unlocks WHERE name = $1 ORDER BY item", [name])).map((row) => row.item);
+}
+
+/** Whether `name` may wear `fruit` already: the whole pack, or that status. */
+async function hasStatus(client: PoolClient, name: string, fruit: string): Promise<boolean> {
+  return !!(await one(
+    `SELECT 1 FROM unlocks WHERE name = $1 AND item = $2
+     UNION ALL SELECT 1 FROM shop_orders WHERE for_name = $1 AND pack = 'fruit' AND paid_at IS NOT NULL LIMIT 1`,
+    [name, `st:${fruit}`],
+    client,
+  ));
+}
+
+/**
+ * Spend `price` credits of `name`'s open game on one fruit status: theirs at
+ * once, or, for `to`, a prize they unlock free in the Shop. Refused when the
+ * credits are short, the status is had already, or `to` is no one. A balance
+ * left too small to bet ends the game, as a losing spin would.
+ */
+export async function buyStatus(input: { name: string; fruit: string; to: string | null; price: number; minBet: number; at: number }): Promise<{ game: SlotGame; prize: string | null }> {
   return tx(async (client) => {
-    const row = await one<SlotGameRow>(`${SLOT_GAME} WHERE name = $1 AND ended_at IS NULL FOR UPDATE`, [name], client);
-    if (!row) throw new SocialError(409, "There’s no game to cash out.");
+    const row = await one<SlotGameRow>(`${SLOT_GAME} WHERE name = $1 AND ended_at IS NULL FOR UPDATE`, [input.name], client);
+    if (!row) throw new SocialError(409, "You have no credits to spend. Start a game first.");
     const game = slotGameFrom(row);
-    if (n !== game.spins) throw new SocialError(409, "That spin was played already.", { spins: game.spins });
-    await client.query("UPDATE slot_games SET ended_at = $2 WHERE id = $1", [game.id, at]);
-    await slotScore(client, name, game.credits, at);
-    return { ...game, endedAt: at };
+    if (game.credits < input.price) throw new SocialError(400, `A status costs ${input.price.toLocaleString("en-US")} credits.`);
+    const item = `st:${input.fruit}`;
+    let prize: string | null = null;
+    if (!input.to || input.to === input.name) {
+      if (await hasStatus(client, input.name, input.fruit)) throw new SocialError(409, "You have this status already.");
+      await client.query("INSERT INTO unlocks (name, item, how, at) VALUES ($1,$2,'slots',$3)", [input.name, item, input.at]);
+    } else {
+      if (!(await one("SELECT 1 FROM users WHERE name = $1 FOR UPDATE", [input.to], client))) throw new SocialError(404, "No such person.");
+      const waiting = await one("SELECT 1 FROM slot_prizes WHERE holder = $1 AND item = $2 AND unlocked_at IS NULL", [input.to, item], client);
+      if (waiting || (await hasStatus(client, input.to, input.fruit))) throw new SocialError(409, `${input.to} has this status already.`);
+      prize = newId();
+      await client.query(
+        `INSERT INTO slot_prizes (id, game, pack, item, won_by, holder, given_by, won_at, given_at) VALUES ($1,NULL,'fruit',$2,$3,$4,$3,$5,$5)`,
+        [prize, item, input.name, input.to, input.at],
+      );
+    }
+    const credits = game.credits - input.price;
+    const endedAt = credits < input.minBet ? input.at : null;
+    await client.query("UPDATE slot_games SET credits = $2, ended_at = $3 WHERE id = $1", [game.id, credits, endedAt]);
+    return { game: { ...game, credits, endedAt }, prize };
+  });
+}
+
+/**
+ * A synced Snake or Pinball game that ended (src/social/play.ts): on the
+ * board if it is the account's best, then their place on it, and the badges
+ * that place unlocks (shop.ts badgesForRank), kept for good. Only a game's
+ * end decides this, so a place held from before counts again only when a
+ * game of theirs ends.
+ */
+export async function finishBoardGame(
+  game: "snake" | "pinball",
+  name: string,
+  score: number,
+  at: number,
+  unlocksFor: (rank: number) => string[],
+): Promise<{ best: number; rank: number | null; unlocked: string[] }> {
+  return tx(async (client) => {
+    if (score > 0) {
+      await client.query(
+        `INSERT INTO ${game} (name, score, at) VALUES ($1, $2, $3)
+         ON CONFLICT (name) DO UPDATE SET score = EXCLUDED.score, at = EXCLUDED.at
+         WHERE ${game}.score < EXCLUDED.score`,
+        [name, score, at],
+      );
+    }
+    const mine = await one<{ score: number; at: number }>(`SELECT score, at FROM ${game} WHERE name = $1`, [name], client);
+    if (!mine) return { best: 0, rank: null, unlocked: [] };
+    const ahead = await one<{ n: number }>(
+      `SELECT count(*)::int AS n FROM ${game} WHERE score > $1 OR (score = $1 AND at < $2)`,
+      [mine.score, mine.at],
+      client,
+    );
+    const rank = (ahead?.n ?? 0) + 1;
+    const items = unlocksFor(rank);
+    const unlocked: string[] = [];
+    if (items.length) {
+      const res = await client.query<{ item: string }>(
+        `INSERT INTO unlocks (name, item, how, at) SELECT $1, unnest($2::text[]), 'rank', $3
+         ON CONFLICT (name, item) DO NOTHING RETURNING item`,
+        [name, items, at],
+      );
+      unlocked.push(...res.rows.map((row) => row.item));
+    }
+    return { best: mine.score, rank, unlocked };
   });
 }
 
@@ -2353,6 +2456,8 @@ export async function cashOutSlotGame(name: string, n: number, at: number): Prom
 export interface SlotPrize {
   id: string;
   pack: Pack;
+  /** One status, 'st:<fruit>'; null for a prize of the whole pack, as the first ones were. */
+  item: string | null;
   wonBy: string;
   /** Who gave it to them last, when it was given; null when they won it. */
   givenBy: string | null;
@@ -2361,14 +2466,15 @@ export interface SlotPrize {
 
 /** The prizes `name` holds: won, or given to them, and not yet unlocked. */
 export async function heldPrizes(name: string): Promise<SlotPrize[]> {
-  const rows = await many<{ id: string; pack: Pack; won_by: string; given_by: string | null; won_at: number; given_at: number | null }>(
-    `SELECT id, pack, won_by, given_by, won_at, given_at FROM slot_prizes
+  const rows = await many<{ id: string; pack: Pack; item: string | null; won_by: string; given_by: string | null; won_at: number; given_at: number | null }>(
+    `SELECT id, pack, item, won_by, given_by, won_at, given_at FROM slot_prizes
      WHERE holder = $1 AND unlocked_at IS NULL ORDER BY won_at`,
     [name],
   );
   return rows.map((row) => ({
     id: row.id,
     pack: row.pack,
+    item: row.item,
     wonBy: row.won_by,
     givenBy: row.given_by,
     at: Number(row.given_at ?? row.won_at),
@@ -2376,9 +2482,9 @@ export async function heldPrizes(name: string): Promise<SlotPrize[]> {
 }
 
 /** The prize `id`, locked, if `name` holds it and it is not unlocked yet; 404 otherwise, whoever's it is. */
-async function heldPrize(client: PoolClient, name: string, id: string): Promise<{ pack: Pack; won_by: string }> {
-  const prize = await one<{ pack: Pack; won_by: string }>(
-    "SELECT pack, won_by FROM slot_prizes WHERE id = $1 AND holder = $2 AND unlocked_at IS NULL FOR UPDATE",
+async function heldPrize(client: PoolClient, name: string, id: string): Promise<{ pack: Pack; item: string | null; won_by: string }> {
+  const prize = await one<{ pack: Pack; item: string | null; won_by: string }>(
+    "SELECT pack, item, won_by FROM slot_prizes WHERE id = $1 AND holder = $2 AND unlocked_at IS NULL FOR UPDATE",
     [id, name],
     client,
   );
@@ -2394,6 +2500,13 @@ async function heldPrize(client: PoolClient, name: string, id: string): Promise<
 export async function unlockPrize(name: string, id: string, reference: string, at: number): Promise<Pack> {
   return tx(async (client) => {
     const prize = await heldPrize(client, name, id);
+    if (prize.item) {
+      // One status: theirs alone, unless they have it already.
+      if (await hasStatus(client, name, prize.item.slice(3))) throw new SocialError(409, "You have this status already. Give it to someone instead.");
+      await client.query("UPDATE slot_prizes SET unlocked_at = $2 WHERE id = $1", [id, at]);
+      await client.query("INSERT INTO unlocks (name, item, how, at) VALUES ($1,$2,'gift',$3)", [name, prize.item, at]);
+      return prize.pack;
+    }
     await canHave(client, name, prize.pack, false);
     await client.query("UPDATE slot_prizes SET unlocked_at = $2 WHERE id = $1", [id, at]);
     await client.query(
@@ -2410,7 +2523,10 @@ export async function givePrize(name: string, id: string, to: string, at: number
   await tx(async (client) => {
     const prize = await heldPrize(client, name, id);
     if (to === name) throw new SocialError(400, "That’s you. Unlock it instead.");
-    await canHave(client, to, prize.pack, true);
+    if (prize.item) {
+      if (!(await one("SELECT 1 FROM users WHERE name = $1 FOR UPDATE", [to], client))) throw new SocialError(404, "No such person.");
+      if (await hasStatus(client, to, prize.item.slice(3))) throw new SocialError(409, `${to} has this status already.`);
+    } else await canHave(client, to, prize.pack, true);
     await client.query("UPDATE slot_prizes SET holder = $2, given_by = $3, given_at = $4 WHERE id = $1", [id, to, name, at]);
   });
 }

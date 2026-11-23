@@ -5,18 +5,18 @@
  * Three reels of the Shop's ten fruit statuses (src/social/shop.ts STATUSES,
  * drawn as /st-<fruit>.svg), one line across the middle. A game starts with
  * START credits; each spin stakes one of BETS and pays the bet times what the
- * line shows (THREE, CHERRIES). The credits are the score. A game ends when
- * they reach TOP, the highest score there is, which wins the Fruit statuses
- * pack (PRIZE); when they fall below the smallest bet; or when its player
- * cashes out. GAMES_A_DAY games an account, a day (UTC).
+ * line shows (THREE, CHERRIES). The balance is kept, from visit to visit,
+ * until it is too small for the smallest bet: then the game is lost, and a
+ * fresh START comes once a day (UTC, GAMES_A_DAY). Every STATUS_PRICE credits
+ * buy one of the ten fruit statuses, to wear or to give. The board is each
+ * account's highest balance.
  *
  * The odds, worked out exactly over every stop (src/social/social.test.ts
  * checks them): the line pays back 93.9% of what is staked, and pays
- * something on 42% of spins, most of it a cherry's bet back. A game reaches
- * TOP about one time in 40 at the smallest bet and one in 20 at the largest:
- * possible, never easy.
+ * something on 42% of spins, most of it a cherry's bet back. From START, a
+ * balance reaches 1,000 about one time in 40 at the smallest bet and one in
+ * 20 at the largest: possible, never easy.
  */
-import type { Pack } from "./shop";
 
 export const FRUITS = ["cherry", "lime", "orange", "apple", "grape", "peach", "mango", "avocado", "vanilla", "banana"] as const;
 export type Fruit = (typeof FRUITS)[number];
@@ -56,12 +56,13 @@ export const BETS = [5, 10, 25] as const;
 export type Bet = (typeof BETS)[number];
 
 export const START = 100;
-export const TOP = 1000;
-export const GAMES_A_DAY = 3;
+/** What one fruit status costs, in credits. */
+export const STATUS_PRICE = 1000;
+/** No balance grows past this; it keeps every sum a safe integer in Postgres. */
+export const MAX_CREDITS = 1_000_000_000;
+/** Fresh starts an account, a day. */
+export const GAMES_A_DAY = 1;
 export const DAY_MS = 86_400_000;
-
-/** What reaching TOP wins: this Shop pack, to unlock or to give. */
-export const PRIZE: Pack = "fruit";
 
 /** A small fixed generator, so every reel is laid out the same on the server and the page. */
 function mulberry(seed: number): () => number {
@@ -109,14 +110,14 @@ export function payout(line: readonly Fruit[]): number {
   return CHERRIES[line.filter((fruit) => fruit === "cherry").length] ?? 0;
 }
 
-/** The credits after a spin: the bet staked, what it won added, and never past TOP. */
+/** The credits after a spin: the bet staked, what it won added. */
 export function settle(credits: number, bet: number, times: number): number {
-  return Math.min(TOP, credits - bet + bet * times);
+  return Math.min(MAX_CREDITS, credits - bet + bet * times);
 }
 
-/** Whether a game with these credits is over: at the top, or too few left for the smallest bet. */
+/** Whether a game with these credits is lost: too few left for the smallest bet. */
 export function isOver(credits: number): boolean {
-  return credits >= TOP || credits < BETS[0];
+  return credits < BETS[0];
 }
 
 /** The day, counted from 1970 in UTC, that `at` falls on; an account's games are counted per day. */

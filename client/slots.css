@@ -642,3 +642,105 @@ a.sl-go {
     navigation: auto;
   }
 }
+
+/* Synced or Offline: whether the server is answering for this account. */
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--f);
+  font: 600 12px var(--ff);
+  white-space: nowrap;
+}
+
+.live::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.4);
+}
+
+.live[data-on="1"] {
+  color: var(--t);
+}
+
+.live[data-on="1"]::before {
+  background: var(--go);
+  box-shadow: 0 0 6px var(--go);
+}
+
+.sl-link:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The statuses to buy: five across, the one picked ringed. */
+.sl-fr {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.sl-ft {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 2px;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--t);
+  font: 500 10px/1.2 var(--ff);
+  text-align: center;
+  cursor: pointer;
+}
+
+.sl-ft img {
+  width: 30px;
+  height: 30px;
+}
+
+.sl-ft[aria-pressed="true"] {
+  border-color: var(--win);
+}
+
+.sl-ft:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sl-who {
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 10px;
+}
+
+.sl-to {
+  box-sizing: border-box;
+  width: 100%;
+  height: 46px;
+  margin-bottom: 4px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--t);
+  font: 16px var(--ff);
+}
+
+.sl-to[hidden] {
+  display: none;
+}
+
+.sl-to::placeholder {
+  color: var(--f);
+}
+
+.sl-sheet .sl-x {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  text-align: center;
+}

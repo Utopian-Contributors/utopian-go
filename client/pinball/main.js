@@ -2,12 +2,15 @@
  * Pinball: the page around the table. The header (Back, the balls left, the
  * score), the two flipper buttons, the keys, sound, messages over the table,
  * and the scores. It is offline first: once loaded it plays with no network,
- * and its scores live on the device (../games/scores.js).
+ * and its scores live on the device (../games/scores.js). Signed in and
+ * online, a game is played in sync with the server (../games/live.js), which
+ * holds its score to what the table can pay; only such a game goes on the board.
  *
  * The table itself is table.js (layout, physics, rules) and render.js (how
  * it is drawn, in 3D).
  */
-import { leaderboard } from "../games/board.js";
+import { leaderboard, placed } from "../games/board.js";
+import { live } from "../games/live.js";
 import { keepOffline } from "../games/offline.js";
 import { scores } from "../games/scores.js";
 import { tone, wakeAudio } from "../games/sound.js";
@@ -30,12 +33,22 @@ const fmt = (n) => n.toLocaleString("en-US");
 
 /* ---------- Scores: this device's first, the shared board when the network answers ---------- */
 
-const finished = leaderboard(scores("ug.pb", "pinball"), "/pinball", {
+const board = leaderboard(scores("ug.pb", "pinball"), "/pinball", {
   myList: $("pb-my"),
   myNote: $("pb-mn"),
   boardList: $("pb-lb"),
   meOut: $("pb-me"),
 });
+
+/** The session a game counts under, and the header's Synced / Offline. */
+const sync = live("pinball", $("pb-lv"));
+
+/** Start a game, and its session. */
+function start() {
+  document.body.classList.add("pb-on");
+  newGame();
+  sync.begin(() => ({ s: game.score, p: document.hidden ? 1 : 0 }));
+}
 
 /* ---------- Messages and counters ---------- */
 
@@ -88,7 +101,13 @@ onEvents({
   change: paintCounters,
   over: (score) => {
     document.body.classList.remove("pb-on");
-    finished(score);
+    board.finished(score);
+    sync.end({ s: score }).then((result) => {
+      if (!result) return;
+      board.counted(result);
+      const line = placed(result);
+      if (line && game.state !== "play") say(line, 6);
+    });
   },
 });
 
@@ -136,8 +155,7 @@ function press(side, down) {
   wakeAudio();
   buttons[side].classList.toggle("on", down);
   if (down && game.state !== "play") {
-    document.body.classList.add("pb-on");
-    newGame();
+    start();
     return;
   }
   flip(side, down);
@@ -172,10 +190,8 @@ function key(e, down) {
     return;
   }
   wakeAudio();
-  if (down && game.state !== "play") {
-    document.body.classList.add("pb-on");
-    newGame();
-  } else pull(down);
+  if (down && game.state !== "play") start();
+  else pull(down);
 }
 
 window.addEventListener("keydown", (e) => key(e, true));
@@ -190,7 +206,10 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     cancelAnimationFrame(raf);
     raf = 0;
+    // Hidden, the table stands still: said at once, so the wait is not a missed sync.
+    if (sync.playing()) sync.pause();
   } else if (!raf) {
+    if (sync.playing()) sync.resume();
     last = 0;
     raf = requestAnimationFrame(frame);
   }

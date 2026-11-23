@@ -2,16 +2,20 @@
  * Snake: the page around the board. The header (Back, the device's best, the
  * score), swipes and keys, sound, the message over the board, and the scores.
  * It is offline first: once loaded it plays with no network, and its scores
- * live on the device (../games/scores.js).
+ * live on the device (../games/scores.js). Signed in and online, a game is
+ * played in sync with the server (../games/live.js), which replays its turns;
+ * only such a game goes on the board.
  *
  * The game itself is game.js (the rules) and render.js (how it is drawn).
  */
-import { leaderboard } from "../games/board.js";
+import { leaderboard, placed } from "../games/board.js";
+import { live } from "../games/live.js";
 import { keepOffline } from "../games/offline.js";
 import { scores } from "../games/scores.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
-import { COLS, ROWS, game, lay, newGame, step, stepMs, turn } from "./game.js";
+import { LETTER, seeded } from "../../src/social/snakeRules.ts";
+import { COLS, ROWS, game, lay, newGame, step, stepMs, takeLog, turn } from "./game.js";
 import { dark, draw, fit, ready } from "./render.js";
 
 /** @typedef {import("./game.js").Dir} Dir */
@@ -40,12 +44,15 @@ const DYING = 700;
 /* ---------- Scores: this device's first, the shared board when the network answers ---------- */
 
 const store = scores("ug.sn", "snake");
-const finished = leaderboard(store, "/snake", {
+const board = leaderboard(store, "/snake", {
   myList: $("sn-my"),
   myNote: $("sn-mn"),
   boardList: $("sn-lb"),
   meOut: $("sn-me"),
 });
+
+/** The session a game counts under, and the header's Synced / Offline. */
+const sync = live("snake", $("sn-lv"));
 
 /* ---------- Messages and counters ---------- */
 
@@ -120,7 +127,13 @@ function advance() {
   }
   // The score is safe before anything else happens, whatever comes next.
   const best = game.score > store.best();
-  finished(game.score);
+  board.finished(game.score);
+  sync.end({}).then((result) => {
+    if (!result) return;
+    board.counted(result);
+    const line = placed(result);
+    if (line && game.state !== "play") say(line);
+  });
   paintCounters();
   (best ? SOUNDS.best : SOUNDS.over)();
   say(result === "full" ? "You filled the board!" : best ? "New best!" : "Game over");
@@ -143,7 +156,14 @@ function settle() {
 function start(dir) {
   if (dyingUntil) return;
   wakeAudio();
-  newGame(dir);
+  // Its session's seed places the apples, so the server can place them the same.
+  const session = sync.begin(
+    (first) => ({ k: game.steps, t: takeLog(), s: game.score, p: paused ? 1 : 0, ...(first ? { d: LETTER[dir] } : {}) }),
+    (body) => {
+      game.log = (body.t || "") + game.log;
+    },
+  );
+  newGame(dir, session?.apples ? seeded(session.apples) : Math.random);
   document.body.classList.add("sn-on");
   // The first step is due at once, so the snake sets off with the swipe.
   owed = stepMs();
@@ -158,12 +178,14 @@ function start(dir) {
 function pause() {
   if (game.state !== "play" || paused) return;
   paused = true;
+  sync.pause();
   say(`Paused. ${AGAIN}`);
 }
 
 function resume() {
   if (!paused) return;
   paused = false;
+  sync.resume();
   last = 0;
   say("");
   run();

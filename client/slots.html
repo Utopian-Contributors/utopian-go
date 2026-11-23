@@ -24,6 +24,7 @@
         </svg>
         Back
       </button>
+      <span class="live" id="sl-lv" role="status">Offline</span>
       <span class="sl-best" id="sl-bs"></span>
       <output class="sl-cr" id="sl-cr" aria-label="Credits">100</output>
     </header>
@@ -34,7 +35,7 @@
       <section class="sl-play" aria-label="Fruit Slots">
         <div class="sl-goal">
           <div class="sl-bar"><i id="sl-pg"></i></div>
-          <p id="sl-gl">Reach 1,000 to win Fruit statuses</p>
+          <p id="sl-gl">1,000 credits buy a fruit status</p>
         </div>
         <div class="sl-mc" id="sl-mc">
           <div class="sl-reels" id="sl-rs" role="img" aria-label="Reels"></div>
@@ -44,15 +45,13 @@
         <div class="sl-bets" id="sl-bt" role="radiogroup" aria-label="Bet"></div>
         <button type="button" class="sl-go" id="sl-go" disabled>Spin</button>
         <div class="sl-row">
-          <button type="button" class="sl-link" id="sl-co" hidden>Cash out</button>
+          <button type="button" class="sl-link" id="sl-by" disabled>Buy a status</button>
           <span id="sl-lf"></span>
           <button type="button" class="sl-link" id="sl-py">Pays</button>
         </div>
       </section>
 
       <aside class="sl-side">
-        <!-- Prizes held: won here, or given. Unlock one, or give it on. -->
-        <section class="sl-card sl-prz" id="sl-pz" hidden></section>
         <section class="sl-card">
           <h2>Everyone</h2>
           <ol class="sl-lb" id="sl-lb"></ol>
@@ -69,12 +68,19 @@
       <button type="button" class="sl-go" data-close>Done</button>
     </dialog>
 
-    <!-- Reaching the top: the prize, to unlock now or to give. -->
-    <dialog class="sl-sheet sl-win" id="sl-win" aria-labelledby="sl-win-h">
-      <div class="sl-burst" aria-hidden="true"></div>
-      <h2 id="sl-win-h">1,000</h2>
-      <p>Jackpot. Fruit statuses are yours to unlock, or to give to someone.</p>
-      <div class="sl-acts" id="sl-wa"></div>
+    <!-- Spending credits: one status, for you or as a gift, which they unlock free in the Shop. -->
+    <dialog class="sl-sheet" id="sl-buy" aria-labelledby="sl-buy-h">
+      <h2 id="sl-buy-h">Buy a status</h2>
+      <p class="sl-fine">1,000 credits each. Wear it after your name, or give it to someone.</p>
+      <div class="sl-fr" id="sl-fr"></div>
+      <div class="sl-bets sl-who" id="sl-wh" role="radiogroup" aria-label="Who is it for?">
+        <button type="button" role="radio" data-gift="0">For me</button>
+        <button type="button" role="radio" data-gift="1">A gift</button>
+      </div>
+      <input class="sl-to" id="sl-to" placeholder="username" maxlength="17" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Who is it for?" hidden />
+      <p class="sl-err" id="sl-be" role="alert"></p>
+      <button type="button" class="sl-go" id="sl-bb" disabled>Pick a status</button>
+      <button type="button" class="sl-link sl-x" data-close>Cancel</button>
     </dialog>
 
     <script src="/slots.js" defer></script>

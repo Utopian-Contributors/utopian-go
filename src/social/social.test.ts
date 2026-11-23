@@ -28,7 +28,10 @@ import { scrub } from "./guard";
 import { AUDIO_BYTES, MAX_AUDIO_MS, MAX_POST, SOCIAL_BYTES, TINY_BYTES, adKeyword, adText, adUrl, postText, postWait, username, waitText } from "./limits";
 import { sendAvatar, sendBadge, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
 import { badgeFor, isBadgePng, markOf, statusFor } from "./shop";
-import { BETS, CHERRIES, FRUITS, REELS, START, THREE, TOP, WEIGHTS, isBet, isOver, lineOf, payout, settle } from "./slots";
+import { BETS, CHERRIES, FRUITS, MAX_CREDITS, REELS, START, STATUS_PRICE, THREE, WEIGHTS, isBet, isOver, lineOf, payout, settle } from "./slots";
+import { GAP_MS, PAUSE_MS, PINBALL_BURST, endSession, openSessions, resetSessions, startSession, syncSession } from "./play";
+import { type Dir, type SnakeState, BACK, COLS, DIRS, LETTER, ROWS, advance, fresh, lay, seeded, stepMsAt } from "./snakeRules";
+import { badgesForRank } from "./shop";
 import { commitOf, drawStops, newSeed } from "./slotDraw";
 import sharp from "sharp";
 import { type AdCreative, type AdOrder, SCHEMA, TIMELINE_PAGE, closePool, createPost, databaseUrl, ensureSchema, getAd, getUser, openShopOrder, payOrder, payShopOrder, postPayment, resetSocial, saveAd } from "./db";
@@ -750,29 +753,26 @@ test("accounts, posts, friends, phrase, and a passkey", async () => {
     const { privateKey, credId } = await addPasskey(call, ada.json?.passkeySetup, base, Buffer.from("credential-id-001"));
     assert.deepEqual(((await call("GET", "/api/social/me")).json?.me as { passkey: unknown }).passkey, { id: credId.toString("base64url") });
 
-    // Pinball: a game is kept only when it beats the account's best, and anything not a score is refused.
+    // Pinball and Snake: no score is taken as posted any more; a game counts
+    // only through a session synced from its start to its end (play.ts, below).
     // From an address of its own, so these writes leave the rest of the test its allowance.
     client = "10.0.7.7";
     assert.deepEqual((await call("GET", "/api/social/pinball")).json, { top: [], best: 0 });
-    const played = await call("POST", "/api/social/pinball", { score: 12_340 });
+    for (const game of ["pinball", "snake"]) {
+      assert.equal((await call("POST", `/api/social/${game}`, { score: 12_340 })).status, 404, `${game} takes no score`);
+    }
+    const session = await call("POST", "/api/social/pinball/start");
+    assert.equal(session.status, 200, session.text);
+    assert.equal((await call("POST", "/api/social/pinball/sync", { id: (session.json as { id: string }).id, s: 0 })).status, 200);
+    assert.equal((await call("POST", "/api/social/pinball/end", { id: (session.json as { id: string }).id, s: 12_345 })).status, 409, "not a pinball score");
+    const synced = ((await call("POST", "/api/social/pinball/start")).json as { id: string }).id;
+    await call("POST", "/api/social/pinball/sync", { id: synced, s: 0 });
+    const played = await call("POST", "/api/social/pinball/end", { id: synced, s: 12_340 });
     assert.equal(played.status, 200, played.text);
-    assert.deepEqual(played.json, { top: [{ name: "ada", score: 12_340 }], best: 12_340 });
-    assert.equal((await call("POST", "/api/social/pinball", { score: 500 })).json?.best, 12_340);
-    for (const score of [-10, 12_345, 1.5, "100", 3e9, null]) {
-      assert.equal((await call("POST", "/api/social/pinball", { score })).status, 400, JSON.stringify(score));
-    }
-    assert.equal((await call("POST", "/api/social/pinball", { score: 20_000 })).json?.best, 20_000);
-    // Snake: the same board of its own, and nothing over a full 15 by 23 grid's worth of apples.
-    assert.deepEqual((await call("GET", "/api/social/snake")).json, { top: [], best: 0 });
-    const slithered = await call("POST", "/api/social/snake", { score: 120 });
-    assert.equal(slithered.status, 200, slithered.text);
-    assert.deepEqual(slithered.json, { top: [{ name: "ada", score: 120 }], best: 120 });
-    assert.equal((await call("POST", "/api/social/snake", { score: 50 })).json?.best, 120);
-    for (const score of [-10, 125, 1.5, "100", 3_430, null]) {
-      assert.equal((await call("POST", "/api/social/snake", { score })).status, 400, JSON.stringify(score));
-    }
-    assert.equal((await call("POST", "/api/social/snake", { score: 3_420 })).json?.best, 3_420);
-    assert.equal((await call("GET", "/api/social/pinball")).json?.best, 20_000);
+    assert.deepEqual([(played.json as Record<string, unknown>).score, (played.json as Record<string, unknown>).best, (played.json as Record<string, unknown>).rank], [12_340, 12_340, 1]);
+    assert.deepEqual((played.json as Record<string, unknown>).unlocked, ["bd:pb1", "bd:pb2", "bd:pb3", "bd:pb4", "bd:pb5"], "first place: every mushroom");
+    assert.deepEqual((played.json as Record<string, unknown>).top, [{ name: "ada", score: 12_340 }]);
+    assert.equal((await call("POST", "/api/social/pinball/end", { id: synced, s: 99_990 })).status, 409, "a session ends once");
     client = "10.0.0.1";
     /**
      * A password login, and the passkey step every password login takes now.
@@ -2813,10 +2813,11 @@ test("Fruit Slots' odds: what a line pays, exactly, and stops drawn evenly and o
   assert.equal(payout(["cherry", "lime", "cherry"]), CHERRIES[2]);
   assert.equal(payout(["lime", "lime", "cherry"]), CHERRIES[1]);
   assert.equal(payout(["lime", "lime", "grape"]), 0);
-  // Credits: the bet off, the win on, never past the top; the game is over at the top or below the smallest bet.
+  // Credits: the bet off, the win on, no cap short of a safe integer; lost below the smallest bet.
   assert.equal(settle(100, 10, 0), 90);
-  assert.equal(settle(990, 25, 4), 1000);
-  assert.ok(isOver(TOP) && isOver(0) && !isOver(5) && !isOver(START));
+  assert.equal(settle(990, 25, 4), 1065, "a balance grows past 1,000");
+  assert.equal(settle(MAX_CREDITS, 25, 500), MAX_CREDITS);
+  assert.ok(isOver(0) && isOver(4) && !isOver(5) && !isOver(START) && !isOver(5000));
   for (const bad of [0, 1, 7, "10", 10.5, -5, null, [10], 1000]) assert.ok(!isBet(bad), JSON.stringify(bad));
   assert.ok(BETS.every(isBet));
   // Deterministic from the secret, different across secrets and spins, and evenly spread.
@@ -2829,10 +2830,12 @@ test("Fruit Slots' odds: what a line pays, exactly, and stops drawn evenly and o
   for (const count of counts) assert.ok(count > 2700 && count < 3300, `stop drawn ${count} of ~3000 times`);
 });
 
-test("Fruit Slots is played on the server: no score is taken, a spin is played once, and a prize is unlocked or given once", async () => {
+/** An HTTP harness of its own for a test: accounts with passkeys, each with its cookie, and direct SQL for setting a scene. */
+async function gameServer() {
   await useTestDatabase();
   await ensureSchema();
   await resetSocial();
+  resetSessions();
   const sql = new Client({ connectionString: databaseUrl() });
   await sql.connect();
   const app = express();
@@ -2847,7 +2850,7 @@ test("Fruit Slots is played on the server: no score is taken, a spin is played o
   const base = `http://127.0.0.1:${address.port}`;
   let ip = 0;
   type Res = { status: number; json: Record<string, any>; text: string };
-  async function raw(method: string, urlPath: string, body?: unknown, extra: Record<string, string> = {}, jar = ""): Promise<Res> {
+  async function raw(method: string, urlPath: string, body?: unknown, extra: Record<string, string> = {}, jar = "") {
     const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": `10.6.${++ip % 250}.${ip % 199}`, ...extra };
     if (jar) headers.Cookie = jar;
     if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -2859,25 +2862,38 @@ test("Fruit Slots is played on the server: no score is taken, a spin is played o
     } catch {
       // Not JSON.
     }
-    return Object.assign({ status: res.status, json, text }, { cookies: res.headers.getSetCookie?.() ?? [] });
+    return { status: res.status, json, text, cookies: res.headers.getSetCookie?.() ?? [] };
   }
   async function join(name: string, passkey = true) {
     let jar = "";
-    const call = async (method: string, urlPath: string, body?: unknown, extra: Record<string, string> = {}) => {
-      const res = (await raw(method, urlPath, body, extra, jar)) as Res & { cookies: string[] };
+    const call = async (method: string, urlPath: string, body?: unknown, extra: Record<string, string> = {}): Promise<Res> => {
+      const res = await raw(method, urlPath, body, extra, jar);
       for (const cookie of res.cookies) jar = cookie.split(";")[0];
-      return res as Res;
+      return res;
     };
     const joined = await call("POST", "/api/social/register", { username: name, password: "password1", terms: true });
     assert.equal(joined.status, 200, joined.text);
     if (passkey) await addPasskey(call, joined.json?.passkeySetup, base);
     return call;
   }
-  /** A secret whose first spin pays at least `times`, to stand in for a game's own. */
-  function seedPaying(times: number) {
+  return {
+    sql,
+    raw,
+    join,
+    async close() {
+      server.close();
+      await sql.end();
+    },
+  };
+}
+
+test("Fruit Slots is played on the server: a balance kept until it runs out, a spin played once, and statuses bought with credits", async () => {
+  const { sql, raw, join, close } = await gameServer();
+  /** A secret whose first spin pays exactly `times` (0 for nothing), to stand in for a game's own. */
+  function seedPaying(test: (times: number) => boolean) {
     for (;;) {
       const fresh = newSeed();
-      if (payout(lineOf(drawStops(fresh.seed, 0))) >= times) return fresh;
+      if (test(payout(lineOf(drawStops(fresh.seed, 0))))) return fresh;
     }
   }
   try {
@@ -2887,37 +2903,33 @@ test("Fruit Slots is played on the server: no score is taken, a spin is played o
     const nokey = await join("nokey", false);
 
     // Signed out: the board only. Nothing to play, nothing to post.
-    const out = await raw("GET", "/api/social/slots");
-    assert.deepEqual(out.json, { top: [], best: 0, signed: false });
+    assert.deepEqual((await raw("GET", "/api/social/slots")).json, { top: [], best: 0, signed: false });
     assert.equal((await raw("POST", "/api/social/slots/new", {})).status, 401);
     assert.equal((await raw("POST", "/api/social/slots/spin", { bet: 5, n: 0 })).status, 401);
-    assert.equal((await raw("POST", "/api/social/shop/prize/abc/unlock", {})).status, 401);
+    assert.equal((await raw("POST", "/api/social/slots/buy", { status: "mango" })).status, 401);
     // No passkey, no game; and no page elsewhere may play for you.
     assert.equal((await nokey("POST", "/api/social/slots/new", {})).status, 403);
     assert.equal((await amy("POST", "/api/social/slots/new", {}, { Origin: "https://evil.example" })).status, 403, "cross-origin");
     assert.equal((await amy("POST", "/api/social/slots/new", {}, { Origin: "" })).status, 403, "no origin");
-    // There is no route that takes a score: the board is the server's to write.
-    for (const path of ["/api/social/slots", "/api/social/slots/score"]) {
-      assert.equal((await amy("POST", path, { score: TOP })).status, 404, path);
+    // No route takes a score, and banking is gone: a balance is kept until it runs out.
+    for (const path of ["/api/social/slots", "/api/social/slots/score", "/api/social/slots/cashout"]) {
+      assert.equal((await amy("POST", path, { score: 1000, n: 0 })).status, 404, path);
     }
 
-    // A spin needs a game.
-    assert.equal((await amy("POST", "/api/social/slots/spin", { bet: 5, n: 0 })).status, 409);
+    assert.equal((await amy("POST", "/api/social/slots/spin", { bet: 5, n: 0 })).status, 409, "a spin needs a game");
     let state = await amy("GET", "/api/social/slots");
-    assert.equal(state.json.game, null);
-    assert.equal(state.json.left, 3);
-    assert.equal(state.json.name, "amy");
+    assert.deepEqual([state.json.game, state.json.left, state.json.name, state.json.statuses], [null, 1, "amy", []]);
 
-    // Two presses at once start one game.
+    // Three presses at once start one game.
     const starts = await Promise.all([1, 2, 3].map(() => amy("POST", "/api/social/slots/new", {})));
     assert.ok(starts.every((r) => r.status === 200), starts.map((r) => r.text).join());
     assert.equal(new Set(starts.map((r) => r.json.game.id)).size, 1, "one open game");
-    assert.equal(starts[0].json.left, 2);
+    assert.equal(starts[0].json.left, 0, "today's fresh start is used");
     const game = starts[0].json.game;
-    assert.deepEqual([game.credits, game.spins, game.over], [START, 0, false]);
+    assert.deepEqual([game.credits, game.spins, game.over, game.peak], [START, 0, false, START]);
     assert.equal(game.secret, undefined, "the secret stays on the server while the game is open");
-    assert.match(game.commit, /^[0-9a-f]{64}$/);
-    assert.ok(!(await amy("GET", "/api/social/slots")).text.includes((await sql.query("SELECT seed FROM slot_games WHERE id = $1", [game.id])).rows[0].seed));
+    const seedRow = (await sql.query("SELECT seed FROM slot_games WHERE id = $1", [game.id])).rows[0].seed;
+    assert.ok(!(await amy("GET", "/api/social/slots")).text.includes(seedRow));
 
     // Anything that is not a bet, or not the next spin, is refused and plays nothing.
     for (const bet of [0, 1, 7, 100, -5, "10", 10.5, null, [5], { bet: 5 }, 1e300]) {
@@ -2927,145 +2939,301 @@ test("Fruit Slots is played on the server: no score is taken, a spin is played o
       assert.equal((await amy("POST", "/api/social/slots/spin", { bet: 5, n })).status, 400, JSON.stringify(n));
     }
     assert.equal((await amy("POST", "/api/social/slots/spin", { bet: 5, n: 1 })).status, 409, "ahead of the game");
+    assert.equal((await bob("POST", "/api/social/slots/spin", { bet: 5, n: 0 })).status, 409, "bob has no game; amy's is not his");
     assert.equal((await amy("GET", "/api/social/slots")).json.game.spins, 0, "nothing was played");
-    // Bob cannot play amy's game: every spin is the caller's own game.
-    assert.equal((await bob("POST", "/api/social/slots/spin", { bet: 5, n: 0 })).status, 409);
 
     // The same spin sent five times at once is played once.
     const racing = await Promise.all([1, 2, 3, 4, 5].map(() => amy("POST", "/api/social/slots/spin", { bet: 10, n: 0 })));
     assert.deepEqual(racing.map((r) => r.status).sort(), [200, 409, 409, 409, 409], racing.map((r) => r.text).join());
     const first = racing.find((r) => r.status === 200)!.json.game;
-    assert.equal(first.spins, 1);
     assert.equal(first.credits, settle(START, 10, payout(lineOf(first.stops))));
     assert.equal(first.win, 10 * payout(lineOf(first.stops)));
-    // A bet past the credits is refused.
     await sql.query("UPDATE slot_games SET credits = 20 WHERE id = $1", [game.id]);
-    assert.equal((await amy("POST", "/api/social/slots/spin", { bet: 25, n: 1 })).status, 400);
+    assert.equal((await amy("POST", "/api/social/slots/spin", { bet: 25, n: 1 })).status, 400, "a bet past the credits");
     await sql.query("UPDATE slot_games SET credits = $2 WHERE id = $1", [game.id, first.credits]);
 
-    // Play on, then cash out: the secret comes out, and every spin replays from it exactly.
-    const played = [{ bet: 10, stops: first.stops }];
-    let credits = first.credits;
+    // The balance is the same on the next visit: nothing ends it but running out.
     let current = first;
-    while (!current.over && played.length < 12) {
+    const played = [{ bet: 10, stops: first.stops }];
+    for (let i = 0; i < 6 && !current.over; i++) {
       const r = await amy("POST", "/api/social/slots/spin", { bet: 5, n: current.spins });
       assert.equal(r.status, 200, r.text);
       current = r.json.game;
       played.push({ bet: 5, stops: current.stops });
     }
     if (!current.over) {
-      assert.equal((await amy("POST", "/api/social/slots/cashout", { n: current.spins + 1 })).status, 409, "a stale cash-out");
-      const cashed = await amy("POST", "/api/social/slots/cashout", { n: current.spins });
-      assert.equal(cashed.status, 200, cashed.text);
-      current = cashed.json.game;
-      assert.equal((await amy("POST", "/api/social/slots/cashout", { n: current.spins })).status, 409, "once");
-      assert.equal((await amy("POST", "/api/social/slots/spin", { bet: 5, n: current.spins })).status, 409, "an ended game plays no more");
+      const later = (await amy("GET", "/api/social/slots")).json.game;
+      assert.deepEqual([later.id, later.credits, later.spins], [game.id, current.credits, current.spins], "kept as it was");
+      // Run it dry: a losing spin at 5 credits ends it.
+      const dry = seedPaying((t) => t === 0);
+      const n = current.spins;
+      await sql.query("UPDATE slot_games SET seed = $2, commit = $3, credits = 5, spins = 0 WHERE id = $1", [game.id, dry.seed, dry.commit]);
+      const lost = await amy("POST", "/api/social/slots/spin", { bet: 5, n: 0 });
+      assert.deepEqual([lost.json.game.credits, lost.json.game.over], [0, true]);
+      assert.equal(commitOf(lost.json.game.secret), dry.commit, "the secret comes out once the game is over");
+      assert.deepEqual(drawStops(lost.json.game.secret, 0), lost.json.game.stops);
+      assert.ok(n > 0);
+    } else {
+      // It ran dry on its own: every spin replays from the secret it reveals.
+      assert.equal(commitOf(current.secret), game.commit);
+      let credits = START;
+      played.forEach((spin, n) => {
+        assert.deepEqual(drawStops(current.secret, n), spin.stops, `spin ${n}`);
+        credits = settle(credits, spin.bet, payout(lineOf(spin.stops)));
+      });
+      assert.equal(current.credits, credits);
     }
-    assert.ok(current.over);
-    assert.equal(commitOf(current.secret), game.commit, "the secret is the one committed to");
-    credits = START;
-    played.forEach((spin, n) => {
-      assert.deepEqual(drawStops(current.secret, n), spin.stops, `spin ${n}`);
-      credits = settle(credits, spin.bet, payout(lineOf(spin.stops)));
-    });
-    assert.equal(current.credits, credits, "the credits are the spins' and nothing else");
-    state = await amy("GET", "/api/social/slots");
-    assert.equal(state.json.best, credits > 0 ? credits : 0, "an ended game goes on the board");
-    assert.equal(state.json.game, null);
+    assert.equal((await amy("POST", "/api/social/slots/spin", { bet: 5, n: 1 })).status, 409, "a lost game plays no more");
+    // One fresh start a day.
+    const tomorrow = await amy("POST", "/api/social/slots/new", {});
+    assert.equal(tomorrow.status, 429, tomorrow.text);
 
-    // Three games a day, and no more, however they are asked for.
-    await amy("POST", "/api/social/slots/new", {});
-    await amy("POST", "/api/social/slots/cashout", { n: 0 });
-    await amy("POST", "/api/social/slots/new", {});
-    await amy("POST", "/api/social/slots/cashout", { n: 0 });
-    const fourth = await amy("POST", "/api/social/slots/new", {});
-    assert.equal(fourth.status, 429, fourth.text);
-    assert.equal((await amy("GET", "/api/social/slots")).json.left, 0);
-    // A cash-out at 100 does not beat a better game on the board.
-    assert.equal((await amy("GET", "/api/social/slots")).json.best, Math.max(credits, START));
-
-    // Reaching the top: credits capped at TOP, a prize, the board, and the game over.
+    // The board is the highest balance, written as a spin reaches it.
     const bobGame = (await bob("POST", "/api/social/slots/new", {})).json.game;
-    const lucky = seedPaying(4);
+    const lucky = seedPaying((t) => t >= 4);
     await sql.query("UPDATE slot_games SET seed = $2, commit = $3, credits = 990 WHERE id = $1", [bobGame.id, lucky.seed, lucky.commit]);
-    const top = await bob("POST", "/api/social/slots/spin", { bet: 5, n: 0 });
-    assert.equal(top.status, 200, top.text);
-    assert.deepEqual([top.json.game.credits, top.json.game.over, top.json.game.top], [TOP, true, true]);
-    const prize = top.json.prize;
-    assert.match(prize, /^[A-Za-z0-9_-]+$/);
-    assert.equal((await bob("GET", "/api/social/slots")).json.best, TOP);
-    assert.deepEqual((await raw("GET", "/api/social/slots")).json.top[0], { name: "bob", score: TOP });
-    const held = (await bob("GET", "/api/social/shop")).json.prizes;
-    assert.deepEqual(held.map((p: { id: string; pack: string; wonBy: string; givenBy: null }) => [p.id, p.pack, p.wonBy, p.givenBy]), [[prize, "fruit", "bob", null]]);
+    const big = await bob("POST", "/api/social/slots/spin", { bet: 25, n: 0 });
+    assert.equal(big.status, 200, big.text);
+    assert.ok(big.json.game.credits > 1000 && !big.json.game.over, "past 1,000 and still playing");
+    assert.equal(big.json.game.peak, big.json.game.credits);
+    assert.equal((await bob("GET", "/api/social/slots")).json.best, big.json.game.credits);
+    assert.deepEqual((await raw("GET", "/api/social/slots")).json.top[0], { name: "bob", score: big.json.game.credits });
 
-    // Nobody else can touch bob's prize, and nothing that is not one is any.
-    assert.equal((await amy("POST", `/api/social/shop/prize/${prize}/unlock`, {})).status, 404);
-    assert.equal((await amy("POST", `/api/social/shop/prize/${prize}/give`, { to: "amy" })).status, 404);
-    assert.equal((await bob("POST", "/api/social/shop/prize/nope/unlock", {})).status, 404);
-    assert.equal((await bob("POST", `/api/social/shop/prize/${"x".repeat(40)}/unlock`, {})).status, 404);
-    assert.equal((await bob("POST", `/api/social/shop/prize/${prize}/unlock`, {}, { Origin: "https://evil.example" })).status, 403);
-    // Giving: not to oneself, no one, a bad name, or someone who owns the pack.
-    assert.equal((await bob("POST", `/api/social/shop/prize/${prize}/give`, { to: "bob" })).status, 400);
-    assert.equal((await bob("POST", `/api/social/shop/prize/${prize}/give`, { to: "zed" })).status, 404);
-    for (const to of ["", "a", "amy; DROP TABLE users", null, ["amy"], 5]) {
-      assert.equal((await bob("POST", `/api/social/shop/prize/${prize}/give`, { to })).status, 400, JSON.stringify(to));
+    // Spending: a status for 1,000 credits, for yourself or as a gift.
+    await sql.query("UPDATE slot_games SET credits = 2500 WHERE id = $1", [bobGame.id]);
+    for (const status of ["toString", "kiwi", "", null, ["mango"]]) {
+      assert.equal((await bob("POST", "/api/social/slots/buy", { status })).status, 400, JSON.stringify(status));
     }
-    await sql.query(
-      `INSERT INTO shop_orders (id, name, for_name, pack, reference, memo, pay_to, cents, usdc, at, paid_at, matched)
-       VALUES ('catfruit','cat','cat','fruit','ref-cat','','',500,0,1,1,'amount')`,
-    );
-    assert.equal((await bob("POST", `/api/social/shop/prize/${prize}/give`, { to: "cat" })).status, 409, "cat owns it");
+    assert.equal((await bob("POST", "/api/social/slots/buy", { status: "mango" }, { Origin: "https://evil.example" })).status, 403);
+    assert.equal((await bob("POST", "/api/social/shop/wear", { status: "mango" })).status, 403, "not yet");
+    const mine = await bob("POST", "/api/social/slots/buy", { status: "mango" });
+    assert.equal(mine.status, 200, mine.text);
+    assert.deepEqual([mine.json.game.credits, mine.json.statuses, mine.json.gift], [1500, ["mango"], false]);
+    assert.equal((await bob("POST", "/api/social/slots/buy", { status: "mango" })).status, 409, "had already");
+    assert.equal((await bob("POST", "/api/social/slots/buy", { status: "mango", for: "bob" })).status, 409, "for oneself is for oneself");
+    assert.equal((await bob("POST", "/api/social/shop/wear", { status: "mango" })).status, 200, "worn");
+    assert.equal((await bob("POST", "/api/social/shop/wear", { status: "lime" })).status, 403, "only what was bought");
+    assert.deepEqual((await bob("GET", "/api/social/shop")).json.items, ["st:mango"]);
+    // A gift: not to no one, nor to a bad name; it costs the same, and the other person unlocks it.
+    assert.equal((await bob("POST", "/api/social/slots/buy", { status: "lime", for: "zed" })).status, 404);
+    assert.equal((await bob("POST", "/api/social/slots/buy", { status: "lime", for: "a b" })).status, 400);
+    assert.equal((await bob("GET", "/api/social/slots")).json.game.credits, 1500, "refusals cost nothing");
+    // Two buys at once with credits for one: one is bought, one refused.
+    const both = await Promise.all([
+      bob("POST", "/api/social/slots/buy", { status: "lime", for: "cat" }),
+      bob("POST", "/api/social/slots/buy", { status: "grape", for: "cat" }),
+    ]);
+    assert.deepEqual(both.map((r) => r.status).sort(), [200, 400], both.map((r) => r.text).join());
+    assert.equal((await bob("GET", "/api/social/slots")).json.game.credits, 500);
+    const gift = (await cat("GET", "/api/social/shop")).json.prizes;
+    assert.equal(gift.length, 1);
+    assert.equal(gift[0].givenBy, "bob");
+    const fruit = gift[0].item.slice(3);
+    assert.ok(["lime", "grape"].includes(fruit));
+    // Only cat can unlock it, once; then it is cat's to wear.
+    assert.equal((await bob("POST", `/api/social/shop/prize/${gift[0].id}/unlock`, {})).status, 404);
+    assert.equal((await cat("POST", "/api/social/shop/wear", { status: fruit })).status, 403);
+    const unlocks = await Promise.all([1, 2, 3].map(() => cat("POST", `/api/social/shop/prize/${gift[0].id}/unlock`, {})));
+    assert.deepEqual(unlocks.map((r) => r.status).sort(), [200, 404, 404]);
+    assert.equal((await cat("POST", "/api/social/shop/wear", { status: fruit })).status, 200);
+    assert.deepEqual((await cat("GET", "/api/social/shop")).json.owned, [], "one status, not the pack");
+    // Nobody is given what they have.
+    await sql.query("UPDATE slot_games SET credits = 1000 WHERE id = $1", [bobGame.id]);
+    assert.equal((await bob("POST", "/api/social/slots/buy", { status: fruit, for: "cat" })).status, 409);
+    // Spending a balance down past the smallest bet ends it, as losing does.
+    const last = await bob("POST", "/api/social/slots/buy", { status: "peach" });
+    assert.deepEqual([last.json.game.credits, last.json.game.over], [0, true]);
+    assert.equal((await bob("POST", "/api/social/slots/buy", { status: "apple" })).status, 409, "nothing left to spend");
 
-    // Given to amy: bob no longer holds it; amy unlocks it once, for nothing.
-    const given = await bob("POST", `/api/social/shop/prize/${prize}/give`, { to: "@Amy" });
-    assert.equal(given.status, 200, given.text);
-    assert.deepEqual(given.json.prizes, []);
-    assert.equal((await bob("POST", `/api/social/shop/prize/${prize}/unlock`, {})).status, 404, "bob gave it away");
-    assert.equal((await bob("POST", `/api/social/shop/prize/${prize}/give`, { to: "cat" })).status, 404);
-    const amyShop = (await amy("GET", "/api/social/shop")).json;
-    assert.deepEqual(amyShop.owned, []);
-    assert.equal(amyShop.prizes[0].givenBy, "bob");
-    assert.equal((await amy("POST", "/api/social/shop/wear", { status: "mango" })).status, 403, "not before it is unlocked");
-    const unlocks = await Promise.all([1, 2, 3].map(() => amy("POST", `/api/social/shop/prize/${prize}/unlock`, {})));
-    assert.deepEqual(unlocks.map((r) => r.status).sort(), [200, 404, 404], unlocks.map((r) => r.text).join());
+    // A prize from before, for the whole pack, still unlocks the whole pack.
+    await sql.query(`INSERT INTO slot_prizes (id, game, pack, won_by, holder, won_at) VALUES ('oldprize','g-old','fruit','amy','amy',1)`);
+    assert.equal((await amy("POST", "/api/social/shop/prize/oldprize/unlock", {})).status, 200);
     assert.deepEqual((await amy("GET", "/api/social/shop")).json.owned, ["fruit"]);
-    assert.deepEqual((await amy("GET", "/api/social/shop")).json.prizes, []);
-    assert.equal((await amy("POST", "/api/social/shop/wear", { status: "mango" })).status, 200);
-    const order = (await sql.query("SELECT cents, usdc, matched, payer, paid_at FROM shop_orders WHERE for_name = 'amy' AND pack = 'fruit'")).rows;
-    assert.equal(order.length, 1);
-    assert.deepEqual([order[0].cents, Number(order[0].usdc), order[0].matched, order[0].payer], [0, 0, "prize", "bob"]);
-    assert.ok(order[0].paid_at);
-
-    // A prize for a pack its holder owns already stays theirs to give.
-    const catGame = (await cat("POST", "/api/social/slots/new", {})).json.game;
-    const lucky2 = seedPaying(4);
-    await sql.query("UPDATE slot_games SET seed = $2, commit = $3, credits = 995 WHERE id = $1", [catGame.id, lucky2.seed, lucky2.commit]);
-    const catPrize = (await cat("POST", "/api/social/slots/spin", { bet: 5, n: 0 })).json.prize;
-    assert.ok(catPrize);
-    assert.equal((await cat("POST", `/api/social/shop/prize/${catPrize}/unlock`, {})).status, 409);
-    assert.equal((await cat("GET", "/api/social/shop")).json.prizes.length, 1, "kept");
-    assert.equal((await cat("POST", `/api/social/shop/prize/${catPrize}/give`, { to: "amy" })).status, 409, "amy owns it now too");
-    assert.equal((await cat("POST", `/api/social/shop/prize/${catPrize}/give`, { to: "bob" })).status, 200);
-    assert.equal((await bob("POST", `/api/social/shop/prize/${catPrize}/unlock`, {})).status, 200);
-    assert.ok((await bob("GET", "/api/social/shop")).json.owned.includes("fruit"));
-
-    // A game that runs dry ends at once, on the board only if it scored.
-    const amyNext = await sql.query("UPDATE slot_games SET day = day - 1 WHERE name = 'amy'");
-    assert.ok(amyNext.rowCount);
-    const dry = (await amy("POST", "/api/social/slots/new", {})).json.game;
-    let dryRes: Res | null = null;
-    for (;;) {
-      const fresh = newSeed();
-      if (payout(lineOf(drawStops(fresh.seed, 0))) === 0) {
-        await sql.query("UPDATE slot_games SET seed = $2, commit = $3, credits = 5 WHERE id = $1", [dry.id, fresh.seed, fresh.commit]);
-        dryRes = await amy("POST", "/api/social/slots/spin", { bet: 5, n: 0 });
-        break;
-      }
-    }
-    assert.deepEqual([dryRes.json.game.credits, dryRes.json.game.over, dryRes.json.prize], [0, true, null]);
+    assert.equal((await amy("GET", "/api/social/slots")).json.statuses.length, 10);
   } finally {
-    server.close();
-    await sql.end();
+    await close();
+  }
+});
+
+/**
+ * A snake played by a simple bot, as a page would play it, steering for the
+ * apple and away from its body. Gives the syncs a page would send, each with
+ * the time it would be sent, until the snake dies or `limit` steps pass.
+ */
+function botSnake(seed: string, start: number, limit = 4000) {
+  const rand = seeded(seed);
+  const s: SnakeState = fresh();
+  lay(s, "up", rand);
+  s.state = "play";
+  const syncs: { at: number; body: Record<string, unknown> }[] = [{ at: start, body: { d: "u", k: 0, t: "" } }];
+  let now = start;
+  let log = "";
+  let lastSync = start;
+  let steps = 0;
+  const occupied = (x: number, y: number) => s.snake.slice(0, -1).some((c) => c.x === x && c.y === y);
+  while (s.state === "play" && steps < limit) {
+    const options = (Object.keys(DIRS) as Dir[]).filter((d) => d === s.dir || d !== BACK[s.dir]);
+    const head = s.snake[0];
+    const at = (d: Dir) => ({ x: (head.x + DIRS[d][0] + COLS) % COLS, y: (head.y + DIRS[d][1] + ROWS) % ROWS });
+    const safe = options.filter((d) => !occupied(at(d).x, at(d).y));
+    const dist = (d: Dir) => (s.apple ? Math.abs(at(d).x - s.apple.x) + Math.abs(at(d).y - s.apple.y) : 0);
+    const pick = (safe.length ? safe : options).sort((a, b) => dist(a) - dist(b))[0];
+    if (pick !== s.dir) {
+      log += `${steps}${LETTER[pick]}`;
+      s.dir = pick;
+    }
+    now += stepMsAt(s.snake.length);
+    advance(s, rand);
+    steps++;
+    if (now - lastSync >= 2000) {
+      syncs.push({ at: now, body: { k: steps, t: log, s: s.score } });
+      log = "";
+      lastSync = now;
+    }
+  }
+  return { syncs, end: { at: now + 50, body: { k: steps, t: log, s: s.score } }, score: s.score, over: (s.state as string) === "over" };
+}
+
+test("a Snake or Pinball game counts only when synced throughout: replayed, never faster than real time, never out of order", () => {
+  resetSessions();
+  const t0 = 1_000_000;
+  // A real game, synced as a page syncs it, replays to the same score.
+  let session = startSession("amy", "snake", t0);
+  const game = botSnake(session.apples, t0 + 10);
+  assert.ok(game.over && game.score >= 50, `the bot should eat a few apples (${game.score})`);
+  for (const sync of game.syncs) syncSession("amy", "snake", { id: session.id, ...sync.body }, sync.at);
+  assert.equal(endSession("amy", "snake", { id: session.id, ...game.end.body }, game.end.at), game.score);
+  assert.equal(openSessions(), 0, "a game's session goes with it");
+
+  /** Play `game` into a new session, then hand the last sync to `last`, as tampered. */
+  function tamper(last: (body: Record<string, unknown>) => Record<string, unknown>, at = (t: number) => t, end = true) {
+    const s = startSession("amy", "snake", t0);
+    const g = botSnake(s.apples, t0 + 10);
+    for (const sync of end ? g.syncs : g.syncs.slice(0, -1)) syncSession("amy", "snake", { id: s.id, ...sync.body }, sync.at);
+    const final = g.syncs.length > 1 ? g.syncs[g.syncs.length - 1] : g.end;
+    const run = () =>
+      end
+        ? endSession("amy", "snake", { id: s.id, ...last(g.end.body) }, at(g.end.at))
+        : syncSession("amy", "snake", { id: s.id, ...last(final.body) }, at(final.at));
+    return { run, s, g };
+  }
+  // A forged score, a death that never happened, a reversal, turns out of order, garbage.
+  assert.throws(tamper((b) => ({ ...b, s: (b.s as number) + 10 })).run, /isn’t the game’s/);
+  assert.throws(tamper((b) => ({ ...b, k: (b.k as number) - 1 })).run, /hasn’t ended|ended earlier|make no sense/);
+  assert.throws(tamper((b) => ({ ...b, k: (b.k as number) + 5 })).run, /already ended|faster/);
+  assert.throws(tamper((b) => ({ ...b, t: `${b.t}${(b.k as number) - 1}x` })).run, /make no sense/);
+  assert.throws(tamper((b) => ({ ...b, t: "5u3l" }), (t) => t, false).run, /make no sense|turned back|went backwards/);
+  assert.throws(tamper((b) => ({ ...b, k: -1 }), (t) => t, false).run, /backwards/);
+  assert.throws(tamper((b) => ({ ...b, k: "9" }), (t) => t, false).run, /backwards/);
+  // Faster than snakes move: every step played in a fraction of the time.
+  const fast = startSession("amy", "snake", t0);
+  const g = botSnake(fast.apples, t0);
+  syncSession("amy", "snake", { id: fast.id, d: "u", k: 0, t: "" }, t0);
+  assert.throws(() => endSession("amy", "snake", { id: fast.id, ...g.end.body, t: g.syncs.map((x) => x.body.t ?? "").join("") + g.end.body.t }, t0 + 3000), /faster than snakes/);
+  // A missed sync: the game no longer counts, whatever comes after.
+  const gap = startSession("amy", "snake", t0);
+  syncSession("amy", "snake", { id: gap.id, d: "u", k: 0, t: "" }, t0);
+  assert.throws(() => syncSession("amy", "snake", { id: gap.id, k: 0, t: "" }, t0 + GAP_MS + 1), /missed/);
+  assert.throws(() => syncSession("amy", "snake", { id: gap.id, k: 0, t: "" }, t0 + GAP_MS + 2), /isn’t synced/, "gone for good");
+  // Paused, it may wait; but steps can't be taken while paused, so time paused buys nothing.
+  const pause = startSession("amy", "snake", t0);
+  syncSession("amy", "snake", { id: pause.id, d: "u", k: 0, t: "", p: 1 }, t0);
+  syncSession("amy", "snake", { id: pause.id, k: 0, t: "" }, t0 + PAUSE_MS - 1);
+  assert.throws(() => syncSession("amy", "snake", { id: pause.id, k: 40, t: "" }, t0 + PAUSE_MS + 500), /faster than snakes/);
+  // A session is its account's alone, and a new one ends the old.
+  const one = startSession("amy", "snake", t0);
+  assert.throws(() => syncSession("bob", "snake", { id: one.id, d: "u", k: 0 }, t0), /isn’t synced/);
+  assert.throws(() => syncSession("amy", "pinball", { id: one.id, s: 0 }, t0), /isn’t synced/, "nor another game's");
+  startSession("amy", "snake", t0);
+  assert.throws(() => syncSession("amy", "snake", { id: one.id, d: "u", k: 0 }, t0), /isn’t synced/);
+  assert.throws(() => syncSession("amy", "snake", { id: "made-up", d: "u", k: 0 }, t0), /isn’t synced/);
+
+  // Pinball: only up, by tens, and no faster than the table pays.
+  const pin = (scores: [number, number][]) => {
+    const p = startSession("bob", "pinball", t0);
+    for (const [at, score] of scores) syncSession("bob", "pinball", { id: p.id, s: score }, t0 + at);
+    return p;
+  };
+  const ok = pin([[0, 0], [2000, 15_000], [4000, 2_500_000], [6000, 2_600_000]]);
+  assert.equal(endSession("bob", "pinball", { id: ok.id, s: 2_700_000 }, t0 + 8000), 2_700_000);
+  for (const bad of [[[0, 0], [2000, 15_005]], [[0, 0], [2000, 500], [4000, 400]], [[0, 0], [2000, "100"]], [[0, 0], [2000, -10]], [[0, 0], [2000, 3e9]]]) {
+    assert.throws(() => pin(bad as [number, number][]), /not a pinball score/, JSON.stringify(bad));
+  }
+  assert.throws(() => pin([[0, 0], [2000, PINBALL_BURST + 10_000_000]]), /faster than the table/);
+  // Jackpot after jackpot is still more than the table pays over a game.
+  const flood: [number, number][] = [[0, 0]];
+  for (let i = 1; i <= 10; i++) flood.push([i * 2000, i * 55_000_000]);
+  assert.throws(() => pin(flood), /faster than the table/);
+  // Memory: sessions that went quiet are swept.
+  resetSessions();
+  for (let i = 0; i < 50; i++) startSession(`p${i}`, "pinball", t0);
+  startSession("late", "pinball", t0 + 31 * 60_000);
+  assert.equal(openSessions(), 1, "the quiet ones are gone");
+  resetSessions();
+});
+
+test("a place in a board's top ten, when a game ends, unlocks that place's badge and every commoner one, for good", async () => {
+  assert.deepEqual(badgesForRank("snake", 1), ["bd:sn1", "bd:sn2", "bd:sn3", "bd:sn4", "bd:sn5"]);
+  assert.deepEqual(badgesForRank("snake", 3), ["bd:sn3", "bd:sn4", "bd:sn5"]);
+  assert.deepEqual(badgesForRank("pinball", 6), ["bd:pb4", "bd:pb5"]);
+  assert.deepEqual(badgesForRank("pinball", 10), ["bd:pb5"]);
+  assert.deepEqual(badgesForRank("pinball", 11), []);
+  assert.deepEqual(badgeFor("sn1", ["checks", "custom"], 1, ["bd:sn2"]), null, "a pack is no place on a board");
+  assert.equal(badgeFor("sn2", [], 0, ["bd:sn2"]), "sn2");
+
+  const { sql, join, close } = await gameServer();
+  try {
+    // Twelve players, each a pinball game in sync. Their places decide their badges.
+    const players: Record<string, Awaited<ReturnType<typeof join>>> = {};
+    for (let i = 1; i <= 12; i++) players[`pl${i}`] = await join(`pl${i}`);
+    async function play(name: string, score: number) {
+      const call = players[name];
+      const { id } = (await call("POST", "/api/social/pinball/start")).json;
+      assert.equal((await call("POST", "/api/social/pinball/sync", { id, s: 0 })).status, 200);
+      const end = await call("POST", "/api/social/pinball/end", { id, s: score });
+      assert.equal(end.status, 200, end.text);
+      return end.json;
+    }
+    // Scores from before the boards were synced are gone, once: the step is recorded.
+    assert.deepEqual((await sql.query("SELECT id FROM schema_steps WHERE id = 'boards-synced'")).rows.length, 1);
+    for (let i = 1; i <= 12; i++) {
+      const r = await play(`pl${i}`, i * 1000);
+      assert.equal(r.rank, 1, "each beats the last");
+    }
+    // The first to play is twelfth now: off the board's top ten, but what it won stays.
+    const items = async (name: string) => (await sql.query("SELECT item FROM unlocks WHERE name = $1 ORDER BY item", [name])).rows.map((r) => r.item);
+    assert.deepEqual(await items("pl1"), ["bd:pb1", "bd:pb2", "bd:pb3", "bd:pb4", "bd:pb5"]);
+    // A game that ends lower than one's best changes nothing on the board, and ranks by the best.
+    const worse = await play("pl5", 10);
+    assert.deepEqual([worse.best, worse.rank, worse.unlocked], [5000, 8, []]);
+    // A newcomer placing third gets the third's badge and those after it, nothing rarer.
+    const newcomer = await join("neo");
+    players.neo = newcomer;
+    const third = await play("neo", 10_500);
+    assert.deepEqual([third.rank, third.unlocked], [3, ["bd:pb3", "bd:pb4", "bd:pb5"]]);
+    // Climbing to first later unlocks the rarer ones.
+    const top = await play("neo", 50_000);
+    assert.deepEqual([top.rank, top.unlocked], [1, ["bd:pb1", "bd:pb2"]]);
+    // Off the top ten: nothing.
+    const low = await join("low");
+    players.low = low;
+    assert.deepEqual((await play("low", 20)).unlocked, []);
+    // Wearing: only what was won.
+    assert.equal((await low("POST", "/api/social/shop/wear", { badge: "pb5" })).status, 403);
+    assert.equal((await newcomer("POST", "/api/social/shop/wear", { badge: "pb1" })).status, 200);
+    assert.equal((await newcomer("GET", "/api/social/u/neo")).json.user.mark, "pb1 ");
+    assert.deepEqual((await newcomer("GET", "/api/social/shop")).json.items, ["bd:pb1", "bd:pb2", "bd:pb3", "bd:pb4", "bd:pb5"]);
+    // Over HTTP, a snake session hands the page its apple seed (guard.ts scrubs any `seed`, so it is `apples`).
+    const opened = (await low("POST", "/api/social/snake/start")).json;
+    assert.match(opened.apples, /^[0-9a-f]{32}$/, JSON.stringify(opened));
+    // A snake game that never ended counts for nothing.
+    const { id } = opened;
+    await low("POST", "/api/social/snake/sync", { id, d: "u", k: 0, t: "" });
+    const early = await low("POST", "/api/social/snake/end", { id, k: 0, t: "", s: 0 });
+    assert.equal(early.status, 409, early.text);
+    assert.equal((await low("GET", "/api/social/snake")).json.best, 0);
+  } finally {
+    await close();
   }
 });
 

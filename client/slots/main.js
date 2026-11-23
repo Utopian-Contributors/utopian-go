@@ -14,7 +14,7 @@
  * fruit and then change under the player's eyes.
  */
 import { STATUSES } from "../../src/social/shop.ts";
-import { BETS, CHERRIES, FRUITS, GAMES_A_DAY, REELS, START, THREE, TOP, lineOf, payout } from "../../src/social/slots.ts";
+import { BETS, CHERRIES, FRUITS, REELS, START, STATUS_PRICE, THREE, lineOf, payout } from "../../src/social/slots.ts";
 import { keepOffline } from "../games/offline.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
@@ -33,16 +33,16 @@ const creditsOut = $("sl-cr");
 const bestOut = $("sl-bs");
 const msgOut = $("sl-msg");
 const goBtn = /** @type {HTMLButtonElement} */ ($("sl-go"));
-const cashBtn = /** @type {HTMLButtonElement} */ ($("sl-co"));
+const buyBtn = /** @type {HTMLButtonElement} */ ($("sl-by"));
+const liveOut = $("sl-lv");
 const leftOut = $("sl-lf");
 const progress = $("sl-pg");
 const goalOut = $("sl-gl");
 const betsBox = $("sl-bt");
 const boardList = $("sl-lb");
 const meOut = $("sl-me");
-const prizeCard = $("sl-pz");
 const paysSheet = /** @type {HTMLDialogElement} */ ($("sl-pays"));
-const winSheet = /** @type {HTMLDialogElement} */ ($("sl-win"));
+const buySheet = /** @type {HTMLDialogElement} */ ($("sl-buy"));
 
 /* ---------- The server ---------- */
 
@@ -64,7 +64,16 @@ async function api(path, body) {
   const init = body
     ? { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body) }
     : { headers: { Accept: "application/json" } };
-  const res = await fetch(`/api/social${path}`, { ...init, cache: "no-store", credentials: "same-origin" });
+  let res;
+  try {
+    res = await fetch(`/api/social${path}`, { ...init, cache: "no-store", credentials: "same-origin" });
+  } catch (err) {
+    answered = false;
+    paintLive();
+    throw err;
+  }
+  answered = res.status !== 401;
+  paintLive();
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(data.error || "Something went wrong. Try again.", res.status, data);
   return data;
@@ -72,12 +81,14 @@ async function api(path, body) {
 
 /* ---------- State ---------- */
 
-/** The last answer to GET /slots: the board, your best, today's games left, the prizes you hold. */
+/** The last answer to GET /slots: the board, your best, today's fresh start, the statuses you have. */
 let state = /** @type {any} */ (null);
 /** The game in play, or the one that just ended, as the server last told it. */
 let game = /** @type {any} */ (null);
 let busy = false;
 let offline = false;
+/** Whether the server answered the last request, with the session still good. */
+let answered = false;
 /** The credits as shown: they count up to a win rather than jump. */
 let shown = START;
 
@@ -312,7 +323,6 @@ function countTo(to) {
 
 function paintCredits() {
   creditsOut.textContent = fmt(shown);
-  progress.style.width = `${Math.min(100, (shown / TOP) * 100)}%`;
 }
 
 function paintBest() {
@@ -329,7 +339,14 @@ function untilTomorrow() {
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
-/** The bet, Spin, Cash out and today's games, as things stand. */
+/** Synced while the server answers for a signed-in account: every spin is the server's, so then the game is in step. */
+function paintLive() {
+  const on = answered && !!state?.signed;
+  liveOut.dataset.on = on ? "1" : "";
+  liveOut.textContent = on ? "Synced" : "Offline";
+}
+
+/** The bet, Spin, Buy a status and today's fresh start, as things stand. */
 function paintControls() {
   const signed = !!state?.signed;
   const left = state?.left ?? 0;
@@ -339,7 +356,7 @@ function paintControls() {
     btn.setAttribute("aria-checked", String(value === bet));
     /** @type {HTMLButtonElement} */ (btn).disabled = busy || !signed || value > credits;
   }
-  cashBtn.hidden = !open() || busy;
+  buyBtn.disabled = busy || !open() || game.credits < STATUS_PRICE;
   if (offline) {
     goBtn.textContent = "Offline";
     goBtn.disabled = true;
@@ -353,28 +370,32 @@ function paintControls() {
   if (!signed) {
     goBtn.textContent = "Log in to play";
     goBtn.disabled = false;
-    leftOut.textContent = `${GAMES_A_DAY} free games a day`;
+    leftOut.textContent = `Free · ${fmt(START)} credits a day`;
     return;
   }
   if (open()) {
     goBtn.textContent = "Spin";
     goBtn.disabled = busy;
-    leftOut.textContent = `Game ${GAMES_A_DAY - left} of ${GAMES_A_DAY}`;
+    leftOut.textContent = "Kept until you run out";
   } else if (left > 0) {
-    goBtn.textContent = game ? "New game" : "Spin";
+    goBtn.textContent = "Spin";
     goBtn.disabled = busy;
-    leftOut.textContent = `${left} ${left === 1 ? "game" : "games"} left today`;
+    leftOut.textContent = `Start with ${fmt(START)} credits`;
   } else {
     goBtn.textContent = "Back tomorrow";
     goBtn.disabled = true;
-    leftOut.textContent = `Next game in ${untilTomorrow()}`;
+    leftOut.textContent = `Fresh start in ${untilTomorrow()}`;
   }
 }
 
+/** How far the credits are from the next status. */
 function paintGoal() {
-  const credits = open() || game?.top ? game.credits : shown;
+  const credits = open() ? game.credits : shown;
+  progress.style.width = `${Math.min(100, (credits / STATUS_PRICE) * 100)}%`;
   goalOut.textContent =
-    credits >= TOP ? "Jackpot" : open() ? `${fmt(TOP - credits)} to go · Reach ${fmt(TOP)} to win Fruit statuses` : `Reach ${fmt(TOP)} to win Fruit statuses`;
+    credits >= STATUS_PRICE
+      ? `You can buy ${Math.floor(credits / STATUS_PRICE) > 1 ? `${Math.floor(credits / STATUS_PRICE)} fruit statuses` : "a fruit status"}`
+      : `${fmt(STATUS_PRICE - credits)} to a fruit status · ${fmt(STATUS_PRICE)} credits each`;
 }
 
 function paintBoard() {
@@ -383,7 +404,6 @@ function paintBoard() {
     ...(state?.top ?? []).map((row) => {
       const li = document.createElement("li");
       if (row.name === me) li.classList.add("me");
-      if (row.score >= TOP) li.classList.add("top");
       const name = document.createElement("span");
       name.textContent = row.name;
       const score = document.createElement("b");
@@ -401,65 +421,7 @@ function paintBoard() {
   } else meOut.textContent = state && !state.top.length ? "No games on the board yet." : "";
 }
 
-/* ---------- Prizes ---------- */
-
-/**
- * Unlock and Give for one prize: in its card, and on the jackpot sheet.
- * @param {{id: string}} prize @param {() => void} [after]
- */
-function prizeActions(prize, after) {
-  const box = document.createElement("div");
-  box.className = "sl-acts";
-  const err = document.createElement("p");
-  err.className = "sl-err";
-  err.setAttribute("role", "alert");
-  const unlock = button("Unlock for me", "sl-go");
-  const give = button("Give to someone", "sl-go two");
-  const form = document.createElement("form");
-  form.className = "sl-give";
-  form.hidden = true;
-  const input = document.createElement("input");
-  Object.assign(input, { placeholder: "username", maxLength: 17, autocapitalize: "off", autocomplete: "off", spellcheck: false, required: true });
-  input.setAttribute("aria-label", "Who is it for?");
-  const send = button("Give", "sl-go");
-  send.type = "submit";
-  form.append(input, send);
-
-  /** @param {HTMLButtonElement} btn @param {() => Promise<string>} run */
-  async function press(btn, run) {
-    err.textContent = "";
-    btn.disabled = true;
-    try {
-      const done = await run();
-      box.replaceChildren(Object.assign(document.createElement("p"), { className: "sl-note", textContent: done }));
-      after?.();
-      refresh();
-    } catch (cause) {
-      err.textContent = /** @type {Error} */ (cause).message;
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
-  unlock.onclick = () =>
-    press(unlock, async () => {
-      await api(`/shop/prize/${prize.id}/unlock`, {});
-      return "Unlocked. Pick your status in the Shop.";
-    });
-  give.onclick = () => {
-    form.hidden = !form.hidden;
-    if (!form.hidden) input.focus();
-  };
-  form.onsubmit = (e) => {
-    e.preventDefault();
-    press(send, async () => {
-      const { to } = await api(`/shop/prize/${prize.id}/give`, { to: input.value.trim() });
-      return `Given to @${to}. They unlock it free in the Shop.`;
-    });
-  };
-  box.append(unlock, give, form, err);
-  return box;
-}
+/* ---------- Buying a status ---------- */
 
 /** @param {string} text @param {string} className */
 function button(text, className) {
@@ -470,53 +432,79 @@ function button(text, className) {
   return btn;
 }
 
-function paintPrizes() {
-  const prizes = state?.prizes ?? [];
-  prizeCard.hidden = !prizes.length;
-  if (!prizes.length) return;
-  const h = document.createElement("h2");
-  h.textContent = prizes.length > 1 ? `${prizes.length} prizes` : "Your prize";
-  prizeCard.replaceChildren(
-    h,
-    ...prizes.map((prize) => {
-      const who = document.createElement("div");
-      who.className = "who";
-      const img = new Image();
-      img.src = src("banana");
-      img.alt = "";
-      const words = document.createElement("div");
-      words.append("Fruit statuses");
-      const small = document.createElement("small");
-      small.textContent = prize.givenBy ? `A gift from @${prize.givenBy}` : "Won at Fruit Slots";
-      words.append(small);
-      who.append(img, words);
-      const item = document.createElement("div");
-      item.className = "item";
-      item.append(who, prizeActions(prize));
-      return item;
-    }),
-  );
-}
+/** The status picked in the sheet, and who it is for: "" for me. */
+let pick = "";
+let gift = false;
 
-/** The jackpot sheet, for the prize just won. @param {string} id */
-function jackpot(id) {
-  const burst = winSheet.querySelector(".sl-burst");
-  burst?.replaceChildren(
-    ...["cherry", "banana", "mango"].map((fruit, i) => {
+/** The sheet: the ten statuses (yours marked), For me or A gift, and Buy. */
+function paintBuy() {
+  const mine = new Set(state?.statuses ?? []);
+  $("sl-fr").replaceChildren(
+    ...FRUITS.map((fruit) => {
+      const had = !gift && mine.has(fruit);
+      const tile = button("", "sl-ft");
+      tile.disabled = had;
+      tile.setAttribute("aria-pressed", String(pick === fruit));
       const img = new Image();
       img.src = src(fruit);
       img.alt = "";
-      img.style.animationDelay = `${i * 0.08}s`;
-      return img;
+      const words = document.createElement("span");
+      words.textContent = had ? "Yours" : STATUSES[fruit];
+      tile.append(img, words);
+      tile.onclick = () => {
+        pick = fruit;
+        paintBuy();
+      };
+      return tile;
     }),
   );
-  const later = button("Later", "sl-link");
-  later.onclick = () => winSheet.close();
-  const note = document.createElement("p");
-  note.className = "sl-note";
-  note.textContent = "It waits for you here and in the Shop.";
-  $("sl-wa").replaceChildren(prizeActions({ id }), later, note);
-  winSheet.showModal();
+  for (const btn of $("sl-wh").children) btn.setAttribute("aria-checked", String((btn.dataset.gift === "1") === gift));
+  const to = /** @type {HTMLInputElement} */ ($("sl-to"));
+  to.hidden = !gift;
+  const buy = /** @type {HTMLButtonElement} */ ($("sl-bb"));
+  buy.disabled = !pick || (!gift && mine.has(pick)) || !open() || game.credits < STATUS_PRICE;
+  buy.textContent = pick ? `${gift ? "Give" : "Buy"} ${STATUSES[pick]} · ${fmt(STATUS_PRICE)}` : "Pick a status";
+}
+
+function openBuy() {
+  if (!open() || game.credits < STATUS_PRICE) return;
+  const mine = new Set(state?.statuses ?? []);
+  if (mine.has(pick)) pick = "";
+  $("sl-be").textContent = "";
+  paintBuy();
+  buySheet.showModal();
+}
+
+async function buy() {
+  if (!pick || busy) return;
+  const err = $("sl-be");
+  const to = /** @type {HTMLInputElement} */ ($("sl-to")).value.trim();
+  if (gift && !to) {
+    err.textContent = "Who is it for?";
+    return;
+  }
+  busy = true;
+  const btn = /** @type {HTMLButtonElement} */ ($("sl-bb"));
+  btn.disabled = true;
+  err.textContent = "";
+  try {
+    const res = await api("/slots/buy", { status: pick, ...(gift ? { for: to } : {}) });
+    game = res.game;
+    state.statuses = res.statuses;
+    countTo(game.credits);
+    say(gift ? `${STATUSES[pick]} sent. They unlock it free in the Shop.` : `${STATUSES[pick]} is yours. Wear it from the Shop.`);
+    SOUNDS.big();
+    buySheet.close();
+    pick = "";
+    if (game.over) refresh();
+  } catch (cause) {
+    err.textContent = /** @type {Error} */ (cause).message;
+  } finally {
+    busy = false;
+    paintControls();
+    paintGoal();
+    if (buySheet.open) paintBuy();
+  }
 }
 
 /* ---------- Pays ---------- */
@@ -550,13 +538,13 @@ function paintPays() {
 function paintFair() {
   const fair = $("sl-fair");
   const lines = [
-    `Each game starts with ${fmt(START)} credits. A bet comes off every spin and a line pays the bet times what it shows. Reach ${fmt(TOP)} and you win Fruit statuses, to unlock or give. ${GAMES_A_DAY} games a day, free.`,
+    `You start with ${fmt(START)} credits, kept from visit to visit until you run out; then a fresh start comes the next day. A bet comes off every spin, and a line pays the bet times what it shows. Every ${fmt(STATUS_PRICE)} credits buy a fruit status, for you or as a gift.`,
   ];
   if (game?.commit) {
     lines.push(
       game.secret
         ? `Every spin was drawn from this game’s secret, ${game.secret}, whose SHA-256 is ${game.commit}.`
-        : `Every spin is drawn on our server from a secret fixed when the game began. Its SHA-256 is ${game.commit}; the secret is shown here once the game ends.`,
+        : `Every spin is drawn on our server from a secret fixed when this balance began. Its SHA-256 is ${game.commit}; the secret is shown here once you run out.`,
     );
   }
   fair.replaceChildren(...lines.flatMap((line, i) => (i ? [document.createElement("br"), document.createElement("br"), line] : [line])));
@@ -594,27 +582,26 @@ function lightUp(stops) {
 /**
  * A spin's answer, once the reels are on it: what it paid, the credits, and
  * the end of the game when it is one.
- * @param {any} next @param {string | null} prize
+ * @param {any} next
  */
-function reveal(next, prize) {
+function reveal(next) {
+  const before = game?.credits ?? 0;
   game = next;
   lightUp(game.stops);
   const times = payout(lineOf(game.stops));
-  if (game.top) SOUNDS.top();
-  else if (times >= 10) SOUNDS.big();
+  if (times >= 10) SOUNDS.big();
   else if (times > 1) SOUNDS.small();
   countTo(game.credits);
   const paid = describe(game);
-  if (game.top) say(`Jackpot · ${fmt(TOP)}`);
-  else if (game.over) {
+  if (game.over) {
     SOUNDS.out();
-    say("Out of credits. Game over.", true);
+    say("Out of credits. A fresh start tomorrow.", true);
+  } else if (before < STATUS_PRICE && game.credits >= STATUS_PRICE) {
+    SOUNDS.top();
+    say(`${fmt(game.credits)} · Buy a fruit status`);
   } else say(paid || "No win", !paid);
   paintGoal();
-  if (game.over) {
-    refresh();
-    if (prize) setTimeout(() => jackpot(prize), reduce ? 0 : 900);
-  }
+  if (game.over) refresh();
 }
 
 async function spin() {
@@ -642,7 +629,7 @@ async function spin() {
     started = performance.now();
     const res = await api("/slots/spin", { bet, n });
     await landAll(res.game.stops, started);
-    reveal(res.game, res.prize);
+    reveal(res.game);
   } catch (cause) {
     await recover(/** @type {ApiError} */ (cause), n, started);
   } finally {
@@ -668,7 +655,7 @@ async function recover(cause, n, started) {
     const played = fresh.game && n >= 0 && fresh.game.spins > n ? fresh.game : null;
     if (played) {
       await landAll(played.stops, started);
-      reveal(played, null);
+      reveal(played);
       paintAll();
       return;
     }
@@ -679,37 +666,6 @@ async function recover(cause, n, started) {
   paintAll();
 }
 
-/** Cash out takes a second press, so a stray tap cannot end a good game. */
-let cashArmed = 0;
-
-async function cashOut() {
-  if (!open() || busy) return;
-  if (!cashArmed) {
-    cashBtn.textContent = `Bank ${fmt(game.credits)}?`;
-    cashArmed = window.setTimeout(() => {
-      cashArmed = 0;
-      cashBtn.textContent = "Cash out";
-    }, 3000);
-    return;
-  }
-  clearTimeout(cashArmed);
-  cashArmed = 0;
-  cashBtn.textContent = "Cash out";
-  busy = true;
-  paintControls();
-  try {
-    game = (await api("/slots/cashout", { n: game.spins })).game;
-    say(`Banked ${fmt(game.credits)}`);
-    refresh();
-  } catch (cause) {
-    say(/** @type {Error} */ (cause).message, true);
-    refresh();
-  } finally {
-    busy = false;
-    paintControls();
-  }
-}
-
 /* ---------- Loading ---------- */
 
 function paintAll() {
@@ -718,10 +674,10 @@ function paintAll() {
   paintGoal();
   paintControls();
   paintBoard();
-  paintPrizes();
+  paintLive();
 }
 
-/** Ask how things stand: the board, your best, your game and today's games, the prizes you hold. */
+/** Ask how things stand: the board, your best, your balance, today's fresh start, the statuses you have. */
 async function refresh() {
   try {
     const fresh = await api("/slots");
@@ -733,7 +689,7 @@ async function refresh() {
     offline = !(cause instanceof ApiError);
     if (!state) state = { top: [], signed: false, best: 0 };
   }
-  if (!busy && !open() && !game?.top) shown = game?.credits ?? START;
+  if (!busy && !open()) shown = game?.credits ?? START;
   paintAll();
 }
 
@@ -759,14 +715,22 @@ goBtn.addEventListener("click", () => {
   if (state && !state.signed && !offline) location.href = "/login?next=/slots";
   else spin();
 });
-cashBtn.addEventListener("click", cashOut);
+buyBtn.addEventListener("click", openBuy);
+$("sl-bb").addEventListener("click", buy);
+for (const btn of $("sl-wh").children) {
+  /** @type {HTMLElement} */ (btn).addEventListener("click", () => {
+    gift = /** @type {HTMLElement} */ (btn).dataset.gift === "1";
+    paintBuy();
+    if (gift) $("sl-to").focus();
+  });
+}
 
 $("sl-py").addEventListener("click", () => {
   paintFair();
   paysSheet.showModal();
 });
 
-for (const sheet of [paysSheet, winSheet]) {
+for (const sheet of [paysSheet, buySheet]) {
   // A tap on the dimmed page around a sheet closes it.
   sheet.addEventListener("click", (e) => {
     if (e.target === sheet || /** @type {Element} */ (e.target).closest("[data-close]")) sheet.close();
@@ -775,7 +739,7 @@ for (const sheet of [paysSheet, winSheet]) {
 
 window.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
-  if (paysSheet.open || winSheet.open) return;
+  if (paysSheet.open || buySheet.open) return;
   const target = /** @type {Element} */ (e.target);
   if (target.closest?.("input, textarea")) return;
   if (e.code === "Space" || (e.code === "Enter" && !target.closest?.("a, button"))) {

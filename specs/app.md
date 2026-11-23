@@ -141,18 +141,18 @@ budget; its document is.
 Pinball is offline first. It registers the service worker itself and, on a first visit, hands it
 the page and its bundle (the same `ugSeed` message client/offline sends), so once loaded it opens
 and plays with no network. Scores live on the device (`ug.pb`: its ten best games), and that is
-the list the page shows first. Signed in, the device's best that is not yet on the shared board
-waits as pending and is posted to `/api/social/pinball` when the network answers: on load, after
-a game, or on the browser's `online`. The board itself is kept as last read (`ug.pbb`) and shown
+the list the page shows first. No page posts a score: a game reaches the shared board only by
+being **played live** (see Live games below). The board itself is kept as last read (`ug.pbb`) and shown
 with its date when offline: a board the worker answered from its copy carries that copy's
 `ug-at`, and only a fresh answer (or a copy the server confirmed with a 304) counts as live. The
 server keeps one row per account in `pinball`, its best. The scores, the board and its painting
 are shared with Snake (`client/games/scores.js`, `board.js`), each game under its own keys and route.
 
 **Snake** is the second game, as open as pinball and offline the same way: its page and bundle
-are precached, its scores live on the device (`ug.sn`, the board as last read `ug.snb`) and a
-signed-in best goes to `/api/social/snake` when the network answers, kept in a `snake` table,
-one row per account. The page is pinball's: Back, the device's best and the score in the header,
+are precached, its scores live on the device (`ug.sn`, the board as last read `ug.snb`), and a
+game reaches the board, a `snake` table with one row per account, only by being played live.
+Its rules are `src/social/snakeRules.ts`, shared by the page (`client/snake/game.js` wraps them)
+and the server, which replays every live game from them. The page is pinball's: Back, the device's best and the score in the header,
 the board under it, the leaderboard over the board between games on a phone and beside it on a
 wide screen, with a Play button. The board is a fixed 15 by 23 grid, the same for everyone, so
 every score on the board was played on the same one; drawn square-cornered, checked, in the
@@ -171,49 +171,86 @@ lifting; a keyboard by the arrows or WASD, with Space or P to pause. A swipe or 
 game in its direction. Leaving the page pauses it; a tap or a direction goes on. For the moment
 the snake blinks as it dies nothing starts another game, so a swipe still under way cannot.
 
+**Live games.** Signed in and online, every Snake and Pinball game is played under a session
+(`src/social/play.ts`, `client/games/live.js`): opened before the game starts, synced every two
+seconds while it runs, closed when it ends. The header shows **Synced** (a green dot) while the
+session is open and every sync answered, **Offline** otherwise: signed out, no network, or a game
+that stopped counting. Only a game synced from first step to last goes on the board; one that
+misses a sync (more than 8 s apart, unless paused) plays on and counts on the device alone.
+Pausing (P, or the page hidden) is said at once, so the wait is no missed sync, and time paused
+buys no steps.
+
+- **Snake is replayed.** The session hands the page a seed (`apples`; `seed` is scrubbed from
+  every answer by guard.ts) from which both sides place the apples (`seeded`, sfc32, integer
+  arithmetic only, so browser and Node agree). Each sync carries the steps taken (`k`) and the
+  turns since the last (`t`, `"12u40l"`: up at step 12, left at 40); the server plays the same
+  steps by the same rules, so the score is the replay's. Refused: a turn back on itself, turns
+  out of order, steps after the snake died, an end before it died, a score that is not the
+  replay's, and steps faster than the snake moves (the replay's least time, against the time
+  played, with 1.5 s for latency).
+- **Pinball is bounded.** Its physics cannot be replayed on the server (floating point differs
+  between engines), so the score is held to the table's limits: whole tens, only up, at most a
+  ×10 jackpot (60M) plus 1M a second within a sync window, and 400k a second on average over
+  the game. A forged score can still pass inside those bounds; a Snake score cannot.
+- **Cheap to run.** Sessions live in the process's memory, a few hundred bytes each, one per
+  account (a new one ends the old), swept once quiet, at most 5,000. Nothing is written per
+  sync; a sync's answer is `{score}`. A restart forgets the sessions, and the games then in play
+  simply do not count.
+- **Places and badges.** When a live game ends, its score goes on the board if it is the
+  account's best, and the account's place is counted. A place in the top ten unlocks that
+  place's badge in the game's set and every commoner one, for good (`unlocks`, `bd:<id>`): #1,
+  #2, #3, #4–6 and #7–10. Snake's are snake heads (Golden Cobra, Ruby Viper, Emerald Mamba,
+  Sapphire Python, Garden Snake), Pinball's mushrooms (Golden Mushroom, Fly Agaric, Amethyst
+  Cap, Blue Bumper, Porcini), `bd-sn1…5.svg` and `bd-pb1…5.svg`, drawn by hand. Only a game's
+  end decides it, so a better place later unlocks the rarer ones, and dropping off the board
+  takes nothing away. The boards held unchecked posted scores before; they were cleared once,
+  at deploy (`schema_steps` `boards-synced`).
+
+```
+POST /api/social/<game>/start              → {id, apples, every}     snake | pinball
+POST /api/social/<game>/sync {id, k, t, d?, p?} (snake) | {id, s, p?} (pinball) → {score}   409 {broken} once it stops counting
+POST /api/social/<game>/end  {…the last sync} → {score, best, rank, unlocked, top}
+```
+
 **Fruit Slots** is the third game: three reels of the Shop's ten fruit statuses
 (`st-<fruit>.svg`), one line across the middle. Unlike the others it is **played on the
 server**: the page asks for a spin and is told where the reels stopped, so it never decides a
 result and no route takes a score. The rules are `src/social/slots.ts`, bundled into the page
 too; the draw is `src/social/slotDraw.ts`, server only.
 
-- **A game.** 100 credits; each spin stakes 5, 10 or 25 and pays the bet times the line:
-  three of a fruit ×10 (In the Limelight) up to ×500 (Top Banana), two cherries anywhere ×4,
-  one cherry the bet back. Each reel holds 31 stops in a fixed order, the commoner fruit more
-  often. Over every line it pays back 93.9% and pays something on 42% of spins. The credits
-  are the score; a game ends at **1,000** (capped there: the highest score there is), below
-  the smallest bet, or on Cash out (two presses). The board (`slots`, as pinball's) is
-  written only as a game ends, with its credits.
-- **Odds.** A game reaches 1,000 about one time in 40 at a bet of 5 and one in 20 at 25.
-  Three games an account a UTC day (`slot_games.day`), so a free prize cannot be farmed.
+- **A balance.** 100 credits to start; each spin stakes 5, 10 or 25 and pays the bet times the
+  line: three of a fruit ×10 (In the Limelight) up to ×500 (Top Banana), two cherries anywhere
+  ×4, one cherry the bet back. Each reel holds 31 stops in a fixed order, the commoner fruit
+  more often. Over every line it pays back 93.9% and pays something on 42% of spins. The
+  balance is kept from visit to visit, with no cashing out, until it is too small for the
+  smallest bet: then the game is lost, and a fresh 100 comes once a day (UTC). The board is
+  each account's highest balance (`slot_games.peak`), written as a spin reaches it.
+- **Statuses for credits.** Every 1,000 credits buy one fruit status (`/slots/buy`), for
+  oneself (`unlocks`, `st:<fruit>`) or as a gift: a prize (`slot_prizes.item`) the other person
+  unlocks free in the Shop. Not a status one has, nor one given to someone who has it or has it
+  waiting. Spending a balance below the smallest bet ends it, as losing does. From 100, a
+  balance reaches 1,000 about one time in 40 at a bet of 5 and one in 20 at 25.
 - **Deterministic and checkable.** A game draws a 32-byte secret when it starts; spin n stops
   where HMAC-SHA256(secret, `spin:n:round`) says, each reel from four bytes, values past the
   last whole multiple of 31 passed over so every stop is equally likely. The page has the
-  secret's SHA-256 (`commit`) from the start and the secret itself (`secret`; `seed` is
-  scrubbed from every answer by guard.ts) once the game is over, so every spin can be replayed.
+  secret's SHA-256 (`commit`) from the start and the secret itself (`secret`) once the game is
+  lost, so every spin can be replayed.
 - **Safe against replays and races.** A spin carries `n`, the spins the page has seen; the
-  game row is locked while it is played, so a spin sent twice, or five at once, is played once
-  (the rest 409). One open game per account (a partial unique index), the account row locked
-  while one starts, so the daily count holds under parallel presses. Same-origin only.
-- **The prize.** Reaching 1,000 writes a prize (`slot_prizes`) for the Fruit statuses pack,
-  held by the winner. Whoever holds it may unlock it (the pack theirs, as an order paid at once
-  for $0, matched `prize`) or give it to someone who does not own the pack, who then unlocks
-  it free in the Shop, where held prizes show on their pack with Unlock free and Give. A holder
-  who owns the pack already can only give it.
-- **The page.** Back, the best and the credits in the header; a bar to 1,000; the reels, a
-  white window (graphite after dark) whose middle row is the line, lit gold on a win; the
-  bet as a segmented control; Spin (Space or Enter; 1–3 pick the bet); Cash out, today's games
-  and Pays (the table, and the game's commit or secret). The reels run while the request is
-  out and land left to right, a beat later when the first two match. A prize held shows in a
-  card beside the board; reaching 1,000 opens a sheet to unlock or give it. Signed out, the
-  board and Log in to play. Its API calls are `no-store`, so the worker never answers them
-  from a copy.
+  game row is locked while it is played, so a spin sent twice, or five at once, is played once.
+  One open game per account (a partial unique index); a buy locks the game too, so two buys
+  with credits for one buy one. Same-origin only.
+- **The page.** Back, Synced or Offline, the best and the credits in the header; a bar to the
+  next 1,000; the reels, a white window (graphite after dark) whose middle row is the line, lit
+  gold on a win, one picture per stop that only ever moves, so the fruit at rest is the fruit
+  played; the bet as a segmented control; Spin (Space or Enter; 1–3 pick the bet); Buy a status
+  (a sheet of the ten, For me or A gift); Pays (the table, and the commit or secret). Signed
+  out, the board and Log in to play. Its calls are `no-store`.
 
 ```
-GET  /api/social/slots                  → {top, best, signed, name?, game?, left?, resets?, prizes?}
-POST /api/social/slots/new              → {game, left, resets}      the open one if any; 429 past 3 a day
-POST /api/social/slots/spin {bet, n}    → {game, prize}             prize: an id when it reached 1,000
-POST /api/social/slots/cashout {n}      → {game}
+GET  /api/social/slots                  → {top, best, signed, name?, game?, left?, resets?, statuses?}
+POST /api/social/slots/new              → {game, left, resets}      the open one if any; 429 past today's fresh start
+POST /api/social/slots/spin {bet, n}    → {game}
+POST /api/social/slots/buy {status, for?} → {game, gift, statuses}
 POST /api/social/shop/prize/<id>/unlock → {pack, owned, prizes}
 POST /api/social/shop/prize/<id>/give {to} → {to, prizes}
 ```
@@ -718,7 +755,11 @@ POST /api/social/shop/wear {badge?, status?}  → {badge, status}   "" for none;
 POST /api/social/shop/badge  64×64 PNG → {badgeRev}
 ```
 
-`GET /api/social/shop` also lists `prizes`, the Fruit Slots prizes held (see Fruit Slots).
+`GET /api/social/shop` also lists `prizes`, the Fruit Slots gifts held, and `items`, what is
+owned one at a time: fruit statuses bought with credits or given (`st:<fruit>`), and the games'
+badges won by a place on a board (`bd:<id>`, see Live games). The Shop shows a status owned
+alone as wearable within the Fruit statuses pack, and each game's badge set as a pack no one can
+buy: its badges won, and for the rest the place that unlocks them.
 
 ### Data Model
 

@@ -324,3 +324,30 @@ body:not(.pb-on) .pb-board {
     navigation: auto;
   }
 }
+
+/* Synced or Offline: whether this game counts for the board (games/live.js). */
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--f);
+  font: 600 12px var(--ff);
+  white-space: nowrap;
+}
+
+.live::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.4);
+}
+
+.live[data-on="1"] {
+  color: var(--t);
+}
+
+.live[data-on="1"]::before {
+  background: var(--go);
+  box-shadow: 0 0 6px var(--go);
+}

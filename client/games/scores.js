@@ -5,17 +5,16 @@
  * kept here too so it reads offline, and refreshed whenever the network
  * answers.
  *
- * Signed in, the device's best game not yet on the board waits here as
- * `pending` until a post succeeds: on the next load, the next game, or the
- * moment the browser says it is back online.
+ * Nothing here posts a score. A game reaches the board only by being played
+ * in sync with the server (live.js, src/social/play.ts); a game played
+ * offline stays on this device.
  */
 
 const KEEP = 10;
 
 /** @typedef {{score: number, at: number}} Game */
-/** @typedef {{games: Game[], pending: number}} Mine */
+/** @typedef {{games: Game[]}} Mine */
 /** @typedef {{top: {name: string, score: number}[], best: number, at: number}} Board */
-
 function read(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -46,7 +45,7 @@ export function scores(key, game) {
   /** @returns {Mine} */
   function mine() {
     const m = read(key, null);
-    return { games: Array.isArray(m?.games) ? m.games.filter((g) => Number.isInteger(g?.score)) : [], pending: Number.isInteger(m?.pending) ? m.pending : 0 };
+    return { games: Array.isArray(m?.games) ? m.games.filter((g) => Number.isInteger(g?.score)) : [] };
   }
 
   /** @returns {Board | null} */
@@ -61,25 +60,15 @@ export function scores(key, game) {
   }
 
   /**
-   * A finished game, kept on this device; a new best waits to go on the board.
+   * A finished game, kept on this device.
    * @param {number} score
-   * @param {boolean} signed
    */
-  function record(score, signed) {
+  function record(score) {
     const m = mine();
-    if (score > 0) {
-      m.games.push({ score, at: Date.now() });
-      m.games.sort((a, b) => b.score - a.score || a.at - b.at);
-      m.games = m.games.slice(0, KEEP);
-    }
-    if (signed && score > m.pending && score >= (board()?.best ?? 0)) m.pending = score;
-    write(key, m);
-  }
-
-  /** Drop `sent` from waiting, unless a better game arrived while it was on its way. */
-  function settle(sent) {
-    const m = mine();
-    if (m.pending === sent) write(key, { ...m, pending: 0 });
+    if (score <= 0) return;
+    m.games.push({ score, at: Date.now() });
+    m.games.sort((a, b) => b.score - a.score || a.at - b.at);
+    write(key, { games: m.games.slice(0, KEEP) });
   }
 
   /** @param {any} data @param {number} at */
@@ -89,47 +78,28 @@ export function scores(key, game) {
     return b;
   }
 
+  /** The board as the server answers it, kept for offline. @param {any} data */
+  function keep(data) {
+    return keepBoard(data, Date.now());
+  }
+
   /**
-   * Bring the board up to date: post a pending best if there is one and the
-   * account will take it, then read the board. Resolves to the board, the
-   * fresh one or the kept one, and whether it is fresh.
-   *
-   * @param {boolean} signed
-   * @returns {Promise<{board: Board | null, live: boolean, refused: boolean}>}
+   * Read the board: the fresh one, or the kept one when the network does not
+   * answer, and whether it is fresh.
+   * @returns {Promise<{board: Board | null, live: boolean}>}
    */
-  async function sync(signed) {
-    let refused = false;
-    const m = mine();
-    if (signed && m.pending) {
-      try {
-        const res = await fetch(api, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ score: m.pending }),
-        });
-        if (res.ok) {
-          settle(m.pending);
-          return { board: keepBoard(await res.json(), Date.now()), live: true, refused };
-        }
-        // Signed out on the server, or no passkey yet: the score stays here.
-        if (res.status === 401 || res.status === 403) refused = true;
-        // A score the server will never take is not worth trying again.
-        else if (res.status === 400) settle(m.pending);
-      } catch {
-        return { board: board(), live: false, refused };
-      }
-    }
+  async function sync() {
     try {
       const res = await fetch(api, { headers: { Accept: "application/json" } });
       // With no network the worker answers too, a 200 from its last copy, and
       // says so with the time of it (client/sw).
       const copy = Number(res.headers.get("ug-at"));
-      if (res.ok) return { board: keepBoard(await res.json(), copy || Date.now()), live: !copy, refused };
+      if (res.ok) return { board: keepBoard(await res.json(), copy || Date.now()), live: !copy };
     } catch {
       // Offline, and the worker had nothing: the copy below.
     }
-    return { board: board(), live: false, refused };
+    return { board: board(), live: false };
   }
 
-  return { mine, board, best, record, sync };
+  return { mine, board, best, record, sync, keep };
 }

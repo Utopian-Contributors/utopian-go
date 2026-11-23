@@ -24,6 +24,56 @@ export const STATUSES = {
 
 export type Pack = "checks" | "fruit" | "custom";
 
+/**
+ * Badges won, not bought: a set for each game with a leaderboard, earned by a
+ * place on it when a game ends (src/social/play.ts). Each is worn as a badge
+ * is, /bd-<id>.svg. The first is the rarest; see TIERS.
+ */
+export const GAME_BADGES = {
+  snake: [
+    { id: "sn1", name: "Golden Cobra" },
+    { id: "sn2", name: "Ruby Viper" },
+    { id: "sn3", name: "Emerald Mamba" },
+    { id: "sn4", name: "Sapphire Python" },
+    { id: "sn5", name: "Garden Snake" },
+  ],
+  pinball: [
+    { id: "pb1", name: "Golden Mushroom" },
+    { id: "pb2", name: "Fly Agaric" },
+    { id: "pb3", name: "Amethyst Cap" },
+    { id: "pb4", name: "Blue Bumper" },
+    { id: "pb5", name: "Porcini" },
+  ],
+} as const;
+
+export type BoardGame = keyof typeof GAME_BADGES;
+
+/** The places each badge of a set is for: #1, #2, #3, #4–6 and #7–10, the top ten. */
+export const TIERS = [
+  { from: 1, to: 1 },
+  { from: 2, to: 2 },
+  { from: 3, to: 3 },
+  { from: 4, to: 6 },
+  { from: 7, to: 10 },
+] as const;
+
+/**
+ * The badges a place on `game`'s board unlocks: its own tier's and every
+ * commoner one's, so a better place later unlocks the rarer ones too. None
+ * past tenth.
+ */
+export function badgesForRank(game: BoardGame, rank: number): string[] {
+  const tier = TIERS.findIndex((t) => rank >= t.from && rank <= t.to);
+  return tier < 0 ? [] : GAME_BADGES[game].slice(tier).map((badge) => `bd:${badge.id}`);
+}
+
+/** Every won badge's id, with the game and the places it is for. */
+export const WON_BADGES: Record<string, { game: BoardGame; name: string; from: number; to: number }> = Object.fromEntries(
+  (Object.keys(GAME_BADGES) as BoardGame[]).flatMap((game) =>
+    GAME_BADGES[game].map((badge, i) => [badge.id, { game, name: badge.name, ...TIERS[i] }]),
+  ),
+);
+
 /** What each pack costs, in cents. */
 export const PACKS: Record<Pack, { cents: number; title: string }> = {
   checks: { cents: 500, title: "Checkmarks" },
@@ -44,15 +94,22 @@ export function isPack(value: unknown): value is Pack {
  * allows. "u" is one's own picture, kept as "u" and its revision so the
  * picture's address changes with it; "" wears none.
  */
-export function badgeFor(choice: unknown, owned: Pack[], rev: number): string | null {
+export function badgeFor(choice: unknown, owned: Pack[], rev: number, items: string[] = []): string | null {
   if (choice === "") return "";
   if (choice === "u") return owned.includes("custom") && rev > 0 ? `u${rev}` : null;
+  if (typeof choice === "string" && Object.hasOwn(WON_BADGES, choice)) return items.includes(`bd:${choice}`) ? choice : null;
   return (BADGES as readonly unknown[]).includes(choice) && owned.includes("checks") ? (choice as string) : null;
 }
 
-export function statusFor(choice: unknown, owned: Pack[]): string | null {
+/** A status is worn from the Fruit statuses pack, or on its own: bought with Fruit Slots credits, or given (`st:<fruit>` in `items`). */
+export function statusFor(choice: unknown, owned: Pack[], items: string[] = []): string | null {
   if (choice === "") return "";
-  return typeof choice === "string" && Object.hasOwn(STATUSES, choice) && owned.includes("fruit") ? choice : null;
+  if (typeof choice !== "string" || !Object.hasOwn(STATUSES, choice)) return null;
+  return owned.includes("fruit") || items.includes(`st:${choice}`) ? choice : null;
+}
+
+export function isStatus(value: unknown): value is keyof typeof STATUSES {
+  return typeof value === "string" && Object.hasOwn(STATUSES, value);
 }
 
 /** Whether `bytes` are a PNG `BADGE_PX` square: its signature, then IHDR's width and height. */

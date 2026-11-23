@@ -56,8 +56,10 @@ import {
   getUser,
   insertUser,
   bumpBadge,
-  cashOutSlotGame,
+  buyStatus,
+  finishBoardGame,
   givePrize,
+  itemsOf,
   grantPack,
   heldPrizes,
   openSlotGame,
@@ -142,9 +144,10 @@ import {
 } from "./limits";
 import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
-import { BADGE_BYTES, PACKS, badgeFor, isBadgePng, isPack, markOf, statusFor } from "./shop";
+import { BADGE_BYTES, PACKS, STATUSES, type BoardGame, badgeFor, badgesForRank, isBadgePng, isPack, isStatus, markOf, statusFor } from "./shop";
+import { endSession, startSession, syncSession } from "./play";
 import { drawStops, newSeed } from "./slotDraw";
-import { DAY_MS, GAMES_A_DAY, PRIZE, START, TOP, dayOf, isBet, isOver, lineOf, payout, settle } from "./slots";
+import { BETS, DAY_MS, GAMES_A_DAY, START, STATUS_PRICE, dayOf, isBet, isOver, lineOf, payout, settle } from "./slots";
 import { avatarFile, badgeFile, bannerFile, chatAudioFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar, writeBadge } from "./store";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
@@ -410,6 +413,8 @@ const readLimit = rateLimit({ perMinute: 240, burst: 60 });
 const searchLimit = rateLimit({ perMinute: 180, burst: 40 });
 /** Slot spins: a reel takes a second or more to stop, so this is well past a person pressing as fast as the page lets them. */
 const spinLimit = rateLimit({ perMinute: 90, burst: 30 });
+/** Game syncs: one every two seconds a game, with room for a household on one address. */
+const syncLimit = rateLimit({ perMinute: 240, burst: 40 });
 
 export const socialRouter = Router();
 
@@ -914,14 +919,13 @@ socialRouter.get(
   }),
 );
 
-/** Highest pinball score a game can reach in practice, with room to spare; anything over it was not played. Fits a Postgres integer. */
-const PINBALL_MAX = 2_000_000_000;
-
-/** The most a snake can score: 10 an apple, on a 15 by 23 board it starts three long on (client/snake/game.js). */
-const SNAKE_MAX = (15 * 23 - 3) * 10;
-
-/** A game's leaderboard: reading it, and a finished game for it. */
-function gameBoard(game: Game, max: number): void {
+/**
+ * A game's leaderboard (Snake, Pinball): reading it, and the live session a
+ * game is played under (src/social/play.ts). No route takes a score: a game
+ * goes on the board only from a session synced from its start to its end,
+ * and its end decides the badges its place unlocks (shop.ts GAME_BADGES).
+ */
+function gameBoard(game: BoardGame): void {
   /** The leaderboard, and the viewer's own best when signed in. */
   socialRouter.get(
     `/${game}`,
@@ -932,33 +936,55 @@ function gameBoard(game: Game, max: number): void {
     }),
   );
 
-  /** A finished game. Kept as the account's best if it is one. */
+  /** A session for the next game: its id, and Snake's apple seed. Any earlier session of yours ends uncounted. */
   socialRouter.post(
-    `/${game}`,
+    `/${game}/start`,
     requireAuth,
-    writeLimit,
+    syncLimit,
+    wrap(async (req, res) => {
+      assertSameOrigin(req);
+      res.json(startSession(requireUser(res).name, game));
+    }),
+  );
+
+  /** A sync: the game so far. Answered small, as it comes every couple of seconds. */
+  socialRouter.post(
+    `/${game}/sync`,
+    requireAuth,
+    syncLimit,
+    readJson,
+    wrap(async (req, res) => {
+      assertSameOrigin(req);
+      res.json(syncSession(requireUser(res).name, game, req.body ?? {}));
+    }),
+  );
+
+  /** The end of a game: the last sync; on the board if it counts, and what its place unlocked. */
+  socialRouter.post(
+    `/${game}/end`,
+    requireAuth,
+    syncLimit,
     readJson,
     wrap(async (req, res) => {
       assertSameOrigin(req);
       const me = requireUser(res);
-      const score = req.body?.score;
-      if (!Number.isInteger(score) || score < 0 || score > max || score % 10) {
-        throw new SocialError(400, "That is not a score.");
-      }
-      await gameScore(game, me.name, score);
-      res.json({ top: await gameTop(game), best: await gameBest(game, me.name) });
+      const now = Date.now();
+      const score = endSession(me.name, game, req.body ?? {}, now);
+      const done = await finishBoardGame(game, me.name, score, now, (rank) => badgesForRank(game, rank));
+      if (done.unlocked.length) console.log(`[games] ${me.name} placed ${done.rank} at ${game} and unlocked ${done.unlocked.join(", ")}`);
+      res.json({ score, ...done, top: await gameTop(game) });
     }),
   );
 }
 
-gameBoard("pinball", PINBALL_MAX);
-gameBoard("snake", SNAKE_MAX);
+gameBoard("pinball");
+gameBoard("snake");
 
 // —— Fruit Slots (src/social/slots.ts) ——
 //
 // Played on the server: the page asks for a spin and is told where the reels
-// stopped. No route takes a score, and the board is written only as a game
-// ends (db.ts spinSlotGame, cashOutSlotGame), so a score can only be played.
+// stopped. No route takes a score: the board, each account's highest balance,
+// is written as a spin reaches it (db.ts spinSlotGame).
 
 /** A game as the page sees it: its secret only once the game is over, when it can no longer tell anyone anything. */
 function slotView(game: SlotGame) {
@@ -970,21 +996,21 @@ function slotView(game: SlotGame) {
     stops: game.stops,
     bet: game.bet,
     win: game.win,
+    peak: game.peak,
     over,
-    top: game.credits >= TOP,
     commit: game.commit,
     // Named `secret`, not `seed`: guard.ts scrubs every `seed` from every answer, as a wallet's would be.
     ...(over ? { secret: game.seed } : {}),
   };
 }
 
-/** Games left today, and when the next day starts. */
+/** Fresh starts left today, and when the next day starts. */
 async function slotDay(name: string, now: number): Promise<{ left: number; resets: number }> {
   const day = dayOf(now);
   return { left: Math.max(0, GAMES_A_DAY - (await slotGamesOn(name, day))), resets: (day + 1) * DAY_MS };
 }
 
-/** The board, and signed in: your best, your game in play, today's games left and the prizes you hold. */
+/** The board, and signed in: your best, your balance, today's fresh start, and the statuses you have. */
 socialRouter.get(
   "/slots",
   readLimit,
@@ -1003,12 +1029,18 @@ socialRouter.get(
       name: me.name,
       game: game ? slotView(game) : null,
       ...(await slotDay(me.name, Date.now())),
-      prizes: await heldPrizes(me.name),
+      statuses: await statusesOf(me.name),
     });
   }),
 );
 
-/** A new game, or the one still open. Refused once today's games are played. */
+/** The fruit statuses `name` may wear: every one with the pack, else those had one at a time. */
+async function statusesOf(name: string): Promise<string[]> {
+  if ((await ownedPacks(name)).includes("fruit")) return Object.keys(STATUSES);
+  return (await itemsOf(name)).filter((item) => item.startsWith("st:")).map((item) => item.slice(3));
+}
+
+/** A fresh start, or the balance still open. Refused once today's fresh start is used. */
 socialRouter.post(
   "/slots/new",
   requireAuth,
@@ -1039,7 +1071,7 @@ socialRouter.post(
     const n = req.body?.n;
     if (!isBet(bet)) throw new SocialError(400, "No such bet.");
     if (!Number.isSafeInteger(n) || n < 0) throw new SocialError(400, "Which spin?");
-    const { game, prize } = await spinSlotGame({
+    const game = await spinSlotGame({
       name: me.name,
       n,
       bet,
@@ -1048,27 +1080,35 @@ socialRouter.post(
         const stops = drawStops(open.seed, open.spins);
         const times = payout(lineOf(stops));
         const credits = settle(open.credits, bet, times);
-        return { stops, win: bet * times, credits, over: isOver(credits), prize: credits >= TOP ? PRIZE : null };
+        return { stops, win: bet * times, credits, over: isOver(credits) };
       },
     });
-    if (prize) console.log(`[slots] ${me.name} reached ${TOP} and won ${PRIZE}`);
-    res.json({ game: slotView(game), prize });
+    res.json({ game: slotView(game) });
   }),
 );
 
-/** Cash out: {n}. The game ends with what it has, which goes on the board. */
+/**
+ * Spend STATUS_PRICE credits on a fruit status: {status, for?}. Yours at
+ * once, or for someone else, theirs to unlock free in the Shop.
+ */
 socialRouter.post(
-  "/slots/cashout",
+  "/slots/buy",
   requireAuth,
-  spinLimit,
+  writeLimit,
   readJson,
   wrap(async (req, res) => {
     assertSameOrigin(req);
     const me = requireUser(res);
-    const n = req.body?.n;
-    if (!Number.isSafeInteger(n) || n < 0) throw new SocialError(400, "Which spin?");
-    const game = await cashOutSlotGame(me.name, n, Date.now());
-    res.json({ game: slotView(game) });
+    const fruit = req.body?.status;
+    if (!isStatus(fruit)) throw new SocialError(400, "No such status.");
+    let to: string | null = null;
+    if (req.body?.for !== undefined && req.body.for !== "") {
+      to = username(typeof req.body.for === "string" ? req.body.for.replace(/^\s*@/, "") : req.body.for);
+      if (!to) throw new SocialError(400, "Usernames are 3–16 letters, numbers, or _.");
+    }
+    const { game, prize } = await buyStatus({ name: me.name, fruit, to, price: STATUS_PRICE, minBet: BETS[0], at: Date.now() });
+    console.log(`[slots] ${me.name} spent ${STATUS_PRICE} on ${fruit}${to && to !== me.name ? ` for ${to}` : ""}`);
+    res.json({ game: slotView(game), gift: !!prize, statuses: await statusesOf(me.name) });
   }),
 );
 
@@ -2147,6 +2187,8 @@ socialRouter.get(
       admin: shopAdmins().has(me.name),
       // Won at Fruit Slots, or given: each unlocks a pack free, or goes on to someone else.
       prizes: await heldPrizes(me.name),
+      // Owned one at a time: statuses bought or given ('st:'), badges won by a place on a board ('bd:').
+      items: await itemsOf(me.name),
     });
   }),
 );
@@ -2286,8 +2328,9 @@ socialRouter.post(
     assertSameOrigin(req);
     const me = requireUser(res);
     const owned = await ownedPacks(me.name);
-    const badge = req.body?.badge === undefined ? (me.badge ?? "") : badgeFor(req.body.badge, owned, me.badgeRev ?? 0);
-    const status = req.body?.status === undefined ? (me.status ?? "") : statusFor(req.body.status, owned);
+    const items = await itemsOf(me.name);
+    const badge = req.body?.badge === undefined ? (me.badge ?? "") : badgeFor(req.body.badge, owned, me.badgeRev ?? 0, items);
+    const status = req.body?.status === undefined ? (me.status ?? "") : statusFor(req.body.status, owned, items);
     if (badge == null || status == null) throw new SocialError(403, "That isn’t yours to wear yet.");
     await wear(me.name, badge, status);
     res.json({ me: await savedMe(me.name), badge, status });
