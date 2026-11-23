@@ -81,7 +81,7 @@ async function badgePng(file) {
 /**
  * @param {{
  *   main: HTMLElement,
- *   me: () => null | { name: string, avatarRev: number },
+ *   me: () => null | { name: string, bio: string, avatarRev: number },
  *   pull: (path: string, opts?: object) => Promise<any>,
  *   send: (path: string, body?: object) => Promise<any>,
  *   face: (name: string, rev: number) => HTMLElement | null,
@@ -370,7 +370,7 @@ async function mount({ main, me, pull, send, face, marks, show }) {
             "div",
             {},
             el("div", {}, name, ...marks(name, mark === " " ? "" : mark)),
-            el("small", { text: "One badge and one status at a time, after your name everywhere." }),
+            who?.bio ? el("small", { text: who.bio }) : null,
           ),
         ),
         pack("checks", (owned) => BADGES.map((c) => tile(`/bd-${c}.svg`, cap(c), state.badge === c, owned, () => put("badge", c)))),
