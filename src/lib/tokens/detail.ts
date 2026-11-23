@@ -97,6 +97,9 @@ async function marketData(mint: string): Promise<JupToken | null> {
   return task;
 }
 
+/** How long the panel's answer waits on its link tiles' colours. */
+const LINK_TINT_WAIT_MS = 1_200;
+
 /** Null when the mint is not in the index: this is not a proxy for arbitrary Jupiter lookups. */
 export async function tokenDetail(mint: string): Promise<TokenDetail | null> {
   const found = lookupMints([mint, WSOL_MINT]);
@@ -117,13 +120,16 @@ export async function tokenDetail(mint: string): Promise<TokenDetail | null> {
     telegram: https(jup?.telegram),
     discord: https(jup?.discord),
   };
-  // X's tile carries X's own mark; the others take their site's icon, whose
-  // fetch the first ask starts.
+  // X's tile carries X's own mark; the others take their site's icon's
+  // colours, waited for, but only so long: a site read for the first time can
+  // take seconds, and then the tile asks again once its icon has drawn.
   const linkTints: NonNullable<TokenDetail["linkTints"]> = {};
-  for (const key of ["website", "telegram", "discord"] as const) {
-    const tint = links[key] ? faviconTint(links[key]) : null;
-    if (tint) linkTints[key] = tint;
-  }
+  await Promise.all(
+    (["website", "telegram", "discord"] as const).map(async (key) => {
+      const tint = links[key] ? await faviconTint(links[key], LINK_TINT_WAIT_MS) : null;
+      if (tint) linkTints[key] = tint;
+    }),
+  );
   return {
     mint,
     symbol: rec.symbol,

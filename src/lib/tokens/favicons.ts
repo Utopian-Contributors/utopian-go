@@ -61,22 +61,50 @@ export function faviconFile(site: string): string | null {
 
 /**
  * The tile colours (`--hi`, `--lo`) for the site's icon, as the home page's
- * asset tiles take theirs from a logo. Null until the icon is on disk and has
- * been read; asking starts the fetch.
+ * asset tiles take theirs from a logo: the icon fetched if it is not on disk,
+ * then read. Null for a site with no icon to be had, or when `waitMs` runs
+ * out first; the fetch and the read carry on, for whoever asks next (the
+ * tile itself, once its icon has drawn: client/wallet/panel.js).
  */
-export function faviconTint(site: string): string | null {
+export async function faviconTint(site: string, waitMs = Infinity): Promise<string | null> {
   const host = hostOf(site);
   if (!host) return null;
-  if (!have.has(host)) {
-    void ensureFavicon(site);
-    return null;
+  const held = tints.get(host);
+  if (held != null) return held || null;
+  const work = (async () => {
+    if (!have.has(host) && !(await ensureFavicon(site))) return null;
+    return (await tintOfHost(host)) || null;
+  })();
+  if (waitMs === Infinity) return work;
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), waitMs);
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
   }
-  const tint = tints.get(host);
-  if (tint != null) return tint || null;
-  void readTint(fileOf(host))
-    .catch(() => "")
-    .then((t) => tints.set(host, t));
-  return null;
+}
+
+/** One read per host at a time; a failed read is not kept, so the next ask tries again. */
+const reading = new Map<string, Promise<string>>();
+
+function tintOfHost(host: string): Promise<string> {
+  const held = tints.get(host);
+  if (held != null) return Promise.resolve(held);
+  let task = reading.get(host);
+  if (!task) {
+    task = readTint(fileOf(host)).then(
+      (t) => {
+        tints.set(host, t);
+        return t;
+      },
+      () => "",
+    ).finally(() => reading.delete(host));
+    reading.set(host, task);
+  }
+  return task;
 }
 
 /** Fetches the site's icon unless it is on disk and fresh. True once there is one to serve. */
@@ -98,6 +126,8 @@ export function ensureFavicon(site: string): Promise<boolean> {
         have.add(host);
         tints.delete(host);
         failed.delete(host);
+        // Read now, so the colour is ready by the time anyone asks for it.
+        void tintOfHost(host);
         return true;
       })
       .catch(() => {

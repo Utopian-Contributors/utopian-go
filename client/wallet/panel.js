@@ -49,9 +49,24 @@ function linkTile(d, key, label) {
     el("strong", { text: label }),
     el("span", { text: where(key, href) }),
   );
-  // As properties, not a style attribute: the tint is the server's text.
-  for (const m of (d.linkTints?.[key] || "").matchAll(/(--hi|--lo):(#[0-9a-f]{6})/g)) tile.style.setProperty(m[1], m[2]);
+  const tint = d.linkTints?.[key];
+  if (tint) paint(tile, tint);
+  else if (key !== "twitter") {
+    // The panel came before the server had read this icon's colours (a site
+    // it had never fetched): by the time the icon has drawn, it has them.
+    const url = `/api/tokens/${encodeURIComponent(d.mint)}/links/${key}/tint`;
+    mark.addEventListener(
+      "load",
+      () => fetch(url).then((r) => (r.ok ? r.json() : null)).then((j) => j?.tint && paint(tile, j.tint), () => {}),
+      { once: true },
+    );
+  }
   return tile;
+}
+
+/** As properties, not a style attribute: the tint is the server's text. */
+function paint(tile, tint) {
+  for (const m of tint.matchAll(/(--hi|--lo):(#[0-9a-f]{6})/g)) tile.style.setProperty(m[1], m[2]);
 }
 
 /** The synced thumbnail, or a coin the same size so the tickers stay in line. */

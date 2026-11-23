@@ -13,7 +13,7 @@ import { rateLimit } from "../lib/rateLimit";
 import { isSignature, signatureStatus } from "../lib/txStatus";
 import { MAX_ASSETS, fetchAssets } from "../lib/tokens/asset";
 import { tokenDetail } from "../lib/tokens/detail";
-import { ensureFavicon, faviconFile } from "../lib/tokens/favicons";
+import { ensureFavicon, faviconFile, faviconTint } from "../lib/tokens/favicons";
 import { tintOf } from "../lib/tokens/icons";
 import { isChartRange, priceSeries } from "../lib/tokens/history";
 import {
@@ -660,6 +660,27 @@ apiRouter.get(
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.type("image/webp").sendFile(file);
+  }),
+);
+
+/**
+ * The colours of that icon, for a tile whose panel came before they were
+ * read: it asks once its icon has drawn, by when they are (or soon will be).
+ */
+apiRouter.get(
+  "/api/tokens/:mint/links/:key/tint",
+  linkIconLimit,
+  wrap(async (req: Request, res: Response) => {
+    const { mint, key } = req.params;
+    if (!isPubkey(mint) || !(key === "website" || key === "telegram" || key === "discord")) {
+      res.status(400).json({ error: "Invalid link." });
+      return;
+    }
+    const site = (await tokenDetail(mint))?.links[key];
+    const tint = site ? await faviconTint(site) : null;
+    // A miss is not kept: the icon may be along in a moment.
+    res.setHeader("Cache-Control", tint ? "public, max-age=86400" : "no-store");
+    res.json({ tint });
   }),
 );
 
