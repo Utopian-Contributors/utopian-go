@@ -21,7 +21,7 @@
  * and checked in as it is; this script leaves it alone.
  *
  * Nor are the badges won at the games (src/social/shop.ts GAME_BADGES):
- * bd-sn1…5.svg, five snake heads seen from above, and bd-pb1…5.svg, five
+ * bd-sn1…5.svg, five snake heads face on, mouths open on their fangs, and bd-pb1…5.svg, five
  * mushrooms after the pinball table's bumpers. The package has neither, so
  * they too are drawn by hand in its manner and checked in.
  */
