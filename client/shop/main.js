@@ -328,7 +328,7 @@ async function mount({ main, me, pull, send, face, marks, show }) {
         ...GAME_BADGES[game].map((badge, i) => {
           const have = items.has(`bd:${badge.id}`);
           const spot = place(TIERS[i]);
-          const card = tile(`/bd-${badge.id}.svg`, badge.name, state.badge === badge.id, have, () => put("badge", badge.id));
+          const card = tile(badgeSrc("", badge.id), badge.name, state.badge === badge.id, have, () => put("badge", badge.id));
           // The place that unlocks it, large in the corner and faded into the card.
           card.classList.add("sh-w");
           card.prepend(el("span", { class: "sh-rk", "aria-hidden": "true", text: spot }));
@@ -373,7 +373,7 @@ async function mount({ main, me, pull, send, face, marks, show }) {
             who?.bio ? el("small", { text: who.bio }) : null,
           ),
         ),
-        pack("checks", (owned) => BADGES.map((c) => tile(`/bd-${c}.svg`, cap(c), state.badge === c, owned, () => put("badge", c)))),
+        pack("checks", (owned) => BADGES.map((c) => tile(badgeSrc("", c), cap(c), state.badge === c, owned, () => put("badge", c)))),
         pack(
           "custom",
           (owned) => [tile(own, "Your own", state.badge[0] === "u", owned && state.badgeRev > 0, () => put("badge", "u"))],

@@ -14,7 +14,7 @@ export const STATUSES = {
   mango: "Good Mango",
   banana: "Top Banana",
   cherry: "Cherry on Top",
-  grape: "Grape Job",
+  grape: "Grape Expectations",
   orange: "Main Squeeze",
   peach: "Feeling Peachy",
   avocado: "Holy Guacamole",
@@ -147,6 +147,14 @@ export function markOf(user: { badge?: string; status?: string }): string | unde
 }
 
 /** Where a badge's picture is: a colour's drawing, or `name`'s own at its revision. */
+/**
+ * The badge drawings' version, in every address they are linked by. The files
+ * are cached for a week (by the CDN, browsers and the service worker) under
+ * their address, so a redrawn badge only reaches anyone under a new one: bump
+ * this whenever a client/bd-*.svg changes.
+ */
+export const BADGE_ART = 3;
+
 export function badgeSrc(name: string, badge: string): string {
-  return badge[0] === "u" ? `/social/k/${name}?v=${badge.slice(1)}` : `/bd-${badge}.svg`;
+  return badge[0] === "u" ? `/social/k/${name}?v=${badge.slice(1)}` : `/bd-${badge}.svg?v=${BADGE_ART}`;
 }
