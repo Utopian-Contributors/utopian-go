@@ -58,10 +58,15 @@ body {
   align-items: center;
   gap: 12px;
   box-sizing: border-box;
+  /* The box spans the window, as the other sections' headers do (header.css
+     #hd, to --shell's 1520px), since a home tile's colour is drawn up into
+     it: a narrower box would pinch the colour in from the sides as well.
+     Its contents keep to the list's 960px, 16px in, as the games' own
+     headers do (snake.css .sn-hd). */
   width: 100%;
-  max-width: 960px;
+  max-width: 1520px;
   margin: 0 auto;
-  padding: max(8px, env(safe-area-inset-top)) 16px 8px;
+  padding: max(8px, env(safe-area-inset-top)) max(16px, (100% - 928px) / 2) 8px;
 }
 
 /* Opened from the home tile, the tile's flood is drawn into this bar as the
