@@ -932,7 +932,12 @@ function gameBoard(game: BoardGame): void {
     readLimit,
     wrap(async (_req, res) => {
       const me = currentUser(res);
-      res.json({ top: await gameTop(game), best: me ? await gameBest(game, me.name) : 0 });
+      res.json({
+        top: await gameTop(game),
+        best: me ? await gameBest(game, me.name) : 0,
+        // The badge they wear, which the game draws itself in (shop.ts SNAKE_SKINS, MUSHROOM_SKINS).
+        ...(me ? { badge: me.badge ?? "" } : {}),
+      });
     }),
   );
 

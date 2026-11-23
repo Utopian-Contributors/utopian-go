@@ -205,6 +205,12 @@ buys no steps.
   end decides it, so a better place later unlocks the rarer ones, and dropping off the board
   takes nothing away. The boards held unchecked posted scores before; they were cleared once,
   at deploy (`schema_steps` `boards-synced`).
+- **Worn in the game.** An equipped snake badge colours the snake, body and eyes, and an
+  equipped mushroom badge the pinball bumpers' caps (spotted or not, as the badge is drawn;
+  the G·O·! power levels brighten that colour rather than change it). `shop.ts SNAKE_SKINS`,
+  `MUSHROOM_SKINS`. A board's answer carries the viewer's `badge`, kept on the device
+  (`ug.bd`, `client/games/skin.js`) so an offline game wears it too; with no one signed in,
+  the games draw themselves as ever.
 
 ```
 POST /api/social/<game>/start              → {id, apples, every}     snake | pinball

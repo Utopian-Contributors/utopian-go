@@ -10,6 +10,8 @@
  * offline stays on this device.
  */
 
+import { keepWorn } from "./skin.js";
+
 const KEEP = 10;
 
 /** @typedef {{score: number, at: number}} Game */
@@ -94,7 +96,12 @@ export function scores(key, game) {
       // With no network the worker answers too, a 200 from its last copy, and
       // says so with the time of it (client/sw).
       const copy = Number(res.headers.get("ug-at"));
-      if (res.ok) return { board: keepBoard(await res.json(), copy || Date.now()), live: !copy };
+      if (res.ok) {
+        const data = await res.json();
+        // A fresh answer says what badge is worn, and with none, that no one is signed in.
+        if (!copy) keepWorn(typeof data.badge === "string" ? data.badge : "");
+        return { board: keepBoard(data, copy || Date.now()), live: !copy };
+      }
     } catch {
       // Offline, and the worker had nothing: the copy below.
     }

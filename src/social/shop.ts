@@ -38,7 +38,7 @@ export const GAME_BADGES = {
     { id: "sn5", name: "Garden Snake" },
   ],
   pinball: [
-    { id: "pb1", name: "Golden Mushroom" },
+    { id: "pb1", name: "Gold Shroom" },
     { id: "pb2", name: "Fly Agaric" },
     { id: "pb3", name: "Amethyst Cap" },
     { id: "pb4", name: "Blue Bumper" },
@@ -47,6 +47,26 @@ export const GAME_BADGES = {
 } as const;
 
 export type BoardGame = keyof typeof GAME_BADGES;
+
+/**
+ * How each game wears its badges: equipped, a snake badge colours the snake
+ * (body and eyes) and a mushroom badge the pinball table's mushroom bumpers
+ * (their caps, and whether they are spotted), as the badge is drawn.
+ */
+export const SNAKE_SKINS: Record<string, { body: string; eye: string }> = {
+  sn1: { body: "#f2b51c", eye: "#ff4b3a" },
+  sn2: { body: "#e0213a", eye: "#ffd23a" },
+  sn3: { body: "#22b84a", eye: "#f4ff6a" },
+  sn4: { body: "#2f7fe0", eye: "#ffb13a" },
+  sn5: { body: "#7f9a2e", eye: "#f5c542" },
+};
+export const MUSHROOM_SKINS: Record<string, { cap: string; spots: boolean }> = {
+  pb1: { cap: "#f0b41a", spots: true },
+  pb2: { cap: "#e5262a", spots: true },
+  pb3: { cap: "#9a4ae0", spots: true },
+  pb4: { cap: "#2f8ae8", spots: false },
+  pb5: { cap: "#9a5b2c", spots: false },
+};
 
 /** The places each badge of a set is for: #1, #2, #3, #4–6 and #7–10, the top ten. */
 export const TIERS = [

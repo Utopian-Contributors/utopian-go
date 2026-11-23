@@ -12,6 +12,7 @@
  * which is where the rules make it.
  */
 import APPLE_ART from "../ic-apple.svg";
+import { SNAKE_SKINS } from "../../src/social/shop.ts";
 import { COLS, ROWS, game } from "./game.js";
 
 /** @typedef {import("./game.js").Cell} Cell */
@@ -25,8 +26,16 @@ const THEMES = {
 /** The system's theme; snake/main.js redraws when it changes. */
 export const dark = matchMedia("(prefers-color-scheme: dark)");
 
-const GREEN = "#3cc316";
-const EYE = "#ffe14d";
+/** The logo's green with yellow eyes, unless the player wears a snake badge (wear()). */
+let GREEN = "#3cc316";
+let EYE = "#ffe14d";
+
+/** Draw the snake in the colours of the badge worn: one of Snake's own, else the logo's green. @param {string} badge */
+export function wear(badge) {
+  const skin = SNAKE_SKINS[badge];
+  GREEN = skin?.body ?? "#3cc316";
+  EYE = skin?.eye ?? "#ffe14d";
+}
 
 /** In cells: how wide the body is, short of a cell so a snake folded on itself still shows its folds; the head's radius, a little wider; and the apple. */
 const BODY = 0.78;

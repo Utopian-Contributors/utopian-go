@@ -16,7 +16,8 @@ import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { LETTER, seeded } from "../../src/social/snakeRules.ts";
 import { COLS, ROWS, game, lay, newGame, step, stepMs, takeLog, turn } from "./game.js";
-import { dark, draw, fit, ready } from "./render.js";
+import { onWorn, worn } from "../games/skin.js";
+import { dark, draw, fit, ready, wear } from "./render.js";
 
 /** @typedef {import("./game.js").Dir} Dir */
 
@@ -302,6 +303,12 @@ function resize() {
 }
 
 dark.addEventListener("change", () => paint());
+// The snake in the badge worn, from the start, and anew when the board says it changed.
+wear(worn());
+onWorn((badge) => {
+  wear(badge);
+  paint();
+});
 ready.then(() => paint());
 
 // Nobody is watching: a game waits for them to come back.

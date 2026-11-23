@@ -3222,6 +3222,10 @@ test("a place in a board's top ten, when a game ends, unlocks that place's badge
     assert.equal((await low("POST", "/api/social/shop/wear", { badge: "pb5" })).status, 403);
     assert.equal((await newcomer("POST", "/api/social/shop/wear", { badge: "pb1" })).status, 200);
     assert.equal((await newcomer("GET", "/api/social/u/neo")).json.user.mark, "pb1 ");
+    // The games draw themselves in the badge worn: the board says which, to the one wearing it.
+    assert.equal((await newcomer("GET", "/api/social/pinball")).json.badge, "pb1");
+    assert.equal((await newcomer("GET", "/api/social/snake")).json.badge, "pb1", "a mushroom on the snake page draws no snake");
+    assert.equal((await low("GET", "/api/social/pinball")).json.badge, "");
     assert.deepEqual((await newcomer("GET", "/api/social/shop")).json.items, ["bd:pb1", "bd:pb2", "bd:pb3", "bd:pb4", "bd:pb5"]);
     // Over HTTP, a snake session hands the page its apple seed (guard.ts scrubs any `seed`, so it is `apples`).
     const opened = (await low("POST", "/api/social/snake/start")).json;

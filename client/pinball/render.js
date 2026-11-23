@@ -13,6 +13,7 @@
  * what stands on it, the ramp (balls pass under it), and the apron and glass
  * (balls drain behind them). Each frame adds what moves and what lights.
  */
+import { MUSHROOM_SKINS } from "../../src/social/shop.ts";
 import {
   BUMPERS,
   CENTER_POST,
@@ -1036,13 +1037,33 @@ function drawLamps() {
   g.restore();
 }
 
-/** A pop bumper: a mushroom, brass skirt, white stem, a domed cap that flares when struck. */
+/** The mushrooms' caps as the badge worn draws them; null for the table's own. @type {{cap: string, spots: boolean} | null} */
+let mushroom = null;
+
+/** `hex` made brighter by `k`, still as hex, since what draws the cap shades it again. @param {string} hex @param {number} k */
+const lift = (hex, k) =>
+  `#${[1, 3, 5].map((i) => Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * k)).toString(16).padStart(2, "0")).join("")}`;
+
+/** Draw the bumpers in the colours of the badge worn: one of Pinball's own mushrooms, else the table's. @param {string} badge */
+export function wear(badge) {
+  mushroom = MUSHROOM_SKINS[badge] ?? null;
+}
+
+/**
+ * A pop bumper: a mushroom, brass skirt, white stem, a domed cap that flares
+ * when struck. Its colour says how far the G·O·! lanes have powered it: the
+ * table's four colours, or, in a worn mushroom's colour, brighter each level.
+ */
 function bumper(b) {
   const lit = b.flash > 0;
   const powered = game.power;
   cylinder(b.x, b.y, b.r + 4, 0, 4, BRASS, "#f2d78a");
   cylinder(b.x, b.y, b.r - 4, 4, 16, "#e8e2cc", null);
-  const capCol = lit ? "#fff27a" : ["#d8352a", "#e8641e", "#e0a21e", "#c22fd8"][powered];
+  const capCol = lit
+    ? "#fff27a"
+    : mushroom
+      ? lift(mushroom.cap, [1, 1.18, 1.36, 1.55][powered])
+      : ["#d8352a", "#e8641e", "#e0a21e", "#c22fd8"][powered];
   cylinder(b.x, b.y, b.r + 1, 16, 21, capCol, null);
   ellipse(b.x, b.y, 21, b.r + 1);
   const [cx, cy, k] = P(b.x, b.y, 21);
@@ -1052,8 +1073,8 @@ function bumper(b) {
   dome.addColorStop(1, shade(capCol, 0.55));
   g.fillStyle = dome;
   g.fill();
-  // White spots on the cap.
-  g.fillStyle = "rgba(255,250,235,0.9)";
+  // White spots on the cap, unless the mushroom worn has none.
+  g.fillStyle = mushroom && !mushroom.spots ? "rgba(0,0,0,0)" : "rgba(255,250,235,0.9)";
   for (const [dx, dy, r] of [
     [-7, -5, 3],
     [6, -7, 2.5],

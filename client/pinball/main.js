@@ -15,7 +15,8 @@ import { keepOffline } from "../games/offline.js";
 import { scores } from "../games/scores.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
-import { ASPECT, draw, fit } from "./render.js";
+import { onWorn, worn } from "../games/skin.js";
+import { ASPECT, draw, fit, wear } from "./render.js";
 import { flip, game, newGame, onEvents, pull, update, waiting } from "./table.js";
 
 /** @param {string} id */
@@ -224,6 +225,9 @@ $("pb-bk").addEventListener("click", () => {
 /* ---------- Start ---------- */
 
 noZoom();
+// The bumpers in the mushroom worn, from the start, and anew when the board says it changed.
+wear(worn());
+onWorn(wear);
 document.documentElement.style.setProperty("--pb-ar", String(ASPECT));
 new ResizeObserver(resize).observe(box);
 resize();
