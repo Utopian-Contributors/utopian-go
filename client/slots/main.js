@@ -18,6 +18,7 @@ import { BETS, CHERRIES, FRUITS, REELS, START, STATUS_PRICE, THREE, lineOf, payo
 import { keepOffline } from "../games/offline.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
+import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
 
 /** @param {string} id */
@@ -32,6 +33,10 @@ const machine = $("sl-mc");
 const reelsBox = $("sl-rs");
 const creditsOut = $("sl-cr");
 const bestOut = $("sl-bs");
+/** The same two, large at the board's head on a desktop. */
+const creditsBig = $("sl-cr2");
+const bestBig = $("sl-bs2");
+const jolt = tally(creditsBig);
 const msgOut = $("sl-msg");
 const goBtn = /** @type {HTMLButtonElement} */ ($("sl-go"));
 const buyBtn = /** @type {HTMLButtonElement} */ ($("sl-by"));
@@ -313,6 +318,7 @@ function countTo(to) {
   const from = shown;
   const t0 = performance.now();
   const dur = reduce || Math.abs(to - from) < 2 ? 0 : Math.min(900, 250 + Math.abs(to - from) * 4);
+  if (to !== from) jolt(to - from, dur);
   const step = (now) => {
     const t = dur ? Math.min(1, (now - t0) / dur) : 1;
     shown = Math.round(from + (to - from) * easeOut(t));
@@ -323,12 +329,12 @@ function countTo(to) {
 }
 
 function paintCredits() {
-  creditsOut.textContent = fmt(shown);
+  creditsOut.textContent = creditsBig.textContent = fmt(shown);
 }
 
 function paintBest() {
   const best = state?.best || 0;
-  bestOut.textContent = best ? `Best ${fmt(best)}` : "";
+  bestOut.textContent = bestBig.textContent = best ? `Best ${fmt(best)}` : "";
 }
 
 const open = () => game && !game.over;

@@ -616,15 +616,38 @@ a.sl-go {
   }
 }
 
-/* A wide screen: the machine, with the prizes and the board at its right. */
-@media (min-width: 860px) {
+/* A wide screen: the machine centred at its phone width, the prizes and the
+   board at its right, as snake.css lays out its board. Below this the
+   one column is centred already, and there is no room for the board on
+   either side of the machine. */
+@media (min-width: 1100px) {
   .sl-main {
-    width: min(100%, 860px);
-    grid-template-columns: minmax(0, 1fr) 280px;
+    width: 100%;
+    grid-template-columns: 1fr 428px 1fr;
     gap: 28px;
     padding-top: 28px;
   }
+
+  .sl-play {
+    grid-column: 2;
+  }
+
+  .sl-side {
+    grid-column: 3;
+    width: 280px;
+  }
+
+  /* The credits leave the header for the card at the board's head. */
+  .sl-hd .sl-cr,
+  .sl-hd .sl-best {
+    display: none;
+  }
+
+  .sl-side .gm-score {
+    display: block;
+  }
 }
+
 
 @media (prefers-reduced-motion: reduce) {
   .sl-reel.fast img {
@@ -640,6 +663,106 @@ a.sl-go {
 @media (prefers-reduced-motion: no-preference) {
   @view-transition {
     navigation: auto;
+  }
+}
+
+/* The score, large, at the head of the board on a desktop, in the header's
+   place (games/tally.js). The same in snake.css, pinball.css and slots.css. */
+.gm-score {
+  display: none;
+}
+
+.gm-score h2 {
+  margin: 0 0 4px;
+  font: 700 15px var(--ff);
+}
+
+.gm-big {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  margin: 2px 0 6px;
+}
+
+.gm-num {
+  display: inline-block;
+  font: 800 56px/1 var(--ff);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  transform-origin: left bottom;
+}
+
+.gm-best {
+  margin: 0;
+  color: var(--f);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gm-best:empty {
+  display: none;
+}
+
+/* What a change put on or took off: rises (points) or drops (a bet, a buy)
+   from beside the number and is gone in about a second. */
+.gm-delta {
+  position: absolute;
+  right: 0;
+  top: 4px;
+  font: 800 24px/1 var(--ff);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: gm-delta-up 1.1s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+.gm-delta.up {
+  color: var(--go);
+  text-shadow: 0 0 12px rgb(156 245 176 / 0.5);
+}
+
+.gm-delta.down {
+  color: var(--f);
+  animation-name: gm-delta-down;
+}
+
+@keyframes gm-delta-up {
+  0% {
+    opacity: 0;
+    translate: 0 14px;
+    scale: 0.6;
+  }
+  20% {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1.15;
+  }
+  35% {
+    scale: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: 0 -30px;
+  }
+}
+
+@keyframes gm-delta-down {
+  0% {
+    opacity: 0;
+    translate: 0 -10px;
+  }
+  20% {
+    opacity: 1;
+    translate: 0 0;
+  }
+  70% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    translate: 0 22px;
   }
 }
 

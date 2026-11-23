@@ -14,6 +14,7 @@ import { keepOffline } from "../games/offline.js";
 import { scores } from "../games/scores.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
+import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
 import { LETTER, seeded } from "../../src/social/snakeRules.ts";
 import { COLS, ROWS, game, lay, newGame, step, stepMs, takeLog, turn } from "./game.js";
@@ -30,6 +31,11 @@ const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
 const box = $("sn-t");
 const bestOut = $("sn-bs");
 const scoreOut = $("sn-sc");
+/** The score, large, beside the board on a desktop, and what makes it jump. */
+const scoreBig = $("sn-sc2");
+const jolt = tally(scoreBig);
+/** The score last painted: what it gained since is what rises from it. */
+let painted = 0;
 const msgOut = $("sn-msg");
 const playBtn = $("sn-go");
 
@@ -65,9 +71,12 @@ function say(text) {
 }
 
 function paintCounters() {
-  scoreOut.textContent = fmt(game.score);
+  scoreOut.textContent = scoreBig.textContent = fmt(game.score);
+  // Points earned rise; a new game's fall back to nought does not.
+  if (game.score > painted) jolt(game.score - painted);
+  painted = game.score;
   const best = store.best();
-  bestOut.textContent = best ? `Best ${fmt(best)}` : "";
+  bestOut.textContent = $("sn-bs2").textContent = best ? `Best ${fmt(best)}` : "";
 }
 
 /* ---------- Sound ---------- */

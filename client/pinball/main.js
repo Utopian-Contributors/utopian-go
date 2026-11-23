@@ -15,6 +15,7 @@ import { keepOffline } from "../games/offline.js";
 import { scores } from "../games/scores.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
+import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
 import { onWorn, worn } from "../games/skin.js";
 import { ASPECT, draw, fit, wear } from "./render.js";
@@ -29,6 +30,11 @@ const box = $("pb-t");
 const ballsOut = $("pb-bn");
 const multOut = $("pb-x");
 const scoreOut = $("pb-sc");
+/** The score, large, beside the board on a desktop, and what makes it jump. */
+const scoreBig = $("pb-sc2");
+const jolt = tally(scoreBig);
+/** The score last painted: what it gained since is what rises from it. */
+let painted = 0;
 const msgOut = $("pb-msg");
 
 const fmt = (n) => n.toLocaleString("en-US");
@@ -66,7 +72,10 @@ function say(text, secs = 2.5) {
 const MULTS = [1, 2, 3, 5, 10];
 
 function paintCounters() {
-  scoreOut.textContent = fmt(game.score);
+  scoreOut.textContent = scoreBig.textContent = fmt(game.score);
+  // Points earned rise; a new game's fall back to nought does not.
+  if (game.score > painted) jolt(game.score - painted);
+  painted = game.score;
   // This ball and those still to come, as dots.
   const left = game.state === "play" ? game.left + 1 : game.state === "idle" ? 3 : 0;
   ballsOut.textContent = "●".repeat(Math.min(left, 6)) || "–";
