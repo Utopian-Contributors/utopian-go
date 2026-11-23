@@ -432,6 +432,15 @@ body.home .hm-a img {
   filter: none;
 }
 
+/* A third of a phone's width: the full-size mark crowds the price. */
+@media (max-width: 620px) {
+  body.home .hm-a img {
+    top: -12px;
+    right: -9px;
+    height: 76px;
+  }
+}
+
 body.home .hm-a .hm-fill {
   background: var(--fill-wallet);
 }
