@@ -14,7 +14,7 @@ export const STATUSES = {
   mango: "Good Mango",
   banana: "Top Banana",
   cherry: "Cherry on Top",
-  grape: "Grape Expectations",
+  grape: "Grape Job",
   orange: "Main Squeeze",
   peach: "Feeling Peachy",
   avocado: "Holy Guacamole",
