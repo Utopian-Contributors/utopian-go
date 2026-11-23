@@ -118,6 +118,13 @@ export const FAVICON_PAGE_BYTES = 256 * 1024;
 export const TOKEN_ICON_EDGE = 64;
 
 /**
+ * The large copy at /icon/big/<mint>, for the logos drawn big: a home asset
+ * tile's (96 CSS px) and the watchlist menu's (72). 256 covers a 96 on a
+ * 2–3x screen; scaling the 64 up to it was what made them look pixelated.
+ */
+export const TOKEN_ICON_BIG_EDGE = 256;
+
+/**
  * Meme-coin logos are often full-size PNGs or GIFs of 2–5 MB. At 1 MB about a
  * hundred of the index's logos never made a thumbnail.
  */

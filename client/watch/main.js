@@ -102,7 +102,7 @@ function mount(section) {
     const a = el(
       "a",
       { class: "hm-t hm-a", href, "data-to": to, "data-m": t.mint, "data-n": t.name, style: t.tint },
-      t.icon && el("img", { src: `/icon/${t.mint}`, alt: "", width: "64", height: "64", decoding: "async" }),
+      t.icon && el("img", { src: `/icon/big/${t.mint}`, alt: "", width: "96", height: "96", decoding: "async" }),
       el("b", { text: label(t.symbol) }),
       // Whole dollars from $1,000 up, as the server writes them: a third of a
       // phone's width has no room for a bitcoin's cents.
@@ -156,7 +156,7 @@ function mount(section) {
     const r = el(
       "button",
       { type: "button", class: "wl-o", role: "menuitemcheckbox", "data-m": t.mint, onclick: () => pick(t.mint) },
-      t.icon && el("img", { src: `/icon/${t.mint}`, alt: "", loading: "lazy", decoding: "async" }),
+      t.icon && el("img", { src: `/icon/big/${t.mint}`, alt: "", loading: "lazy", decoding: "async" }),
       el("span", { text: t.name || label(t.symbol) }, el("small", { text: label(t.symbol) })),
     );
     r.insertAdjacentHTML("afterbegin", CHECK);

@@ -12,7 +12,7 @@ import {
   PORT,
   SITE_URL,
 } from "./config";
-import { iconFile } from "./lib/tokens/icons";
+import { bigIconFile, iconFile } from "./lib/tokens/icons";
 import { startTokenIndex } from "./lib/tokens/store";
 import { newsLink, newsPhoto, renderHomeNews, startNews } from "./lib/news";
 import { WATCH_COOKIE, renderFundPrices, renderHomeTickerReady, warmHomeTiles, watchKeys } from "./lib/tokens/ticker";
@@ -670,6 +670,17 @@ app.get("/slots.html", (req, res) => {
 app.get("/slots", (req, _res, next) => {
   req.url = "/slots.html" + req.originalUrl.slice(req.path.length);
   next();
+});
+
+/** The large copy, for a logo drawn big (TOKEN_ICON_BIG_EDGE). */
+app.get("/icon/big/:mint", (req, res) => {
+  const file = bigIconFile(req.params.mint);
+  if (!file) {
+    res.status(404).type("text").send("Not found.");
+    return;
+  }
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.type("webp").sendFile(file);
 });
 
 app.get("/icon/:mint", (req, res) => {

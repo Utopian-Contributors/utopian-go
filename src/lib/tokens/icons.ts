@@ -7,6 +7,7 @@ import path from "path";
 import sharp from "sharp";
 import {
   SITE_URL,
+  TOKEN_ICON_BIG_EDGE,
   TOKEN_ICON_DIR,
   TOKEN_ICON_EDGE,
   TOKEN_ICON_MAX_BYTES,
@@ -34,11 +35,19 @@ const USER_AGENT = `UtopianGo/1.0 (+${SITE_URL})`;
 sharp.cache(false);
 
 const have = new Set<string>();
+/** Mints whose large copy is on disk too. */
+const haveBig = new Set<string>();
 const failed = new Map<string, number>();
 let running = false;
 
+const BIG = ".big.webp";
+
 function fileOf(mint: string): string {
   return path.join(TOKEN_ICON_DIR, `${mint}.webp`);
+}
+
+function bigFileOf(mint: string): string {
+  return path.join(TOKEN_ICON_DIR, `${mint}${BIG}`);
 }
 
 export function hasIcon(mint: string): boolean {
@@ -49,10 +58,16 @@ export function iconFile(mint: string): string | null {
   return MINT.test(mint) && have.has(mint) ? fileOf(mint) : null;
 }
 
+/** The large copy, or the small one for a mint synced before there were large ones. */
+export function bigIconFile(mint: string): string | null {
+  return MINT.test(mint) && haveBig.has(mint) ? bigFileOf(mint) : iconFile(mint);
+}
+
 export function restoreIcons(): void {
   try {
     for (const name of readdirSync(TOKEN_ICON_DIR)) {
-      if (name.endsWith(".webp")) have.add(name.slice(0, -5));
+      if (name.endsWith(BIG)) haveBig.add(name.slice(0, -BIG.length));
+      else if (name.endsWith(".webp")) have.add(name.slice(0, -5));
     }
   } catch {
     // No directory yet.
@@ -64,7 +79,8 @@ export function restoreIcons(): void {
 function fresh(mint: string, now: number): boolean {
   const miss = failed.get(mint);
   if (miss && now - miss < TOKEN_ICON_RETRY_MS) return true;
-  if (!have.has(mint)) return false;
+  // One synced before the large copies were made is fetched again for it.
+  if (!have.has(mint) || !haveBig.has(mint)) return false;
   try {
     return now - statSync(fileOf(mint)).mtimeMs < TOKEN_ICON_TTL_MS;
   } catch {
@@ -273,26 +289,30 @@ function sources(icon: string): string[] {
  * A gateway can answer 200 with an error page, so a source counts only once
  * its bytes have been drawn.
  */
-async function iconOf(rec: TokenRecord): Promise<Buffer> {
+async function iconOf(rec: TokenRecord): Promise<Thumbs> {
   let last: unknown = new Error("no logo");
   for (const url of rec.icon ? sources(rec.icon) : []) {
     try {
-      return await thumb(await download(url));
+      return await thumbs(await download(url));
     } catch (err) {
       last = err;
     }
   }
   const own = TOKEN_OWN_ICONS.get(rec.mint);
-  if (own) return thumb(readFileSync(own));
+  if (own) return thumbs(readFileSync(own));
   throw last;
 }
 
-function thumb(input: Buffer): Promise<Buffer> {
-  return shrink(input, TOKEN_ICON_EDGE);
+type Thumbs = { small: Buffer; big: Buffer };
+
+/** Both sizes from the one download, each straight from the original. */
+async function thumbs(input: Buffer): Promise<Thumbs> {
+  const small = await shrink(input, TOKEN_ICON_EDGE);
+  return { small, big: await shrink(input, TOKEN_ICON_BIG_EDGE, 82) };
 }
 
 /** Any raster or SVG drawn into a transparent square `edge` pixels on a side, as WebP. */
-export async function shrink(input: Buffer, edge: number): Promise<Buffer> {
+export async function shrink(input: Buffer, edge: number, quality = 70): Promise<Buffer> {
   if (!raster(input)) {
     if (!vector(input)) throw new Error("not an image");
     if (input.length > TOKEN_ICON_MAX_SVG_BYTES) throw new Error("svg too large");
@@ -304,15 +324,20 @@ export async function shrink(input: Buffer, edge: number): Promise<Buffer> {
       fit: "contain",
       background: { r: 0, g: 0, b: 0, alpha: 0 },
     })
-    .webp({ quality: 70, alphaQuality: 80, effort: 6 })
+    .webp({ quality, alphaQuality: Math.max(80, quality), effort: 6 })
     .toBuffer();
 }
 
-function write(mint: string, bytes: Buffer): void {
-  const file = fileOf(mint);
+function save(file: string, bytes: Buffer): void {
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, bytes);
   renameSync(tmp, file);
+}
+
+function write(mint: string, { small, big }: Thumbs): void {
+  save(bigFileOf(mint), big);
+  save(fileOf(mint), small);
+  haveBig.add(mint);
   have.add(mint);
   // A new logo may be a new colour: read it again now, while it is fresh in
   // mind, rather than on some visitor's page.

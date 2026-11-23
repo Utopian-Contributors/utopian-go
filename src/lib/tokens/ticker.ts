@@ -101,7 +101,7 @@ function tile(t: TopToken, signed: boolean): string {
   return (
     `<a class="hm-t hm-a" href="${signed ? to : authPath("/login", to)}" data-to="${to}" data-m="${t.mint}" data-n="${esc(t.name)}"` +
     `${tint ? ` style="${tint}"` : ""}>` +
-    (t.icon ? `<img src="/icon/${t.mint}" alt="" width="64" height="64" decoding="async">` : "") +
+    (t.icon ? `<img src="/icon/big/${t.mint}" alt="" width="96" height="96" decoding="async">` : "") +
     `<b>${esc(label(t.symbol))}</b><span>${price(t.price)}</span>${delta}</a>`
   );
 }
