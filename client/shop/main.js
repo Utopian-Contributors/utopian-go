@@ -315,7 +315,8 @@ async function mount({ main, me, pull, send, face, marks, show }) {
 
   /** A game's won badges: each worn once unlocked, else the place that unlocks it. */
   function won(game, title, href) {
-    const place = (t) => (t.from === t.to ? `#${t.from}` : `#${t.from}–${t.to}`);
+    // The lowest place that unlocks it: #6 for #4–6, #10 for #7–10.
+    const place = (t) => `#${t.to}`;
     const items = new Set(state.items || []);
     return el(
       "section",
