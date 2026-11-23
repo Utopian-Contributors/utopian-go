@@ -430,6 +430,10 @@ body.home .hm-a img {
   border-radius: 50%;
   rotate: none;
   filter: none;
+  /* Tight enough that the chain badge some logos wear in their lower right
+     corner fades out with the rest. */
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 30%, transparent 62%);
+  mask-image: radial-gradient(circle at 50% 45%, #000 30%, transparent 62%);
 }
 
 /* A third of a phone's width: the full-size mark crowds the price. */
