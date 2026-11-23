@@ -32,6 +32,12 @@
   }
 }
 
+html {
+  /* The scrollbar's room kept on every Games page, scrolling or not, so a
+     classic scrollbar on one doesn't recentre the header against the next. */
+  scrollbar-gutter: stable;
+}
+
 /* The red is the ground, the header clear on it, and the games sit on it in
    a panel with rounded top corners, white by day and the deep shade after
    dark, as the wallet's and Social's pages do (base.css --panel). */
@@ -123,7 +129,9 @@ body {
 
 main {
   flex: 1 0 auto;
-  margin-top: 8px;
+  /* Straight under the header, so the red above it is as tall as a game's
+     bar (snake.css .sn-hd and the rest). */
+  margin-top: 0;
   padding: 16px max(16px, (100% - 928px) / 2) max(16px, env(safe-area-inset-bottom));
   border-radius: 20px 20px 0 0;
   background: var(--panel);

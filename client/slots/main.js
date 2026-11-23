@@ -18,6 +18,7 @@ import { BETS, CHERRIES, FRUITS, REELS, START, STATUS_PRICE, THREE, lineOf, payo
 import { keepOffline } from "../games/offline.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
+import { plainSwap } from "../js/plainswap.js";
 
 /** @param {string} id */
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -771,5 +772,8 @@ refresh().then(() => {
   if (game?.stops?.length) setReels(game.stops);
 });
 keepOffline();
+
+// Back to the list at once: no fade of its header in (js/plainswap.js).
+plainSwap();
 // Every fruit, early, so no reel waits on a picture mid-spin.
 for (const fruit of FRUITS) new Image().src = src(fruit);

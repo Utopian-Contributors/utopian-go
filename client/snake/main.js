@@ -14,6 +14,7 @@ import { keepOffline } from "../games/offline.js";
 import { scores } from "../games/scores.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
+import { plainSwap } from "../js/plainswap.js";
 import { LETTER, seeded } from "../../src/social/snakeRules.ts";
 import { COLS, ROWS, game, lay, newGame, step, stepMs, takeLog, turn } from "./game.js";
 import { onWorn, worn } from "../games/skin.js";
@@ -333,3 +334,6 @@ resize();
 paintCounters();
 say(HOW);
 keepOffline();
+
+// Back to the list at once: no fade of its header in (js/plainswap.js).
+plainSwap();

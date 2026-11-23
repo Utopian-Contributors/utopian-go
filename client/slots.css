@@ -37,6 +37,9 @@
 
 html {
   background: var(--bg);
+  /* The scrollbar's room kept on every Games page, scrolling or not, so a
+     classic scrollbar on one doesn't recentre the header against the next. */
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -56,7 +59,9 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  /* The games list's inset (games.css .gm-hd: 16px inside 960px), so Back
+     stays put going between the list and a game. */
+  padding: max(8px, env(safe-area-inset-top)) max(16px, (100% - 928px) / 2) 8px;
   background: var(--bar);
 }
 
@@ -613,11 +618,6 @@ a.sl-go {
 
 /* A wide screen: the machine, with the prizes and the board at its right. */
 @media (min-width: 860px) {
-  .sl-hd {
-    padding-left: max(12px, (100% - 860px) / 2);
-    padding-right: max(12px, (100% - 860px) / 2);
-  }
-
   .sl-main {
     width: min(100%, 860px);
     grid-template-columns: minmax(0, 1fr) 280px;

@@ -15,6 +15,7 @@ import { keepOffline } from "../games/offline.js";
 import { scores } from "../games/scores.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
+import { plainSwap } from "../js/plainswap.js";
 import { onWorn, worn } from "../games/skin.js";
 import { ASPECT, draw, fit, wear } from "./render.js";
 import { flip, game, newGame, onEvents, pull, update, waiting } from "./table.js";
@@ -235,3 +236,6 @@ paintCounters();
 say("Press a button to play", 0);
 raf = requestAnimationFrame(frame);
 keepOffline();
+
+// Back to the list at once: no fade of its header in (js/plainswap.js).
+plainSwap();

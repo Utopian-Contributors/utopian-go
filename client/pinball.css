@@ -46,6 +46,12 @@ body {
   overscroll-behavior: none;
 }
 
+html {
+  /* The scrollbar's room kept on every Games page, scrolling or not, so a
+     classic scrollbar on one doesn't recentre the header against the next. */
+  scrollbar-gutter: stable;
+}
+
 body {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -64,7 +70,9 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  /* The games list's inset (games.css .gm-hd: 16px inside 960px), so Back
+     stays put going between the list and a game. */
+  padding: max(8px, env(safe-area-inset-top)) max(16px, (100% - 928px) / 2) 8px;
   background: var(--bar);
   box-shadow: 0 0 0 100vmax var(--bar);
   clip-path: inset(0 -100vmax);
@@ -283,7 +291,6 @@ body:not(.pb-on) .pb-board {
 
 /* A desktop: the table as tall as the window, centred, the leaderboard at its right. */
 @media (min-width: 900px) {
-  .pb-hd,
   .pb-btns {
     width: min(100%, 900px);
     margin: 0 auto;
