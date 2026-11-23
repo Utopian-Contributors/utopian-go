@@ -4,9 +4,14 @@
  * one, sets the reels going while it waits, and lands each reel on the stop
  * the server sent. It never decides a result, and never sends a score.
  *
- * The reels are the Shop's fruit statuses (/st-<fruit>.svg), five pictures a
- * reel moved by transform: fruit i sits (p - i) cells below the line, so as
- * p grows the reel runs downwards and fruit i is on the line when p = i.
+ * The reels are the Shop's fruit statuses (/st-<fruit>.svg): a picture for
+ * every stop, loaded once, moved by transform and never given another
+ * picture. Stop i sits (p - i) cells below the line (taken round the reel to
+ * wherever is nearest), so as p grows the reel runs downwards and stop i is
+ * on the line when p = i. Recycling a few pictures by changing their src
+ * showed fruit that was not there: a browser keeps drawing an image's last
+ * picture until the next is decoded, so a reel could come to rest on stale
+ * fruit and then change under the player's eyes.
  */
 import { STATUSES } from "../../src/social/shop.ts";
 import { BETS, CHERRIES, FRUITS, GAMES_A_DAY, REELS, START, THREE, TOP, lineOf, payout } from "../../src/social/slots.ts";
@@ -108,11 +113,13 @@ let cell = 96;
 const reels = REELS.map((strip) => {
   const box = document.createElement("div");
   box.className = "sl-reel";
-  const imgs = Array.from({ length: 5 }, () => {
+  // One picture per stop, its fruit for good.
+  const imgs = strip.map((fruit) => {
     const img = new Image();
     img.alt = "";
-    img.decoding = "async";
     img.draggable = false;
+    img.src = src(fruit);
+    img.dataset.f = fruit;
     box.append(img);
     return img;
   });
@@ -122,16 +129,13 @@ const reels = REELS.map((strip) => {
 
 /** @param {Reel} reel */
 function drawReel(reel) {
-  const centre = Math.round(reel.p);
-  reel.imgs.forEach((img, k) => {
-    const i = centre + k - 2;
-    const fruit = reel.strip[mod(i, reel.strip.length)];
-    if (img.dataset.f !== fruit) {
-      img.dataset.f = fruit;
-      img.src = src(fruit);
-      img.classList.remove("hit");
-    }
-    img.style.transform = `translateY(${((reel.p - i) * cell).toFixed(2)}px)`;
+  const size = reel.strip.length;
+  reel.imgs.forEach((img, j) => {
+    // Stop j's place nearest the line, round the loop.
+    const off = reel.p - j - size * Math.round((reel.p - j) / size);
+    const seen = Math.abs(off) < 2.5;
+    img.style.visibility = seen ? "" : "hidden";
+    if (seen) img.style.transform = `translateY(${(off * cell).toFixed(2)}px)`;
   });
 }
 
@@ -192,6 +196,7 @@ function startReels() {
     else reel.box.style.opacity = "0.4";
   }
   machine.classList.remove("won");
+  for (const reel of reels) for (const img of reel.imgs) img.classList.remove("hit");
   run();
 }
 
@@ -577,7 +582,7 @@ function lightUp(stops) {
   if (!times) return;
   const three = line[0] === line[1] && line[1] === line[2];
   reels.forEach((reel, i) => {
-    const img = reel.imgs[2];
+    const img = reel.imgs[mod(stops[i], reel.strip.length)];
     if (three || line[i] === "cherry") {
       img.classList.remove("hit");
       void img.offsetWidth;
