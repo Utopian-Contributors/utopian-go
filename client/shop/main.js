@@ -38,6 +38,9 @@ const CSS =
   ".sh-t.on{border-color:var(--a)}" +
   ".sh-t:disabled{cursor:default;opacity:.6}" +
   ".sh-t:not(:disabled):hover{filter:brightness(1.05)}" +
+  // A won badge's card: the place that unlocks it, large in the top right, faded into the card.
+  ".sh-w{position:relative;overflow:hidden;isolation:isolate}" +
+  ".sh-rk{position:absolute;top:2px;right:7px;z-index:-1;font:800 28px/1 var(--ff);letter-spacing:-.04em;color:var(--t);opacity:.13;pointer-events:none}" +
   ".sh-b{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}" +
   ".sh-b .go-pill{margin:0}" +
   ".sh-b .hint{margin:0}" +
@@ -323,9 +326,13 @@ async function mount({ main, me, pull, send, face, marks, show }) {
         { class: "sh-g" },
         ...GAME_BADGES[game].map((badge, i) => {
           const have = items.has(`bd:${badge.id}`);
-          return tile(`/bd-${badge.id}.svg`, have ? badge.name : `${badge.name} · ${place(TIERS[i])}`, state.badge === badge.id, have, () =>
-            put("badge", badge.id),
-          );
+          const spot = place(TIERS[i]);
+          const card = tile(`/bd-${badge.id}.svg`, badge.name, state.badge === badge.id, have, () => put("badge", badge.id));
+          // The place that unlocks it, large in the corner and faded into the card.
+          card.classList.add("sh-w");
+          card.prepend(el("span", { class: "sh-rk", "aria-hidden": "true", text: spot }));
+          card.setAttribute("aria-label", have ? badge.name : `${badge.name}, unlocked by place ${spot}`);
+          return card;
         }),
       ),
       el(
