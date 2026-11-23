@@ -1,6 +1,6 @@
 import { authPath } from "../../pages";
 import { TopToken } from "../../types";
-import { iconTint } from "./icons";
+import { iconTint, tintsOf } from "./icons";
 import { lookupToken, quoteMints } from "./store";
 
 /**
@@ -104,6 +104,17 @@ function tile(t: TopToken, signed: boolean): string {
     (t.icon ? `<img src="/icon/${t.mint}" alt="" width="64" height="64" decoding="async">` : "") +
     `<b>${esc(label(t.symbol))}</b><span>${price(t.price)}</span>${delta}</a>`
   );
+}
+
+/**
+ * The same tiles, once their logos' colours have been read. iconTint answers
+ * only from what it has already read, so a render that did not wait went out
+ * graphite whenever it was the first to ask for a mint since a restart, or a
+ * mint nobody had chosen yet; the next load then had it.
+ */
+export async function renderHomeTickerReady(mints: string[], signed: boolean): Promise<string> {
+  await tintsOf(mints);
+  return renderHomeTicker(mints, signed);
 }
 
 /**

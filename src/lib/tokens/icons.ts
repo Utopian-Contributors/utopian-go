@@ -314,6 +314,10 @@ function write(mint: string, bytes: Buffer): void {
   writeFileSync(tmp, bytes);
   renameSync(tmp, file);
   have.add(mint);
+  // A new logo may be a new colour: read it again now, while it is fresh in
+  // mind, rather than on some visitor's page.
+  tints.delete(mint);
+  void tintOf(mint);
 }
 
 /** Fetch and shrink the logos of these mints that are missing or older than a week, in list order. */
@@ -354,7 +358,7 @@ export async function syncIcons(list: TokenRecord[]): Promise<void> {
  * the home page's asset tiles to be painted in the way its app tiles are
  * painted in their marks' colours. Read once per mint from the thumbnail on
  * disk and kept; null until it has been, which the first render that asks
- * starts.
+ * starts. A page that must have it waits for it with tintOf / tintsOf.
  */
 const tints = new Map<string, string>();
 const tinting = new Map<string, Promise<string>>();
@@ -378,16 +382,41 @@ export async function tintOf(mint: string): Promise<string | null> {
   if (!file) return null;
   let task = tinting.get(mint);
   if (!task) {
-    task = readTint(file)
-      .catch(() => "")
-      .then((t) => {
+    // A read that fails is not kept: the next page to ask tries again, rather
+    // than the tile staying graphite until a restart.
+    task = readTint(file).then(
+      (t) => {
         tints.set(mint, t);
         tinting.delete(mint);
         return t;
-      });
+      },
+      () => {
+        tinting.delete(mint);
+        return "";
+      },
+    );
     tinting.set(mint, task);
   }
   return (await task) || null;
+}
+
+/**
+ * How long a page waits on its tiles' colours. A read is a few milliseconds;
+ * this only bounds a disk or sharp that has stalled, past which the page goes
+ * out with graphite tiles rather than not at all.
+ */
+const TINT_WAIT_MS = 250;
+
+/** Every one of these mints' colours read, or the wait up: what a render needs before it asks iconTint. */
+export async function tintsOf(mints: string[]): Promise<void> {
+  const pending = mints.filter((m) => !tints.has(m) && iconFile(m));
+  if (!pending.length) return;
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, TINT_WAIT_MS);
+  });
+  await Promise.race([Promise.all(pending.map(tintOf)), late]);
+  clearTimeout(timer);
 }
 
 /**
