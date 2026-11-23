@@ -56,7 +56,16 @@ import {
   getUser,
   insertUser,
   bumpBadge,
+  cashOutSlotGame,
+  givePrize,
   grantPack,
+  heldPrizes,
+  openSlotGame,
+  slotGamesOn,
+  spinSlotGame,
+  startSlotGame,
+  unlockPrize,
+  type SlotGame,
   openShopOrder,
   ownedPacks,
   shopOrderOf,
@@ -134,6 +143,8 @@ import {
 import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
 import { BADGE_BYTES, PACKS, badgeFor, isBadgePng, isPack, markOf, statusFor } from "./shop";
+import { drawStops, newSeed } from "./slotDraw";
+import { DAY_MS, GAMES_A_DAY, PRIZE, START, TOP, dayOf, isBet, isOver, lineOf, payout, settle } from "./slots";
 import { avatarFile, badgeFile, bannerFile, chatAudioFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar, writeBadge } from "./store";
 import { MAX_SLIPPAGE_BPS, swapFor } from "./swap";
 import { verifyAssertion, verifyRegistration } from "./webauthn";
@@ -397,6 +408,8 @@ const writeLimit = rateLimit({ perMinute: 60, burst: 20 });
 /** Page loads: every social page asks for itself and for who is signed in. */
 const readLimit = rateLimit({ perMinute: 240, burst: 60 });
 const searchLimit = rateLimit({ perMinute: 180, burst: 40 });
+/** Slot spins: a reel takes a second or more to stop, so this is well past a person pressing as fast as the page lets them. */
+const spinLimit = rateLimit({ perMinute: 90, burst: 30 });
 
 export const socialRouter = Router();
 
@@ -940,6 +953,124 @@ function gameBoard(game: Game, max: number): void {
 
 gameBoard("pinball", PINBALL_MAX);
 gameBoard("snake", SNAKE_MAX);
+
+// —— Fruit Slots (src/social/slots.ts) ——
+//
+// Played on the server: the page asks for a spin and is told where the reels
+// stopped. No route takes a score, and the board is written only as a game
+// ends (db.ts spinSlotGame, cashOutSlotGame), so a score can only be played.
+
+/** A game as the page sees it: its secret only once the game is over, when it can no longer tell anyone anything. */
+function slotView(game: SlotGame) {
+  const over = game.endedAt != null;
+  return {
+    id: game.id,
+    credits: game.credits,
+    spins: game.spins,
+    stops: game.stops,
+    bet: game.bet,
+    win: game.win,
+    over,
+    top: game.credits >= TOP,
+    commit: game.commit,
+    // Named `secret`, not `seed`: guard.ts scrubs every `seed` from every answer, as a wallet's would be.
+    ...(over ? { secret: game.seed } : {}),
+  };
+}
+
+/** Games left today, and when the next day starts. */
+async function slotDay(name: string, now: number): Promise<{ left: number; resets: number }> {
+  const day = dayOf(now);
+  return { left: Math.max(0, GAMES_A_DAY - (await slotGamesOn(name, day))), resets: (day + 1) * DAY_MS };
+}
+
+/** The board, and signed in: your best, your game in play, today's games left and the prizes you hold. */
+socialRouter.get(
+  "/slots",
+  readLimit,
+  wrap(async (_req, res) => {
+    const me = currentUser(res);
+    const top = await gameTop("slots");
+    if (!me) {
+      res.json({ top, best: 0, signed: false });
+      return;
+    }
+    const game = await openSlotGame(me.name);
+    res.json({
+      top,
+      best: await gameBest("slots", me.name),
+      signed: true,
+      name: me.name,
+      game: game ? slotView(game) : null,
+      ...(await slotDay(me.name, Date.now())),
+      prizes: await heldPrizes(me.name),
+    });
+  }),
+);
+
+/** A new game, or the one still open. Refused once today's games are played. */
+socialRouter.post(
+  "/slots/new",
+  requireAuth,
+  spinLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const now = Date.now();
+    const { game } = await startSlotGame({ name: me.name, ...newSeed(), credits: START, day: dayOf(now), perDay: GAMES_A_DAY, at: now });
+    res.json({ game: slotView(game), ...(await slotDay(me.name, now)) });
+  }),
+);
+
+/**
+ * One spin: {bet, n}, n being the spins the page has seen played. Where the
+ * reels stop comes from the game's secret alone; the bet only scales the pay.
+ */
+socialRouter.post(
+  "/slots/spin",
+  requireAuth,
+  spinLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const bet = req.body?.bet;
+    const n = req.body?.n;
+    if (!isBet(bet)) throw new SocialError(400, "No such bet.");
+    if (!Number.isSafeInteger(n) || n < 0) throw new SocialError(400, "Which spin?");
+    const { game, prize } = await spinSlotGame({
+      name: me.name,
+      n,
+      bet,
+      at: Date.now(),
+      play(open) {
+        const stops = drawStops(open.seed, open.spins);
+        const times = payout(lineOf(stops));
+        const credits = settle(open.credits, bet, times);
+        return { stops, win: bet * times, credits, over: isOver(credits), prize: credits >= TOP ? PRIZE : null };
+      },
+    });
+    if (prize) console.log(`[slots] ${me.name} reached ${TOP} and won ${PRIZE}`);
+    res.json({ game: slotView(game), prize });
+  }),
+);
+
+/** Cash out: {n}. The game ends with what it has, which goes on the board. */
+socialRouter.post(
+  "/slots/cashout",
+  requireAuth,
+  spinLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const n = req.body?.n;
+    if (!Number.isSafeInteger(n) || n < 0) throw new SocialError(400, "Which spin?");
+    const game = await cashOutSlotGame(me.name, n, Date.now());
+    res.json({ game: slotView(game) });
+  }),
+);
 
 socialRouter.get(
   "/friends",
@@ -2014,7 +2145,46 @@ socialRouter.get(
       payable: adsPayable(),
       // May unlock packs for nothing (SHOP_ADMINS).
       admin: shopAdmins().has(me.name),
+      // Won at Fruit Slots, or given: each unlocks a pack free, or goes on to someone else.
+      prizes: await heldPrizes(me.name),
     });
+  }),
+);
+
+/** A prize's id, from the path: anything else is no prize of anyone's. */
+function prizeId(raw: string): string {
+  if (!PAGE_ID.test(raw)) throw new SocialError(404, "No such prize.");
+  return raw;
+}
+
+/** Unlock a prize you hold: its pack is yours, for nothing. */
+socialRouter.post(
+  "/shop/prize/:id/unlock",
+  requireAuth,
+  writeLimit,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const pack = await unlockPrize(me.name, prizeId(req.params.id), orderCodes().reference, Date.now());
+    res.json({ ok: true, pack, owned: await ownedPacks(me.name), prizes: await heldPrizes(me.name) });
+  }),
+);
+
+/** Give a prize you hold ({to}): theirs to unlock in the Shop. */
+socialRouter.post(
+  "/shop/prize/:id/give",
+  requireAuth,
+  writeLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const id = prizeId(req.params.id);
+    const to = username(typeof req.body?.to === "string" ? req.body.to.replace(/^\s*@/, "") : req.body?.to);
+    if (!to) throw new SocialError(400, "Usernames are 3–16 letters, numbers, or _.");
+    await givePrize(me.name, id, to, Date.now());
+    console.log(`[slots] ${me.name} gave a prize to ${to}`);
+    res.json({ ok: true, to, prizes: await heldPrizes(me.name) });
   }),
 );
 

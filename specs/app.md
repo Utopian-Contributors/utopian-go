@@ -77,6 +77,7 @@ Anything that is only needed after a click is a lazy bundle.
 | Games | `/games` | `games.html` | `games.js` | — |
 | Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |
 | Snake | `/snake` | `snake.html` | `snake.js` | — |
+| Fruit Slots | `/slots` | `slots.html` | `slots.js` | — |
 
 **Each section is its home tile's colour.** The app is iOS's system palette, and the pages a
 home tile opens wear that tile's colour: the wallet brown, Social blue, the games list and every
@@ -110,10 +111,10 @@ also the tab icon of the games page and of every game). It opens the games list:
 Back and the title, then the games as the home page draws its sections, a tile each in its own
 colour with its mark large in the corner, its name and a line about it: Pinball in its table's
 felt green with a pair of flippers and the ball (`ic-flippers.svg`, drawn by hand in the
-skeu-icons manner, as the package has no flipper), Snake in amber under its apple (`ic-apple`).
+skeu-icons manner, as the package has no flipper), Snake in amber under its apple (`ic-apple`), Fruit Slots in grape purple under a cherry (`st-cherry`).
 Two to a row on a phone, more as the screen widens. The marks are linked with their content hash
 and kept by the worker for good (`TILE_MARKS`), like the games themselves. The old screenshots
-(`game-*.webp`) are no longer shown. Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists two games.
+(`game-*.webp`) are no longer shown. Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists three games.
 
 The games list is offline first, and so is every game on it. `games.js` registers the service
 worker and, on a first visit, hands it the page (`ugSeed`, as the games do); and the worker's
@@ -169,6 +170,53 @@ worth (3,420). A phone steers by swipes anywhere on the page, a stroke that turn
 lifting; a keyboard by the arrows or WASD, with Space or P to pause. A swipe or arrow starts a
 game in its direction. Leaving the page pauses it; a tap or a direction goes on. For the moment
 the snake blinks as it dies nothing starts another game, so a swipe still under way cannot.
+
+**Fruit Slots** is the third game: three reels of the Shop's ten fruit statuses
+(`st-<fruit>.svg`), one line across the middle. Unlike the others it is **played on the
+server**: the page asks for a spin and is told where the reels stopped, so it never decides a
+result and no route takes a score. The rules are `src/social/slots.ts`, bundled into the page
+too; the draw is `src/social/slotDraw.ts`, server only.
+
+- **A game.** 100 credits; each spin stakes 5, 10 or 25 and pays the bet times the line:
+  three of a fruit ×10 (In the Limelight) up to ×500 (Top Banana), two cherries anywhere ×4,
+  one cherry the bet back. Each reel holds 31 stops in a fixed order, the commoner fruit more
+  often. Over every line it pays back 93.9% and pays something on 42% of spins. The credits
+  are the score; a game ends at **1,000** (capped there: the highest score there is), below
+  the smallest bet, or on Cash out (two presses). The board (`slots`, as pinball's) is
+  written only as a game ends, with its credits.
+- **Odds.** A game reaches 1,000 about one time in 40 at a bet of 5 and one in 20 at 25.
+  Three games an account a UTC day (`slot_games.day`), so a free prize cannot be farmed.
+- **Deterministic and checkable.** A game draws a 32-byte secret when it starts; spin n stops
+  where HMAC-SHA256(secret, `spin:n:round`) says, each reel from four bytes, values past the
+  last whole multiple of 31 passed over so every stop is equally likely. The page has the
+  secret's SHA-256 (`commit`) from the start and the secret itself (`secret`; `seed` is
+  scrubbed from every answer by guard.ts) once the game is over, so every spin can be replayed.
+- **Safe against replays and races.** A spin carries `n`, the spins the page has seen; the
+  game row is locked while it is played, so a spin sent twice, or five at once, is played once
+  (the rest 409). One open game per account (a partial unique index), the account row locked
+  while one starts, so the daily count holds under parallel presses. Same-origin only.
+- **The prize.** Reaching 1,000 writes a prize (`slot_prizes`) for the Fruit statuses pack,
+  held by the winner. Whoever holds it may unlock it (the pack theirs, as an order paid at once
+  for $0, matched `prize`) or give it to someone who does not own the pack, who then unlocks
+  it free in the Shop, where held prizes show on their pack with Unlock free and Give. A holder
+  who owns the pack already can only give it.
+- **The page.** Back, the best and the credits in the header; a bar to 1,000; the reels, a
+  white window (graphite after dark) whose middle row is the line, lit gold on a win; the
+  bet as a segmented control; Spin (Space or Enter; 1–3 pick the bet); Cash out, today's games
+  and Pays (the table, and the game's commit or secret). The reels run while the request is
+  out and land left to right, a beat later when the first two match. A prize held shows in a
+  card beside the board; reaching 1,000 opens a sheet to unlock or give it. Signed out, the
+  board and Log in to play. Its API calls are `no-store`, so the worker never answers them
+  from a copy.
+
+```
+GET  /api/social/slots                  → {top, best, signed, name?, game?, left?, resets?, prizes?}
+POST /api/social/slots/new              → {game, left, resets}      the open one if any; 429 past 3 a day
+POST /api/social/slots/spin {bet, n}    → {game, prize}             prize: an id when it reached 1,000
+POST /api/social/slots/cashout {n}      → {game}
+POST /api/social/shop/prize/<id>/unlock → {pack, owned, prizes}
+POST /api/social/shop/prize/<id>/give {to} → {to, prizes}
+```
 
 Every page wears the same header as search: the wordmark, the search field, and the
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet
@@ -669,6 +717,8 @@ GET  /api/social/shop/order/<id>      → {paid, open}
 POST /api/social/shop/wear {badge?, status?}  → {badge, status}   "" for none; "u" your own
 POST /api/social/shop/badge  64×64 PNG → {badgeRev}
 ```
+
+`GET /api/social/shop` also lists `prizes`, the Fruit Slots prizes held (see Fruit Slots).
 
 ### Data Model
 

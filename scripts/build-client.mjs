@@ -23,7 +23,7 @@
  *   would cost more than the whole page weighs. Social is a third, for the
  *   same reason, and its document is capped at 14KB gzip. The login page is
  *   the fourth, and the smallest. Games, the list of games, is the fifth,
- *   Pinball the sixth, and Snake the seventh.
+ *   Pinball the sixth, Snake the seventh, and Fruit Slots the eighth.
  */
 import * as esbuild from "esbuild";
 import { minify as minifyHtml } from "html-minifier-terser";
@@ -154,6 +154,11 @@ const PAGES = [
     parallel: [{ file: "snake.js", gzip: FLIGHT }],
   },
   {
+    name: "Fruit Slots",
+    doc: { file: "slots.html", gzip: FLIGHT },
+    parallel: [{ file: "slots.js", gzip: FLIGHT }],
+  },
+  {
     name: "Login",
     // The server renders a destination and two ?next= into it (src/pages.ts
     // renderAuth): a few dozen bytes, against a page that weighs a third of this.
@@ -201,7 +206,7 @@ const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
  * public/ waiting for something to serve it by mistake. The wallet page has no
  * per-request content at all, so for it the file *is* the response.
  */
-const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "games.html", "pinball.html", "snake.html"];
+const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "games.html", "pinball.html", "snake.html", "slots.html"];
 
 const watch = process.argv.includes("--watch");
 
@@ -493,6 +498,13 @@ const snakeOpts = {
   outfile: path.join(outDir, "snake.js"),
   // The apple's drawing, ic-apple.svg, as text in the bundle: there with the game offline, never a request of its own.
   loader: { ".svg": "text" },
+};
+
+/** Fruit Slots' bundle: the reels and the page around them; every spin is the server's. */
+const slotsOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "slots", "main.js")],
+  outfile: path.join(outDir, "slots.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -1053,6 +1065,15 @@ async function buildPinballHtml(hash) {
   writeFileSync(path.join(outDir, "pinball.html"), await minifyDoc(raw));
 }
 
+/** Fruit Slots' document: like snake's, its own sheet inlined and nothing else. */
+async function buildSlotsHtml(hash) {
+  let raw = readFileSync(path.join(clientDir, "slots.html"), "utf8");
+  const css = await minifyCss(readFileSync(path.join(clientDir, "slots.css"), "utf8"));
+  raw = replaceOnce(raw, /<link rel="stylesheet" href="\/slots\.css"\s*\/?>/, `<style>${css}</style>`, "slots stylesheet link");
+  raw = replaceOnce(raw, /src="\/slots\.js"/, `src="/slots.js?v=${hash("slots.js")}"`, "slots.js src");
+  writeFileSync(path.join(outDir, "slots.html"), await minifyDoc(raw));
+}
+
 /** Snake's document: like pinball's, its own sheet inlined and nothing else. */
 async function buildSnakeHtml(hash) {
   let raw = readFileSync(path.join(clientDir, "snake.html"), "utf8");
@@ -1192,6 +1213,7 @@ async function buildAssets() {
     esbuild.build(gamesOpts),
     esbuild.build(pinballOpts),
     esbuild.build(snakeOpts),
+    esbuild.build(slotsOpts),
     buildCss("app.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
@@ -1214,6 +1236,7 @@ async function buildAssets() {
     buildGamesHtml(hash),
     buildPinballHtml(hash),
     buildSnakeHtml(hash),
+    buildSlotsHtml(hash),
   ]);
   buildLegal();
   precompress();

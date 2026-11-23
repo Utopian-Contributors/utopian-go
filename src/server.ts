@@ -658,6 +658,20 @@ app.get("/snake", (req, _res, next) => {
   next();
 });
 
+/**
+ * Fruit Slots: one static document for anyone. Playing takes an account, and
+ * every spin is the server's (/api/social/slots); the page only asks.
+ */
+app.get("/slots.html", (req, res) => {
+  const qs = req.originalUrl.slice(req.path.length);
+  res.redirect(308, `/slots${qs}`);
+});
+
+app.get("/slots", (req, _res, next) => {
+  req.url = "/slots.html" + req.originalUrl.slice(req.path.length);
+  next();
+});
+
 app.get("/icon/:mint", (req, res) => {
   const file = iconFile(req.params.mint);
   if (!file) {
@@ -831,7 +845,7 @@ app.use(
       // `wallet.html`. Matching the bare name alone silently missed every
       // compressed response — which is every real one.
       const name = path.basename(filePath).replace(/\.(br|gz)$/, "");
-      if (name === "index.html" || name === "wallet.html" || name === "social.html" || name === "auth.html" || name === "games.html" || name === "pinball.html" || name === "snake.html") {
+      if (name === "index.html" || name === "wallet.html" || name === "social.html" || name === "auth.html" || name === "games.html" || name === "pinball.html" || name === "snake.html" || name === "slots.html") {
         res.setHeader("Cache-Control", "no-cache");
       }
       // The service worker and the manifest keep one URL across deploys, so

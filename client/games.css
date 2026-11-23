@@ -216,6 +216,11 @@ main {
   --lo: #c9681a;
 }
 
+.gm-slots {
+  --hi: #b98cff;
+  --lo: #5a2bb0;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   @view-transition {
     navigation: auto;

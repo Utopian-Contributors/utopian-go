@@ -9,6 +9,10 @@
  * (client/js/solpay.js) as an ad does. Any pack can be given: Gift asks who
  * for, and checks out the same way, for them. A Shop admin (SHOP_ADMINS on the
  * server) has Unlock beside Buy, and in Gift, which owns the pack at once.
+ *
+ * A prize (won at Fruit Slots, src/social/slots.ts, or given by whoever held
+ * it) shows on its pack: Unlock free makes the pack yours, Give passes the
+ * prize on, for them to unlock here.
  */
 import { BADGES, BADGE_PX, PACKS, STATUSES, badgeSrc } from "../../src/social/shop.ts";
 import { el } from "../js/dom.js";
@@ -204,6 +208,60 @@ async function mount({ main, me, pull, send, face, marks, show }) {
     );
   }
 
+  /** Give a prize on: who to, then it is theirs to unlock here. */
+  function givePrizeDialog(prize) {
+    injectFormStyles();
+    const { body, close } = dialog(`Give ${PACKS[prize.pack].title}`);
+    const input = el("input", {
+      id: "sh-pz",
+      class: "sh-in",
+      maxlength: "17",
+      placeholder: "username",
+      autocapitalize: "off",
+      autocomplete: "off",
+      spellcheck: "false",
+    });
+    const out = el("p", { class: "err", role: "alert" });
+    const go = el("button", { type: "submit", class: "swx-go", text: "Give for free" });
+    const form = el("form", { class: "sh-f" }, el("label", { for: "sh-pz", text: "Who is it for? They unlock it here, free." }), input, go, out);
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      press(go, out, async () => {
+        await send(`/api/social/shop/prize/${prize.id}/give`, { to: input.value.trim() });
+        close();
+        show();
+      });
+    });
+    body.replaceChildren(form);
+    input.focus();
+  }
+
+  /** The prizes held for a pack: Unlock free (while it is not owned) and Give. */
+  function prizeRows(id, owned) {
+    return (state.prizes || [])
+      .filter((prize) => prize.pack === id)
+      .map((prize) => {
+        const unlock = el("button", {
+          type: "button",
+          class: "go-pill",
+          text: "Unlock free",
+          onclick: () =>
+            press(unlock, err, async () => {
+              await send(`/api/social/shop/prize/${prize.id}/unlock`, {});
+              show();
+            }),
+        });
+        const give = el("button", { type: "button", class: "go-pill sh-2", text: "Give", onclick: () => givePrizeDialog(prize) });
+        return el(
+          "div",
+          { class: "sh-b" },
+          owned ? null : unlock,
+          give,
+          el("p", { class: "hint", text: prize.givenBy ? `A gift from @${prize.givenBy}` : "You won this at Fruit Slots" }),
+        );
+      });
+  }
+
   /** A pack: its title and price, its choices, Buy (or an admin's Unlock) while it is not owned, and Gift. */
   function pack(id, tiles, extra) {
     const owned = state.owned.includes(id);
@@ -231,6 +289,7 @@ async function mount({ main, me, pull, send, face, marks, show }) {
       el("h3", {}, state.packs[id].title, el("span", { text: owned ? "Yours" : usd(state.packs[id].cents) })),
       el("div", { class: "sh-g" }, ...tiles(owned)),
       owned ? extra : null,
+      ...prizeRows(id, owned),
       el(
         "div",
         { class: "sh-b" },

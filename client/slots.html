@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en" data-sec="games">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Fruit Slots</title>
+    <link rel="icon" href="/ic-games.png" sizes="64x64" type="image/png" />
+    <link rel="icon" href="/ic-games.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="UtopianGO" />
+    <meta name="application-name" content="UtopianGO" />
+    <meta name="theme-color" content="#bd332d" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#6e1b17" media="(prefers-color-scheme: dark)" />
+    <link rel="stylesheet" href="/slots.css" />
+  </head>
+  <body class="sl">
+    <!-- Back, as the app's other pages have it; the best game and the credits, which are the score. -->
+    <header class="sl-hd">
+      <button type="button" class="sl-back" id="sl-bk">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Back
+      </button>
+      <span class="sl-best" id="sl-bs"></span>
+      <output class="sl-cr" id="sl-cr" aria-label="Credits">100</output>
+    </header>
+
+    <main class="sl-main">
+      <!-- The machine: the goal, the reels, what the spin paid, the bet and Spin.
+           slots/main.js fills the reels; every spin is played by the server. -->
+      <section class="sl-play" aria-label="Fruit Slots">
+        <div class="sl-goal">
+          <div class="sl-bar"><i id="sl-pg"></i></div>
+          <p id="sl-gl">Reach 1,000 to win Fruit statuses</p>
+        </div>
+        <div class="sl-mc" id="sl-mc">
+          <div class="sl-reels" id="sl-rs" role="img" aria-label="Reels"></div>
+          <div class="sl-line" aria-hidden="true"></div>
+        </div>
+        <p class="sl-msg" id="sl-msg" role="status" aria-live="polite"></p>
+        <div class="sl-bets" id="sl-bt" role="radiogroup" aria-label="Bet"></div>
+        <button type="button" class="sl-go" id="sl-go" disabled>Spin</button>
+        <div class="sl-row">
+          <button type="button" class="sl-link" id="sl-co" hidden>Cash out</button>
+          <span id="sl-lf"></span>
+          <button type="button" class="sl-link" id="sl-py">Pays</button>
+        </div>
+      </section>
+
+      <aside class="sl-side">
+        <!-- Prizes held: won here, or given. Unlock one, or give it on. -->
+        <section class="sl-card sl-prz" id="sl-pz" hidden></section>
+        <section class="sl-card">
+          <h2>Everyone</h2>
+          <ol class="sl-lb" id="sl-lb"></ol>
+          <p class="sl-note" id="sl-me"></p>
+        </section>
+      </aside>
+    </main>
+
+    <!-- What each line pays, and how a spin is decided. -->
+    <dialog class="sl-sheet" id="sl-pays" aria-labelledby="sl-pays-h">
+      <h2 id="sl-pays-h">Pays</h2>
+      <ul class="sl-pt" id="sl-pt"></ul>
+      <p class="sl-fine" id="sl-fair"></p>
+      <button type="button" class="sl-go" data-close>Done</button>
+    </dialog>
+
+    <!-- Reaching the top: the prize, to unlock now or to give. -->
+    <dialog class="sl-sheet sl-win" id="sl-win" aria-labelledby="sl-win-h">
+      <div class="sl-burst" aria-hidden="true"></div>
+      <h2 id="sl-win-h">1,000</h2>
+      <p>Jackpot. Fruit statuses are yours to unlock, or to give to someone.</p>
+      <div class="sl-acts" id="sl-wa"></div>
+    </dialog>
+
+    <script src="/slots.js" defer></script>
+  </body>
+</html>

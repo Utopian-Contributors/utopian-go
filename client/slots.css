@@ -1,0 +1,644 @@
+/*
+ * Fruit Slots: the games' page (snake.css), flat and in the section's red,
+ * with one solid thing on it: the reels, a white window (graphite after
+ * dark) with the Shop's fruit on it, the line across the middle.
+ */
+:root {
+  --bar: #bd332d;
+  --bg: #7e1a17;
+  --t: #ffffff;
+  --f: rgba(255, 255, 255, 0.78);
+  --go: #9cf5b0;
+  --a: #ffffff;
+  --sheet: #8a1f1b;
+  --btn: #ad302b;
+  --btn-on: #c93a33;
+  --card: #962421;
+  --line: rgba(255, 255, 255, 0.14);
+  --win: #ffd75e;
+  --glass: #ffffff;
+  --glass-t: #1d1d1f;
+  --ff: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bar: #6e1b17;
+    --bg: #240807;
+    --sheet: #2e0b0a;
+    --card: #3a0f0d;
+    --btn: #521714;
+    --btn-on: #6e1b17;
+    --glass: #1c1c1e;
+    --glass-t: #f5f5f7;
+  }
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--t);
+  font: 15px/1.35 var(--ff);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sl-hd {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  background: var(--bar);
+}
+
+/* The app's Back pill (header.css .hb). */
+.sl-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 15px 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--a);
+  font: 600 14px var(--ff);
+  cursor: pointer;
+}
+
+.sl-back:active {
+  scale: 0.96;
+}
+
+.sl-best {
+  margin-left: auto;
+  color: var(--f);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-cr {
+  min-width: 3ch;
+  text-align: right;
+  font: 700 22px/1 var(--ff);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.sl-main {
+  box-sizing: border-box;
+  display: grid;
+  gap: 20px;
+  width: min(100%, 460px);
+  margin: 0 auto;
+  padding: 16px 16px max(24px, env(safe-area-inset-bottom));
+}
+
+.sl-play {
+  display: grid;
+  gap: 14px;
+}
+
+/* How far the credits are from the top: a thin bar and a line under it. */
+.sl-goal p {
+  margin: 6px 0 0;
+  color: var(--f);
+  font-size: 13px;
+  text-align: center;
+}
+
+.sl-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.sl-bar i {
+  display: block;
+  width: 10%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--win);
+  transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The machine. */
+.sl-mc {
+  position: relative;
+  padding: 10px;
+  border-radius: 28px;
+  background: var(--glass);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.25) inset,
+    0 20px 40px -12px rgb(0 0 0 / 0.45);
+}
+
+.sl-reels {
+  --cell: 96px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+/* A reel shows three fruit, the middle one on the line; the top and bottom fade. */
+.sl-reel {
+  position: relative;
+  height: calc(var(--cell) * 3);
+  overflow: hidden;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.06), transparent 30%, transparent 70%, rgb(0 0 0 / 0.06));
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
+}
+
+.sl-reel img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--cell) * 0.66);
+  height: calc(var(--cell) * 0.66);
+  margin: calc(var(--cell) * -0.33) 0 0 calc(var(--cell) * -0.33);
+  will-change: transform;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.sl-reel.fast img {
+  filter: blur(1.2px);
+}
+
+/* The line: a band across the middle row. */
+.sl-line {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  height: var(--cell, 96px);
+  transform: translateY(-50%);
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1.5px rgb(127 127 127 / 0.22);
+  pointer-events: none;
+  transition: box-shadow 0.25s;
+}
+
+.sl-mc.won .sl-line {
+  box-shadow:
+    inset 0 0 0 2.5px var(--win),
+    0 0 24px rgb(255 215 94 / 0.45);
+}
+
+.sl-reel img.hit {
+  animation: sl-pop 0.9s cubic-bezier(0.3, 1.6, 0.5, 1) 2;
+}
+
+@keyframes sl-pop {
+  40% {
+    scale: 1.16;
+  }
+}
+
+.sl-msg {
+  min-height: 22px;
+  margin: 0;
+  font: 600 17px/22px var(--ff);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-msg.dim {
+  color: var(--f);
+  font-weight: 500;
+  font-size: 15px;
+}
+
+/* The bet: a segmented control, as iOS draws one. */
+.sl-bets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px;
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.sl-bets button {
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--t);
+  font: 600 14px var(--ff);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.sl-bets button[aria-checked="true"] {
+  background: var(--a);
+  color: var(--bg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+}
+
+.sl-bets button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The one big button: white, its label the page's deep red. */
+.sl-go {
+  height: 54px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--a);
+  color: var(--bg);
+  font: 700 18px var(--ff);
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: scale 0.15s, opacity 0.2s;
+}
+
+.sl-go:active:not(:disabled) {
+  scale: 0.98;
+}
+
+.sl-go:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sl-go:focus {
+  outline: none;
+}
+
+.sl-go:focus-visible,
+.sl-bets button:focus-visible,
+.sl-link:focus-visible {
+  outline: 2px solid var(--go);
+  outline-offset: 2px;
+}
+
+a.sl-go {
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+}
+
+.sl-go.two {
+  background: var(--card);
+  color: var(--t);
+}
+
+.sl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+  color: var(--f);
+  font-size: 13px;
+}
+
+.sl-row span {
+  flex: 1;
+  text-align: center;
+}
+
+.sl-link {
+  min-width: 70px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--a);
+  font: 600 14px var(--ff);
+  cursor: pointer;
+}
+
+.sl-link:last-child {
+  text-align: right;
+}
+
+.sl-link:first-child {
+  text-align: left;
+}
+
+.sl-link[hidden] {
+  display: block;
+  visibility: hidden;
+}
+
+/* The board and the prizes. */
+.sl-side {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.sl-card {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: var(--sheet);
+}
+
+.sl-card[hidden] {
+  display: none;
+}
+
+.sl-card h2 {
+  margin: 0 0 8px;
+  font: 700 15px var(--ff);
+}
+
+.sl-lb {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: sl;
+}
+
+.sl-lb li {
+  display: flex;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+  counter-increment: sl;
+}
+
+.sl-lb li::before {
+  content: counter(sl);
+  width: 1.4em;
+  color: var(--f);
+  text-align: right;
+}
+
+.sl-lb li span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sl-lb li b {
+  font-weight: 600;
+}
+
+.sl-lb li.me span {
+  color: var(--go);
+  font-weight: 700;
+}
+
+.sl-lb li.top b::after {
+  content: " ★";
+  color: var(--win);
+}
+
+.sl-note {
+  margin: 8px 0 0;
+  color: var(--f);
+  font-size: 13px;
+}
+
+.sl-note:empty {
+  display: none;
+}
+
+.sl-note a {
+  color: var(--a);
+}
+
+.sl-prz {
+  display: grid;
+  gap: 10px;
+}
+
+.sl-prz .who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sl-prz .who img {
+  width: 40px;
+  height: 40px;
+}
+
+.sl-prz .who small {
+  display: block;
+  color: var(--f);
+  font-size: 13px;
+}
+
+.sl-acts {
+  display: grid;
+  gap: 8px;
+}
+
+.sl-acts .sl-go {
+  height: 46px;
+  font-size: 16px;
+}
+
+.sl-give {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.sl-give[hidden] {
+  display: none;
+}
+
+.sl-prz .item {
+  display: grid;
+  gap: 12px;
+}
+
+.sl-give input {
+  min-width: 0;
+  height: 46px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--t);
+  font: 16px var(--ff);
+}
+
+.sl-give input::placeholder {
+  color: var(--f);
+}
+
+.sl-give .sl-go {
+  padding: 0 18px;
+}
+
+.sl-err {
+  margin: 0;
+  color: var(--win);
+  font-size: 13px;
+}
+
+.sl-err:empty {
+  display: none;
+}
+
+/* Sheets: what pays, and the jackpot. */
+.sl-sheet {
+  box-sizing: border-box;
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 20px;
+  border: 0;
+  border-radius: 24px;
+  background: var(--sheet);
+  color: var(--t);
+  box-shadow: 0 30px 60px rgb(0 0 0 / 0.4);
+}
+
+.sl-sheet::backdrop {
+  background: rgb(0 0 0 / 0.45);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.sl-sheet h2 {
+  margin: 0 0 12px;
+  font: 700 20px var(--ff);
+}
+
+.sl-sheet .sl-go {
+  width: 100%;
+  margin-top: 14px;
+}
+
+.sl-sheet .sl-acts .sl-go {
+  margin-top: 0;
+}
+
+.sl-pt {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sl-pt li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-pt li:first-child {
+  border-top: 0;
+}
+
+.sl-pt img {
+  width: 26px;
+  height: 26px;
+}
+
+.sl-pt i {
+  display: inline-block;
+  width: 26px;
+}
+
+.sl-pt span {
+  flex: 1;
+  margin-left: 8px;
+  color: var(--f);
+  font-size: 13px;
+}
+
+.sl-pt b {
+  font-weight: 650;
+}
+
+.sl-fine {
+  margin: 12px 0 0;
+  color: var(--f);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.sl-win {
+  text-align: center;
+  overflow: hidden;
+}
+
+.sl-win h2 {
+  margin: 4px 0 6px;
+  font: 800 52px/1 var(--ff);
+  letter-spacing: -0.03em;
+  color: var(--win);
+}
+
+.sl-win p {
+  margin: 0 0 16px;
+  color: var(--f);
+}
+
+.sl-burst {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.sl-burst img {
+  width: 44px;
+  height: 44px;
+  animation: sl-rise 0.7s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+}
+
+@keyframes sl-rise {
+  from {
+    opacity: 0;
+    translate: 0 30px;
+    scale: 0.4;
+  }
+}
+
+/* A wide screen: the machine, with the prizes and the board at its right. */
+@media (min-width: 860px) {
+  .sl-hd {
+    padding-left: max(12px, (100% - 860px) / 2);
+    padding-right: max(12px, (100% - 860px) / 2);
+  }
+
+  .sl-main {
+    width: min(100%, 860px);
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 28px;
+    padding-top: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-reel.fast img {
+    filter: none;
+  }
+
+  .sl-reel img.hit,
+  .sl-burst img {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+}
