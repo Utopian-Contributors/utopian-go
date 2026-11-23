@@ -12,7 +12,8 @@
 
 import { keepWorn } from "./skin.js";
 
-const KEEP = 10;
+/** A device keeps its best five games; any more (an older page kept ten) are dropped on the next read. */
+const KEEP = 5;
 
 /** @typedef {{score: number, at: number}} Game */
 /** @typedef {{games: Game[]}} Mine */
@@ -47,7 +48,7 @@ export function scores(key, game) {
   /** @returns {Mine} */
   function mine() {
     const m = read(key, null);
-    return { games: Array.isArray(m?.games) ? m.games.filter((g) => Number.isInteger(g?.score)) : [] };
+    return { games: Array.isArray(m?.games) ? m.games.filter((g) => Number.isInteger(g?.score)).slice(0, KEEP) : [] };
   }
 
   /** @returns {Board | null} */

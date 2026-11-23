@@ -33,7 +33,7 @@ const machine = $("sl-mc");
 const reelsBox = $("sl-rs");
 const creditsOut = $("sl-cr");
 const bestOut = $("sl-bs");
-/** The same two, large at the board's head on a desktop. */
+/** The same two, large beside the machine on a desktop. */
 const creditsBig = $("sl-cr2");
 const bestBig = $("sl-bs2");
 const jolt = tally(creditsBig);
@@ -45,8 +45,6 @@ const leftOut = $("sl-lf");
 const progress = $("sl-pg");
 const goalOut = $("sl-gl");
 const betsBox = $("sl-bt");
-const boardList = $("sl-lb");
-const meOut = $("sl-me");
 const paysSheet = /** @type {HTMLDialogElement} */ ($("sl-pays"));
 const buySheet = /** @type {HTMLDialogElement} */ ($("sl-buy"));
 
@@ -87,7 +85,7 @@ async function api(path, body) {
 
 /* ---------- State ---------- */
 
-/** The last answer to GET /slots: the board, your best, today's fresh start, the statuses you have. */
+/** The last answer to GET /slots: your best, today's fresh start, the statuses you have. */
 let state = /** @type {any} */ (null);
 /** The game in play, or the one that just ended, as the server last told it. */
 let game = /** @type {any} */ (null);
@@ -405,29 +403,6 @@ function paintGoal() {
       : `${fmt(STATUS_PRICE - credits)} to a fruit status · ${fmt(STATUS_PRICE)} credits each`;
 }
 
-function paintBoard() {
-  const me = state?.name;
-  boardList.replaceChildren(
-    ...(state?.top ?? []).map((row) => {
-      const li = document.createElement("li");
-      if (row.name === me) li.classList.add("me");
-      const name = document.createElement("span");
-      name.textContent = row.name;
-      const score = document.createElement("b");
-      score.textContent = fmt(row.score);
-      li.append(name, score);
-      return li;
-    }),
-  );
-  if (offline) meOut.textContent = "The board shows once you are online.";
-  else if (state && !state.signed) {
-    const a = document.createElement("a");
-    a.href = "/login?next=/slots";
-    a.textContent = "Log in";
-    meOut.replaceChildren(a, " to play and put your best on the board.");
-  } else meOut.textContent = state && !state.top.length ? "No games on the board yet." : "";
-}
-
 /* ---------- Buying a status ---------- */
 
 /** @param {string} text @param {string} className */
@@ -680,11 +655,10 @@ function paintAll() {
   paintCredits();
   paintGoal();
   paintControls();
-  paintBoard();
   paintLive();
 }
 
-/** Ask how things stand: the board, your best, your balance, today's fresh start, the statuses you have. */
+/** Ask how things stand: your best, your balance, today's fresh start, the statuses you have. */
 async function refresh() {
   try {
     const fresh = await api("/slots");
@@ -694,7 +668,7 @@ async function refresh() {
     if (fresh.game) game = fresh.game;
   } catch (cause) {
     offline = !(cause instanceof ApiError);
-    if (!state) state = { top: [], signed: false, best: 0 };
+    if (!state) state = { signed: false, best: 0 };
   }
   if (!busy && !open()) shown = game?.credits ?? START;
   paintAll();

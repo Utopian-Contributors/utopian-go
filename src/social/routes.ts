@@ -1015,20 +1015,22 @@ async function slotDay(name: string, now: number): Promise<{ left: number; reset
   return { left: Math.max(0, GAMES_A_DAY - (await slotGamesOn(name, day))), resets: (day + 1) * DAY_MS };
 }
 
-/** The board, and signed in: your best, your balance, today's fresh start, and the statuses you have. */
+/**
+ * Signed in: your best, your balance, today's fresh start, and the statuses
+ * you have. No board: a balance is luck and a daily top-up, not a score to
+ * rank people by.
+ */
 socialRouter.get(
   "/slots",
   readLimit,
   wrap(async (_req, res) => {
     const me = currentUser(res);
-    const top = await gameTop("slots");
     if (!me) {
-      res.json({ top, best: 0, signed: false });
+      res.json({ best: 0, signed: false });
       return;
     }
     const game = await openSlotGame(me.name);
     res.json({
-      top,
       best: await gameBest("slots", me.name),
       signed: true,
       name: me.name,

@@ -2903,7 +2903,7 @@ test("Fruit Slots is played on the server: a balance kept until it runs out, a s
     const nokey = await join("nokey", false);
 
     // Signed out: the board only. Nothing to play, nothing to post.
-    assert.deepEqual((await raw("GET", "/api/social/slots")).json, { top: [], best: 0, signed: false });
+    assert.deepEqual((await raw("GET", "/api/social/slots")).json, { best: 0, signed: false });
     assert.equal((await raw("POST", "/api/social/slots/new", {})).status, 401);
     assert.equal((await raw("POST", "/api/social/slots/spin", { bet: 5, n: 0 })).status, 401);
     assert.equal((await raw("POST", "/api/social/slots/buy", { status: "mango" })).status, 401);
@@ -2988,7 +2988,7 @@ test("Fruit Slots is played on the server: a balance kept until it runs out, a s
     const tomorrow = await amy("POST", "/api/social/slots/new", {});
     assert.equal(tomorrow.status, 429, tomorrow.text);
 
-    // The board is the highest balance, written as a spin reaches it.
+    // Your best is the highest balance, written as a spin reaches it.
     const bobGame = (await bob("POST", "/api/social/slots/new", {})).json.game;
     const lucky = seedPaying((t) => t >= 4);
     await sql.query("UPDATE slot_games SET seed = $2, commit = $3, credits = 990 WHERE id = $1", [bobGame.id, lucky.seed, lucky.commit]);
@@ -2997,7 +2997,6 @@ test("Fruit Slots is played on the server: a balance kept until it runs out, a s
     assert.ok(big.json.game.credits > 1000 && !big.json.game.over, "past 1,000 and still playing");
     assert.equal(big.json.game.peak, big.json.game.credits);
     assert.equal((await bob("GET", "/api/social/slots")).json.best, big.json.game.credits);
-    assert.deepEqual((await raw("GET", "/api/social/slots")).json.top[0], { name: "bob", score: big.json.game.credits });
 
     // Spending: a status for 1,000 credits, for yourself or as a gift.
     await sql.query("UPDATE slot_games SET credits = 2500 WHERE id = $1", [bobGame.id]);

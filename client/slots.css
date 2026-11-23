@@ -342,9 +342,10 @@ a.sl-go {
   visibility: hidden;
 }
 
-/* The board and the prizes. */
+/* The credits beside the machine, on a wide screen only: on a narrower one
+   they are in the header, and there is nothing else to put here. */
 .sl-side {
-  display: grid;
+  display: none;
   gap: 14px;
   align-content: start;
 }
@@ -362,63 +363,6 @@ a.sl-go {
 .sl-card h2 {
   margin: 0 0 8px;
   font: 700 15px var(--ff);
-}
-
-.sl-lb {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: sl;
-}
-
-.sl-lb li {
-  display: flex;
-  gap: 10px;
-  padding: 7px 0;
-  border-top: 1px solid var(--line);
-  font-variant-numeric: tabular-nums;
-  counter-increment: sl;
-}
-
-.sl-lb li::before {
-  content: counter(sl);
-  width: 1.4em;
-  color: var(--f);
-  text-align: right;
-}
-
-.sl-lb li span {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sl-lb li b {
-  font-weight: 600;
-}
-
-.sl-lb li.me span {
-  color: var(--go);
-  font-weight: 700;
-}
-
-.sl-lb li.top b::after {
-  content: " ★";
-  color: var(--win);
-}
-
-.sl-note {
-  margin: 8px 0 0;
-  color: var(--f);
-  font-size: 13px;
-}
-
-.sl-note:empty {
-  display: none;
-}
-
-.sl-note a {
-  color: var(--a);
 }
 
 .sl-prz {
@@ -616,10 +560,9 @@ a.sl-go {
   }
 }
 
-/* A wide screen: the machine centred at its phone width, the prizes and the
-   board at its right, as snake.css lays out its board. Below this the
-   one column is centred already, and there is no room for the board on
-   either side of the machine. */
+/* A wide screen: the machine centred at its phone width, the credits at its
+   right, where snake.css has its board. Below this the one column is centred
+   already, and there is no room beside the machine. */
 @media (min-width: 1100px) {
   .sl-main {
     width: 100%;
@@ -633,11 +576,12 @@ a.sl-go {
   }
 
   .sl-side {
+    display: grid;
     grid-column: 3;
     width: 280px;
   }
 
-  /* The credits leave the header for the card at the board's head. */
+  /* The credits leave the header for the card beside the machine. */
   .sl-hd .sl-cr,
   .sl-hd .sl-best {
     display: none;
