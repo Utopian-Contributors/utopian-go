@@ -14,7 +14,7 @@ export const STATUSES = {
   mango: "Good Mango",
   banana: "Top Banana",
   cherry: "Cherry on Top",
-  grape: "Grape Job",
+  grape: "Grape Expectations",
   orange: "Main Squeeze",
   peach: "Feeling Peachy",
   avocado: "Holy Guacamole",
@@ -64,7 +64,7 @@ export const MUSHROOM_SKINS: Record<string, { cap: string; spots: boolean }> = {
   pb1: { cap: "#f0b41a", spots: true },
   pb2: { cap: "#e5262a", spots: true },
   pb3: { cap: "#9a4ae0", spots: true },
-  pb4: { cap: "#2f8ae8", spots: false },
+  pb4: { cap: "#2f8ae8", spots: true },
   pb5: { cap: "#9a5b2c", spots: false },
 };
 
@@ -153,7 +153,7 @@ export function markOf(user: { badge?: string; status?: string }): string | unde
  * their address, so a redrawn badge only reaches anyone under a new one: bump
  * this whenever a client/bd-*.svg changes.
  */
-export const BADGE_ART = 3;
+export const BADGE_ART = 4;
 
 export function badgeSrc(name: string, badge: string): string {
   return badge[0] === "u" ? `/social/k/${name}?v=${badge.slice(1)}` : `/bd-${badge}.svg?v=${BADGE_ART}`;
