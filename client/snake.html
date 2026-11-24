@@ -16,7 +16,7 @@
     <link rel="stylesheet" href="/snake.css" />
   </head>
   <body class="sn">
-    <!-- Back, as the app's other pages have it; this device's best and the score. -->
+    <!-- Back, as the app's other pages have it; the points to the next mark (the best, a place) and the score. -->
     <header class="sn-hd">
       <button type="button" class="sn-back" id="sn-bk">
         <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -27,6 +27,8 @@
       <span class="live" id="sn-lv" role="status">Offline</span>
       <span class="sn-best" id="sn-bs"></span>
       <output class="sn-sc" id="sn-sc" aria-label="Score">0</output>
+      <!-- How far the score is from the next place on the board. -->
+      <span class="gm-next" id="sn-nx" role="progressbar" aria-label="To the next place" aria-valuemin="0" aria-valuemax="100" hidden><i></i></span>
     </header>
 
     <main class="sn-main">
@@ -41,7 +43,8 @@
       <section class="gm-score" aria-label="Score">
         <h2>Score</h2>
         <div class="gm-big"><output class="gm-num" id="sn-sc2">0</output></div>
-        <p class="gm-best" id="sn-bs2"></p>
+        <span class="gm-next" id="sn-nx2" role="progressbar" aria-label="To the next place" aria-valuemin="0" aria-valuemax="100" hidden><i></i></span>
+        <p class="gm-best" id="sn-nt"></p>
       </section>
       <section class="sn-board" aria-label="Scores">
         <div class="sn-lists">

@@ -147,6 +147,12 @@ with its date when offline: a board the worker answered from its copy carries th
 `ug-at`, and only a fresh answer (or a copy the server confirmed with a 304) counts as live. The
 server keeps one row per account in `pinball`, its best. The scores, the board and its painting
 are shared with Snake (`client/games/scores.js`, `board.js`), each game under its own keys and route.
+Neither shows a "Best": both race the score through tiers instead (`board.js` `nextPlace`). Each
+tier ends at a mark to beat, the player's own best (this device's or the account's, as it stood
+when the game began) or a place on the board (their own row left out), and a bar fills toward it
+with the points left beside it ("41 to best", "120 to #7"). Passing a mark fills the bar,
+flashes it, and the next tier's starts from empty. On a phone the bar is a slim strip along the
+header's foot and the count sits in the header; on a desktop both are in the score's card.
 
 **Snake** is the second game, as open as pinball and offline the same way: its page and bundle
 are precached, its scores live on the device (`ug.sn`, the board as last read `ug.snb`), and a

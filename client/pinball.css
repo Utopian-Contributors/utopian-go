@@ -67,6 +67,7 @@ body {
 }
 
 .pb-hd {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -111,8 +112,24 @@ body {
   font: 700 12px var(--ff);
 }
 
+/* The points to the next mark, your best or a place (games/board.js). */
+.pb-best {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--f);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .pb-sc {
   margin-left: auto;
+}
+
+.pb-best:not(:empty) + .pb-sc {
+  margin-left: 0;
   font: 700 22px/1 var(--ff);
   font-variant-numeric: tabular-nums;
 }
@@ -306,6 +323,7 @@ body:not(.pb-on) .pb-board {
   }
 
   /* The score leaves the header for the card at the board's head. */
+  .pb-hd .gm-next,
   .pb-hd .pb-sc,
   .pb-hd .pb-best {
     display: none;
@@ -390,6 +408,45 @@ body:not(.pb-on) .pb-board {
 
 .gm-best:empty {
   display: none;
+}
+
+/* How far the score is from the next place on the board (games/board.js): a
+   slim strip along the header's foot on a phone, a bar in the score's card on
+   a desktop, filling in the board's green and starting over at each place. */
+.gm-next {
+  display: block;
+  height: 6px;
+  margin: 2px 0 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.gm-next[hidden] {
+  display: none;
+}
+
+.gm-next i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--go);
+  transition: width 0.35s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+/* A mark passed: the full bar flashes white a moment before the next tier starts. */
+.gm-next.passed i {
+  background: #fff;
+}
+
+.pb-hd .gm-next {
+  position: absolute;
+  left: max(16px, (100% - 928px) / 2);
+  right: max(16px, (100% - 928px) / 2);
+  bottom: 2px;
+  height: 3px;
+  margin: 0;
 }
 
 /* What a change put on or took off: rises (points) or drops (a bet, a buy)

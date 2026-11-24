@@ -27,7 +27,10 @@
       <span class="live" id="pb-lv" role="status">Offline</span>
       <span class="pb-balls" id="pb-bn" role="img" aria-label="3 balls left">●●●</span>
       <span class="pb-x" id="pb-x" hidden>×2</span>
+      <span class="pb-best" id="pb-nl"></span>
       <output class="pb-sc" id="pb-sc" aria-label="Score">0</output>
+      <!-- How far the score is from the next place on the board. -->
+      <span class="gm-next" id="pb-nx" role="progressbar" aria-label="To the next place" aria-valuemin="0" aria-valuemax="100" hidden><i></i></span>
     </header>
 
     <main class="pb-main">
@@ -42,6 +45,8 @@
       <section class="gm-score" aria-label="Score">
         <h2>Score</h2>
         <div class="gm-big"><output class="gm-num" id="pb-sc2">0</output></div>
+        <span class="gm-next" id="pb-nx2" role="progressbar" aria-label="To the next place" aria-valuemin="0" aria-valuemax="100" hidden><i></i></span>
+        <p class="gm-best" id="pb-nt"></p>
       </section>
       <section class="pb-board" aria-label="Scores">
         <h2>Your best</h2>

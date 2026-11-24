@@ -46,6 +46,8 @@ const board = leaderboard(scores("ug.pb", "pinball"), "/pinball", {
   myNote: $("pb-mn"),
   boardList: $("pb-lb"),
   meOut: $("pb-me"),
+  nextBars: [$("pb-nx"), $("pb-nx2")],
+  nextLabels: [$("pb-nl"), $("pb-nt")],
 });
 
 /** The session a game counts under, and the header's Synced / Offline. */
@@ -76,6 +78,7 @@ function paintCounters() {
   // Points earned rise; a new game's fall back to nought does not.
   if (game.score > painted) jolt(game.score - painted);
   painted = game.score;
+  board.score(game.score);
   // This ball and those still to come, as dots.
   const left = game.state === "play" ? game.left + 1 : game.state === "idle" ? 3 : 0;
   ballsOut.textContent = "●".repeat(Math.min(left, 6)) || "–";

@@ -1,6 +1,6 @@
 /**
- * Snake: the page around the board. The header (Back, the device's best, the
- * score), swipes and keys, sound, the message over the board, and the scores.
+ * Snake: the page around the board. The header (Back, the points to the next
+ * mark, the score), swipes and keys, sound, the message over the board, and the scores.
  * It is offline first: once loaded it plays with no network, and its scores
  * live on the device (../games/scores.js). Signed in and online, a game is
  * played in sync with the server (../games/live.js), which replays its turns;
@@ -29,7 +29,6 @@ const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const canvas = /** @type {HTMLCanvasElement} */ ($("sn-c"));
 const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
 const box = $("sn-t");
-const bestOut = $("sn-bs");
 const scoreOut = $("sn-sc");
 /** The score, large, beside the board on a desktop, and what makes it jump. */
 const scoreBig = $("sn-sc2");
@@ -57,6 +56,8 @@ const board = leaderboard(store, "/snake", {
   myNote: $("sn-mn"),
   boardList: $("sn-lb"),
   meOut: $("sn-me"),
+  nextBars: [$("sn-nx"), $("sn-nx2")],
+  nextLabels: [$("sn-bs"), $("sn-nt")],
 });
 
 /** The session a game counts under, and the header's Synced / Offline. */
@@ -75,8 +76,7 @@ function paintCounters() {
   // Points earned rise; a new game's fall back to nought does not.
   if (game.score > painted) jolt(game.score - painted);
   painted = game.score;
-  const best = store.best();
-  bestOut.textContent = $("sn-bs2").textContent = best ? `Best ${fmt(best)}` : "";
+  board.score(game.score);
 }
 
 /* ---------- Sound ---------- */
