@@ -141,6 +141,11 @@ async function forgetAccount() {
   ]);
 }
 
+/** The writes after which the device's copies belong to another account, or to nobody. */
+const ACCOUNT_CHANGES = new Set(
+  ["logout", "switch", "login", "login/passkey", "register", "recover"].map((p) => `/api/social/${p}`),
+);
+
 /** Keep a page under its own address and, where it is one, as its section's shell. */
 function keepPage(url, response) {
   const own = url.pathname + url.search;
@@ -438,8 +443,10 @@ self.addEventListener("fetch", (event) => {
   // A check from client/offline goes to the server and only the server.
   if (url.origin !== self.location.origin || request.cache === "no-store" || request.headers.has("x-ug-check")) return;
   if (request.method !== "GET") {
-    // Logging out takes this device's copies of the account with it.
-    if (url.pathname === "/api/social/logout") event.waitUntil(forgetAccount());
+    // Logging out, switching to another account or signing in to one (Add
+    // Account, on the login page) takes this device's copies of the account
+    // before it with it.
+    if (ACCOUNT_CHANGES.has(url.pathname)) event.waitUntil(forgetAccount());
     // A write passes straight to the server, but its answer says the network
     // is up. The page's next read shows what was just saved, and must not be
     // handed the copy from before it because a stalled request still has the

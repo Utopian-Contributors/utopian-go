@@ -1,241 +1,32 @@
 /**
- * The Log in dialog: log in, create an account, or recover one. Then, for an
- * account with no passkey, the dialog that adds one, which every account must
- * have before it can do anything (src/social/guard.ts).
+ * The passkey step: the dialog that holds an account with no passkey until it
+ * adds one, which every account must have before it can do anything
+ * (src/social/guard.ts). Logging in and creating an account are pages,
+ * /login and /register (client/auth); this is for an account that is already
+ * signed in, from before passkeys were required or after a recovery took its
+ * one, wherever it turns up.
  *
- * One implementation for every page, each of which fetches it as login.js the
- * first time someone presses Log in, or finds itself signed in to an account
- * without a passkey. It builds its own markup and injects its own styles, so
- * it looks the same whichever page opened it — every colour comes from the
- * page's custom properties. The ways in themselves are signin.js, which the
- * login page (client/auth) goes in by too.
+ * Every page fetches it as login.js when it finds itself signed in to such an
+ * account. It builds its own markup and injects its own styles, so it looks
+ * the same whichever page opened it: every colour comes from the page's
+ * custom properties.
  */
-import { LOGIN, logOut } from "./acct.js";
+import { logOut } from "./acct.js";
 import { el } from "./dom.js";
 import { NO_PASSKEY, canPasskey, enrol, register, why } from "./passkey.js";
-import { dismissible } from "./sheet.js";
-import { passkeyLogIn, send, submit } from "./signin.js";
+import { send } from "./signin.js";
+import { sheetDialog } from "./sheet.js";
 import { injectStyles } from "./ui.js";
 
+/* The rest is the iOS sheet's own (js/ios-sheet.css): the frame, the grouped
+   field, the buttons. */
 const CSS = `
-.lgd{width:min(360px,calc(100% - 32px));padding:20px;border:1px solid var(--b);
- border-radius:24px;background:var(--pn);color:var(--t);font:14px/1.5 var(--ff)}
-.lgd::backdrop{background:rgb(0 0 0/40%)}
-.lgd h2{margin:0;font-size:18px}
-.lgd label{display:block;margin-top:14px;font-size:13px;color:var(--m)}
-.lgd input,.lgd textarea{box-sizing:border-box;width:100%;margin-top:4px;padding:10px 13px;
- border:0;border-radius:12px;background:var(--wash);font:inherit;color:var(--in-ink);
- outline:0}
-.lgd input:focus,.lgd textarea:focus{background:var(--wash2)}
-.lgd textarea{resize:none}
-.lgd-h{margin:4px 0 0;font-size:12px;line-height:1.4;color:var(--f)}
-.lgd-e{margin:8px 0 0;color:var(--dn)}
+.lgd-h{margin:0;font-size:15px;line-height:20px;color:var(--m)}
+.lgd .ios-gp{margin-top:16px}
+.lgd-e{margin:8px 16px 0;font-size:13px;color:var(--dn)}
 .lgd-e:empty{display:none}
-.lgd-go{display:block;width:100%;margin-top:12px;border:0;border-radius:999px;background:var(--buy);
- color:var(--buy-ink);font:500 14px/1 var(--ff);padding:13px 12px;cursor:pointer}
-.lgd-go:hover:not(:disabled){filter:brightness(1.08)}
-.lgd-t{background:none;color:var(--go);border:0;padding:12px 0;font:500 13px/1 var(--ff);cursor:pointer}
-.lgd-t:hover{color:var(--buy-text)}
-.lgd button:disabled{opacity:.55;cursor:default}
-.lgd .lgd-c{display:flex;gap:8px;align-items:flex-start;color:var(--t)}
-.lgd .lgd-c input{width:auto;margin:3px 0 0;flex:none}
-.lgd-c a{color:var(--go)}
-.lgd-or{margin:16px 0 0;text-align:center;font-size:13px;color:var(--f)}
-.lgd-f{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.lgd .ios-btn.lgd-t{color:var(--dn)}
 `;
-
-/** "login", "register" or "recover". */
-let mode = "login";
-/** @type {HTMLDialogElement | null} */
-let dialog = null;
-/** Called once someone is signed in. */
-let done = () => {};
-/** @type {Record<string, any>} */
-let $ = {};
-
-/** A node shown only in the listed modes. */
-function only(modes, node) {
-  node.dataset.m = modes;
-  return node;
-}
-
-/** One line of copy per mode, only one of which is visible at a time. */
-function per(tag, props, texts) {
-  return Object.entries(texts).map(([m, text]) => only(m, el(tag, { ...props, text })));
-}
-
-/**
- * Every way into an account ends the same: the dialog shuts and the page is
- * told. An account without a passkey adds one first, with the challenge the
- * server answered with, and the page is told once it has.
- */
-async function signIn(button, task) {
-  $.err.textContent = "";
-  button.disabled = true;
-  try {
-    const data = await task();
-    $.pass.value = $.again.value = $.phrase.value = "";
-    $.terms.checked = false;
-    dialog?.close();
-    if (data?.passkeySetup) setupPasskey(data.name, data.passkeySetup, done);
-    else done();
-  } catch (cause) {
-    $.err.textContent = why(cause);
-  } finally {
-    button.disabled = false;
-  }
-}
-
-function build() {
-  injectStyles("lgd-css", CSS);
-  const hint = (m, text) => only(m, el("p", { class: "lgd-h", text }));
-  $.user = el("input", {
-    id: "lgd-u",
-    name: "username",
-    required: true,
-    maxlength: "16",
-    autocomplete: "username",
-    autocapitalize: "off",
-    spellcheck: "false",
-  });
-  $.phrase = el("textarea", {
-    id: "lgd-r",
-    rows: "3",
-    required: true,
-    autocomplete: "off",
-    autocapitalize: "off",
-    spellcheck: "false",
-  });
-  $.pass = el("input", {
-    id: "lgd-p",
-    name: "password",
-    type: "password",
-    required: true,
-    minlength: "8",
-    maxlength: "128",
-  });
-  $.again = el("input", {
-    id: "lgd-p2",
-    name: "password-again",
-    type: "password",
-    required: true,
-    autocomplete: "new-password",
-    maxlength: "128",
-  });
-  $.terms = el("input", { id: "lgd-a", type: "checkbox", required: true });
-  $.err = el("p", { class: "lgd-e", role: "alert" });
-  $.go = el(
-    "button",
-    { type: "submit", class: "lgd-go" },
-    ...per("span", {}, { login: LOGIN, register: "Create account", recover: "Recover account" }),
-  );
-  $.key = el("button", {
-    type: "button",
-    class: "lgd-go",
-    text: "Use a passkey",
-    onclick: () => signIn($.key, passkeyLogIn),
-  });
-
-  const form = el(
-    "form",
-    {},
-    el("h2", { id: "lgd-t" }, ...per("span", {}, { login: LOGIN, register: "Create account", recover: "Recover account" })),
-    hint("login", "Use the username and password for your account."),
-    hint("register", "Pick a username. It cannot be changed later."),
-    hint(
-      "recover",
-      "Enter the 12-word recovery phrase from your profile and a new password. This removes any passkey and signs out your other devices.",
-    ),
-    only(
-      "login register",
-      el(
-        "div",
-        {},
-        el("label", { for: "lgd-u", text: "Username" }),
-        $.user,
-        hint("register", "3–16 letters, numbers, or _."),
-      ),
-    ),
-    only("recover", el("div", {}, el("label", { for: "lgd-r", text: "Recovery phrase" }), $.phrase)),
-    el("label", { for: "lgd-p" }, ...per("span", {}, { "login register": "Password", recover: "New password" })),
-    $.pass,
-    hint("register recover", "At least 8 characters."),
-    only("register", el("div", {}, el("label", { for: "lgd-p2", text: "Confirm password" }), $.again)),
-    only(
-      "register",
-      el(
-        "label",
-        { class: "lgd-c", for: "lgd-a" },
-        $.terms,
-        el(
-          "span",
-          {},
-          "I agree to the ",
-          el("a", { href: "/terms", target: "_blank", rel: "noopener", text: "Terms of Service" }),
-        ),
-      ),
-    ),
-    only("login", el("button", { type: "button", class: "lgd-t", text: "Forgot password?", onclick: () => open("recover") })),
-    $.err,
-    $.go,
-  );
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    signIn($.go, () =>
-      submit(mode, {
-        username: $.user.value,
-        password: $.pass.value,
-        again: $.again.value,
-        phrase: $.phrase.value,
-        terms: $.terms.checked,
-      }),
-    );
-  });
-
-  const d = /** @type {HTMLDialogElement} */ (
-    el(
-      "dialog",
-      { class: "lgd", "aria-labelledby": "lgd-t" },
-      form,
-      only("login", el("div", {}, el("p", { class: "lgd-or", text: "or" }), $.key)),
-      el(
-        "div",
-        { class: "lgd-f" },
-        el(
-          "button",
-          { type: "button", class: "lgd-t", onclick: () => open(mode === "login" ? "register" : "login") },
-          ...per("span", {}, { login: "Create account", register: "I have an account", recover: "Back to log in" }),
-        ),
-      ),
-    )
-  );
-  dismissible(d);
-  document.body.append(d);
-  return d;
-}
-
-/**
- * Open the dialog, or switch the open one to another mode.
- *
- * @param {"login" | "register" | "recover"} [next]
- * @param {() => void} [onDone] called once signed in; the header already knows by then
- */
-export function open(next = "login", onDone) {
-  if (!dialog) dialog = build();
-  if (onDone) done = onDone;
-  mode = next;
-  for (const node of dialog.querySelectorAll("[data-m]")) {
-    /** @type {HTMLElement} */ (node).hidden = !(/** @type {HTMLElement} */ (node).dataset.m.split(" ").includes(mode));
-  }
-  // Disabled as well as hidden: a hidden required field would still block the form.
-  $.user.disabled = mode === "recover";
-  $.phrase.disabled = mode !== "recover";
-  $.again.disabled = $.terms.disabled = mode !== "register";
-  $.pass.autocomplete = mode === "login" ? "current-password" : "new-password";
-  $.err.textContent = "";
-  if (!dialog.open) dialog.showModal();
-  (mode === "recover" ? $.phrase : $.user).focus();
-}
 
 /** The passkey step's dialog, built the first time it is needed. */
 let setup = null;
@@ -252,15 +43,14 @@ function buildSetup() {
     minlength: "8",
     maxlength: "128",
   });
-  const passRow = el("div", {}, el("label", { for: "lgd-sp", text: "Password" }), pass);
+  const passRow = el("div", { class: "ios-gp" }, el("div", { class: "ios-fr" }, el("label", { for: "lgd-sp", text: "Password" }), pass));
   const err = el("p", { class: "lgd-e", role: "alert" });
-  const go = el("button", { type: "submit", class: "lgd-go", text: "Create passkey" });
+  const go = el("button", { type: "submit", class: "ios-btn", text: "Create passkey" });
   /** In place of the password and the button, on a browser that cannot make one. */
   const unable = el("p", { class: "lgd-e", role: "alert", text: NO_PASSKEY });
   const form = el(
     "form",
     {},
-    el("h2", { id: "lgd-st", text: "Add a passkey" }),
     el("p", {
       class: "lgd-h",
       text: "Every account has one. It signs you in, confirms every trade and send, and shows your recovery phrase. It stays on this device, opened by your face, fingerprint or screen lock.",
@@ -270,12 +60,12 @@ function buildSetup() {
     err,
     go,
   );
-  const out = el("button", { type: "button", class: "lgd-t", text: "Log out" });
+  const out = el("button", { type: "button", class: "ios-btn ios-2 lgd-t", text: "Log Out" });
   const d = /** @type {HTMLDialogElement} */ (
-    el("dialog", { class: "lgd", "aria-labelledby": "lgd-st" }, form, el("div", { class: "lgd-f" }, out))
+    el("dialog", { class: "lgd", "aria-labelledby": "lgd-st" }, el("h2", { id: "lgd-st", text: "Add a passkey" }), form, out)
   );
-  // No X, no outside tap, no Escape: a passkey or Log out are the ways on.
-  d.addEventListener("cancel", (e) => e.preventDefault());
+  // No X, no drag, no outside tap, no Escape: a passkey or Log out are the ways on.
+  sheetDialog(d, { close: false });
 
   /**
    * With the challenge from signing in, the passkey is all; without, or once

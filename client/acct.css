@@ -86,26 +86,26 @@
   filter: brightness(1.08);
 }
 
-/* Log out, last in the control: on Social, and on the wallet page while signed
-   in. iOS's destructive button: the red as its label, on a grey fill, so it
-   does not read as a link and does not shout either. No display of its own,
-   so the hidden attribute still hides it. */
-.ac-out {
+/* Accounts, last in the control: on Social, and on the wallet page while
+   signed in. It opens the account picker (js/accounts.js), where Log Out is.
+   iOS's grey fill with the page's ink. No display of its own, so the hidden
+   attribute still hides it. */
+.ac-sw {
   height: 36px;
   border: 0;
   border-radius: 999px;
   padding: 0 15px;
   background: var(--wash);
-  color: var(--dn);
+  color: var(--t);
   font: 600 15px/1 var(--ff);
   cursor: pointer;
 }
 
-.ac-out:hover:not(:disabled) {
+.ac-sw:hover:not(:disabled) {
   background: var(--wash2);
 }
 
-.ac-out:disabled {
+.ac-sw:disabled {
   cursor: progress;
 }
 

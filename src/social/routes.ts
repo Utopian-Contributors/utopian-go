@@ -9,8 +9,13 @@ import { matchesAd, reloadAds, socialAdFor } from "./ads";
 import { audioKind } from "./audio";
 import { calloutsIn } from "./callouts";
 import {
+  HELD_MAX,
+  type Held,
   checkPassword,
   clearSession,
+  forgetHeld,
+  readHeld,
+  switchSession,
   newPassword,
   openForServer,
   openPhrase,
@@ -479,7 +484,7 @@ socialRouter.post(
     if (!inserted) throw new SocialError(409, "That username is taken.");
     // Only once the name is ours: before, it could overwrite a taken name's photo.
     if (pic) writeAvatar(name, pic.full, pic.tiny);
-    setSession(res, name, 0, req.secure);
+    setSession(req, res, name, 0);
     // The phrase stays out of this response; it is behind the passkey this adds.
     res.json({ name, address, passkeySetup: passkeySetup(user) });
   }),
@@ -503,7 +508,7 @@ socialRouter.post(
       return;
     }
     // Signed in, but held to adding a passkey before anything else (guard.ts).
-    setSession(res, user.name, user.epoch, req.secure);
+    setSession(req, res, user.name, user.epoch);
     res.json({ name: user.name, passkeySetup: passkeySetup(user) });
   }),
 );
@@ -526,7 +531,7 @@ socialRouter.post(
     const user = await recoverAccount(solanaAddress(phrase), pass, box, sealForServer(phrase));
     if (!user) throw new SocialError(401, "No account uses that phrase.");
     misses.delete(user.name);
-    setSession(res, user.name, user.epoch, req.secure);
+    setSession(req, res, user.name, user.epoch);
     // Recovery took the passkey, so the next thing is a new one.
     res.json({ name: user.name, passkeySetup: passkeySetup(user) });
   }),
@@ -593,7 +598,7 @@ socialRouter.post(
       throw new SocialError(401, "Passkey was not accepted.");
     }
     await bumpPasskeyCount(user.name, count);
-    setSession(res, user.name, user.epoch, req.secure);
+    setSession(req, res, user.name, user.epoch);
     res.json({ name: user.name });
   }),
 );
@@ -618,7 +623,83 @@ socialRouter.post(
     // on every device this account is signed in on.
     const me = currentUser(res);
     if (me) await endSessions(me.name);
-    clearSession(res, req.secure);
+    // Another account held here carries on in its place, as an iOS app does
+    // when you log out of one of several accounts.
+    const { live, stale } = await liveHeld(req);
+    const next = live[0] ?? null;
+    clearSession(req, res, next?.held ?? null, stale);
+    res.json({ ok: true, name: next?.user.name ?? null });
+  }),
+);
+
+/**
+ * The held accounts (auth.ts readHeld) that still speak for their account,
+ * in order, and the names of those that no longer do: logged out or recovered
+ * since, or gone.
+ */
+async function liveHeld(req: Request): Promise<{ live: { held: Held; user: User }[]; stale: string[] }> {
+  const list = readHeld(req);
+  const users = await Promise.all(list.map((h) => getUser(h.name)));
+  const live: { held: Held; user: User }[] = [];
+  const stale: string[] = [];
+  list.forEach((held, i) => {
+    const user = users[i];
+    if (user && user.epoch === held.epoch) live.push({ held, user });
+    else stale.push(held.name);
+  });
+  return { live, stale };
+}
+
+/**
+ * The accounts this browser is signed in to: the active one first, then the
+ * ones held beside it. Only names and pictures, which are public anyway.
+ */
+socialRouter.get(
+  "/accounts",
+  readLimit,
+  wrap(async (req, res) => {
+    const me = currentUser(res);
+    const { live, stale } = await liveHeld(req);
+    if (stale.length) forgetHeld(req, res, stale);
+    res.set("Cache-Control", "no-store");
+    res.json({
+      accounts: [
+        ...(me ? [{ name: me.name, avatarRev: me.avatarRev, active: true }] : []),
+        ...live.map(({ user }) => ({ name: user.name, avatarRev: user.avatarRev, active: false })),
+      ],
+      max: HELD_MAX + 1,
+    });
+  }),
+);
+
+/** Switch to an account this browser already holds. No password: it is signed in already. */
+socialRouter.post(
+  "/switch",
+  writeLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const name = username(req.body?.name);
+    const held = name ? readHeld(req).find((h) => h.name === name) : undefined;
+    const user = held ? await getUser(held.name) : null;
+    if (!held || !user || user.epoch !== held.epoch) {
+      if (held) forgetHeld(req, res, [held.name]);
+      throw new SocialError(401, "That account was logged out. Log in to it again.");
+    }
+    switchSession(req, res, held);
+    res.json({ name: user.name });
+  }),
+);
+
+/** Stop holding an account in this browser. It stays signed in wherever else it is. */
+socialRouter.post(
+  "/accounts/forget",
+  writeLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const name = username(req.body?.name);
+    if (name) forgetHeld(req, res, [name]);
     res.json({ ok: true });
   }),
 );

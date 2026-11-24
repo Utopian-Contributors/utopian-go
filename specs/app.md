@@ -270,14 +270,26 @@ POST /api/social/shop/prize/<id>/give {to} → {to, prizes}
 Every page wears the same header as search: the wordmark, the search field, and the
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet
 mark and the word) and then the username, which opens My Profile. Signed out, the Wallet
-pill is a **Log in** pill (a person mark) that opens the login dialog in place, followed by
+pill is a **Log in** pill (a person mark) to the login page, followed by
 **Get Social** (except on Social itself). Social remembers the name in `localStorage`
 (`ug.me`), so search paints it without a request. Log in is always the Social account; the
 trade dialog connects a browser wallet only for visitors without one.
 
-There is one login dialog (`client/js/login.js`): log in, create an account, or recover
-one. Social bundles it; search and the wallet page fetch it as `login.js` on the first
-click. Every Log in button, in a header or on a page, opens it and never navigates away.
+**Accounts.** A browser can be signed in to up to six accounts at once. Signing in to another
+keeps the one before it in `soa`, a signed httpOnly list beside the `soc` session cookie
+(`src/social/auth.ts`), each entry carrying its epoch, so a logout or recovery elsewhere still ends
+it. On Social and the wallet page the last header button is **Accounts** (a long press on My
+Profile opens it too): an iOS sheet (`client/js/accounts.js`, in the login bundle) listing them with
+a check on the one in use, a tap to switch, Add Account (the login page with `?add=1`, which
+shows it to someone already signed in), Edit to remove one from
+this device, and Log Out, after which the next held account carries on. A switch reloads the page.
+
+Logging in and creating an account are pages, not dialogs: `/login` and `/register`
+(`client/auth.html`), with recovery a mode of `/login`. Every Log in button, in a header or on
+a page, goes to `/login?next=` the page it was pressed on (or the page it was opening, for a
+Social tab that needs an account), and the page comes back there once someone is in; Create
+account on it is `/register` with the same `?next=`. The only dialog left in `login.js` is the
+passkey step that holds an account without one (`setupPasskey`).
 
 Messenger is part of Social: one more tab and one more route in the same document, with
 its own lazy bundle (`chat.js`), served by the same API and stored in the same database.
@@ -498,7 +510,10 @@ POST /api/social/login         {username, password}          → {name} | {passk
 POST /api/social/login/passkey {username?, id?, challenge, clientData, authenticatorData, signature} → {name}
 POST /api/social/passkey/login {}                            → {challenge}
 POST /api/social/recover       {phrase, password}            → {name}
-POST /api/social/logout        {}                            → {ok}   ends every session of the account
+POST /api/social/logout        {}                            → {ok, name}   ends every session of the account; name: the held account now active, or null
+GET  /api/social/accounts                                    → {accounts: {name, avatarRev, active}[], max}
+POST /api/social/switch        {name}                        → {name}   to an account this browser holds
+POST /api/social/accounts/forget {name}                      → {ok}   stop holding it here; its sessions elsewhere stay
 GET  /api/social/me                                          → {me: Me | null}
 
 GET  /api/social/timeline?before&id&friends=1&saved=1&images=0&audio=0
@@ -982,8 +997,17 @@ already exists for that action.
   Its rules live once, in `header.css` and `acct.css`, which the build appends to every
   page's sheet; a page's sheet adds to them and never copies them. That is also what lets
   the wallet page have the header without inlining the rest of `app.css`.
+- **One sheet for every dialog.** Every dialog is iOS's sheet (`client/js/ios-sheet.js`): a
+  navigation bar with the title centred, a grey close button and, for a step, Back at its
+  leading end. On a phone it rises from the bottom, inset 8px from the edges, follows the
+  keyboard up, keeps clear of the home indicator, holds the page still, and a drag down on
+  its bar dismisses it; wider, it is a centred card. Native dialogs get it from
+  `sheet.js` (`dismissible`, `sheetDialog`), the money dialogs from `ui.js` (`dialog`). Its
+  controls (`.ios-btn`, the grouped rows `.ios-gp`/`.ios-fr`) are for any dialog's content;
+  fields are 16px or more so iOS never zooms on focus. Photo viewers stay full screen, and
+  the offline screen is a page, not a dialog.
 - **One component per action.** Log in is `.ac-in` in a header and `.ac-go` on a page, and
-  both open the one login dialog. A dialog shared by several pages is one module (see
+  both go to the one login page. A dialog shared by several pages is one module (see
   `login.js`, `ui.js`), not a copy per page.
 - **One label per action.** The words live in one constant (`LOGIN` in `acct.js`) and are
   not respelled: "Log in", not "Sign in" or "Login".

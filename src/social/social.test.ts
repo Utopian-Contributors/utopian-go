@@ -7,7 +7,7 @@ import { tmpdir } from "os";
 import path from "path";
 import { Client } from "pg";
 import test, { after } from "node:test";
-import { checkPassword, newPassword, openPhrase, pepperHash, sealPhrase, stale, wrapPhraseCt } from "./auth";
+import { HELD_MAX, checkPassword, clearSession, forgetHeld, newPassword, openPhrase, pepperHash, readHeld, readSession, sealPhrase, setSession, stale, switchSession, wrapPhraseCt } from "./auth";
 import { TERMS_VERSION, UTCC_MINT } from "../config";
 import { audioKind } from "./audio";
 import { jpegSize } from "./jpeg";
@@ -106,6 +106,77 @@ test("recovery phrase is BIP39 and the Solana account Phantom imports", () => {
   // m/44'/501'/0'/0' for that phrase, checked against ed25519-hd-key and web3.js.
   assert.equal(solanaAddress(ABANDON), "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk");
   assert.equal(base58(Buffer.from([0, 0, 1])), "112");
+});
+
+/** A browser's cookie jar, as far as the session helpers see it: they read `req` and write `res`. */
+function jar() {
+  const cookies = new Map<string, string>();
+  const req = () => ({ secure: false, headers: { cookie: [...cookies].map(([k, v]) => `${k}=${v}`).join("; ") } }) as unknown as express.Request;
+  const res = () =>
+    ({
+      setHeader(_: string, value: string | string[]) {
+        for (const line of [value].flat()) {
+          const [pair] = line.split(";");
+          const i = pair.indexOf("=");
+          const [k, v] = [pair.slice(0, i), pair.slice(i + 1)];
+          if (/Max-Age=0(;|$)/.test(line)) cookies.delete(k);
+          else cookies.set(k, v);
+        }
+      },
+    }) as unknown as express.Response;
+  const as = (fn: (q: express.Request, r: express.Response) => void) => fn(req(), res());
+  return { as, active: () => readSession(req())?.name ?? null, held: () => readHeld(req()).map((h) => h.name), cookies };
+}
+
+test("signing in to a second account holds the first, and a switch swaps them", () => {
+  const b = jar();
+  b.as((q, r) => setSession(q, r, "alice", 0));
+  assert.equal(b.active(), "alice");
+  assert.deepEqual(b.held(), []);
+  b.as((q, r) => setSession(q, r, "bob", 3));
+  assert.equal(b.active(), "bob");
+  assert.deepEqual(b.held(), ["alice"]);
+  // Signing in again to an account already held does not list it twice.
+  b.as((q, r) => setSession(q, r, "alice", 0));
+  assert.equal(b.active(), "alice");
+  assert.deepEqual(b.held(), ["bob"]);
+  b.as((q, r) => {
+    const bob = readHeld(q)[0];
+    assert.equal(bob.epoch, 3);
+    switchSession(q, r, bob);
+  });
+  assert.equal(b.active(), "bob");
+  assert.deepEqual(b.held(), ["alice"]);
+});
+
+test("logging out hands over to a held account, or signs the browser out", () => {
+  const b = jar();
+  b.as((q, r) => setSession(q, r, "alice", 0));
+  b.as((q, r) => setSession(q, r, "bob", 0));
+  b.as((q, r) => setSession(q, r, "carol", 0));
+  assert.deepEqual(b.held(), ["bob", "alice"]);
+  b.as((q, r) => clearSession(q, r, readHeld(q)[0], []));
+  assert.equal(b.active(), "bob");
+  assert.deepEqual(b.held(), ["alice"]);
+  b.as((q, r) => forgetHeld(q, r, ["alice"]));
+  assert.deepEqual(b.held(), []);
+  b.as((q, r) => clearSession(q, r));
+  assert.equal(b.active(), null);
+  assert.equal(b.cookies.size, 0);
+});
+
+test("held accounts are capped, and a held list that was tampered with is ignored", () => {
+  const b = jar();
+  for (const name of ["aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh"]) b.as((q, r) => setSession(q, r, name, 0));
+  assert.equal(b.held().length, HELD_MAX);
+  assert.deepEqual(b.held(), ["ggg", "fff", "eee", "ddd", "ccc"]);
+  const raw = decodeURIComponent(b.cookies.get("soa")!);
+  const [payload, sig] = raw.split(".");
+  const forged = Buffer.from(JSON.stringify([{ u: "mallory", s: 0, e: Date.now() + 60_000 }])).toString("base64url");
+  b.cookies.set("soa", encodeURIComponent(`${forged}.${sig}`));
+  assert.deepEqual(b.held(), []);
+  b.cookies.set("soa", encodeURIComponent(`${payload}.${sig}`));
+  assert.equal(b.held().length, HELD_MAX);
 });
 
 test("phrase opens only with the password that sealed it", async () => {
@@ -1964,6 +2035,25 @@ test("the timeline filters in the query, and pages through what is left", async 
     assert.deepEqual(await rail(bob), [], "not someone already added");
     // The top of Trending and its length; nothing on it in an empty index.
     assert.deepEqual((await ada("GET", "/api/social/rail")).json.assets, { count: 0, tokens: [] });
+
+    // A plain reply to a post with a photo: with images off the reply shows,
+    // but not the photo post above it.
+    const more = new Client({ connectionString: process.env.DATABASE_URL });
+    await more.connect();
+    try {
+      await more.query("INSERT INTO posts (id, by_name, text, at, reply_to, root) VALUES ('fr','bob','a reply',$1,'f56','f56')", [
+        1_000_000 + 60 * 60_000,
+      ]);
+    } finally {
+      await more.end();
+    }
+    const above = async (query: string) => {
+      const posts = (await ada("GET", `/api/social/timeline?${query}`)).json.posts as { id: string; context?: { id: string }[] }[];
+      return posts.find((post) => post.id === "fr")?.context?.map((card) => card.id);
+    };
+    assert.deepEqual(await above(""), ["f56"]);
+    assert.deepEqual(await above("images=0"), [], "f56 has a photo");
+    assert.deepEqual(await above("audio=0"), ["f56"], "f56 has no memo");
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
@@ -3378,6 +3468,8 @@ test("the login page goes on only to a page on this site, and signed out the hom
   assert.equal(authPath("/login", "/wallet"), "/login?next=/wallet");
   assert.equal(authPath("/register", "/"), "/register");
   assert.equal(authPath("/login", "/social?a=1&b=2"), "/login?next=/social%3Fa%3D1%26b%3D2");
+  assert.equal(authPath("/login", "/social", true), "/login?next=/social&add=1");
+  assert.equal(authPath("/login", "/", true), "/login?add=1");
 
   const shell =
     '<nav id="hm-nv" aria-label="Go to"><a href="/wallet" data-to="/wallet">Wallet</a><a href="/social" data-to="/social">Social</a><a href="/pinball">Pinball</a></nav>' +

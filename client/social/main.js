@@ -8,7 +8,7 @@
  * Notifications, Edit profile, Messenger, Advertise, the Shop, the rail, Pay,
  * and the Log in dialog.
  */
-import { logOut } from "../js/acct.js";
+import { goLogIn, openAccounts } from "../js/acct.js";
 import { $, el, nil } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { marks, statusPill } from "../js/marks.js";
@@ -254,9 +254,15 @@ function send(path, obj) {
   return pull(path, { method: "POST", body: JSON.stringify(obj || {}) });
 }
 
-/** The one login dialog, its own bundle (client/login) as on search; signed in, the page redraws. */
-function openAuth(next, done = show) {
-  load("lg", "__login").then((login) => login.open(next, done), () => {});
+/**
+ * To the login page, or with "register" the sign-up page (client/auth), and
+ * back to `to`, this page unless said, once someone is in.
+ *
+ * @param {"login" | "register"} [mode]
+ * @param {string} [to]
+ */
+function openAuth(mode = "login", to) {
+  goLogIn(to, mode === "register");
 }
 
 /**
@@ -1632,18 +1638,53 @@ for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data
   tab.addEventListener("click", (e) => {
     if (me || readName()) return;
     e.preventDefault();
-    openAuth("login", () => location.assign(/** @type {HTMLAnchorElement} */ (tab).href));
+    openAuth("login", /** @type {HTMLAnchorElement} */ (tab).pathname);
   });
 }
-// Signed out, Social is not yours to stay on (src/server.ts): home, as the wallet goes.
-$("out").addEventListener("click", async () => {
-  try {
-    await logOut();
-    location.replace("/");
-  } catch (cause) {
-    main.replaceChildren(el("p", { class: "err", text: cause.message }));
-  }
-});
+/**
+ * The account picker (js/accounts.js). Another account starts Social again,
+ * so nothing drawn for the last one stays, Messenger's key in tab memory
+ * least of all: on My Profile at the new account's own profile, on any other
+ * tab at that tab's front page. Signed out, Social is not yours to stay on
+ * (src/server.ts): home, as the wallet goes.
+ */
+function accounts() {
+  openAccounts({
+    onSwitch: (name) => {
+      const { page } = route();
+      const own = page === "edit" || (page === "profile" && route().name === me?.name);
+      const tab = document.querySelector("#tb a.on");
+      location.assign(own && name ? `/social/u/${name}` : tab && !own ? /** @type {HTMLAnchorElement} */ (tab).pathname : "/social");
+    },
+  });
+}
+$("out").addEventListener("click", accounts);
+
+// A long press on My Profile opens the picker, as iOS apps do with their
+// profile tab. The tap that ends the press is not a visit to the profile.
+{
+  const tab = $("me");
+  let timer = 0;
+  let held = false;
+  const stop = () => clearTimeout(timer);
+  tab.addEventListener("pointerdown", (e) => {
+    held = false;
+    if (e.button !== 0 || !(me || readName())) return;
+    timer = setTimeout(() => {
+      held = true;
+      navigator.vibrate?.(10);
+      accounts();
+    }, 450);
+  });
+  for (const type of ["pointerup", "pointerleave", "pointercancel"]) tab.addEventListener(type, stop);
+  tab.addEventListener("contextmenu", (e) => (me || readName()) && e.preventDefault());
+  tab.addEventListener("click", (e) => {
+    if (!held) return;
+    held = false;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+}
 
 // Saved was a page before it was a filter. An old link lands on the timeline with Saved on.
 if (route().page === "saved") {

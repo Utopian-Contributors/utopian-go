@@ -1,8 +1,10 @@
 /**
- * The Log in dialog as a lazy bundle: search, the wallet page and Social all
- * fetch this the first time someone presses Log in, or signs in to an account
- * that has no passkey yet.
+ * The passkey step and the account picker as a lazy bundle: every page
+ * fetches this when it finds itself signed in to an account that has no
+ * passkey yet, or when someone opens Accounts. Logging in and creating an
+ * account are pages (client/auth), not part of it.
  */
-import { open, setupPasskey } from "../js/login.js";
+import { openAccounts } from "../js/accounts.js";
+import { setupPasskey } from "../js/login.js";
 
-window.__login = { open, setupPasskey };
+window.__login = { setupPasskey, accounts: openAccounts };

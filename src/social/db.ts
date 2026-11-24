@@ -881,7 +881,7 @@ export async function timeline(
   const page = more ? rows.slice(0, TIMELINE_PAGE) : rows;
   const last = page[page.length - 1];
   return {
-    posts: await withContext(page.map(cardFrom), who),
+    posts: await withContext(page.map(cardFrom), who, filter),
     next: more && last ? { at: Number(last.at), id: last.id } : null,
   };
 }
@@ -904,15 +904,19 @@ async function cardsById(ids: string[], who: string | null): Promise<Card[]> {
  * it answers, and before that the thread's first post when the reply is
  * further down than the first reply. The client draws a broken line between
  * those two when there are posts between them. One query for the whole page.
+ * A post above that the timeline's filter leaves out (images or audio off) is
+ * left out there too, so the reply stands on its own.
  */
-async function withContext(cards: Card[], who: string | null): Promise<Card[]> {
+async function withContext(cards: Card[], who: string | null, filter: FeedFilter = WHOLE_FEED): Promise<Card[]> {
   const ids = new Set(cards.flatMap((card) => (card.replyTo ? [card.replyTo, card.root ?? card.replyTo] : [])));
   const found = new Map((await cardsById([...ids], who)).map((card) => [card.id, card]));
   for (const card of cards) {
     if (!card.replyTo) continue;
     const top = card.root && card.root !== card.replyTo ? found.get(card.root) : undefined;
     const parent = found.get(card.replyTo);
-    card.context = [top, parent].filter((c): c is Card => !!c);
+    card.context = [top, parent].filter(
+      (c): c is Card => !!c && (filter.images || !c.photos) && (filter.audio || !c.audio),
+    );
   }
   return cards;
 }

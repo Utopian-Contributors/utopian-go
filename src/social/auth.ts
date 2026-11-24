@@ -251,27 +251,159 @@ function sign(payload: string): string {
   return `${payload}.${sig}`;
 }
 
-function cookie(value: string, maxAge: number, secure: boolean): string {
+/** The payload of a value `sign` wrote, or null if the signature is not ours. */
+function verified(raw: string | null): string | null {
+  if (!raw) return null;
+  const dot = raw.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const payload = raw.slice(0, dot);
+  const sig = raw.slice(dot + 1);
+  const expect = createHmac("sha256", secret()).update(payload).digest();
+  let got: Buffer;
+  try {
+    got = Buffer.from(sig, "base64url");
+  } catch {
+    return null;
+  }
+  if (got.length !== expect.length || !timingSafeEqual(got, expect)) return null;
+  try {
+    return Buffer.from(payload, "base64url").toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+function cookie(key: string, value: string, maxAge: number, secure: boolean): string {
   return (
-    `soc=${encodeURIComponent(value)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}` +
+    `${key}=${encodeURIComponent(value)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}` +
     (secure ? "; Secure" : "")
   );
 }
 
-/**
- * `epoch` is the account's session counter. Recovery bumps it, and every
- * cookie signed under the old value stops working, because a cookie is the
- * one thing a stateless session cannot otherwise take back.
- */
-export function setSession(res: Response, name: string, epoch: number, secure: boolean): void {
-  const payload = Buffer.from(
-    JSON.stringify({ u: name, s: epoch, e: Date.now() + SESSION_MS }),
-  ).toString("base64url");
-  res.setHeader("Set-Cookie", cookie(sign(payload), SESSION_S, secure));
+/** One signed-in account: its name, the epoch it was signed under, and when it lapses. */
+export interface Held {
+  name: string;
+  epoch: number;
+  exp: number;
 }
 
-export function clearSession(res: Response, secure: boolean): void {
-  res.setHeader("Set-Cookie", cookie("", 0, secure));
+/** A session's fields, checked. Null for anything malformed or lapsed. */
+function held(obj: unknown): Held | null {
+  if (!obj || typeof obj !== "object") return null;
+  const { u, s, e } = obj as { u?: unknown; s?: unknown; e?: unknown };
+  if (typeof u !== "string" || typeof e !== "number") return null;
+  if (e < Date.now()) return null;
+  if (!NAME.test(u)) return null;
+  return { name: u, epoch: typeof s === "number" ? s : 0, exp: e };
+}
+
+/**
+ * The other accounts this browser is signed in to, besides the one it is
+ * using. iOS apps let you hold several accounts and switch with a tap; this is
+ * that, without a server-side session table.
+ *
+ * `soa` holds them as one signed list, each entry the same three fields a
+ * session cookie carries, under the same key. Being signed, it cannot name an
+ * account nobody here signed in to; carrying each one's epoch, a logout or a
+ * recovery elsewhere still ends it, because a switch checks the epoch against
+ * the account exactly as every request checks the active session
+ * (guard.ts sessionAccount). Holding an account here is the same as being
+ * signed in to it: anything that signs or reveals a key still asks for its
+ * passkey, whichever account is active.
+ */
+const HELD = "soa";
+
+/** At most this many besides the active one: a cookie has a size, and a picker a length. */
+export const HELD_MAX = 5;
+
+export function readHeld(req: Request): Held[] {
+  const header = req.headers.cookie;
+  if (!header) return [];
+  const text = verified(readCookie(header, HELD));
+  if (!text) return [];
+  try {
+    const list = JSON.parse(text) as unknown;
+    if (!Array.isArray(list)) return [];
+    const out: Held[] = [];
+    for (const item of list) {
+      const one = held(item);
+      if (one && !out.some((o) => o.name === one.name)) out.push(one);
+    }
+    return out.slice(0, HELD_MAX);
+  } catch {
+    return [];
+  }
+}
+
+function heldCookie(list: Held[], secure: boolean): string {
+  if (!list.length) return cookie(HELD, "", 0, secure);
+  const payload = Buffer.from(
+    JSON.stringify(list.slice(0, HELD_MAX).map((h) => ({ u: h.name, s: h.epoch, e: h.exp }))),
+  ).toString("base64url");
+  // Lives as long as the longest-lived account in it; each entry lapses on its own.
+  const age = Math.max(1, Math.ceil((Math.max(...list.map((h) => h.exp)) - Date.now()) / 1000));
+  return cookie(HELD, sign(payload), age, secure);
+}
+
+function sessionCookie(one: Held, secure: boolean): string {
+  const payload = Buffer.from(JSON.stringify({ u: one.name, s: one.epoch, e: one.exp })).toString("base64url");
+  return cookie("soc", sign(payload), Math.max(1, Math.ceil((one.exp - Date.now()) / 1000)), secure);
+}
+
+/**
+ * Make `active` the session and `others` the accounts held beside it, in one
+ * response. Never lists the active account among the others.
+ */
+function writeAccounts(req: Request, res: Response, active: Held | null, others: Held[]): void {
+  const secure = req.secure;
+  const rest = others.filter((h, i) => h.name !== active?.name && others.findIndex((o) => o.name === h.name) === i);
+  // A browser that holds nothing, and is to hold nothing, is not sent a held
+  // list to delete: most never sign in to a second account.
+  const hadHeld = !!req.headers.cookie && readCookie(req.headers.cookie, HELD) != null;
+  const session = active ? sessionCookie(active, secure) : cookie("soc", "", 0, secure);
+  res.setHeader("Set-Cookie", rest.length || hadHeld ? [heldCookie(rest, secure), session] : session);
+}
+
+/**
+ * Sign `name` in, for 30 days. The account signed in before it, if another,
+ * is not signed out: it moves to the front of the held list, so the account
+ * picker can switch back to it. `epoch` is the account's session counter.
+ * Recovery bumps it, and every cookie signed under the old value stops
+ * working, because a cookie is the one thing a stateless session cannot
+ * otherwise take back.
+ */
+export function setSession(req: Request, res: Response, name: string, epoch: number): void {
+  const before = readSession(req);
+  const others = readHeld(req).filter((h) => h.name !== name);
+  if (before && before.name !== name) others.unshift(before);
+  writeAccounts(req, res, { name, epoch, exp: Date.now() + SESSION_MS }, others);
+}
+
+/**
+ * Make a held account the active one, keeping its own expiry. The account it
+ * replaces is held in its place, first in the list.
+ */
+export function switchSession(req: Request, res: Response, to: Held): void {
+  const before = readSession(req);
+  const others = readHeld(req).filter((h) => h.name !== to.name);
+  if (before && before.name !== to.name) others.unshift(before);
+  writeAccounts(req, res, to, others);
+}
+
+/**
+ * End the active session in this browser. `next`, a held account already
+ * checked against its epoch, takes its place; without one, the browser is
+ * signed out. `drop` names held accounts found to be stale on the way.
+ */
+export function clearSession(req: Request, res: Response, next: Held | null = null, drop: string[] = []): void {
+  const others = readHeld(req).filter((h) => h.name !== next?.name && !drop.includes(h.name));
+  writeAccounts(req, res, next, others);
+}
+
+/** Stop holding `names` in this browser. Their sessions elsewhere are untouched. */
+export function forgetHeld(req: Request, res: Response, names: string[]): void {
+  const others = readHeld(req).filter((h) => !names.includes(h.name));
+  res.setHeader("Set-Cookie", heldCookie(others, req.secure));
 }
 
 export function readCookie(header: string, name: string): string | null {
@@ -288,33 +420,13 @@ export function readCookie(header: string, name: string): string | null {
   return null;
 }
 
-export function readSession(req: Request): { name: string; epoch: number } | null {
+export function readSession(req: Request): Held | null {
   const header = req.headers.cookie;
   if (!header) return null;
-  const raw = readCookie(header, "soc");
-  if (!raw) return null;
-  const dot = raw.lastIndexOf(".");
-  if (dot <= 0) return null;
-  const payload = raw.slice(0, dot);
-  const sig = raw.slice(dot + 1);
-  const expect = createHmac("sha256", secret()).update(payload).digest();
-  let got: Buffer;
+  const text = verified(readCookie(header, "soc"));
+  if (!text) return null;
   try {
-    got = Buffer.from(sig, "base64url");
-  } catch {
-    return null;
-  }
-  if (got.length !== expect.length || !timingSafeEqual(got, expect)) return null;
-  try {
-    const obj = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
-      u?: unknown;
-      s?: unknown;
-      e?: unknown;
-    };
-    if (typeof obj.u !== "string" || typeof obj.e !== "number") return null;
-    if (obj.e < Date.now()) return null;
-    if (!NAME.test(obj.u)) return null;
-    return { name: obj.u, epoch: typeof obj.s === "number" ? obj.s : 0 };
+    return held(JSON.parse(text));
   } catch {
     return null;
   }

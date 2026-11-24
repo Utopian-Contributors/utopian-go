@@ -1,6 +1,6 @@
 /**
  * The account control in the top right. Signed in: Wallet. Signed out: Log in,
- * which opens the one login dialog. Either way, then Get Social, to the
+ * to the login page and back to this one. Either way, then Get Social, to the
  * timeline. On the wallet page itself, signed in, Wallet would only point at
  * the page you are on, so it is Get Social and then Log out. Connecting a
  * wallet is not a header action; the trade dialog asks for one when it needs
@@ -16,28 +16,50 @@ export const WALLET_PAGE = "/wallet";
 /** The one label for logging in, on every button that opens the login dialog. */
 export const LOGIN = "Log in";
 
-/** The login page, going on to `to` once someone is in (client/auth). As src/pages.ts authPath writes it. */
-export function loginPath(to) {
-  return `/login?next=${encodeURIComponent(to).replace(/%2F/gi, "/")}`;
+/** The page someone is on, as a ?next= names it. */
+export function here() {
+  return location.pathname + location.search;
 }
 
 /**
- * Open the login dialog from a page that fetches it lazily (data-lg).
+ * `page` (/login or /register), going on to `to` once someone is in. As
+ * src/pages.ts authPath writes it. `add` is Add Account: the login page shown
+ * to someone already signed in, who would otherwise be sent straight on.
  *
- * @param {() => void} [onDone]
+ * @param {"/login" | "/register"} page
+ * @param {string} [to]
+ * @param {boolean} [add]
  */
-export async function openLogin(onDone) {
-  try {
-    (await load("lg", "__login")).open("login", onDone);
-  } catch {
-    // The bundle would not load, here or on any page: they all fetch it. A
-    // failed load is not kept (js/lazy.js), so the next press tries again.
-  }
+export function authPath(page, to = here(), add = false) {
+  const q = [];
+  if (to !== "/") q.push(`next=${encodeURIComponent(to).replace(/%2F/gi, "/")}`);
+  if (add) q.push("add=1");
+  return q.length ? `${page}?${q.join("&")}` : page;
+}
+
+/** The login page, going on to `to` once someone is in. */
+export function loginPath(to = here()) {
+  return authPath("/login", to);
+}
+
+/**
+ * Go to the login page, or with `register` the sign-up page, and come back
+ * to `to` (this page, unless said) once someone is in.
+ *
+ * @param {string} [to]
+ * @param {boolean} [register]
+ */
+export function goLogIn(to = here(), register = false) {
+  location.assign(authPath(register ? "/register" : "/login", to));
 }
 
 /**
  * End the Social session, here and on every device it is signed in on, and
- * forget it in this browser. Throws if the server did not.
+ * forget it in this browser. Another account this browser holds (the account
+ * picker, js/accounts.js) carries on in its place: its name is the answer,
+ * null when nobody is signed in now. Throws if the server did not.
+ *
+ * @returns {Promise<string | null>}
  */
 export async function logOut() {
   const res = await fetch("/api/social/logout", {
@@ -45,10 +67,8 @@ export async function logOut() {
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: "{}",
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || "Could not log out.");
-  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Could not log out.");
   // Messenger keeps its opened key in tab memory now (client/chat); this is the
   // store earlier versions wrote it to, gone for whoever uses the device next.
   try {
@@ -56,43 +76,52 @@ export async function logOut() {
   } catch {
     // Storage is off, so nothing was kept.
   }
-  writeName("");
+  writeName(data.name || "");
+  return data.name || null;
 }
 
 /**
- * Log out, as the header's button. `done` runs once it has signed them out, or
- * with the error if it could not. Its own export, so the pages without one
- * (search) do not carry it.
+ * Open the account picker (js/accounts.js, in the login bundle): switch,
+ * add an account, or log out. A switch, an added account or a log out that
+ * another account carries on from all start the page again as `onSwitch`
+ * says (a reload by default), so nothing on it still belongs to the account
+ * it was drawn for; a log out that leaves nobody runs `onLoggedOut`.
  *
- * @param {(err?: Error) => void} done
+ * @param {{onSwitch?: (name: string) => void, onLoggedOut?: () => void}} [o]
  */
-export function logOutButton(done) {
-  const out = el("button", {
-    class: "ac-out",
-    type: "button",
-    text: "Log out",
-    onclick: async () => {
-      out.disabled = true;
-      try {
-        await logOut();
-      } catch (err) {
-        out.disabled = false;
-        done(err);
-        return;
-      }
-      done();
-    },
-  });
-  return out;
+export async function openAccounts(o = {}) {
+  try {
+    const login = await load("lg", "__login");
+    login.accounts({
+      onSwitch: o.onSwitch ?? (() => location.reload()),
+      onLoggedOut: o.onLoggedOut ?? (() => location.replace("/")),
+      addAccount: () => location.assign(authPath("/login", here(), true)),
+    });
+  } catch {
+    // The bundle would not load; the next press tries again (js/lazy.js).
+  }
+}
+
+/** The header's Accounts button, where a page has one (Social and the wallet page). */
+export const ACCOUNTS = "Accounts";
+
+/**
+ * The header's Accounts button, for a page that builds its header (the
+ * wallet page). Social's is in its document.
+ *
+ * @param {Parameters<typeof openAccounts>[0]} [o]
+ */
+export function accountsButton(o) {
+  return el("button", { class: "ac-sw", type: "button", text: ACCOUNTS, onclick: () => openAccounts(o) });
 }
 
 /**
  * @param {HTMLElement} node the page's #ac slot
- * @param {{self?: () => HTMLElement, onLogin?: () => void, loginAlone?: boolean}} [opts]
+ * @param {{self?: () => HTMLElement, loginAlone?: boolean}} [opts]
  *   `self` on the wallet page, where a Wallet button would only point at the
  *   page you are on: signed in, what it makes follows Get Social instead.
- *   `onLogin` runs once the dialog has signed someone in. `loginAlone` on
- *   search: signed out, Log in is the whole control, with no Get Social.
+ *   `loginAlone` on search: signed out, Log in is the whole control, with no
+ *   Get Social.
  */
 export function mountAccount(node, opts = {}) {
   function paint() {
@@ -110,15 +139,7 @@ export function mountAccount(node, opts = {}) {
       node.replaceChildren(el("a", { class: "ac-w", href: WALLET_PAGE, text: "Wallet" }), social);
       return;
     }
-    const login = el("a", {
-      class: "ac-w ac-in",
-      href: WALLET_PAGE,
-      text: LOGIN,
-      onclick: (/** @type {Event} */ e) => {
-        e.preventDefault();
-        openLogin(opts.onLogin);
-      },
-    });
+    const login = el("a", { class: "ac-w ac-in", href: loginPath(), text: LOGIN });
     if (opts.loginAlone) node.replaceChildren(login);
     else node.replaceChildren(login, social);
   }

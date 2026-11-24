@@ -7,7 +7,7 @@
  * any public address, so neither needs a wallet prompt to paint.
  */
 import { $, el, nil } from "../js/dom.js";
-import { loginPath, logOutButton, mountAccount } from "../js/acct.js";
+import { accountsButton, loginPath, mountAccount } from "../js/acct.js";
 import { noZoom } from "../js/device.js";
 import { load } from "../js/lazy.js";
 import { account as whoami } from "../js/me.js";
@@ -788,22 +788,6 @@ function offer() {
   location.replace(loginPath(location.pathname + location.search));
 }
 
-/**
- * The dialog has signed someone in, or Log out has signed them out: ask the
- * server who, and paint their wallet or the offer to log in.
- */
-function switched() {
-  // Someone else's history is not the one on show.
-  closeHistory();
-  // Nor are someone else's entries, whatever their balances.
-  entriesFor = "";
-  window.__ugme = null;
-  account = whoami();
-  refresh();
-  paintKeys();
-  paintActions();
-}
-
 /** POSTed so the address stays out of request logs. Throws on anything that is not an answer. */
 async function readHoldings(address) {
   const res = await fetch("/api/holdings", {
@@ -909,8 +893,7 @@ async function settle() {
 
 // Signed out, the page is not yours to stay on (src/server.ts): home, as Social goes.
 mountAccount($("ac"), {
-  self: () => logOutButton((err) => (err ? setNote(err.message, "err") : location.replace("/"))),
-  onLogin: switched,
+  self: () => accountsButton(),
 });
 noZoom();
 mountPwa();

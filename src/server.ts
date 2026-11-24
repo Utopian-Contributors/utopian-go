@@ -570,7 +570,9 @@ app.get(WALLET_PATH, (req, res, next) => {
  * either mode. Signed out, the wallet and Social send anyone here (the guard
  * above), as the home page's rows link here outright (src/pages.ts homeNav),
  * and it goes on to ?next= once someone is in; anyone already signed in goes
- * straight on. Its own file name redirects, as the wallet page's does.
+ * straight on, unless ?add=1 (Add Account, in the account picker) asks for
+ * the page to sign in to another account beside it. Its own file name
+ * redirects, as the wallet page's does.
  */
 const AUTH_FILE = "/auth.html";
 
@@ -586,14 +588,15 @@ app.get(["/login", "/register"], (req, res, next) => {
   signedIn(req)
     .then((yes) => {
       const to = nextPath(req.query.next);
-      if (yes) {
+      const add = req.query.add === "1";
+      if (yes && !add) {
         res.setHeader("Cache-Control", "private, no-cache");
         res.redirect(302, to);
         return;
       }
       if (authDoc) {
         const mode = req.path.startsWith("/register") ? "register" : "login";
-        sendDoc(req, res, renderAuth(authDoc, mode, to), AUTH_NEXT.has(to) ? `auth:${mode}:${to}` : null);
+        sendDoc(req, res, renderAuth(authDoc, mode, to, add), AUTH_NEXT.has(to) && !add ? `auth:${mode}:${to}` : null);
         return;
       }
       // Not built yet: the file as it is, which auth.js puts in the URL's mode.

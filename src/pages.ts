@@ -20,7 +20,7 @@ export function esc(value: string): string {
 }
 
 const SOCIAL = '<a class="ac-soc" href="/social" aria-label="Get Social"><span class="ac-soc-t">Get Social</span></a>';
-const LOG_IN = '<a class="ac-w ac-in" href="/wallet">Log in</a>';
+const LOG_IN = '<a class="ac-w ac-in" href="/login">Log in</a>';
 
 /** The header's #ac, as mountAccount paints it (index, wallet) or applyMe leaves it (social). */
 export function accountNav(page: Page, signed: boolean): string {
@@ -29,10 +29,10 @@ export function accountNav(page: Page, signed: boolean): string {
     const hide = (hidden: boolean) => (hidden ? " hidden" : "");
     inner =
       `<a class="ac-w" href="/wallet" id="aw"${hide(!signed)}>Wallet</a> ` +
-      `<a class="ac-w ac-in" href="/wallet" id="in"${hide(signed)}>Log in</a> ` +
-      `<button type="button" class="ac-out" id="out"${hide(!signed)}>Log out</button>`;
+      `<a class="ac-w ac-in" href="/login" id="in"${hide(signed)}>Log in</a> ` +
+      `<button type="button" class="ac-sw" id="out"${hide(!signed)}>Accounts</button>`;
   } else if (!signed) inner = page === "index" ? LOG_IN : LOG_IN + SOCIAL;
-  else if (page === "wallet") inner = `${SOCIAL}<button type="button" class="ac-out">Log out</button>`;
+  else if (page === "wallet") inner = `${SOCIAL}<button type="button" class="ac-sw">Accounts</button>`;
   else inner = `<a class="ac-w" href="/wallet">Wallet</a>${SOCIAL}`;
   return `<nav id="ac" aria-label="Account">${inner}</nav>`;
 }
@@ -72,9 +72,16 @@ export function nextPath(raw: unknown): string {
   return /^\/(login|register)(?:[/?#]|$)/.test(raw) ? "/" : raw;
 }
 
-/** /login or /register, going on to `to` once someone is in. client/js/acct.js loginPath writes the same. */
-export function authPath(page: "/login" | "/register", to: string): string {
-  return to === "/" ? page : `${page}?next=${encodeURIComponent(to).replace(/%2F/gi, "/")}`;
+/**
+ * /login or /register, going on to `to` once someone is in. client/js/acct.js
+ * authPath writes the same. `add` is Add Account in the account picker: the
+ * page shown to someone already signed in, who would otherwise go straight on.
+ */
+export function authPath(page: "/login" | "/register", to: string, add = false): string {
+  const q: string[] = [];
+  if (to !== "/") q.push(`next=${encodeURIComponent(to).replace(/%2F/gi, "/")}`);
+  if (add) q.push("add=1");
+  return q.length ? `${page}?${q.join("&")}` : page;
 }
 
 /** The home page's Wallet, Social and Games rows (client/index.html). */
@@ -102,7 +109,7 @@ function destination(to: string): string {
  * in and Create account linking to each other with the same ?next=. Throws
  * if the build moved anything it renders into.
  */
-export function renderAuth(html: string, mode: "login" | "register", to: string): string {
+export function renderAuth(html: string, mode: "login" | "register", to: string, add = false): string {
   const where = destination(to);
   // The section it goes on to, so the page wears that section's colour (client/base.css, :root[data-sec]).
   const sec = where.toLowerCase();
@@ -111,8 +118,8 @@ export function renderAuth(html: string, mode: "login" | "register", to: string)
     ['<body class="au" data-m="login">', `<body class="au" data-m="${mode}">`],
     ["<title>Log in</title>", `<title>${mode === "register" ? "Create account" : "Log in"}</title>`],
     ['<p class="au-to" id="au-to"></p>', `<p class="au-to" id="au-to">${where && `to continue to ${where}`}</p>`],
-    ['href="/register" id="au-tr"', `href="${esc(authPath("/register", to))}" id="au-tr"`],
-    ['href="/login" id="au-tl"', `href="${esc(authPath("/login", to))}" id="au-tl"`],
+    ['href="/register" id="au-tr"', `href="${esc(authPath("/register", to, add))}" id="au-tr"`],
+    ['href="/login" id="au-tl"', `href="${esc(authPath("/login", to, add))}" id="au-tl"`],
   ];
   let out = html;
   for (const [from, into] of swaps) {
