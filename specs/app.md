@@ -305,7 +305,8 @@ the API, and it has no shared board. Its credits are its own, not Fruit Slots'.
   every zombie on it and setting off barrels, 14 shots), the **rocket blaster** from wave 8
   (rockets blow up where they land, hurting the player close by, 12 rockets) and the
   **laser** from wave 10 (5 cells: held, a cell charges for about a second, then burns a beam
-  to the first wall for as long as it is held, up to 2.5 seconds; let go, the beam stops and
+  to the first wall, a railgun's strength held on (40 a second, setting off any barrel it
+  touches), for as long as it is held, up to 2.5 seconds; let go, the beam stops and
   the cell keeps what is left). These tiers never come from the wheel. Their crates ring
   orange.
 - **Sentry turrets.** One crate in four holds a turret instead of a gun. Taken (shot or walked

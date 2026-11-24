@@ -36,7 +36,7 @@
  * beam crosses the field at once through every zombie on it, a rocket blows
  * up where it lands, and the laser charges a cell, then burns a beam for as
  * long as it is held, up to the cell's 2.5 seconds; its `ammo` is cells and
- * its `dmg` a second.
+ * its `dmg` a second: a railgun's hit, held on.
  * @type {Record<GunId, Gun>}
  */
 export const GUNS = {
@@ -47,7 +47,7 @@ export const GUNS = {
   minigun: { name: "Minigun", tag: "MINIGUN", every: 0.045, pellets: 1, spread: 0.2, dmg: 1, speed: 140, life: 0.9, pierce: 1, ammo: 320, len: 5.8, from: 4, kind: "spin" },
   railgun: { name: "Railgun", tag: "RAILGUN", every: 0.95, pellets: 1, spread: 0, dmg: 12, speed: 0, life: 0, pierce: Infinity, ammo: 14, len: 7, from: 6, kind: "rail" },
   rocket: { name: "Rocket Blaster", tag: "ROCKETS", every: 0.8, pellets: 1, spread: 0.03, dmg: 14, speed: 72, life: 1.6, pierce: 1, ammo: 12, len: 6, from: 8, kind: "rocket" },
-  laser: { name: "Laser", tag: "LASER", every: 0, pellets: 1, spread: 0, dmg: 9, speed: 0, life: 0, pierce: Infinity, ammo: 5, len: 6.2, from: 10, kind: "laser" },
+  laser: { name: "Laser", tag: "LASER", every: 0, pellets: 1, spread: 0, dmg: 40, speed: 0, life: 0, pierce: Infinity, ammo: 5, len: 6.2, from: 10, kind: "laser" },
 };
 
 /** The guns this wave's crates can hold: every one unlocked by now but the pistol. */
@@ -646,14 +646,13 @@ function laser(dt) {
   const dx = Math.cos(game.aim);
   const dy = Math.sin(game.aim);
   for (const z of [...game.zombies]) {
-    if (cross(ox, oy, end.x, end.y, z.x, z.y, z.r + 0.4) < 0) continue;
-    hurtZombie(z, gun.dmg * dt, dx, dy, dt * 4);
+    if (cross(ox, oy, end.x, end.y, z.x, z.y, z.r + 1.2) < 0) continue;
+    hurtZombie(z, gun.dmg * dt, dx, dy, dt * 10);
     if (Math.random() < dt * 30) burst(z.x - dx * z.r, z.y - dy * z.r, 1, "#ff5a4a", 14, 0.7);
   }
   for (const b of [...game.barrels]) {
-    if (cross(ox, oy, end.x, end.y, b.x, b.y, BARREL_R) < 0) continue;
-    b.hp -= dt * 3;
-    if (b.hp <= 0) explode(b);
+    // As the railgun's: a barrel the beam touches goes up.
+    if (cross(ox, oy, end.x, end.y, b.x, b.y, BARREL_R) >= 0) explode(b);
   }
   if (wallGap(end.x, end.y) === 0 && Math.random() < dt * 25) burst(end.x, end.y, 1, "#ffb3a8", 12, 0.6);
   on("lase");
@@ -1173,7 +1172,7 @@ function drawLaser(ctx, r) {
   const w = 1 + Math.random() * 0.25;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
-  for (const [color, width] of /** @type {[string, number][]} */ ([["rgba(255, 40, 30, 0.35)", 2.6], ["rgba(255, 70, 50, 0.8)", 1.1], ["#fff4f0", 0.4]])) {
+  for (const [color, width] of /** @type {[string, number][]} */ ([["rgba(255, 40, 30, 0.35)", 4], ["rgba(255, 70, 50, 0.85)", 1.8], ["#fff4f0", 0.7]])) {
     ctx.strokeStyle = color;
     ctx.lineWidth = width * w;
     ctx.beginPath();
