@@ -289,9 +289,10 @@ the API, and it has no shared board. Its credits are its own, not Fruit Slots'.
   middle of each wall. The player starts inside it. Nothing walks or shoots through a wall:
   a zombie with a wall in its way heads for the doorway that makes the shortest way round,
   then through it. Barrels are never laid in front of a doorway. They
-  walk (WASD or the arrows on a desktop; on a touch screen, a thumb-stick wherever a thumb goes
-  down on the field's left two-fifths) and shoot where they aim (the mouse held down, or a
-  finger held anywhere else). Zombies come in from the edges, 5 + 3 per wave of them, faster
+  walk and aim apart. On a desktop, WASD or the arrows walk and the mouse aims, shooting while
+  held down. On a touch screen there are two thumb-sticks, each where its thumb goes down: on
+  the field's left half one walks, on the right half one turns the gun as it leans and shoots
+  while pushed most of the way out (its knob red), stopping when let go. Zombies come in from the edges, 5 + 3 per wave of them, faster
   each wave, and bite on reaching the player (100 health). A shot barrel blows up everything
   within its blast, the barrels near it a beat later, and the player too if they stand close;
   the barrels are laid again each wave. From the second wave, gun crates drop now and then,

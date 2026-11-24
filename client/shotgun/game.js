@@ -81,8 +81,10 @@ export const game = {
   /** Which way they are walking, each −1…1 (keys or the thumb-stick). */
   mx: 0,
   my: 0,
-  /** @type {{x: number, y: number, dx: number, dy: number} | null} the thumb-stick, in units, while a thumb is on it */
+  /** @type {{x: number, y: number, dx: number, dy: number} | null} the walking stick, in units, while a thumb is on it */
   stick: null,
+  /** @type {{x: number, y: number, dx: number, dy: number} | null} the aiming stick, likewise */
+  aimStick: null,
   step: 0,
   hp: HP,
   hurt: 0,
@@ -310,6 +312,7 @@ export function newGame(kit) {
     mx: 0,
     my: 0,
     stick: null,
+    aimStick: null,
     step: 0,
     hp: HP,
     hurt: 0,
@@ -752,7 +755,7 @@ export function update(dt) {
     game.hp = 0;
     game.state = "over";
     game.firing = false;
-    game.stick = null;
+    game.stick = game.aimStick = null;
     burst(game.px, game.py, 24, "#b3261e", 26, 2.4);
     on("over");
   }
@@ -886,6 +889,7 @@ export function draw(ctx, w, h, u) {
   }
   ctx.globalAlpha = 1;
   if (game.stick && game.state === "play") drawStick(ctx, game.stick);
+  if (game.aimStick && game.state === "play") drawStick(ctx, game.aimStick, game.firing);
   if (game.ghost && game.state === "play") drawGhost(ctx, game.ghost);
   ctx.restore();
 
@@ -1201,8 +1205,12 @@ function drawFallen(ctx) {
   ctx.restore();
 }
 
-/** The thumb-stick: a ring where the thumb went down, a knob where it is. @param {CanvasRenderingContext2D} ctx @param {{x: number, y: number, dx: number, dy: number}} s */
-function drawStick(ctx, s) {
+/**
+ * A thumb-stick: a ring where the thumb went down, a knob where it is, red
+ * while the aiming stick is firing.
+ * @param {CanvasRenderingContext2D} ctx @param {{x: number, y: number, dx: number, dy: number}} s @param {boolean} [hot]
+ */
+function drawStick(ctx, s, hot = false) {
   ctx.fillStyle = "rgba(255, 255, 255, 0.12)";
   ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
   ctx.lineWidth = 0.4;
@@ -1210,13 +1218,13 @@ function drawStick(ctx, s) {
   ctx.arc(s.x, s.y, STICK, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+  ctx.fillStyle = hot ? "rgba(255, 110, 90, 0.7)" : "rgba(255, 255, 255, 0.55)";
   ctx.beginPath();
   ctx.arc(s.x + s.dx * STICK, s.y + s.dy * STICK, STICK * 0.42, 0, Math.PI * 2);
   ctx.fill();
 }
 
-/** The thumb-stick's reach, in units. */
+/** A thumb-stick's reach, in units. */
 export const STICK = 9;
 
 /** Wave and what is left of it top left; health and the gun at the bottom. In device pixels. */

@@ -248,9 +248,9 @@ function start() {
   paused = false;
   document.body.classList.add("sg-on");
   held.clear();
-  walker = shooter = -1;
+  walker = shooter = aimer = -1;
   stopPlacing();
-  say(touch ? "Left thumb walks · other finger shoots" : "WASD or arrows walk · hold the mouse to shoot");
+  say(touch ? "Left thumb walks · right thumb aims and shoots" : "WASD or arrows walk · hold the mouse to shoot");
   clearTimeout(sayTimer);
   sayTimer = window.setTimeout(() => game.state === "play" && !paused && say(""), 3200);
   last = 0;
@@ -289,8 +289,8 @@ function pause() {
   paused = true;
   game.firing = false;
   game.mx = game.my = 0;
-  game.stick = null;
-  walker = shooter = -1;
+  game.stick = game.aimStick = null;
+  walker = shooter = aimer = -1;
   held.clear();
   say(touch ? "Paused · tap to go on" : "Paused · click or press Space to go on");
 }
@@ -323,7 +323,9 @@ function startPlacing() {
   if (game.state !== "play" || game.carry < 1) return;
   placing = true;
   game.firing = false;
-  shooter = -1;
+  shooter = aimer = -1;
+  game.aimStick = null;
+  game.firing = false;
   game.ghost = touch ? null : lastMouse || { x: game.px, y: game.py - 12 };
   say(touch ? "Tap where the turret goes" : "Click where the turret goes · Esc to cancel");
   paintPlace();
@@ -370,9 +372,33 @@ function aimAt(e) {
   game.aim = Math.atan2(p.y - game.py, p.x - game.px);
 }
 
+/** The mouse button held down to shoot. */
 let shooter = -1;
-/** The finger on the thumb-stick: one that went down on the field's left part, on a touch screen. */
+/** The thumb on the walking stick: one that went down on the field's left half, on a touch screen. */
 let walker = -1;
+/** The thumb on the aiming stick: one that went down on the field's right half. */
+let aimer = -1;
+
+/**
+ * Move a thumb-stick's knob to where the finger is, the ring following a
+ * finger past its reach, and say how far it is pushed (0…1).
+ * @param {{x: number, y: number, dx: number, dy: number}} stick @param {PointerEvent} e
+ */
+function push(stick, e) {
+  const p = toWorld(e);
+  let dx = (p.x - stick.x) / STICK;
+  let dy = (p.y - stick.y) / STICK;
+  const m = Math.hypot(dx, dy);
+  if (m > 1) {
+    stick.x += (dx - dx / m) * STICK;
+    stick.y += (dy - dy / m) * STICK;
+    dx /= m;
+    dy /= m;
+  }
+  stick.dx = dx;
+  stick.dy = dy;
+  return Math.min(m, 1);
+}
 
 canvas.addEventListener("pointerdown", (e) => {
   if (game.state !== "play") return;
@@ -387,10 +413,18 @@ canvas.addEventListener("pointerdown", (e) => {
   }
   canvas.setPointerCapture?.(e.pointerId);
   const rect = canvas.getBoundingClientRect();
-  if (e.pointerType !== "mouse" && walker < 0 && e.clientX - rect.left < rect.width * 0.4) {
-    walker = e.pointerId;
+  if (e.pointerType !== "mouse") {
+    // Two sticks: the left half walks, the right half aims and, pushed, shoots.
     const p = toWorld(e);
-    game.stick = { x: p.x, y: p.y, dx: 0, dy: 0 };
+    if (e.clientX - rect.left < rect.width / 2) {
+      if (walker >= 0) return;
+      walker = e.pointerId;
+      game.stick = { x: p.x, y: p.y, dx: 0, dy: 0 };
+    } else {
+      if (aimer >= 0) return;
+      aimer = e.pointerId;
+      game.aimStick = { x: p.x, y: p.y, dx: 0, dy: 0 };
+    }
     return;
   }
   if (shooter >= 0) return;
@@ -402,31 +436,27 @@ canvas.addEventListener("pointerdown", (e) => {
 canvas.addEventListener("pointermove", (e) => {
   if (game.state !== "play") return;
   if (e.pointerId === walker && game.stick) {
-    const p = toWorld(e);
-    let dx = (p.x - game.stick.x) / STICK;
-    let dy = (p.y - game.stick.y) / STICK;
-    const m = Math.hypot(dx, dy);
-    if (m > 1) {
-      // Past its reach, the ring follows the thumb.
-      game.stick.x += (dx - dx / m) * STICK;
-      game.stick.y += (dy - dy / m) * STICK;
-      dx /= m;
-      dy /= m;
-    }
-    game.stick.dx = dx;
-    game.stick.dy = dy;
+    const m = push(game.stick, e);
     // A little give at the middle, so a resting thumb stands still.
     const live = m > 0.18;
-    game.mx = live ? dx : 0;
-    game.my = live ? dy : 0;
+    game.mx = live ? game.stick.dx : 0;
+    game.my = live ? game.stick.dy : 0;
+    return;
+  }
+  if (e.pointerId === aimer && game.aimStick) {
+    const s = game.aimStick;
+    const m = push(s, e);
+    // The gun turns as soon as the stick leans, and fires once it is pushed.
+    if (m > 0.18) game.aim = Math.atan2(s.dy, s.dx);
+    game.firing = m > 0.45;
     return;
   }
   if (e.pointerType === "mouse") {
     lastMouse = toWorld(e);
     if (placing) game.ghost = lastMouse;
   }
-  // A mouse aims as it moves; a finger only while it is down.
-  if (e.pointerType === "mouse" || e.pointerId === shooter) aimAt(e);
+  // A mouse aims as it moves.
+  if (e.pointerType === "mouse") aimAt(e);
 });
 
 for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
@@ -439,6 +469,11 @@ for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
     }
     if (id === shooter) {
       shooter = -1;
+      game.firing = false;
+    }
+    if (id === aimer) {
+      aimer = -1;
+      game.aimStick = null;
       game.firing = false;
     }
   });
