@@ -14,7 +14,7 @@ import { keepOffline } from "../games/offline.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { plainSwap } from "../js/plainswap.js";
-import { GUNS, STICK, canPlace, credits, draw, game, listen, newGame, placeTurret, scenery, settling, size, update } from "./game.js";
+import { GUNS, STICK, TURRETS, canPlace, credits, draw, game, listen, newGame, placeTurret, scenery, settling, size, update } from "./game.js";
 import { label, paintWheel, spin } from "./wheel.js";
 
 /** @typedef {import("./game.js").Kit} Kit */
@@ -80,11 +80,31 @@ const cost = () => (saved.spins === 0 ? 0 : 20 * 2 ** (saved.spins - 1));
 
 /* ---------- Sound ---------- */
 
+/** When a sound that would play every frame last played. */
+const lastAt = { laser: 0, mini: 0 };
+/** @param {keyof typeof lastAt} k @param {number} ms whether it has been that long */
+const due = (k, ms) => {
+  const now = performance.now();
+  if (now - lastAt[k] < ms) return false;
+  lastAt[k] = now;
+  return true;
+};
 const SOUNDS = {
   pistol: () => tone(520, 0.07, "square", 180, 0.03),
   shotgun: () => tone(200, 0.18, "sawtooth", 50, 0.07),
   smg: () => tone(700, 0.04, "square", 300, 0.02),
   rifle: () => tone(900, 0.12, "sawtooth", 120, 0.05),
+  minigun: () => tone(560, 0.03, "square", 260, 0.015),
+  railgun: () => {
+    tone(2200, 0.32, "sawtooth", 160, 0.05);
+    tone(90, 0.3, "square", 40, 0.04);
+  },
+  rocket: () => tone(140, 0.35, "sawtooth", 420, 0.05),
+  // The cell going live, then a hum while the beam burns.
+  laser: () => tone(300, 0.25, "sawtooth", 1400, 0.05),
+  lase: () => due("laser", 110) && tone(1300 + Math.random() * 120, 0.12, "sawtooth", 1250, 0.012),
+  turretMini: () => due("mini", 70) && tone(620, 0.03, "square", 300, 0.012),
+  dome: () => [520, 260].forEach((f, i) => tone(f, 0.2, "triangle", f * 0.6, 0.05, i * 0.1)),
   kill: () => tone(160, 0.12, "triangle", 70, 0.05),
   boom: () => {
     tone(90, 0.5, "sawtooth", 30, 0.09);
@@ -198,9 +218,14 @@ listen((type, data) => {
   else if (type === "kill") SOUNDS.kill();
   else if (type === "boom") SOUNDS.boom();
   else if (type === "hurt") SOUNDS.hurt();
-  else if (type === "turret") {
+  else if (type === "lase") SOUNDS.lase();
+  else if (type === "dome") {
+    SOUNDS.dome();
+    flash("A dome went down");
+  } else if (type === "turret") {
     SOUNDS.pickup();
-    flash(touch ? "Turret! Tap Place turret, then where it goes" : "Turret! Press E, then click where it goes", 2600);
+    const name = TURRETS[/** @type {import("./game.js").TurretKind} */ (data)].name;
+    flash(touch ? `${name}! Tap Place, then where it goes` : `${name}! Press E, then click where it goes`, 2600);
     paintPlace();
   } else if (type === "placed") {
     SOUNDS.placed();
@@ -212,7 +237,11 @@ listen((type, data) => {
   } else if (type === "empty") flash("Out of ammo: back to the pistol");
   else if (type === "wave") {
     SOUNDS.wave();
-    flash(data === 2 ? "Wave 2 · guns unlocked: shoot a crate" : data === 3 ? "Wave 3 · here come the blue ones" : `Wave ${data}`, 2200);
+    const fresh = [...Object.values(GUNS), ...Object.values(TURRETS)].find((g) => g.from === data && data > 2);
+    flash(
+      data === 2 ? "Wave 2 · guns unlocked: shoot a crate" : data === 3 ? "Wave 3 · here come the blue ones" : fresh ? `Wave ${data} · ${fresh.name} unlocked: find its crate` : `Wave ${data}`,
+      2600,
+    );
   } else if (type === "cleared") flash(`Wave ${data.wave} cleared · +${fmt(data.bonus)} credits`, 2200);
   else if (type === "over") finish();
   else if (type === "earn") paintCounters();
@@ -313,14 +342,16 @@ let placing = false;
 let lastMouse = /** @type {{x: number, y: number} | null} */ (null);
 
 function paintPlace() {
-  placeBtn.hidden = game.state !== "play" || game.carry < 1;
+  placeBtn.hidden = game.state !== "play" || game.carry.length < 1;
   placeBtn.classList.toggle("on", placing);
-  const n = game.carry > 1 ? ` ×${game.carry}` : "";
-  placeBtn.textContent = placing ? "Cancel" : `Place turret${n}${touch ? "" : " (E)"}`;
+  const next = game.carry[0];
+  const name = next && next !== "sentry" ? TURRETS[next].name.toLowerCase() : "turret";
+  const n = game.carry.length > 1 ? ` ×${game.carry.length}` : "";
+  placeBtn.textContent = placing ? "Cancel" : `Place ${name}${n}${touch ? "" : " (E)"}`;
 }
 
 function startPlacing() {
-  if (game.state !== "play" || game.carry < 1) return;
+  if (game.state !== "play" || game.carry.length < 1) return;
   placing = true;
   game.firing = false;
   shooter = aimer = -1;

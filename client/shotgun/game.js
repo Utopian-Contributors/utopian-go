@@ -12,29 +12,69 @@
  * inside it, and zombies come in through the doorways, as nothing walks or
  * shoots through a wall. A crate may hold a sentry turret instead: taken, it
  * is carried until the player places it (`placeTurret`), and then it turns on
- * the nearest zombie it can see and shoots until its rounds run out.
+ * the nearest zombie it can see and shoots until its rounds run out. Later
+ * waves put heavier guns in the crates: the minigun from the fourth, the
+ * railgun from the sixth, the rocket blaster from the eighth and the laser
+ * from the tenth, each arriving in a crate of its own; and better turrets,
+ * minigun turrets from the fifth and, from the seventh, minigun turrets under
+ * a dome that keeps zombies out until they have gnawed through it.
  */
 
-/** @typedef {"pistol" | "shotgun" | "smg" | "rifle"} GunId */
+/** @typedef {"pistol" | "shotgun" | "smg" | "rifle" | "minigun" | "railgun" | "rocket" | "laser"} GunId */
+
+/**
+ * @typedef {{name: string, tag: string, every: number, pellets: number, spread: number, dmg: number,
+ *   speed: number, life: number, pierce: number, ammo: number, len: number, from: number,
+ *   kind?: "spin" | "rail" | "rocket" | "laser"}} Gun
+ */
 
 /**
  * The guns. `every` is seconds between shots, `speed` units a second, `life`
- * how long a pellet flies; `pierce` how many zombies one passes through.
+ * how long a pellet flies; `pierce` how many zombies one passes through;
+ * `from` the wave whose crates first hold it. The heavier tiers each work
+ * their own way (`kind`): the minigun spins up while held, the railgun's
+ * beam crosses the field at once through every zombie on it, a rocket blows
+ * up where it lands, and the laser charges a cell, then burns a beam for as
+ * long as it is held, up to the cell's 2.5 seconds; its `ammo` is cells and
+ * its `dmg` a second.
+ * @type {Record<GunId, Gun>}
  */
 export const GUNS = {
-  pistol: { name: "Pistol", every: 0.3, pellets: 1, spread: 0.04, dmg: 1, speed: 120, life: 1.3, pierce: 1, ammo: Infinity, len: 3.2 },
-  shotgun: { name: "Shotgun", every: 0.68, pellets: 7, spread: 0.5, dmg: 1, speed: 105, life: 0.42, pierce: 1, ammo: 24, len: 5.2 },
-  smg: { name: "SMG", every: 0.085, pellets: 1, spread: 0.15, dmg: 1, speed: 130, life: 1, pierce: 1, ammo: 160, len: 4.2 },
-  rifle: { name: "Rifle", every: 0.45, pellets: 1, spread: 0, dmg: 5, speed: 190, life: 1, pierce: 4, ammo: 30, len: 6.4 },
+  pistol: { name: "Pistol", tag: "PISTOL", every: 0.3, pellets: 1, spread: 0.04, dmg: 1, speed: 120, life: 1.3, pierce: 1, ammo: Infinity, len: 3.2, from: 0 },
+  shotgun: { name: "Shotgun", tag: "SHOTGUN", every: 0.68, pellets: 7, spread: 0.5, dmg: 1, speed: 105, life: 0.42, pierce: 1, ammo: 24, len: 5.2, from: 2 },
+  smg: { name: "SMG", tag: "SMG", every: 0.085, pellets: 1, spread: 0.15, dmg: 1, speed: 130, life: 1, pierce: 1, ammo: 160, len: 4.2, from: 2 },
+  rifle: { name: "Rifle", tag: "RIFLE", every: 0.45, pellets: 1, spread: 0, dmg: 5, speed: 190, life: 1, pierce: 4, ammo: 30, len: 6.4, from: 2 },
+  minigun: { name: "Minigun", tag: "MINIGUN", every: 0.045, pellets: 1, spread: 0.2, dmg: 1, speed: 140, life: 0.9, pierce: 1, ammo: 320, len: 5.8, from: 4, kind: "spin" },
+  railgun: { name: "Railgun", tag: "RAILGUN", every: 0.95, pellets: 1, spread: 0, dmg: 12, speed: 0, life: 0, pierce: Infinity, ammo: 14, len: 7, from: 6, kind: "rail" },
+  rocket: { name: "Rocket Blaster", tag: "ROCKETS", every: 0.8, pellets: 1, spread: 0.03, dmg: 14, speed: 72, life: 1.6, pierce: 1, ammo: 12, len: 6, from: 8, kind: "rocket" },
+  laser: { name: "Laser", tag: "LASER", every: 0, pellets: 1, spread: 0, dmg: 9, speed: 0, life: 0, pierce: Infinity, ammo: 5, len: 6.2, from: 10, kind: "laser" },
 };
 
-/** The guns a crate can hold. */
-const DROPS = /** @type {GunId[]} */ (["shotgun", "smg", "rifle"]);
+/** The guns this wave's crates can hold: every one unlocked by now but the pistol. */
+const drops = () => /** @type {GunId[]} */ (Object.keys(GUNS)).filter((id) => id !== "pistol" && GUNS[id].from <= game.wave);
+/** A rocket's blast: how far it reaches, and what it takes from the player standing in it. */
+const ROCKET_BLAST = 11;
+const ROCKET_HURT = 15;
+/** The laser: seconds to charge a cell, and seconds of beam a cell holds. */
+const LASER = { charge: 1.1, run: 2.5 };
 /** The share of crates that hold a turret rather than a gun. */
 const TURRET_DROP = 0.25;
 
-/** A sentry turret: how far it sees, how often it fires, its rounds, how many stand at once, how many the player can carry. */
-const TURRET = { range: 34, every: 0.32, dmg: 1, speed: 130, rounds: 60, r: 2.6, max: 3, carry: 2 };
+/** @typedef {"sentry" | "minigun" | "dome"} TurretKind */
+/**
+ * The turrets: how far one sees, how often it fires, its rounds, the wave
+ * whose crates first hold it, and its dome's strength (none but the last).
+ * @type {Record<TurretKind, {name: string, tag: string, range: number, every: number, spread: number, dmg: number, speed: number, rounds: number, from: number, dome: number}>}
+ */
+export const TURRETS = {
+  sentry: { name: "Turret", tag: "", range: 34, every: 0.32, spread: 0.05, dmg: 1, speed: 130, rounds: 60, from: 2, dome: 0 },
+  minigun: { name: "Minigun turret", tag: "MINIGUN", range: 38, every: 0.075, spread: 0.14, dmg: 1, speed: 150, rounds: 260, from: 5, dome: 0 },
+  dome: { name: "Dome turret", tag: "DOME", range: 38, every: 0.075, spread: 0.14, dmg: 1, speed: 150, rounds: 320, from: 7, dome: 150 },
+};
+/** Every turret: its size, how many stand at once, how many the player can carry, and a dome's reach. */
+const TURRET = { r: 2.6, max: 3, carry: 2, domeR: 10 };
+/** The turrets this wave's crates can hold. */
+const turretDrops = () => /** @type {TurretKind[]} */ (Object.keys(TURRETS)).filter((k) => TURRETS[k].from <= game.wave);
 
 const PLAYER_R = 3;
 /** Units a second the player walks. */
@@ -56,14 +96,16 @@ const BETWEEN = 2.6;
 /**
  * @typedef {{x: number, y: number, r: number, hp: number, max: number, blue: boolean,
  *   speed: number, bite: number, flash: number, face: number, wob: number,
- *   plan: {door: number, side: number, through: boolean} | null}} Zombie
- * @typedef {{x: number, y: number, vx: number, vy: number, life: number, dmg: number, pierce: number, hit: Set<object>, sentry?: boolean}} Bullet
+ *   plan: {door: number, side: number, through: boolean} | null, gnaw: number}} Zombie
+ * @typedef {{x: number, y: number, vx: number, vy: number, life: number, dmg: number, pierce: number, hit: Set<object>,
+ *   sentry?: boolean, kind?: "rocket"}} Bullet
+ * @typedef {{x1: number, y1: number, x2: number, y2: number, life: number}} Beam
  * @typedef {{x: number, y: number, hp: number, fuse: number}} Barrel
- * @typedef {{x: number, y: number, gun: GunId | "turret", life: number}} Crate
- * @typedef {{x: number, y: number, aim: number, cool: number, rounds: number, muzzle: number}} Turret
+ * @typedef {{x: number, y: number, gun: GunId | "turret", tier?: TurretKind, life: number}} Crate
+ * @typedef {{x: number, y: number, aim: number, cool: number, rounds: number, muzzle: number, kind: TurretKind, shield: number, hitFx: number}} Turret
  * @typedef {{x: number, y: number, vx: number, vy: number, life: number, max: number, color: string, size: number}} Part
  * @typedef {{x: number, y: number, r: number, color: string, a: number, rot: number}} Decal
- * @typedef {{x: number, y: number, life: number}} Boom
+ * @typedef {{x: number, y: number, life: number, r: number}} Boom
  * @typedef {{gun: GunId | null, ammo: number, mult: number}} Kit
  */
 
@@ -101,6 +143,13 @@ export const game = {
   gun: "pistol",
   ammo: Infinity,
   cool: 0,
+  /** How far the minigun has spun up, 0…1. */
+  spool: 0,
+  /** The laser: how far the next cell has charged, 0…1, and the seconds of beam left in this one. */
+  charge: 0,
+  lase: 0,
+  /** @type {{x1: number, y1: number, x2: number, y2: number} | null} the laser's beam this frame */
+  ray: null,
   muzzle: 0,
   shake: 0,
   /** @type {Zombie[]} */ zombies: [],
@@ -108,16 +157,17 @@ export const game = {
   /** @type {Barrel[]} */ barrels: [],
   /** @type {Crate[]} */ crates: [],
   /** @type {Turret[]} */ turrets: [],
-  /** Turrets taken and not yet placed. */
-  carry: 0,
+  /** @type {TurretKind[]} turrets taken and not yet placed, the best first */
+  carry: [],
   /** @type {{x: number, y: number} | null} where a turret would go, while the player is placing one */
   ghost: null,
   /** @type {Part[]} */ parts: [],
   /** @type {Decal[]} */ decals: [],
   /** @type {Boom[]} */ booms: [],
+  /** @type {Beam[]} the railgun's beams, fading */ beams: [],
 };
 
-/** @typedef {"shot" | "empty" | "kill" | "boom" | "hurt" | "pickup" | "cleared" | "wave" | "over" | "earn" | "turret" | "placed" | "spent"} Event */
+/** @typedef {"shot" | "empty" | "kill" | "boom" | "hurt" | "pickup" | "cleared" | "wave" | "over" | "earn" | "turret" | "placed" | "spent" | "unlock" | "lase" | "dome"} Event */
 /** @type {(type: Event, data?: any) => void} */
 let on = () => {};
 
@@ -327,17 +377,22 @@ export function newGame(kit) {
     gun: kit.gun && kit.ammo > 0 ? kit.gun : "pistol",
     ammo: kit.gun && kit.ammo > 0 ? kit.ammo : Infinity,
     cool: 0,
+    spool: 0,
+    charge: 0,
+    lase: 0,
+    ray: null,
     muzzle: 0,
     shake: 0,
     zombies: [],
     bullets: [],
     crates: [],
     turrets: [],
-    carry: 0,
+    carry: [],
     ghost: null,
     parts: [],
     decals: [],
     booms: [],
+    beams: [],
   });
   game.barrels = [];
   home();
@@ -375,6 +430,14 @@ function nextWave() {
   if (game.wave === 2) dropCrate();
   if (game.wave >= 2) game.crateIn = rand(9, 15);
   on("wave", game.wave);
+  // A heavier gun comes in with its wave, in a crate of its own.
+  const fresh = /** @type {GunId[]} */ (Object.keys(GUNS)).find((id) => GUNS[id].from === game.wave && game.wave > 2);
+  if (fresh) {
+    dropCrate(fresh);
+    on("unlock", fresh);
+  }
+  const tier = /** @type {TurretKind[]} */ (Object.keys(TURRETS)).find((k) => TURRETS[k].from === game.wave && game.wave > 2);
+  if (tier) dropCrate("turret", tier);
 }
 
 function spawn() {
@@ -387,31 +450,38 @@ function spawn() {
   const speed = Math.min(13, 6 + w * 0.5) * (blue ? 0.92 : 1) * rand(0.85, 1.15);
   // A blue one's stamina grows with the waves: five shots at the third, a dozen by the fifteenth.
   const hp = blue ? 4 + Math.ceil(w / 2) : 2;
-  game.zombies.push({ x, y, r: blue ? 3.6 : 3, hp, max: hp, blue, speed, bite: 0, flash: 0, face: Math.atan2(game.py - y, game.px - x), wob: Math.random() * 6, plan: null });
+  game.zombies.push({ x, y, r: blue ? 3.6 : 3, hp, max: hp, blue, speed, bite: 0, flash: 0, face: Math.atan2(game.py - y, game.px - x), wob: Math.random() * 6, plan: null, gnaw: 0.5 });
 }
 
-function dropCrate() {
+/**
+ * @param {GunId | "turret"} [only] what it holds, else one of the wave's guns at random, or a turret
+ * @param {TurretKind} [only_tier] which turret, else one of the wave's at random
+ */
+function dropCrate(only, only_tier) {
   for (let tries = 0; tries < 40; tries++) {
     const x = rand(-game.hw + 8, game.hw - 8);
     const y = rand(-game.hh + 8, game.hh - 8);
     const d = Math.hypot(x - game.px, y - game.py);
     if (d < 12 || wallGap(x, y) < 8 || game.barrels.some((b) => Math.hypot(b.x - x, b.y - y) < 8)) continue;
-    const gun = Math.random() < TURRET_DROP ? "turret" : DROPS[Math.floor(Math.random() * DROPS.length)];
-    game.crates.push({ x, y, gun, life: CRATE_LIFE });
+    const list = drops();
+    const gun = only ?? (Math.random() < TURRET_DROP ? "turret" : list[Math.floor(Math.random() * list.length)]);
+    const tiers = turretDrops();
+    const tier = gun === "turret" ? only_tier ?? tiers[Math.floor(Math.random() * tiers.length)] : undefined;
+    game.crates.push({ x, y, gun, tier, life: CRATE_LIFE });
     return;
   }
 }
 
 /* ---------- Damage ---------- */
 
-/** @param {Zombie} z @param {number} dmg @param {number} ax @param {number} ay */
-function hurtZombie(z, dmg, ax, ay) {
+/** @param {Zombie} z @param {number} dmg @param {number} ax @param {number} ay @param {number} [knock] */
+function hurtZombie(z, dmg, ax, ay, knock = 0.8) {
   z.hp -= dmg;
-  z.flash = 0.08;
+  if (knock) z.flash = 0.08;
   // Knocked back a little along the shot.
   const d = Math.hypot(ax, ay) || 1;
-  z.x += (ax / d) * 0.8;
-  z.y += (ay / d) * 0.8;
+  z.x += (ax / d) * knock;
+  z.y += (ay / d) * knock;
   if (z.hp > 0) return;
   const i = game.zombies.indexOf(z);
   if (i < 0) return;
@@ -430,22 +500,32 @@ function explode(b) {
   const i = game.barrels.indexOf(b);
   if (i < 0) return;
   game.barrels.splice(i, 1);
-  game.booms.push({ x: b.x, y: b.y, life: 0.5 });
-  game.decals.push({ x: b.x, y: b.y, r: BLAST * 0.55, color: "#1d1a14", a: 0.5, rot: Math.random() * 6 });
-  burst(b.x, b.y, 26, "#ffb02e", 40, 3);
-  burst(b.x, b.y, 14, "#5a5048", 22, 4);
-  game.shake = Math.min(1.6, game.shake + 1);
+  blast(b.x, b.y, BLAST, 50, 35);
+}
+
+/**
+ * A blast, a barrel's or a rocket's: it takes `dmg` from every zombie within
+ * `reach`, `hurt` from the player close in, and sets off the barrels it reaches.
+ * @param {number} x @param {number} y @param {number} reach @param {number} dmg @param {number} hurt
+ */
+function blast(x, y, reach, dmg, hurt) {
+  game.booms.push({ x, y, life: 0.5, r: reach });
+  game.decals.push({ x, y, r: reach * 0.55, color: "#1d1a14", a: 0.5, rot: Math.random() * 6 });
+  if (game.decals.length > 70) game.decals.shift();
+  burst(x, y, 26, "#ffb02e", reach * 2.8, 3);
+  burst(x, y, 14, "#5a5048", reach * 1.6, 4);
+  game.shake = Math.min(1.6, game.shake + reach / 14);
   for (const z of [...game.zombies]) {
-    if (Math.hypot(z.x - b.x, z.y - b.y) < BLAST + z.r) hurtZombie(z, 50, z.x - b.x, z.y - b.y);
+    if (Math.hypot(z.x - x, z.y - y) < reach + z.r) hurtZombie(z, dmg, z.x - x, z.y - y);
   }
-  if (game.state === "play" && Math.hypot(game.px - b.x, game.py - b.y) < BLAST * 0.8 + PLAYER_R) {
-    game.hp -= 35;
+  if (game.state === "play" && Math.hypot(game.px - x, game.py - y) < reach * 0.8 + PLAYER_R) {
+    game.hp -= hurt;
     game.hurt = 0.4;
     on("hurt");
   }
   // The barrels it reaches go up a beat after it.
   for (const other of game.barrels) {
-    if (!other.fuse && Math.hypot(other.x - b.x, other.y - b.y) < BLAST + BARREL_R) other.fuse = 0.14;
+    if (!other.fuse && Math.hypot(other.x - x, other.y - y) < reach + BARREL_R) other.fuse = 0.14;
   }
   on("boom");
 }
@@ -473,26 +553,136 @@ function fire() {
   const tip = PLAYER_R + gun.len;
   const ox = game.px + Math.cos(game.aim) * tip;
   const oy = game.py + Math.sin(game.aim) * tip;
+  const kind = gun.kind === "rocket" ? gun.kind : undefined;
+  game.ammo--;
+  // The minigun fires slowly until it has spun up.
+  game.cool = gun.kind === "spin" ? gun.every / Math.max(0.25, game.spool) : gun.every;
+  game.muzzle = 0.06;
+  on("shot", game.gun);
+  if (gun.kind === "rail") {
+    rail(ox, oy, game.aim, gun.dmg);
+    return;
+  }
   for (let i = 0; i < gun.pellets; i++) {
     const a = game.aim + (Math.random() - 0.5) * gun.spread;
     const v = gun.speed * (gun.pellets > 1 ? rand(0.85, 1.1) : 1);
-    game.bullets.push({ x: ox, y: oy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: gun.life * (gun.pellets > 1 ? rand(0.8, 1.15) : 1), dmg: gun.dmg, pierce: gun.pierce, hit: new Set() });
+    const life = gun.life * (gun.pellets > 1 ? rand(0.8, 1.15) : 1);
+    game.bullets.push({ x: ox, y: oy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, max: life, dmg: gun.dmg, pierce: gun.pierce, hit: new Set(), kind });
   }
-  game.ammo--;
-  game.cool = gun.every;
-  game.muzzle = 0.06;
-  on("shot", game.gun);
+}
+
+/**
+ * The railgun: a beam straight across the field to the first wall or the
+ * edge, through every zombie on it, setting off the barrels it crosses.
+ * @param {number} ox @param {number} oy @param {number} a @param {number} dmg
+ */
+function rail(ox, oy, a, dmg) {
+  const dx = Math.cos(a);
+  const dy = Math.sin(a);
+  const { x: ex, y: ey } = rayEnd(ox, oy, a);
+  game.beams.push({ x1: ox, y1: oy, x2: ex, y2: ey, life: 0.3 });
+  if (wallGap(ex, ey) === 0) burst(ex, ey, 8, "#b9f3ff", 22, 1.2);
+  for (const z of [...game.zombies]) {
+    if (cross(ox, oy, ex, ey, z.x, z.y, z.r + 0.6) >= 0) {
+      hurtZombie(z, dmg, dx, dy, 1.6);
+      burst(z.x, z.y, 4, "#b9f3ff", 16, 1);
+    }
+  }
+  for (const b of [...game.barrels]) {
+    if (cross(ox, oy, ex, ey, b.x, b.y, BARREL_R) >= 0) explode(b);
+  }
+  game.shake = Math.min(1.6, game.shake + 0.35);
+}
+
+/** Where a beam from a point along an angle stops: the first wall, or past the field's edge. @param {number} ox @param {number} oy @param {number} a */
+function rayEnd(ox, oy, a) {
+  const dx = Math.cos(a);
+  const dy = Math.sin(a);
+  const far = Math.hypot(game.hw, game.hh) * 2 + 10;
+  let t = 0;
+  while (t < far) {
+    const x = ox + dx * t;
+    const y = oy + dy * t;
+    if (Math.abs(x) > game.hw + 6 || Math.abs(y) > game.hh + 6 || wallGap(x, y) === 0) break;
+    t += 0.5;
+  }
+  return { x: ox + dx * t, y: oy + dy * t };
+}
+
+/**
+ * The laser, every frame it is out: held, it charges a cell, then burns a
+ * beam to the first wall for as long as it stays held, until the cell's
+ * seconds run out and the next must charge. Let go, the beam stops and keeps
+ * what is left of the cell; a charge half-made drains away.
+ * @param {number} dt
+ */
+function laser(dt) {
+  game.ray = null;
+  if (!game.firing) {
+    game.charge = Math.max(0, game.charge - dt * 0.8);
+    return;
+  }
+  if (game.lase <= 0) {
+    if (game.ammo <= 0) {
+      toPistol();
+      return;
+    }
+    game.charge += dt / LASER.charge;
+    if (game.charge >= 1) {
+      game.charge = 0;
+      game.ammo--;
+      game.lase = LASER.run;
+      on("shot", "laser");
+    }
+    return;
+  }
+  game.lase = Math.max(0, game.lase - dt);
+  const gun = GUNS.laser;
+  const tip = PLAYER_R + gun.len;
+  const ox = game.px + Math.cos(game.aim) * tip;
+  const oy = game.py + Math.sin(game.aim) * tip;
+  const end = rayEnd(ox, oy, game.aim);
+  game.ray = { x1: ox, y1: oy, x2: end.x, y2: end.y };
+  const dx = Math.cos(game.aim);
+  const dy = Math.sin(game.aim);
+  for (const z of [...game.zombies]) {
+    if (cross(ox, oy, end.x, end.y, z.x, z.y, z.r + 0.4) < 0) continue;
+    hurtZombie(z, gun.dmg * dt, dx, dy, dt * 4);
+    if (Math.random() < dt * 30) burst(z.x - dx * z.r, z.y - dy * z.r, 1, "#ff5a4a", 14, 0.7);
+  }
+  for (const b of [...game.barrels]) {
+    if (cross(ox, oy, end.x, end.y, b.x, b.y, BARREL_R) < 0) continue;
+    b.hp -= dt * 3;
+    if (b.hp <= 0) explode(b);
+  }
+  if (wallGap(end.x, end.y) === 0 && Math.random() < dt * 25) burst(end.x, end.y, 1, "#ffb3a8", 12, 0.6);
+  on("lase");
+  if (game.lase <= 0 && game.ammo <= 0) toPistol();
+}
+
+/** Out of ammo: back to the pistol. */
+function toPistol() {
+  game.gun = "pistol";
+  game.ammo = Infinity;
+  game.charge = game.lase = 0;
+  game.ray = null;
+  on("empty");
 }
 
 /** @param {Crate} c */
 function pickUp(c) {
   game.crates.splice(game.crates.indexOf(c), 1);
   if (c.gun === "turret") {
-    game.carry = Math.min(TURRET.carry, game.carry + 1);
+    // The best kept first; one too many, the weakest is left behind.
+    const tier = c.tier ?? "sentry";
+    game.carry.push(tier);
+    game.carry.sort((a, b) => TURRETS[b].from - TURRETS[a].from);
+    game.carry.length = Math.min(game.carry.length, TURRET.carry);
     burst(c.x, c.y, 12, "#c89b5a", 20, 1.6);
-    on("turret");
+    on("turret", tier);
     return;
   }
+  if (game.gun !== c.gun) game.charge = game.lase = 0;
   game.ammo = game.gun === c.gun ? game.ammo + GUNS[c.gun].ammo : GUNS[c.gun].ammo;
   game.gun = c.gun;
   burst(c.x, c.y, 12, "#c89b5a", 20, 1.6);
@@ -511,11 +701,11 @@ export function canPlace(x, y) {
 
 /** Put a carried turret down at a point; whether it went down. @param {number} x @param {number} y */
 export function placeTurret(x, y) {
-  if (game.state !== "play" || game.carry < 1 || !canPlace(x, y)) return false;
-  game.carry--;
+  if (game.state !== "play" || game.carry.length < 1 || !canPlace(x, y)) return false;
+  const kind = /** @type {TurretKind} */ (game.carry.shift());
   // The oldest goes once too many stand.
   if (game.turrets.length >= TURRET.max) game.turrets.shift();
-  game.turrets.push({ x, y, aim: Math.atan2(-y, -x), cool: 0.3, rounds: TURRET.rounds, muzzle: 0 });
+  game.turrets.push({ x, y, aim: Math.atan2(-y, -x), cool: 0.3, rounds: TURRETS[kind].rounds, muzzle: 0, kind, shield: TURRETS[kind].dome, hitFx: 0 });
   burst(x, y, 10, "#c9d1d9", 14, 1.2);
   on("placed");
   return true;
@@ -528,11 +718,13 @@ export function placeTurret(x, y) {
  */
 function sentries(dt) {
   for (const t of game.turrets) {
+    const spec = TURRETS[t.kind];
     t.cool -= dt;
     t.muzzle = Math.max(0, t.muzzle - dt);
+    t.hitFx = Math.max(0, t.hitFx - dt);
     /** @type {Zombie | null} */
     let target = null;
-    let near = TURRET.range;
+    let near = spec.range;
     for (const z of game.zombies) {
       const d = Math.hypot(z.x - t.x, z.y - t.y);
       if (d < near && !walled(t.x, t.y, z.x, z.y, 0.3)) {
@@ -545,13 +737,13 @@ function sentries(dt) {
     const off = Math.atan2(Math.sin(want - t.aim), Math.cos(want - t.aim));
     t.aim += Math.sign(off) * Math.min(Math.abs(off), dt * 7);
     if (Math.abs(off) > 0.18 || t.cool > 0) continue;
-    t.cool = TURRET.every;
+    t.cool = spec.every;
     t.rounds--;
     t.muzzle = 0.06;
     const tip = TURRET.r + 1.6;
-    const a = t.aim + (Math.random() - 0.5) * 0.05;
-    game.bullets.push({ x: t.x + Math.cos(t.aim) * tip, y: t.y + Math.sin(t.aim) * tip, vx: Math.cos(a) * TURRET.speed, vy: Math.sin(a) * TURRET.speed, life: TURRET.range / TURRET.speed + 0.05, dmg: TURRET.dmg, pierce: 1, hit: new Set(), sentry: true });
-    on("shot", "turret");
+    const a = t.aim + (Math.random() - 0.5) * spec.spread;
+    game.bullets.push({ x: t.x + Math.cos(t.aim) * tip, y: t.y + Math.sin(t.aim) * tip, vx: Math.cos(a) * spec.speed, vy: Math.sin(a) * spec.speed, life: spec.range / spec.speed + 0.05, dmg: spec.dmg, pierce: 1, hit: new Set(), sentry: true });
+    on("shot", t.kind === "sentry" ? "turret" : "turretMini");
   }
   for (const t of game.turrets.filter((t) => t.rounds <= 0)) {
     burst(t.x, t.y, 14, "#8b949e", 18, 1.4);
@@ -606,6 +798,7 @@ function cross(x1, y1, x2, y2, cx, cy, r) {
 
 /** @param {Bullet} b @param {number} dt @returns {boolean} whether it flies on */
 function fly(b, dt) {
+  if (b.kind === "rocket") return flyRocket(b, dt);
   const x2 = b.x + b.vx * dt;
   const y2 = b.y + b.vy * dt;
   // A turret's rounds are for zombies only: never a crate, never a barrel.
@@ -637,7 +830,33 @@ function fly(b, dt) {
   b.x = x2;
   b.y = y2;
   b.life -= dt;
+
   return b.life > 0 && Math.abs(b.x) < game.hw + 10 && Math.abs(b.y) < game.hh + 10;
+}
+
+/** A rocket flies until it meets a zombie, a barrel, a wall or the end of its fuel, and blows up there. @param {Bullet} b @param {number} dt */
+function flyRocket(b, dt) {
+  const x2 = b.x + b.vx * dt;
+  const y2 = b.y + b.vy * dt;
+  const hit =
+    game.zombies.some((z) => cross(b.x, b.y, x2, y2, z.x, z.y, z.r + 0.4) >= 0) ||
+    game.barrels.some((r) => cross(b.x, b.y, x2, y2, r.x, r.y, BARREL_R) >= 0) ||
+    wallGap(x2, y2) === 0 ||
+    (b.life -= dt) <= 0 ||
+    Math.abs(x2) > game.hw + 4 ||
+    Math.abs(y2) > game.hh + 4;
+  if (hit) {
+    blast(b.x, b.y, ROCKET_BLAST, b.dmg, ROCKET_HURT);
+    return false;
+  }
+  b.x = x2;
+  b.y = y2;
+  // A trail of smoke.
+  if (Math.random() < 0.7) {
+    const life = rand(0.25, 0.5);
+    game.parts.push({ x: b.x, y: b.y, vx: rand(-3, 3), vy: rand(-3, 3), life, max: life, color: Math.random() < 0.3 ? "#ffb347" : "#9a948c", size: rand(0.6, 1.1) });
+  }
+  return true;
 }
 
 /* ---------- A step of the world ---------- */
@@ -650,7 +869,13 @@ export function update(dt) {
   }
   game.cool -= dt;
   walk(dt);
-  if (game.firing && game.cool <= 0) fire();
+  const spinning = game.firing && GUNS[game.gun].kind === "spin";
+  game.spool = Math.max(0, Math.min(1, game.spool + (spinning ? dt * 1.6 : -dt * 2)));
+  if (GUNS[game.gun].kind === "laser") laser(dt);
+  else {
+    game.ray = null;
+    if (game.firing && game.cool <= 0) fire();
+  }
 
   // Waves: spawning, then the pause after a cleared one.
   if (game.between > 0) {
@@ -745,6 +970,27 @@ export function update(dt) {
         a.y = b.y + (dy / d) * min;
       }
     }
+    // A dome keeps zombies out, and those pressed against it gnaw at it.
+    for (const t of game.turrets) {
+      if (t.shield <= 0) continue;
+      const dx = a.x - t.x;
+      const dy = a.y - t.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const min = a.r + TURRET.domeR;
+      if (d >= min) continue;
+      a.x = t.x + (dx / d) * min;
+      a.y = t.y + (dy / d) * min;
+      a.gnaw -= dt;
+      if (a.gnaw > 0) continue;
+      a.gnaw = 1;
+      t.shield -= a.blue ? 6 : 4;
+      t.hitFx = 0.2;
+      if (t.shield <= 0) {
+        t.shield = 0;
+        burst(t.x, t.y, 30, "#8fd3ff", 30, 1.4);
+        on("dome");
+      }
+    }
     offWall(a, a.r);
   }
 
@@ -776,11 +1022,13 @@ function settleEffects(dt) {
   game.parts = game.parts.filter((p) => p.life > 0);
   for (const b of game.booms) b.life -= dt;
   game.booms = game.booms.filter((b) => b.life > 0);
+  for (const b of game.beams) b.life -= dt;
+  game.beams = game.beams.filter((b) => b.life > 0);
   for (const d of game.decals) d.a = Math.max(0.12, d.a - dt * 0.01);
 }
 
 /** Whether anything is still moving once a game is over. */
-export const settling = () => game.parts.length > 0 || game.booms.length > 0 || game.shake > 0 || game.hurt > 0;
+export const settling = () => game.parts.length > 0 || game.booms.length > 0 || game.beams.length > 0 || game.shake > 0 || game.hurt > 0;
 
 /* ---------- Drawing ---------- */
 
@@ -859,6 +1107,10 @@ export function draw(ctx, w, h, u) {
 
   ctx.lineCap = "round";
   for (const b of game.bullets) {
+    if (b.kind === "rocket") {
+      drawRocket(ctx, b);
+      continue;
+    }
     ctx.strokeStyle = "#fff6c4";
     ctx.lineWidth = 0.45;
     ctx.beginPath();
@@ -867,17 +1119,33 @@ export function draw(ctx, w, h, u) {
     ctx.stroke();
   }
 
+  if (game.ray) drawLaser(ctx, game.ray);
+  for (const b of game.beams) {
+    const k = b.life / 0.3;
+    ctx.globalAlpha = k;
+    ctx.strokeStyle = "#5fd8ff";
+    ctx.lineWidth = 2.4 * k + 0.4;
+    ctx.beginPath();
+    ctx.moveTo(b.x1, b.y1);
+    ctx.lineTo(b.x2, b.y2);
+    ctx.stroke();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 0.7 * k + 0.15;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
   for (const b of game.booms) {
     const t = 1 - b.life / 0.5;
     ctx.globalAlpha = 1 - t;
     ctx.fillStyle = t < 0.3 ? "#fff1b8" : "#ff8a1f";
     ctx.beginPath();
-    ctx.arc(b.x, b.y, BLAST * (0.4 + t * 0.7), 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, b.r * (0.4 + t * 0.7), 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 0.6;
     ctx.beginPath();
-    ctx.arc(b.x, b.y, BLAST * (0.6 + t * 0.6), 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, b.r * (0.6 + t * 0.6), 0, Math.PI * 2);
     ctx.stroke();
   }
   for (const p of game.parts) {
@@ -898,6 +1166,52 @@ export function draw(ctx, w, h, u) {
     ctx.fillStyle = `rgba(200, 20, 20, ${game.hurt * 0.9})`;
     ctx.fillRect(0, 0, w, h);
   }
+}
+
+/** The laser's beam: a red glow round a white core, flickering. @param {CanvasRenderingContext2D} ctx @param {{x1: number, y1: number, x2: number, y2: number}} r */
+function drawLaser(ctx, r) {
+  const w = 1 + Math.random() * 0.25;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const [color, width] of /** @type {[string, number][]} */ ([["rgba(255, 40, 30, 0.35)", 2.6], ["rgba(255, 70, 50, 0.8)", 1.1], ["#fff4f0", 0.4]])) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width * w;
+    ctx.beginPath();
+    ctx.moveTo(r.x1, r.y1);
+    ctx.lineTo(r.x2, r.y2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(255, 120, 90, 0.6)";
+  ctx.beginPath();
+  ctx.arc(r.x2, r.y2, 1.2 * w, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** A rocket in flight: a body along its heading and a flame behind. @param {CanvasRenderingContext2D} ctx @param {Bullet} b */
+function drawRocket(ctx, b) {
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(Math.atan2(b.vy, b.vx));
+  ctx.fillStyle = "#ffb02e";
+  ctx.beginPath();
+  ctx.moveTo(-1.4, 0);
+  ctx.lineTo(-2.6 - Math.random() * 1.2, 0);
+  ctx.lineTo(-1.4, 0.45);
+  ctx.closePath();
+  ctx.moveTo(-1.4, -0.45);
+  ctx.lineTo(-2.6 - Math.random() * 1.2, 0);
+  ctx.lineTo(-1.4, 0);
+  ctx.fill();
+  ctx.fillStyle = "#4a5a3a";
+  ctx.fillRect(-1.5, -0.5, 2.4, 1);
+  ctx.fillStyle = "#d8302a";
+  ctx.beginPath();
+  ctx.moveTo(0.9, -0.5);
+  ctx.lineTo(1.7, 0);
+  ctx.lineTo(0.9, 0.5);
+  ctx.fill();
+  ctx.restore();
 }
 
 /** @param {CanvasRenderingContext2D} ctx @param {number} x @param {number} y @param {number} r */
@@ -975,6 +1289,7 @@ function drawBarrel(ctx, b) {
 /** A sentry turret from above: three legs, a round housing, the barrel along its aim, its rounds left as a ring. @param {CanvasRenderingContext2D} ctx @param {Turret} t */
 function drawTurret(ctx, t) {
   const r = TURRET.r;
+  const spec = TURRETS[t.kind];
   shadow(ctx, t.x, t.y, r * 1.2);
   ctx.save();
   ctx.translate(t.x, t.y);
@@ -994,9 +1309,9 @@ function drawTurret(ctx, t) {
   ctx.beginPath();
   ctx.arc(0, 0, r * 1.15, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.strokeStyle = t.rounds > TURRET.rounds * 0.25 ? "#7ee2a0" : "#ffb347";
+  ctx.strokeStyle = t.rounds > spec.rounds * 0.25 ? "#7ee2a0" : "#ffb347";
   ctx.beginPath();
-  ctx.arc(0, 0, r * 1.15, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * t.rounds) / TURRET.rounds);
+  ctx.arc(0, 0, r * 1.15, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * t.rounds) / spec.rounds);
   ctx.stroke();
   ctx.rotate(t.aim);
   if (t.muzzle > 0) {
@@ -1006,10 +1321,15 @@ function drawTurret(ctx, t) {
     ctx.fill();
   }
   ctx.fillStyle = "#23272e";
-  ctx.fillRect(0, -0.4, r + 1.6, 0.8);
+  if (t.kind === "sentry") ctx.fillRect(0, -0.4, r + 1.6, 0.8);
+  else {
+    // Three barrels side by side, shaking as they fire.
+    const j = t.muzzle > 0 ? (Math.random() - 0.5) * 0.25 : 0;
+    for (const off of [-0.55, 0, 0.55]) ctx.fillRect(0, off - 0.2 + j, r + 2, 0.4);
+  }
   const g = ctx.createRadialGradient(-0.5, -0.5, 0.2, 0, 0, r * 0.8);
-  g.addColorStop(0, "#c3ccd6");
-  g.addColorStop(1, "#5c6670");
+  g.addColorStop(0, t.kind === "sentry" ? "#c3ccd6" : "#e1b96a");
+  g.addColorStop(1, t.kind === "sentry" ? "#5c6670" : "#7a5a22");
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(0, 0, r * 0.8, 0, Math.PI * 2);
@@ -1022,22 +1342,56 @@ function drawTurret(ctx, t) {
   ctx.arc(r * 0.3, 0, 0.35, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+  if (t.shield > 0) drawDome(ctx, t.x, t.y, t.shield / spec.dome, t.hitFx);
+}
+
+/**
+ * A dome from above: a pale blue bubble, fainter as it weakens, a bright
+ * rim with its strength left drawn round it, flaring when bitten.
+ * @param {CanvasRenderingContext2D} ctx @param {number} x @param {number} y @param {number} left 0…1 @param {number} hit
+ */
+function drawDome(ctx, x, y, left, hit) {
+  const R = TURRET.domeR;
+  const g = ctx.createRadialGradient(x - R * 0.35, y - R * 0.4, R * 0.1, x, y, R);
+  g.addColorStop(0, `rgba(220, 244, 255, ${0.08 + 0.12 * left})`);
+  g.addColorStop(0.85, `rgba(120, 200, 255, ${0.08 + 0.14 * left})`);
+  g.addColorStop(1, `rgba(150, 215, 255, ${0.25 + 0.3 * left + hit * 2})`);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 0.35;
+  ctx.strokeStyle = `rgba(190, 232, 255, ${0.5 + hit * 2})`;
+  ctx.stroke();
+  ctx.lineWidth = 0.5;
+  ctx.strokeStyle = left > 0.3 ? "rgba(140, 215, 255, 0.95)" : "rgba(255, 179, 71, 0.95)";
+  ctx.beginPath();
+  ctx.arc(x, y, R + 0.6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left);
+  ctx.stroke();
+  // A highlight, as on glass.
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+  ctx.lineWidth = 0.4;
+  ctx.beginPath();
+  ctx.arc(x, y, R * 0.78, Math.PI * 1.1, Math.PI * 1.45);
+  ctx.stroke();
 }
 
 /** Where a turret would go: its reach, and the turret see-through, red where it cannot stand. @param {CanvasRenderingContext2D} ctx @param {{x: number, y: number}} p */
 function drawGhost(ctx, p) {
   const ok = canPlace(p.x, p.y);
+  const kind = game.carry[0] ?? "sentry";
+  const spec = TURRETS[kind];
   ctx.fillStyle = ok ? "rgba(126, 226, 160, 0.1)" : "rgba(229, 72, 77, 0.1)";
   ctx.strokeStyle = ok ? "rgba(126, 226, 160, 0.6)" : "rgba(229, 72, 77, 0.7)";
   ctx.lineWidth = 0.3;
   ctx.setLineDash([1.2, 1]);
   ctx.beginPath();
-  ctx.arc(p.x, p.y, TURRET.range, 0, Math.PI * 2);
+  ctx.arc(p.x, p.y, spec.range, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.globalAlpha = 0.6;
-  drawTurret(ctx, { x: p.x, y: p.y, aim: -Math.PI / 2, cool: 0, rounds: TURRET.rounds, muzzle: 0 });
+  drawTurret(ctx, { x: p.x, y: p.y, aim: -Math.PI / 2, cool: 0, rounds: spec.rounds, muzzle: 0, kind, shield: spec.dome, hitFx: 0 });
   if (!ok) {
     ctx.strokeStyle = "#e5484d";
     ctx.lineWidth = 0.6;
@@ -1074,13 +1428,21 @@ function drawCrate(ctx, c) {
   ctx.strokeStyle = "rgba(90, 58, 23, 0.6)";
   ctx.stroke();
   ctx.fillStyle = "#fff8e6";
-  ctx.font = `700 ${c.gun === "smg" ? 1.5 : c.gun === "turret" ? 1.05 : 1.15}px system-ui, sans-serif`;
+  const tag = c.gun === "turret" ? "TURRET" : GUNS[c.gun].tag;
+  const sub = c.gun === "turret" && c.tier ? TURRETS[c.tier].tag : "";
+  ctx.font = `700 ${tag.length <= 3 ? 1.5 : tag.length >= 6 ? 1.05 : 1.15}px system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(c.gun === "turret" ? "TURRET" : GUNS[c.gun].name.toUpperCase(), 0, 0.1, r * 1.9);
+  ctx.fillText(tag, 0, sub ? -0.6 : 0.1, r * 1.9);
+  if (sub) {
+    ctx.fillStyle = "#ffe08a";
+    ctx.font = "800 0.95px system-ui, sans-serif";
+    ctx.fillText(sub, 0, 0.75, r * 1.9);
+  }
   ctx.restore();
   // A ring calls it out.
-  ctx.strokeStyle = `rgba(255, 236, 140, ${0.5 + 0.3 * Math.sin(c.life * 8)})`;
+  const heavy = c.gun === "turret" ? !!c.tier && TURRETS[c.tier].from > 2 : GUNS[c.gun].from > 2;
+  ctx.strokeStyle = `rgba(${heavy ? "255, 120, 70" : "255, 236, 140"}, ${0.5 + 0.3 * Math.sin(c.life * 8)})`;
   ctx.lineWidth = 0.3;
   ctx.beginPath();
   ctx.arc(c.x, c.y + bob, r * 1.75, 0, Math.PI * 2);
@@ -1154,17 +1516,12 @@ function drawPlayer(ctx) {
   }
   ctx.rotate(game.aim);
   if (game.muzzle > 0) {
-    ctx.fillStyle = "#ffe066";
+    ctx.fillStyle = game.gun === "railgun" ? "#9be9ff" : "#ffe066";
     ctx.beginPath();
-    ctx.arc(r + gun.len + 0.6, 0, game.gun === "shotgun" ? 1.6 : 1.1, 0, Math.PI * 2);
+    ctx.arc(r + gun.len + 0.6, 0, game.gun === "shotgun" || game.gun === "rocket" ? 1.6 : 1.1, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.fillStyle = "#1e1e22";
-  ctx.fillRect(r * 0.4, -0.45, gun.len + r * 0.6, 0.9);
-  if (game.gun === "shotgun") {
-    ctx.fillStyle = "#7a4a22";
-    ctx.fillRect(r * 0.4, -0.55, 2.2, 1.1);
-  }
+  drawGun(ctx, r, gun);
   ctx.lineCap = "round";
   ctx.strokeStyle = "#e9b98d";
   ctx.lineWidth = 1.1;
@@ -1187,6 +1544,65 @@ function drawPlayer(ctx) {
   ctx.arc(-r * 0.05, 0, r * 0.5, Math.PI * 0.55, Math.PI * 1.45);
   ctx.fill();
   ctx.restore();
+}
+
+/**
+ * The gun in the player's hands, pointing along +x, each tier its own shape.
+ * @param {CanvasRenderingContext2D} ctx @param {number} r @param {Gun} gun
+ */
+function drawGun(ctx, r, gun) {
+  const x0 = r * 0.4;
+  const len = gun.len + r * 0.6;
+  if (game.gun === "minigun") {
+    // A drum of barrels that turn as it spins up.
+    ctx.fillStyle = "#3a3d44";
+    ctx.fillRect(x0, -1.1, 2.6, 2.2);
+    const turn = Math.sin(performance.now() / (40 + 200 * (1 - game.spool))) * 0.35;
+    ctx.fillStyle = "#1e1e22";
+    for (const off of [-0.6, 0, 0.6]) ctx.fillRect(x0 + 2.4, off + turn * 0.3 - 0.22, len - 2.4, 0.44);
+    ctx.fillStyle = "#5b616b";
+    ctx.fillRect(x0 + len - 0.8, -0.95, 0.5, 1.9);
+  } else if (game.gun === "railgun") {
+    // Two rails with a glow between them.
+    ctx.fillStyle = "#2b3440";
+    ctx.fillRect(x0, -0.9, 2.4, 1.8);
+    ctx.fillStyle = `rgba(95, 216, 255, ${0.35 + 0.5 * Math.max(0, 1 - game.cool / gun.every)})`;
+    ctx.fillRect(x0 + 2.4, -0.3, len - 2.4, 0.6);
+    ctx.fillStyle = "#c9d1d9";
+    ctx.fillRect(x0 + 1.6, -0.85, len - 1.6, 0.4);
+    ctx.fillRect(x0 + 1.6, 0.45, len - 1.6, 0.4);
+  } else if (game.gun === "rocket") {
+    // A wide olive tube on the shoulder, its mouth dark.
+    ctx.fillStyle = "#56663f";
+    ctx.fillRect(x0 - 1.4, -0.85, len + 1.4, 1.7);
+    ctx.fillStyle = "#2c3322";
+    ctx.fillRect(x0 + len - 0.6, -0.85, 0.6, 1.7);
+    ctx.fillStyle = "#c8a24a";
+    ctx.fillRect(x0 + 1.4, -0.85, 0.5, 1.7);
+  } else if (game.gun === "laser") {
+    // A white body, a red lens, and the charge glowing at its tip.
+    ctx.fillStyle = "#d9dee5";
+    ctx.fillRect(x0, -0.7, len - 0.6, 1.4);
+    ctx.fillStyle = "#8a929c";
+    ctx.fillRect(x0 + 1, -0.7, 0.5, 1.4);
+    ctx.fillRect(x0 + 2.2, -0.7, 0.5, 1.4);
+    ctx.fillStyle = "#e0281e";
+    ctx.fillRect(x0 + len - 0.8, -0.5, 0.8, 1);
+    const glow = game.lase > 0 ? 1 : game.charge;
+    if (glow > 0) {
+      ctx.fillStyle = `rgba(255, 70, 50, ${0.3 + 0.5 * glow})`;
+      ctx.beginPath();
+      ctx.arc(x0 + len + 0.2, 0, 0.3 + glow * 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    ctx.fillStyle = "#1e1e22";
+    ctx.fillRect(x0, -0.45, len, 0.9);
+    if (game.gun === "shotgun") {
+      ctx.fillStyle = "#7a4a22";
+      ctx.fillRect(x0, -0.55, 2.2, 1.1);
+    }
+  }
 }
 
 /** @param {CanvasRenderingContext2D} ctx */
@@ -1260,7 +1676,12 @@ function drawHud(ctx, w, h, u) {
     ctx.fill();
   }
   const gun = GUNS[game.gun];
-  const ammo = Number.isFinite(game.ammo) ? `${gun.name} · ${game.ammo}` : gun.name;
+  const ammo =
+    gun.kind === "laser"
+      ? `Laser · ${game.ammo} ${game.ammo === 1 ? "cell" : "cells"}${game.lase > 0 ? ` · ${game.lase.toFixed(1)}s` : game.charge > 0 ? " · charging" : ""}`
+      : Number.isFinite(game.ammo)
+        ? `${gun.name} · ${game.ammo}`
+        : gun.name;
   ctx.font = `700 ${13 * s}px -apple-system, system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";

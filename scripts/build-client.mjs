@@ -161,8 +161,10 @@ const PAGES = [
   },
   {
     name: "Shotgun",
+    // As Pinball: the document is held to the window, the game's bundle (the
+    // wheel, the waves and every gun and turret in them) is left to be the game.
     doc: { file: "shotgun.html", gzip: FLIGHT },
-    parallel: [{ file: "shotgun.js", gzip: FLIGHT }],
+    parallel: [],
   },
   {
     name: "Login",

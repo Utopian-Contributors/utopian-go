@@ -299,6 +299,15 @@ the API, and it has no shared board. Its credits are its own, not Fruit Slots'.
   taken by shooting one or walking over it; a gun out of ammo goes back to the pistol. From
   the third wave a share of each wave is **blue** (15% more each wave, at most three in four):
   bigger and with stamina growing with the waves (5 hits at the third, 12 by the fifteenth).
+- **Heavier guns.** Later waves add a tier each to what crates hold, announced as the wave
+  starts and arriving in a crate of its own: the **minigun** from wave 4 (spins up while held,
+  320 rounds), the **railgun** from wave 6 (a beam across the field to the first wall, through
+  every zombie on it and setting off barrels, 14 shots), the **rocket blaster** from wave 8
+  (rockets blow up where they land, hurting the player close by, 12 rockets) and the
+  **laser** from wave 10 (5 cells: held, a cell charges for about a second, then burns a beam
+  to the first wall for as long as it is held, up to 2.5 seconds; let go, the beam stops and
+  the cell keeps what is left). These tiers never come from the wheel. Their crates ring
+  orange.
 - **Sentry turrets.** One crate in four holds a turret instead of a gun. Taken (shot or walked
   over), it is carried, two at most, until placed: Place turret (or E on a desktop), then a
   press on the field puts it there, with a see-through preview of it and its reach (34 units),
@@ -307,6 +316,13 @@ the API, and it has no shared board. Its credits are its own, not Fruit Slots'.
   walls and fires once facing it, a round every 0.32 s; its rounds are for zombies only, never
   a barrel or a crate, and its kills pay credits like the player's. After 60 rounds it falls
   apart. At most three stand at once; a fourth replaces the oldest.
+- **Better turrets.** Later waves add turret tiers, each announced and arriving in a crate of
+  its own (stencilled TURRET with the tier under it): the **minigun turret** from wave 5 (three
+  barrels, a round every 0.075 s, 260 rounds, reach 38) and the **dome turret** from wave 7 (a
+  minigun turret, 320 rounds, under a glass dome 10 units across). A dome keeps zombies out
+  (the player can stand inside); those pressed against it gnaw it, 4 a second (a blue one 6),
+  from a strength of 150, shown as a ring round it, until it goes down, leaving the turret.
+  Of two turrets carried the better is placed first; taking a third leaves the weakest.
 - **Credits, the one count.** There are no points: the header shows only credits, the wheel
   pays and costs them, and a game earns them. A zombie is 1 credit, a blue one 3, a cleared
   wave n is n. A game's credits are multiplied by the kit's multiplier and banked when the
