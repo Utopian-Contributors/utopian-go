@@ -20,6 +20,7 @@ import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
+import { sheetDialog } from "../js/sheet.js";
 
 /** @param {string} id */
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -712,9 +713,11 @@ $("sl-py").addEventListener("click", () => {
 });
 
 for (const sheet of [paysSheet, buySheet]) {
-  // A tap on the dimmed page around a sheet closes it.
+  // iOS's sheet (js/ios-sheet.js): the X, a drag down and a tap on the dimmed
+  // page around it close it, as Done and Cancel do.
+  sheetDialog(sheet);
   sheet.addEventListener("click", (e) => {
-    if (e.target === sheet || /** @type {Element} */ (e.target).closest("[data-close]")) sheet.close();
+    if (/** @type {Element} */ (e.target).closest("[data-close]")) sheet.close();
   });
 }
 

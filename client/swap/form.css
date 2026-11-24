@@ -1,7 +1,7 @@
 /* A wash with no edge (base.css); the pixel the border took is back in the padding. */
-.swx-pane{background:var(--wash);border-radius:18px;padding:11px 13px}
-.swx-bal{background:none;border:0;color:var(--f);font-size:12px;cursor:pointer;
- padding:0;font-family:var(--ff)}
+.swx-pane{background:var(--wash);border-radius:20px;padding:12px 16px 14px}
+.swx-bal{background:none;border:0;color:var(--f);font-size:13px;cursor:pointer;
+ padding:6px 0;margin:-6px 0;font-family:var(--ff)}
 .swx-bal:hover{color:var(--a)}
 .swx-body{display:flex;align-items:center;gap:10px}
 /*
@@ -10,8 +10,8 @@
  * vanishing into it. The pane keeps the page colour around it: the balance
  * line, the receive figure and the size chips stay as they were.
  */
-.swx-amt{flex:1;min-width:0;padding:4px 10px;border:0;border-radius:10px;
- background:var(--in);outline:none;text-align:right;font:500 22px/1.2 var(--ff);
+.swx-amt{flex:1;min-width:0;padding:0;border:0;border-radius:0;
+ background:none;outline:none;text-align:right;font:600 28px/1.2 var(--ff);letter-spacing:-.02em;
  color:var(--in-ink);font-variant-numeric:tabular-nums}
 .swx-amt::placeholder{color:var(--in-ph)}
 /*
@@ -22,13 +22,13 @@
  * inherited 14px and every figure this class styles rendered at body size.
  * font-variant-numeric stays after the shorthand, which resets it.
  */
-.swx-recv{flex:1;text-align:right;font:500 22px/1.2 var(--ff);color:var(--t);
+.swx-recv{flex:1;text-align:right;font:600 28px/1.2 var(--ff);letter-spacing:-.02em;color:var(--t);
  font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
 .swx-recv.dim{color:var(--f)}
 /* The same figure when it is a quantity rather than a dollar one — see
    stateSide(). Millions of a memecoin is far longer than $24.81, and at 22px
    it would ellipsise inside its own pane. */
-.swx-recv.qty{font-size:17px}
+.swx-recv.qty{font-size:20px}
 
 /*
  * Which currency funds the trade — so the selected one has to be unmistakable.
@@ -40,12 +40,13 @@
  * fill — which reads as chosen at a glance in either theme and stays on the
  * grayscale the rest of the dialog keeps, leaving colour to mean direction.
  */
-.swx-seg{display:flex;gap:4px;background:var(--wash);border-radius:999px;padding:3px}
-.swx-seg button{border:0;background:none;border-radius:999px;padding:5px 12px;
- font:600 13px/1.2 var(--ff);color:var(--m);cursor:pointer;
- transition:background .15s,color .15s}
-.swx-seg button:hover:not(.on){background:var(--wash);color:var(--t)}
-.swx-seg button.on{background:var(--t);color:var(--bg)}
+.swx-seg{display:flex;gap:2px;background:var(--wash);border-radius:999px;padding:2px}
+.swx-seg button{border:0;background:none;border-radius:999px;min-height:32px;padding:0 14px;
+ font:600 14px/1.2 var(--ff);color:var(--t);cursor:pointer;
+ transition:background .2s,box-shadow .2s}
+.swx-seg button:hover:not(.on){background:var(--wash)}
+.swx-seg button.on{background:var(--ios-seg,#fff);color:var(--t);
+ box-shadow:0 3px 8px rgb(0 0 0/.12),0 3px 1px rgb(0 0 0/.04)}
 /*
  * The fixed side's ticker — and on the confirmation screen, both sides'.
  *
@@ -61,18 +62,18 @@
  * both tickers' text 15px in. The form's panes match, and nothing moves when a
  * chosen ticker becomes a locked one on the confirmation.
  */
-.swx-lock{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;
- border:3px solid var(--wash);border-radius:999px;background:var(--t);background-clip:padding-box;
- font:600 13px/1.2 var(--ff);color:var(--bg)}
+.swx-lock{display:inline-flex;align-items:center;gap:6px;min-height:32px;box-sizing:border-box;padding:0 14px;
+ border:2px solid var(--wash);border-radius:999px;background:var(--ios-seg,#fff);background-clip:padding-box;
+ box-shadow:0 3px 8px rgb(0 0 0/.12);font:600 14px/1.2 var(--ff);color:var(--t)}
 
-.swx-arrow{display:flex;justify-content:center;margin:-7px 0;position:relative;
+.swx-arrow{display:flex;justify-content:center;margin:-9px 0;position:relative;
  z-index:1}
 /* The arrow between the panes (client/ic-down.svg), on a disc of the panel's own. */
-.swx-flip{width:28px;height:28px;border-radius:50%;
+.swx-flip{width:36px;height:36px;border-radius:50%;
  background:url("/ic-down.svg") center/16px no-repeat,var(--pn);
- border:1px solid var(--b);cursor:pointer;padding:0;
- transition:transform .18s,border-color .18s}
-.swx-flip:hover{border-color:var(--a)}
+ border:3px solid var(--pn);box-shadow:0 1px 4px rgb(0 0 0/.14);cursor:pointer;padding:0;
+ transition:transform .3s cubic-bezier(.32,.72,0,1)}
+.swx-flip:hover{box-shadow:0 2px 8px rgb(0 0 0/.18)}
 .swx-flip.up{transform:rotate(180deg)}
 
 /*
@@ -84,9 +85,10 @@
  * is legible under both skies, and the two ends of a direction have to stay
  * told apart first.
  */
-.swx-go{width:100%;margin-top:12px;border:0;border-radius:999px;padding:12px;
- background:var(--buy);color:var(--buy-ink);font:600 17px/1.2 var(--ff);cursor:pointer;
- --press:.985}
+.swx-go{display:flex;align-items:center;justify-content:center;width:100%;min-height:50px;margin-top:16px;
+ border:0;border-radius:999px;padding:0 16px;
+ background:var(--buy);color:var(--buy-ink);font:600 17px/1.2 var(--ff);letter-spacing:-.02em;cursor:pointer;
+ -webkit-tap-highlight-color:transparent;transition:transform .2s var(--spring,ease)}
 .swx-go.sell{background:#c2410c}
 .swx-go:hover:not(:disabled){filter:brightness(1.1)}
 .swx-go:disabled{opacity:.55;cursor:not-allowed}
@@ -116,9 +118,9 @@
  * themes and outrank the primary at 13:1 against its own panel. The seg control
  * above documents that same mistake being taken back out.
  */
-.swx-act{display:flex;gap:8px;align-items:stretch}
+.swx-act{display:flex;gap:10px;align-items:stretch}
 .swx-act>*{flex:1 1 0;width:auto;min-width:0}
-.swx-act .swx-2nd{margin-top:12px;border-color:var(--f)}
+.swx-act .swx-2nd{margin-top:16px}
 /*
  * Confirmation screen. The two panes and the arrow are the form's, restyled
  * only where they stop being interactive, so the trade does not appear to
@@ -130,25 +132,26 @@
  * amount above it, and quiet — it is the reading you check rather than the one
  * you take in.
  */
-.swx-sub{margin-top:2px;text-align:right;font-size:12px;color:var(--f);
+.swx-sub{margin-top:2px;text-align:right;font-size:13px;color:var(--f);
  font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
-.swx-sum{margin-top:12px;border-top:1px solid var(--b);padding-top:8px}
-.swx-row{display:flex;align-items:baseline;justify-content:space-between;
- gap:14px;padding:4px 0;font-size:12.5px}
+.swx-sum{margin-top:12px;padding:4px 16px;border-radius:18px;background:var(--wash)}
+.swx-row{position:relative;display:flex;align-items:baseline;justify-content:space-between;
+ gap:14px;padding:11px 0;font-size:15px;line-height:20px}
 .swx-k{color:var(--f);flex:0 0 auto}
 .swx-v{color:var(--t);text-align:right;min-width:0;overflow-wrap:anywhere;
  font-variant-numeric:tabular-nums}
 .swx-v.warn{color:var(--dn);font-weight:600}
-.swx-2nd{width:100%;margin-top:8px;border:1px solid var(--b);border-radius:999px;
- padding:10px;background:none;color:var(--t);font:500 14px/1.2 var(--ff);
- cursor:pointer;--press:.985}
-.swx-2nd:hover:not(:disabled){background:var(--wash)}
+.swx-2nd{display:flex;align-items:center;justify-content:center;width:100%;min-height:50px;margin-top:10px;
+ border:0;border-radius:999px;padding:0 16px;background:var(--wash);color:var(--t);
+ font:600 17px/1.2 var(--ff);letter-spacing:-.02em;cursor:pointer;
+ -webkit-tap-highlight-color:transparent;transition:transform .2s var(--spring,ease)}
+.swx-2nd:hover:not(:disabled){background:var(--wash2)}
 .swx-2nd:disabled{opacity:.55;cursor:not-allowed}
 /* The password that adds a passkey to an account with none to trade with. */
-.swx-pw{display:block;width:100%;margin-top:10px;padding:10px 12px;border:0;
- border-radius:12px;background:var(--wash);color:var(--t);font:15px/1.3 var(--ff);outline:0}
+.swx-pw{display:block;box-sizing:border-box;width:100%;min-height:50px;margin-top:10px;padding:0 16px;border:0;
+ border-radius:14px;background:var(--wash);color:var(--t);font:17px/1.3 var(--ff);outline:0}
 .swx-pw:focus{background:var(--wash2)}
-.swx-acct{font-size:12px;color:var(--f);font-variant-numeric:tabular-nums}
+.swx-acct{font-size:13px;color:var(--f);font-variant-numeric:tabular-nums}
 /*
  * The hand-off screen — a QR on a desktop, wallet links on a phone.
  *
@@ -162,23 +165,23 @@
  * which is the one thing crispEdges cannot fix. max-width keeps it inside the
  * bottom sheet on a narrow phone, where it is decoration rather than the point.
  */
-.swx-lnk{display:block;width:100%;margin-top:8px;border:1px solid var(--b);
- border-radius:999px;padding:10px;background:none;color:var(--t);
- font:500 14px/1.2 var(--ff);text-align:center;text-decoration:none;--press:.985}
-.swx-lnk:hover{background:var(--wash);text-decoration:none}
+.swx-lnk{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%;min-height:50px;
+ margin-top:10px;border:0;border-radius:999px;padding:0 16px;background:var(--wash);color:var(--t);
+ font:600 17px/1.2 var(--ff);text-align:center;text-decoration:none}
+.swx-lnk:hover{background:var(--wash2);text-decoration:none}
 .swx-qr{width:220px;max-width:100%;margin:14px auto 0}
-.swx-qr svg{display:block;width:100%;height:auto;border-radius:6px}
+.swx-qr svg{display:block;width:100%;height:auto;border-radius:12px}
 /*
  * Quick sizes, inside the pane the amount is typed into — so they read as part
  * of the field rather than a second control beside it. The chosen one takes
  * the seg control's inverted fill, the one "selected" this dialog already uses.
  */
-.swx-pct{display:flex;justify-content:flex-end;gap:6px;margin-top:8px}
-.swx-pct button{border:1px solid transparent;background:var(--wash);border-radius:999px;
- padding:3px 10px;font:500 12px/1.3 var(--ff);color:var(--m);cursor:pointer;
+.swx-pct{display:flex;justify-content:flex-end;gap:6px;margin-top:10px}
+.swx-pct button{border:0;background:var(--ios-seg,#fff);border-radius:999px;min-height:30px;
+ padding:0 12px;font:600 13px/1.3 var(--ff);color:var(--t);cursor:pointer;
  font-variant-numeric:tabular-nums}
 .swx-pct button:hover:not(:disabled):not(.on){background:var(--wash2);color:var(--t)}
-.swx-pct button.on{background:var(--t);border-color:var(--t);color:var(--bg)}
+.swx-pct button.on{background:var(--t);color:var(--bg)}
 .swx-pct button:disabled{opacity:.45;cursor:default}
 /*
  * The trade landed: one big green disc with its tick (client/ic-done.svg),
@@ -190,8 +193,16 @@
  filter:drop-shadow(0 2px 3px rgb(0 0 0/.22));
  animation:swx-pop .38s cubic-bezier(.2,1.4,.4,1) both}
 @keyframes swx-pop{from{transform:scale(.4);opacity:0}}
-.swx-done-t{margin-top:16px;font:600 18px/1.3 var(--ff);color:var(--t)}
-.swx-done-s{margin-top:4px;font-size:13px;color:var(--f);
+.swx-done-t{margin-top:16px;font:600 20px/1.3 var(--ff);letter-spacing:-.02em;color:var(--t)}
+.swx-done-s{margin-top:6px;font-size:15px;line-height:20px;color:var(--m);
  font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .swx-done-s a{color:var(--a);text-decoration:underline}
 @media (prefers-reduced-motion:reduce){.swx-check{animation:none}}
+
+/* iOS's raised segment: white on the light track, a lighter grey on the dark one. */
+@media (prefers-color-scheme:dark){.swx-seg,.swx-lock,.swx-pct{--ios-seg:#636366}}
+/* A hairline between the summary's rows, from its text, as a grouped list draws one. */
+.swx-row+.swx-row::before{content:"";position:absolute;top:0;right:0;left:0;height:1px;
+ background:var(--sep);transform:scaleY(.5);transform-origin:top}
+.swx-k,.swx-v{font-size:15px}
+.swx-go:active:not(:disabled),.swx-2nd:active:not(:disabled),.swx-lnk:active{transform:scale(.97);transition-duration:.05s}

@@ -455,6 +455,10 @@ a.sl-go {
   box-shadow: 0 30px 60px rgb(0 0 0 / 0.4);
 }
 
+.sl-sheet.ios-sh {
+  background: var(--sheet);
+}
+
 .sl-sheet::backdrop {
   background: rgb(0 0 0 / 0.45);
   -webkit-backdrop-filter: blur(6px);

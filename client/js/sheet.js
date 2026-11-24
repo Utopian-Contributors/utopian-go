@@ -1,41 +1,68 @@
 /**
- * What every native <dialog> on the site shares with the trade dialog in
- * ui.js: a round X in the top right corner, a tap outside that dismisses it,
- * and on a phone a sheet docked to the bottom edge of the screen.
+ * What every native <dialog> on the site shares with the money dialogs in
+ * ui.js: iOS's sheet (js/ios-sheet.js). A navigation bar with the title in
+ * the middle and a grey close button, a tap outside that dismisses it, and on
+ * a phone a sheet that rises from the bottom and goes back down when it is
+ * dragged by its bar.
  *
- * The home-screen app runs to that edge, the home indicator over it, so there
- * the sheet ends in 24px of its own colour, the same the social tab bar keeps.
- * A transparent border rather than padding, which each dialog sets its own of.
+ * However it is closed (the X, a drag, the backdrop, Escape, or a caller's
+ * own dialog.close()), it slides away first and closes after, so the `close`
+ * event still means the dialog is gone.
  */
-import { el } from "./dom.js";
-import { X_ICON, injectStyles } from "./ui.js";
+import { frame, hold, iosStyles, leave } from "./ios-sheet.js";
 
-const CSS = `
-dialog.dlg{position:fixed}
-.dlg-x{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:30px;height:30px;
- padding:0;border:0;border-radius:50%;background:var(--wash);color:var(--t);cursor:pointer}
-.dlg-x:hover{background:var(--wash2)}
-.dlg-x .mk{width:13px;height:13px}
-dialog.dlg h2{margin-right:36px}
-@media (max-width:620px){dialog.dlg{width:100%;max-width:none;max-height:calc(100% - 24px);
- margin:auto 0 0;border-bottom:0;border-radius:24px 24px 0 0}
- dialog.dlg::before{content:"";position:absolute;top:6px;left:50%;width:36px;height:5px;margin-left:-18px;
- border-radius:3px;background:var(--sep,rgba(60,60,67,.3))}}
-@media (max-width:620px) and (display-mode:standalone){dialog.dlg{border-bottom:24px solid transparent}}
-`;
+const native = {
+  close: HTMLDialogElement.prototype.close,
+  showModal: HTMLDialogElement.prototype.showModal,
+};
 
 /**
- * Give a <dialog> the X and the outside tap. Call once, before showModal().
+ * Frame a <dialog> as an iOS sheet. Call once, before showModal(). Its first
+ * <h2> becomes the bar's title.
  *
  * @param {HTMLDialogElement} dialog
+ * @param {{lead?: HTMLElement | null, close?: boolean, title?: string}} [opts]
+ *   `close: false` for a step that must be finished: no X, no drag, no
+ *   outside tap, and Escape does nothing.
  */
-export function dismissible(dialog) {
-  injectStyles("dlg-css", CSS);
+export function sheetDialog(dialog, opts = {}) {
+  iosStyles();
   dialog.classList.add("dlg");
-  const x = el("button", { type: "button", class: "dlg-x", "aria-label": "Close", onclick: () => dialog.close() });
-  x.innerHTML = X_ICON;
-  // Last, so showModal() still focuses the dialog's own first control.
-  dialog.append(x);
+  const closable = opts.close !== false;
+  /** @type {(() => void) | null} */
+  let release = null;
+  let leaving = false;
+
+  dialog.showModal = function () {
+    native.showModal.call(dialog);
+    release ??= hold();
+    // The bar comes first, so the browser would put focus on its X; the
+    // dialog's own first control is what it focused before the bar was there.
+    const first = /** @type {HTMLElement | null} */ (
+      parts.body.querySelector("input:not([disabled]):not([hidden]), select, textarea, button:not([disabled]), a[href]")
+    );
+    first?.focus({ preventScroll: true });
+  };
+  dialog.close = function (value) {
+    if (!dialog.open || leaving) return;
+    leaving = true;
+    leave(dialog).then(() => {
+      leaving = false;
+      native.close.call(dialog, value);
+    });
+  };
+  dialog.addEventListener("close", () => {
+    release?.();
+    release = null;
+  });
+  // Escape: the same slide away as the X, or nothing for a step that must be finished.
+  dialog.addEventListener("cancel", (e) => {
+    e.preventDefault();
+    if (closable) dialog.close();
+  });
+
+  const parts = frame(dialog, { ...opts, onDismiss: () => dialog.close() });
+  if (!closable) return parts;
 
   // A tap on the backdrop lands on the dialog itself, outside its box. Both
   // ends of the press must be out there: a text selection dragged past the
@@ -51,4 +78,16 @@ export function dismissible(dialog) {
     if (downOutside && outside(e)) dialog.close();
     downOutside = false;
   });
+  return parts;
+}
+
+/**
+ * Give a <dialog> the iOS sheet, its close button and the outside tap. Call
+ * once, before showModal().
+ *
+ * @param {HTMLDialogElement} dialog
+ * @param {{lead?: HTMLElement | null}} [opts]
+ */
+export function dismissible(dialog, opts) {
+  return sheetDialog(dialog, opts);
 }

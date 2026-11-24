@@ -9,7 +9,8 @@ import { load } from "../js/lazy.js";
 import { amount } from "../js/num.js";
 import { assertion, why } from "../js/passkey.js";
 import { confirmSend } from "../js/sendconfirm.js";
-import { dialog } from "../js/ui.js";
+import { dialog, injectStyles } from "../js/ui.js";
+import CSS from "./keys.css";
 
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 /** Left behind on a Max SOL send: the account's own rent minimum and the fee. */
@@ -28,6 +29,7 @@ async function send(path, body) {
 
 /** A <dialog> that removes itself, and whatever it showed, when closed. */
 function modal(title, ...kids) {
+  injectStyles("ks-css", CSS);
   const dialog = el(
     "dialog",
     { class: "ks", "aria-label": title },
@@ -67,7 +69,7 @@ function phrase(me) {
   const err = el("p", { class: "ks-err", role: "alert" });
   const out = el("div", {});
   const key = me.passkey
-    ? el("button", { type: "button", class: "wl-cta", text: "Show with passkey", onclick: viaPasskey })
+    ? el("button", { type: "button", class: "ios-btn", text: "Show with passkey", onclick: viaPasskey })
     : el("p", { class: "ks-n" }, "Your recovery phrase is behind a passkey. ", el("a", { href: "/social/edit", text: "Add one in Edit profile" }), ".");
 
   function show(words) {
@@ -106,8 +108,8 @@ function receive(me) {
   const code = el("div", { class: "ks-qr", role: "img", "aria-label": "QR code of this wallet's address" });
   const copy = el("button", {
     type: "button",
-    class: "wl-cta",
-    text: "Copy address",
+    class: "ios-btn",
+    text: "Copy Address",
     onclick: async () => {
       try {
         await navigator.clipboard.writeText(me.address);
@@ -119,7 +121,7 @@ function receive(me) {
   });
   modal(
     "Receive",
-    el("p", { class: "ks-n", text: "Send SOL or any Solana token to this address." }),
+    el("p", { class: "ks-n ks-c", text: "Send SOL or any Solana token to this address." }),
     code,
     el("p", { class: "ks-a", text: me.address }),
     copy,
@@ -152,17 +154,19 @@ function transfer(me, holdings, onSent) {
     required: true,
     autocomplete: "off",
     spellcheck: "false",
-    placeholder: "Recipient's Solana address",
+    placeholder: "Solana address",
+    autocapitalize: "off",
+    autocorrect: "off",
     maxlength: "44",
   });
-  const amount = el("input", { id: "ks-am", inputmode: "decimal", required: true, autocomplete: "off", placeholder: "0.0" });
-  const go = el("button", { type: "submit", class: "wl-cta", text: "Send" });
+  const amount = el("input", { id: "ks-am", inputmode: "decimal", enterkeyhint: "done", required: true, autocomplete: "off", placeholder: "0.0" });
+  const go = el("button", { type: "submit", class: "ios-btn", text: "Send" });
   const held = () => holdings[Number(pick.value)];
 
   const paste = navigator.clipboard?.readText
     ? el("button", {
         type: "button",
-        class: "ks-side",
+        class: "ios-mini",
         text: "Paste",
         onclick: async () => {
           try {
@@ -176,7 +180,7 @@ function transfer(me, holdings, onSent) {
     : null;
   const max = el("button", {
     type: "button",
-    class: "ks-side",
+    class: "ios-mini",
     text: "Max",
     onclick: () => {
       const h = held();
@@ -195,16 +199,18 @@ function transfer(me, holdings, onSent) {
   const form = el(
     "form",
     { class: "ks-f" },
-    el("label", { for: "ks-t", text: "Token" }),
-    pick,
-    el("label", { for: "ks-to", text: "To" }),
-    el("div", { class: "ks-row" }, to, paste),
-    el("label", { for: "ks-am", text: "Amount" }),
-    el("div", { class: "ks-row" }, amount, max),
+    el(
+      "div",
+      { class: "ios-gp" },
+      el("div", { class: "ios-fr" }, el("label", { for: "ks-t", text: "Token" }), pick),
+      el("div", { class: "ios-fr" }, el("label", { for: "ks-to", text: "To" }), to, paste),
+      el("div", { class: "ios-fr" }, el("label", { for: "ks-am", text: "Amount" }), amount, max),
+    ),
     go,
   );
   for (const input of [pick, to, amount]) input.addEventListener("input", label);
 
+  injectStyles("ks-css", CSS);
   const { body, close, setTitle } = dialog("Send");
 
   /** The form again, as it was left: Back from the confirmation. */

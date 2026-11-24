@@ -1,5 +1,6 @@
 /**
  * The modal, and the wallet chooser that is the only thing some of them hold.
+ * Every one is drawn as iOS's sheet (js/ios-sheet.js).
  *
  * Lives under js/ rather than swap/ because two different bundles open one: the
  * buy panel, and the Login button in the header. They are the same dialog on
@@ -12,54 +13,32 @@
  * page's existing custom properties, so light and dark come for free.
  */
 import { el } from "./dom.js";
+import { frame, hold, iosStyles, leave } from "./ios-sheet.js";
 
 /**
- * The dialog shell, the chooser, and the note line under it — everything
- * shared by every dialog this app opens. The trade form's own controls are a
- * separate sheet in swap/ui.js, so the login bundle does not carry the styling
- * for an amount field it will never render.
+ * The wallet chooser and the note line under a form: what every money dialog
+ * shares inside its sheet. The sheet itself is js/ios-sheet.js. The trade
+ * form's own controls are a separate sheet in swap/form.css, so the login
+ * bundle does not carry the styling for an amount field it will never render.
  */
 const CSS = `
-.swx{position:fixed;inset:0;z-index:60;display:flex;align-items:center;
- justify-content:center;padding:16px}
-.swx-bd{position:absolute;inset:0;background:rgba(0,0,0,.55);
- backdrop-filter:blur(2px);animation:swx-in .15s both}
-.swx-d{position:relative;width:100%;max-width:400px;background:var(--pn);
- border:1px solid var(--b);border-radius:24px;padding:18px;
- box-shadow:0 16px 48px rgba(0,0,0,.35);animation:swx-up .18s both}
-@keyframes swx-in{from{opacity:0}}
-@keyframes swx-up{from{opacity:0;transform:translateY(8px)}}
-.swx-h{display:flex;align-items:center;justify-content:space-between;
- margin-bottom:14px}
-.swx-t{font-size:15px;font-weight:600;color:var(--t)}
-.swx-x{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;
- border-radius:50%;background:var(--wash);color:var(--t);font-size:20px;line-height:1;cursor:pointer}
-.swx-x:hover{background:var(--wash2)}
-.swx-x .mk{width:13px;height:13px}
-.swx-h .swx-x{margin:-4px -4px -4px 0}
 .swx-lbl{display:flex;justify-content:space-between;align-items:center;
- font-size:12px;color:var(--f);margin-bottom:6px}
-
-.swx-note{margin-top:9px;font-size:12px;color:var(--f);min-height:16px;
+ font-size:13px;color:var(--f);margin-bottom:6px}
+.swx-note{margin-top:10px;font-size:13px;line-height:18px;color:var(--f);min-height:18px;
  text-align:center}
 .swx-note.err{color:var(--dn)}
 .swx-note.ok{color:var(--go)}
 .swx-note a{color:var(--a);text-decoration:underline}
-
-.swx-w{display:flex;flex-direction:column;gap:8px}
-.swx-w button{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;
- border:0;border-radius:16px;background:var(--wash);cursor:pointer;
- font:500 14px/1.2 var(--ff);color:var(--t);--press:.985}
-.swx-w button:hover:not(:disabled){background:var(--wash2)}
+.swx-w{display:flex;flex-direction:column;border-radius:18px;background:var(--wash);overflow:hidden}
+.swx-w button{position:relative;display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:0 16px;
+ border:0;background:none;cursor:pointer;font:400 17px/22px var(--ff);color:var(--t);text-align:left;
+ -webkit-tap-highlight-color:transparent}
+.swx-w button+button::before{content:"";position:absolute;top:0;right:0;left:58px;height:1px;
+ background:var(--sep);transform:scaleY(.5);transform-origin:top}
+.swx-w button:hover:not(:disabled),.swx-w button:active:not(:disabled){background:var(--wash)}
 .swx-w button:disabled{opacity:.6;cursor:progress}
-.swx-w img{width:22px;height:22px;border-radius:6px}
-@media (max-width:620px){.swx{align-items:flex-end;padding:0}
- .swx-d{max-width:none;border-radius:24px 24px 0 0;border-bottom:0}}
-@media (max-width:620px) and (display-mode:standalone){.swx-d{border-bottom:24px solid transparent}}
+.swx-w img{width:30px;height:30px;border-radius:8px}
 `;
-
-/** The close button's x: the app's red one (base.css .mk.ic-close). Static markup, so it goes in as HTML. */
-export const X_ICON = '<i class="mk ic-close" aria-hidden="true"></i>';
 
 /**
  * Add a stylesheet once per page.
@@ -77,61 +56,56 @@ export function injectStyles(id, css) {
 }
 
 /**
- * Mount a modal and return handles to its body plus a closer.
+ * Mount a modal, an iOS sheet (js/ios-sheet.js), and return handles to its
+ * body plus a closer.
  *
- * Escape and backdrop both dismiss, and focus is restored to whatever opened
- * it — a dialog that traps you or loses your place is worse than no dialog.
+ * Escape, the backdrop, the X and a drag down on the bar all dismiss, and
+ * focus is restored to whatever opened it: a dialog that traps you or loses
+ * your place is worse than no dialog. `setLead` puts a Back button (or
+ * anything) at the bar's leading end for a step, and takes it away with null.
  *
  * @param {string} title
  * @param {() => void} [onClose]
  */
 export function dialog(title, onClose) {
+  iosStyles();
   injectStyles("swx-css", CSS);
 
   const opener = document.activeElement;
-  const body = el("div");
+  let closed = false;
+  const release = hold();
   const close = () => {
+    if (closed) return;
+    closed = true;
     document.removeEventListener("keydown", onKey);
-    root.remove();
-    if (opener instanceof HTMLElement) opener.focus();
+    leave(root, panel).then(() => {
+      root.remove();
+      release();
+      if (opener instanceof HTMLElement) opener.focus({ preventScroll: true });
+    });
     onClose?.();
   };
   const onKey = (e) => {
     if (e.key === "Escape") close();
   };
 
-  const closeBtn = el("button", {
-    class: "swx-x",
-    type: "button",
-    "aria-label": "Close",
-    onclick: close,
-  });
-  // Drawn, not the × character, which sits below the middle of its line box.
-  closeBtn.innerHTML = X_ICON;
-
-  const heading = el("div", { class: "swx-t", text: title });
-
-  const panel = el(
-    "div",
-    { class: "swx-d", role: "document" },
-    el("div", { class: "swx-h" }, heading, closeBtn),
-    body,
-  );
+  const panel = el("div", { class: "swx-d", role: "document" });
+  const parts = frame(panel, { title, onDismiss: close });
 
   const root = el(
     "div",
-    { class: "swx", role: "dialog", "aria-modal": "true", "aria-label": title },
-    el("div", { class: "swx-bd", onclick: close }),
+    { class: "swx ios-ov", role: "dialog", "aria-modal": "true", "aria-label": title },
+    el("div", { class: "swx-bd ios-bg", onclick: close }),
     panel,
   );
 
-  /** Retitle in place — the dialog's screens are steps, not separate dialogs. */
+  /** Retitle in place: the dialog's screens are steps, not separate dialogs. */
   const setTitle = (next) => {
-    heading.textContent = next;
+    parts.setTitle(next);
     root.setAttribute("aria-label", next);
   };
 
   document.addEventListener("keydown", onKey);
   document.body.append(root);
-  return { body, close, panel, setTitle };
+  return { body: parts.body, close, panel, setTitle, setLead: parts.setLead };
 }
