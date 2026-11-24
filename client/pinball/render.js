@@ -1302,6 +1302,46 @@ function ball(b) {
   g.fill();
 }
 
+/**
+ * The balls left, the one in play counted: 3 before a game, none after.
+ * They are drawn as spares resting on the apron right of its name, a dimple
+ * for each one played and the one in play; six at most.
+ */
+export function ballsLeft() {
+  return game.state === "play" ? game.left + 1 : game.state === "idle" ? 3 : 0;
+}
+
+function spareBalls() {
+  // The ball in play is on the table, not here: its dimple stands empty.
+  const left = Math.min(game.state === "play" ? game.left : ballsLeft(), 6);
+  const slots = Math.max(3, left + (game.state === "play" ? 1 : 0));
+  // From the apron's right end inward: the balls played went to the plunger from the right, so the spares sit left.
+  const step = slots > 3 ? 13 : 17;
+  for (let i = 0; i < slots; i++) {
+    const [cx, cy, k] = P(LANE_X - 18 - i * step, H + 10, 22);
+    const r = 6 * k;
+    g.save();
+    g.translate(cx, cy);
+    g.scale(1, 0.62);
+    // The dimple it rests in.
+    g.fillStyle = "rgba(0,0,0,0.45)";
+    g.beginPath();
+    g.arc(0, r * 0.35, r * 1.05, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+    if (i < slots - left) continue;
+    const steel = g.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.05, cx, cy, r);
+    steel.addColorStop(0, "#ffffff");
+    steel.addColorStop(0.3, "#d9dfe2");
+    steel.addColorStop(0.7, "#6f7b80");
+    steel.addColorStop(1, "#1a2024");
+    g.fillStyle = steel;
+    g.beginPath();
+    g.arc(cx, cy - r * 0.2, r, 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
 /* ---------- The renderer ---------- */
 
 let width = 0;
@@ -1388,4 +1428,5 @@ export function draw(ctx) {
   g.drawImage(rampLayer, 0, 0);
   for (const b of balls) if (b.ramp >= 0) ball(b);
   g.drawImage(front, 0, 0);
+  spareBalls();
 }

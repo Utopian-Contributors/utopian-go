@@ -1,6 +1,6 @@
 /**
- * Pinball: the page around the table. The header (Back, the balls left, the
- * score), the two flipper buttons, the keys, sound, messages over the table,
+ * Pinball: the page around the table. The header (Back, the points to the
+ * next mark, the score), the two flipper buttons, the keys, sound, messages over the table,
  * and the scores. It is offline first: once loaded it plays with no network,
  * and its scores live on the device (../games/scores.js). Signed in and
  * online, a game is played in sync with the server (../games/live.js), which
@@ -18,7 +18,7 @@ import { noZoom } from "../js/device.js";
 import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
 import { onWorn, worn } from "../games/skin.js";
-import { ASPECT, draw, fit, wear } from "./render.js";
+import { ASPECT, ballsLeft, draw, fit, wear } from "./render.js";
 import { flip, game, newGame, onEvents, pull, update, waiting } from "./table.js";
 
 /** @param {string} id */
@@ -27,7 +27,6 @@ const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const canvas = /** @type {HTMLCanvasElement} */ ($("pb-c"));
 const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
 const box = $("pb-t");
-const ballsOut = $("pb-bn");
 const multOut = $("pb-x");
 const scoreOut = $("pb-sc");
 /** The score, large, beside the board on a desktop, and what makes it jump. */
@@ -79,10 +78,9 @@ function paintCounters() {
   if (game.score > painted) jolt(game.score - painted);
   painted = game.score;
   board.score(game.score);
-  // This ball and those still to come, as dots.
-  const left = game.state === "play" ? game.left + 1 : game.state === "idle" ? 3 : 0;
-  ballsOut.textContent = "●".repeat(Math.min(left, 6)) || "–";
-  ballsOut.setAttribute("aria-label", `${left} ${left === 1 ? "ball" : "balls"} left`);
+  // The balls left are drawn on the apron (render.js); said here.
+  const left = ballsLeft();
+  canvas.setAttribute("aria-label", `Pinball table, ${left} ${left === 1 ? "ball" : "balls"} left`);
   multOut.textContent = `×${MULTS[game.mult]}`;
   multOut.hidden = game.mult === 0;
 }

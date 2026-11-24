@@ -126,8 +126,9 @@ a game's next bundle replaces its last instead. Each game registers the worker t
 (`client/games/offline.js`).
 
 **Pinball** is the first game, and like the list a
-page anyone may open signed out. Its Back goes where the visitor came from, else to `/games`. The page is flat, in the app's palette: a header with Back,
-the balls left and the score, the table edge to edge under it, and two flat buttons along the
+page anyone may open signed out. Its Back goes where the visitor came from, else to `/games`. The page is flat, in the app's palette: a header with Back
+and the score, the points to the next mark under it, the table edge to edge under it (the balls left
+resting on its apron, right of its name, an empty dimple for each one played and the one in play), and two flat buttons along the
 bottom edge (or Z and /); either button also pulls and lets go of the plunger. On a wide screen
 the table is as tall as the window, with the leaderboard at its right; on a phone the
 leaderboard shows over the table between games. Only the table is drawn as a solid thing: a
