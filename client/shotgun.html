@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-sec="games">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Shotgun</title>
+    <link rel="icon" href="/ic-games.png" sizes="64x64" type="image/png" />
+    <link rel="icon" href="/ic-games.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="UtopianGO" />
+    <meta name="application-name" content="UtopianGO" />
+    <meta name="theme-color" content="#bd332d" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#6e1b17" media="(prefers-color-scheme: dark)" />
+    <link rel="stylesheet" href="/shotgun.css" />
+  </head>
+  <body class="sg">
+    <!-- Back, and the credits this device holds: the game's one count. -->
+    <header class="sg-hd">
+      <button type="button" class="sg-back" id="sg-bk">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Back
+      </button>
+      <span class="sg-cr"><output id="sg-cr">0</output> credits</span>
+    </header>
+
+    <main class="sg-main">
+      <!-- The field. shotgun/main.js sizes the canvas to this box. -->
+      <div class="sg-tbl" id="sg-t">
+        <canvas id="sg-c" aria-label="Shotgun field"></canvas>
+        <p class="sg-msg" id="sg-msg" role="status" aria-live="polite" hidden></p>
+        <!-- A turret taken from a crate: this, then a tap on the field, puts it down. -->
+        <button type="button" class="sg-place" id="sg-pl" hidden>Place turret</button>
+
+        <!-- Between games, over the field: the wheel, what it has won for the
+             next game, and Play. -->
+        <section class="sg-panel" aria-label="The wheel">
+          <div class="sg-wheel">
+            <canvas id="sg-wh" aria-hidden="true"></canvas>
+            <i class="sg-ptr" aria-hidden="true"></i>
+          </div>
+          <p class="sg-nt" id="sg-nt" role="status" aria-live="polite"></p>
+          <ul class="sg-kit" id="sg-kit" aria-label="For the next game"></ul>
+          <div class="sg-btns">
+            <button type="button" class="sg-spin" id="sg-sp">Spin · free</button>
+            <button type="button" class="sg-go" id="sg-go">Play</button>
+          </div>
+          <p class="sg-bs" id="sg-bs"></p>
+        </section>
+      </div>
+    </main>
+
+    <script src="/shotgun.js" defer></script>
+  </body>
+</html>

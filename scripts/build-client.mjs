@@ -23,7 +23,8 @@
  *   would cost more than the whole page weighs. Social is a third, for the
  *   same reason, and its document is capped at 14KB gzip. The login page is
  *   the fourth, and the smallest. Games, the list of games, is the fifth,
- *   Pinball the sixth, Snake the seventh, and Fruit Slots the eighth.
+ *   Pinball the sixth, Snake the seventh, Fruit Slots the eighth, and
+ *   Shotgun the ninth.
  */
 import * as esbuild from "esbuild";
 import { minify as minifyHtml } from "html-minifier-terser";
@@ -159,6 +160,11 @@ const PAGES = [
     parallel: [{ file: "slots.js", gzip: FLIGHT }],
   },
   {
+    name: "Shotgun",
+    doc: { file: "shotgun.html", gzip: FLIGHT },
+    parallel: [{ file: "shotgun.js", gzip: FLIGHT }],
+  },
+  {
     name: "Login",
     // The server renders a destination and two ?next= into it (src/pages.ts
     // renderAuth): a few dozen bytes, against a page that weighs a third of this.
@@ -206,7 +212,7 @@ const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
  * public/ waiting for something to serve it by mistake. The wallet page has no
  * per-request content at all, so for it the file *is* the response.
  */
-const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "games.html", "pinball.html", "snake.html", "slots.html"];
+const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "games.html", "pinball.html", "snake.html", "slots.html", "shotgun.html"];
 
 const watch = process.argv.includes("--watch");
 
@@ -505,6 +511,13 @@ const slotsOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "slots", "main.js")],
   outfile: path.join(outDir, "slots.js"),
+};
+
+/** Shotgun's bundle: the wheel, the zombie waves, and the page around them; all of it on the device. */
+const shotgunOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "shotgun", "main.js")],
+  outfile: path.join(outDir, "shotgun.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -1074,6 +1087,15 @@ async function buildSlotsHtml(hash) {
   writeFileSync(path.join(outDir, "slots.html"), await minifyDoc(raw));
 }
 
+/** Shotgun's document: like snake's, its own sheet inlined and nothing else. */
+async function buildShotgunHtml(hash) {
+  let raw = readFileSync(path.join(clientDir, "shotgun.html"), "utf8");
+  const css = await minifyCss(readFileSync(path.join(clientDir, "shotgun.css"), "utf8"));
+  raw = replaceOnce(raw, /<link rel="stylesheet" href="\/shotgun\.css"\s*\/?>/, `<style>${css}</style>`, "shotgun stylesheet link");
+  raw = replaceOnce(raw, /src="\/shotgun\.js"/, `src="/shotgun.js?v=${hash("shotgun.js")}"`, "shotgun.js src");
+  writeFileSync(path.join(outDir, "shotgun.html"), await minifyDoc(raw));
+}
+
 /** Snake's document: like pinball's, its own sheet inlined and nothing else. */
 async function buildSnakeHtml(hash) {
   let raw = readFileSync(path.join(clientDir, "snake.html"), "utf8");
@@ -1214,6 +1236,7 @@ async function buildAssets() {
     esbuild.build(pinballOpts),
     esbuild.build(snakeOpts),
     esbuild.build(slotsOpts),
+    esbuild.build(shotgunOpts),
     buildCss("app.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
@@ -1237,6 +1260,7 @@ async function buildAssets() {
     buildPinballHtml(hash),
     buildSnakeHtml(hash),
     buildSlotsHtml(hash),
+    buildShotgunHtml(hash),
   ]);
   buildLegal();
   precompress();

@@ -78,6 +78,7 @@ Anything that is only needed after a click is a lazy bundle.
 | Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |
 | Snake | `/snake` | `snake.html` | `snake.js` | — |
 | Fruit Slots | `/slots` | `slots.html` | `slots.js` | — |
+| Shotgun | `/shotgun` | `shotgun.html` | `shotgun.js` | — |
 
 **Each section is its home tile's colour.** The app is iOS's system palette, and the pages a
 home tile opens wear that tile's colour: the wallet brown, Social blue, the games list and every
@@ -267,6 +268,44 @@ POST /api/social/slots/buy {status, for?} → {game, gift, statuses}
 POST /api/social/shop/prize/<id>/unlock → {pack, owned, prizes}
 POST /api/social/shop/prize/<id>/give {to} → {to, prizes}
 ```
+
+**Shotgun** is the fourth game: a wheel of fortune, then zombie waves. It is played entirely
+on the device, offline first like the others, and needs no account; nothing of it is asked of
+the API, and it has no shared board. Its credits are its own, not Fruit Slots'.
+
+- **The wheel.** Twelve equal segments: three guns to start the next game with (Shotgun, SMG,
+  Rifle, each with twice a crate's ammo; one spin in four), six of credits paid at once (+5,
+  +5, +10, +10, +20, +40), and three multipliers on the credits the next game earns (×1.5, ×2, ×3, multiplying
+  one another). The first spin before each game is free; each spin after it costs twice the
+  last (20, 40, 80… credits). The guns and multipliers won are the **kit**, spent on the next game,
+  and the prices start over then.
+- **The waves.** A grass field with five explosive barrels and, in its middle, a square stone
+  fort (36 units a side, the field's short side being 100) with an 11-unit doorway in the
+  middle of each wall. The player starts inside it. Nothing walks or shoots through a wall:
+  a zombie with a wall in its way heads for the doorway that makes the shortest way round,
+  then through it. Barrels are never laid in front of a doorway. They
+  walk (WASD or the arrows on a desktop; on a touch screen, a thumb-stick wherever a thumb goes
+  down on the field's left two-fifths) and shoot where they aim (the mouse held down, or a
+  finger held anywhere else). Zombies come in from the edges, 5 + 3 per wave of them, faster
+  each wave, and bite on reaching the player (100 health). A shot barrel blows up everything
+  within its blast, the barrels near it a beat later, and the player too if they stand close;
+  the barrels are laid again each wave. From the second wave, gun crates drop now and then,
+  taken by shooting one or walking over it; a gun out of ammo goes back to the pistol. From
+  the third wave a share of each wave is **blue** (15% more each wave, at most three in four):
+  bigger and with stamina growing with the waves (5 hits at the third, 12 by the fifteenth).
+- **Sentry turrets.** One crate in four holds a turret instead of a gun. Taken (shot or walked
+  over), it is carried, two at most, until placed: Place turret (or E on a desktop), then a
+  press on the field puts it there, with a see-through preview of it and its reach (34 units),
+  red where it cannot stand (walls, barrels, crates, another turret, off the field); Esc or
+  Cancel puts it away. A placed turret turns to the nearest zombie in reach it can see past the
+  walls and fires once facing it, a round every 0.32 s; its rounds are for zombies only, never
+  a barrel or a crate, and its kills pay credits like the player's. After 60 rounds it falls
+  apart. At most three stand at once; a fourth replaces the oldest.
+- **Credits, the one count.** There are no points: the header shows only credits, the wheel
+  pays and costs them, and a game earns them. A zombie is 1 credit, a blue one 3, a cleared
+  wave n is n. A game's credits are multiplied by the kit's multiplier and banked when the
+  zombies win. The device keeps the credits, the kit, the most one game has earned and the
+  best wave (`localStorage` `ug.sg`).
 
 Every page wears the same header as search: the wordmark, the search field, and the
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet

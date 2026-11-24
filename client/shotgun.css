@@ -1,0 +1,337 @@
+/*
+ * Shotgun: the page is the Games section's red, as snake.css draws it; the
+ * field is grass (shotgun/game.js), the same after dark. Between games the
+ * wheel sits over the field in a sheet. The field takes the pointer, so
+ * nothing on the page scrolls.
+ */
+:root {
+  --bar: #bd332d;
+  --bg: #7e1a17;
+  --t: #ffffff;
+  --f: rgba(255, 255, 255, 0.78);
+  --go: #34c759;
+  --go-on: #45d36a;
+  --sheet: #8a1f1b;
+  --btn: #ad302b;
+  --btn-on: #c93a33;
+  --card: #962421;
+  --line: rgba(255, 255, 255, 0.14);
+  --ff: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bar: #6e1b17;
+    --bg: #240807;
+    --sheet: #2e0b0a;
+    --card: #3a0f0d;
+    --btn: #521714;
+    --btn-on: #6e1b17;
+    --go: #30d158;
+    --go-on: #3fdc66;
+  }
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg);
+  color: var(--t);
+  font: 15px/1.3 var(--ff);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The games list's inset (games.css .gm-hd), so Back stays put going between them. */
+.sg-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: max(8px, env(safe-area-inset-top)) max(16px, (100% - 928px) / 2) 8px;
+  background: var(--bar);
+  box-shadow: 0 0 0 100vmax var(--bar);
+  clip-path: inset(0 -100vmax);
+}
+
+.sg-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 15px 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--card);
+  color: #fff;
+  font: 600 14px var(--ff);
+  cursor: pointer;
+}
+
+.sg-back:active {
+  scale: 0.96;
+}
+
+.sg-cr {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+  margin-left: auto;
+  color: var(--f);
+  font: 600 13px var(--ff);
+  white-space: nowrap;
+}
+
+.sg-cr output {
+  color: #fff;
+  font: 700 22px/1 var(--ff);
+  font-variant-numeric: tabular-nums;
+}
+
+.sg-main {
+  display: flex;
+  min-height: 0;
+  padding: 0 0 max(0px, env(safe-area-inset-bottom));
+}
+
+.sg-tbl {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  max-width: 960px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+#sg-c {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.sg-msg {
+  position: absolute;
+  left: 50%;
+  top: 48px;
+  z-index: 1;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 16, 12, 0.72);
+  color: #fff;
+  font: 600 13px/1.25 var(--ff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* Place turret: over the field's bottom right, clear of the health bar. */
+.sg-place {
+  position: absolute;
+  right: 12px;
+  bottom: 40px;
+  z-index: 1;
+  height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #3b4048;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.18);
+  color: #fff;
+  font: 650 14px var(--ff);
+  cursor: pointer;
+}
+
+.sg-place.on {
+  background: #e5484d;
+}
+
+.sg-place:active {
+  scale: 0.96;
+}
+
+.sg-place[hidden],
+.sg-msg[hidden] {
+  display: none;
+}
+
+/* Between games: the wheel in a sheet over the field. */
+.sg-panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  display: flex;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(320px, calc(100% - 32px));
+  max-height: calc(100% - 24px);
+  padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: 20px;
+  background: var(--sheet);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 30%);
+  transform: translate(-50%, -50%);
+  touch-action: pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+body.sg-on .sg-panel {
+  display: none;
+}
+
+/* While a game is on, the message sits at the top, clear of the HUD's wave pill. */
+body:not(.sg-on) .sg-msg {
+  top: 10px;
+}
+
+.sg-wheel {
+  position: relative;
+  flex: none;
+  width: min(220px, 34vh);
+  aspect-ratio: 1;
+}
+
+#sg-wh {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+  will-change: transform;
+}
+
+/* The pointer, at the top, pointing down into the wheel. */
+.sg-ptr {
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  width: 22px;
+  height: 26px;
+  background: linear-gradient(#fff3c2, #f5b82e);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.4));
+  transform: translateX(-50%);
+}
+
+.sg-nt {
+  min-height: 1.3em;
+  margin: 2px 0 0;
+  text-align: center;
+  font: 600 14px/1.3 var(--ff);
+}
+
+.sg-nt:empty {
+  display: none;
+}
+
+.sg-kit {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sg-kit li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  font: 650 12.5px var(--ff);
+}
+
+.sg-kit li.sg-none {
+  background: none;
+  color: var(--f);
+  font-weight: 500;
+  text-align: center;
+}
+
+.sg-btns {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.sg-btns button {
+  flex: 1;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  font: 650 15px var(--ff);
+  cursor: pointer;
+  transition: scale 0.15s;
+}
+
+.sg-btns button:active:not(:disabled) {
+  scale: 0.97;
+}
+
+.sg-btns button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sg-spin {
+  background: var(--btn);
+  color: #fff;
+}
+
+.sg-spin:hover:not(:disabled) {
+  background: var(--btn-on);
+}
+
+.sg-go {
+  background: var(--go);
+  color: #fff;
+}
+
+.sg-go:hover:not(:disabled) {
+  background: var(--go-on);
+}
+
+.sg-bs {
+  margin: 0;
+  color: var(--f);
+  font: 500 12.5px var(--ff);
+}
+
+.sg-bs:empty {
+  display: none;
+}
+
+@media (min-width: 720px) {
+  .sg-tbl {
+    margin: 12px auto max(12px, env(safe-area-inset-bottom));
+    border-radius: 16px;
+  }
+}
