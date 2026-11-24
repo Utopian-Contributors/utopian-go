@@ -27,15 +27,24 @@
       <h1>Games</h1>
     </header>
 
-    <!-- The games as the home page draws its sections: a tile each in its own
-         colour, its mark large in the corner. Each is its own page, anyone's,
-         signed in or not. games.js keeps the list and every game in it
-         offline (client/sw GAMES, TILE_MARKS). -->
+    <!-- The games laid out as the home page's tiles (#hm-nv): Fruit Slots the
+         tall tile, three rows high, drawn with its reels caught mid-spin;
+         Pinball, drawn with its table, Snake under its apple and Shotgun
+         under a shell stack beside it. Each is its own page, anyone's, signed
+         in or not. games.js keeps the list and every game in it offline
+         (client/sw GAMES, TILE_MARKS). -->
     <main>
       <ul class="gm-list">
+        <li class="gm-tall">
+          <a class="gm-card gm-slots" href="/slots">
+            <img class="gm-shot" src="/game-slots.webp" alt="" width="640" height="607" />
+            <strong>Fruit Slots</strong>
+            <span>Hit 1,000 to win a fruit status</span>
+          </a>
+        </li>
         <li>
           <a class="gm-card gm-pinball" href="/pinball">
-            <img src="/ic-flippers.svg" alt="" width="32" height="32" />
+            <img class="gm-shot" src="/game-pinball.webp" alt="" width="585" height="740" />
             <strong>Pinball</strong>
             <span>Flippers, ramps and multiball</span>
           </a>
@@ -48,10 +57,10 @@
           </a>
         </li>
         <li>
-          <a class="gm-card gm-slots" href="/slots">
-            <img src="/st-cherry.svg" alt="" width="32" height="32" />
-            <strong>Fruit Slots</strong>
-            <span>Hit 1,000 to win a fruit status</span>
+          <a class="gm-card gm-shotgun" href="/shotgun">
+            <img src="/ic-shell.svg" alt="" width="32" height="32" />
+            <strong>Shotgun</strong>
+            <span>Spin the wheel, hold off the waves</span>
           </a>
         </li>
       </ul>

@@ -64,10 +64,10 @@ const SHELLS = ["/", "/social", "/wallet"];
  * network once it has its page and its bundle, so it should not need a first
  * visit either.
  */
-const GAMES = ["/games", "/pinball", "/snake", "/slots"];
+const GAMES = ["/games", "/pinball", "/snake", "/slots", "/shotgun"];
 
-/** The marks the games list's tiles are drawn with (client/games.html). */
-const TILE_MARKS = ["/ic-flippers.svg", "/ic-apple.svg", "/st-cherry.svg"];
+/** The screenshots and the mark the games list's tiles are drawn with (client/games.html). */
+const TILE_MARKS = ["/game-pinball.webp", "/ic-apple.svg", "/game-slots.webp", "/ic-shell.svg"];
 
 /**
  * Whether a page or file is one of the games', which the caches never let go

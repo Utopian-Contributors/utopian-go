@@ -142,12 +142,16 @@ main {
   background: var(--panel);
 }
 
-/* Two to a row on a phone, more as the screen widens. */
+/* The home page's grid (app.css #hm-nv), as wide as home's column (584px):
+   two columns of 104px rows, Fruit Slots spanning three on the left,
+   Pinball, Snake and Shotgun one each on the right. */
 .gm-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 104px;
   gap: 10px;
-  margin: 0;
+  max-width: 584px;
+  margin: 0 auto;
   padding: 8px 0 0;
   list-style: none;
 }
@@ -166,7 +170,8 @@ main {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  aspect-ratio: 1;
+  height: 100%;
+  box-sizing: border-box;
   padding: 16px 18px;
   border-radius: 18px;
   background: linear-gradient(150deg, var(--hi), var(--lo));
@@ -196,10 +201,10 @@ main {
 .gm-card img {
   position: absolute;
   z-index: -1;
-  right: -26px;
+  right: -22px;
   bottom: -30px;
-  width: 75%;
-  height: auto;
+  width: auto;
+  height: 140px;
   aspect-ratio: 1;
   rotate: -12deg;
   pointer-events: none;
@@ -229,9 +234,72 @@ main {
   --lo: #c9681a;
 }
 
+/* Shotgun in gunmetal, under a red shell. */
+.gm-shotgun {
+  --hi: #8592a6;
+  --lo: #2c3442;
+}
+
+/* Each tile fills its cell, the tall one all three rows. */
+.gm-list > li {
+  display: grid;
+}
+
+.gm-tall {
+  grid-row: span 3;
+}
+
+/* On a phone (app.css's 620px), one column: each game a full-width row,
+   Fruit Slots two tall so its reels still show under the words. */
+@media (max-width: 620px) {
+  .gm-list {
+    grid-template-columns: 1fr;
+  }
+
+  .gm-tall {
+    grid-row: span 2;
+  }
+}
+
+/*
+ * Fruit Slots and Pinball are drawn with their own games, screenshots after
+ * dark filling the tile: the reels caught mid-spin (game-slots.webp, the
+ * fruit blurred in motion) and the table (game-pinball.webp, from its
+ * flippers up). A wash of the tile's colour (--wash) sits behind the words
+ * only, so the picture below keeps its own.
+ */
 .gm-slots {
   --hi: #b98cff;
   --lo: #5a2bb0;
+  --wash: 58 24 120;
+}
+
+.gm-pinball {
+  --wash: 10 60 38;
+}
+
+.gm-pinball .gm-shot {
+  object-position: 50% 88%;
+}
+
+.gm-card .gm-shot {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  rotate: none;
+  filter: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.gm-slots::after,
+.gm-pinball::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgb(var(--wash) / 0.9) 0, rgb(var(--wash) / 0.6) 50px, rgb(var(--wash) / 0) 104px);
 }
 
 @media (prefers-reduced-motion: no-preference) {
