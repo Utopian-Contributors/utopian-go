@@ -16,7 +16,7 @@
     <link rel="stylesheet" href="/snake.css" />
   </head>
   <body class="sn">
-    <!-- Back, as the app's other pages have it; the points to the next mark (the best, a place) and the score. -->
+    <!-- Back, as the app's other pages have it, and the score. -->
     <header class="sn-hd">
       <button type="button" class="sn-back" id="sn-bk">
         <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -25,11 +25,14 @@
         Back
       </button>
       <span class="live" id="sn-lv" role="status">Offline</span>
-      <span class="sn-best" id="sn-bs"></span>
       <output class="sn-sc" id="sn-sc" aria-label="Score">0</output>
-      <!-- How far the score is from the next place on the board. -->
-      <span class="gm-next" id="sn-nx" role="progressbar" aria-label="To the next place" aria-valuemin="0" aria-valuemax="100" hidden><i></i></span>
     </header>
+    <!-- How far the score is from the next mark, the best or a place, under the
+         header on a phone; on a desktop the score's card has it. -->
+    <div class="gm-race">
+      <span id="sn-bs"></span>
+      <span class="gm-next" id="sn-nx" role="progressbar" aria-label="To the next place" aria-valuemin="0" aria-valuemax="100" hidden><i></i></span>
+    </div>
 
     <main class="sn-main">
       <!-- The board. snake/main.js sizes the canvas to this box. -->

@@ -16,7 +16,7 @@
     <link rel="stylesheet" href="/pinball.css" />
   </head>
   <body class="pb">
-    <!-- Back, as the app's other pages have it; the balls left and the score. -->
+    <!-- Back, as the app's other pages have it, and the score. The balls left are on the table's apron. -->
     <header class="pb-hd">
       <button type="button" class="pb-back" id="pb-bk">
         <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -25,13 +25,15 @@
         Back
       </button>
       <span class="live" id="pb-lv" role="status">Offline</span>
-      <span class="pb-balls" id="pb-bn" role="img" aria-label="3 balls left">●●●</span>
       <span class="pb-x" id="pb-x" hidden>×2</span>
-      <span class="pb-best" id="pb-nl"></span>
       <output class="pb-sc" id="pb-sc" aria-label="Score">0</output>
-      <!-- How far the score is from the next place on the board. -->
-      <span class="gm-next" id="pb-nx" role="progressbar" aria-label="To the next place" aria-valuemin="0" aria-valuemax="100" hidden><i></i></span>
     </header>
+    <!-- How far the score is from the next mark, the best or a place, under the
+         header on a phone; on a desktop the score's card has it. -->
+    <div class="gm-race">
+      <span id="pb-nl"></span>
+      <span class="gm-next" id="pb-nx" role="progressbar" aria-label="To the next place" aria-valuemin="0" aria-valuemax="100" hidden><i></i></span>
+    </div>
 
     <main class="pb-main">
       <!-- The table. pinball/main.js sizes the canvas to this box. -->

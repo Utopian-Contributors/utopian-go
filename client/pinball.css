@@ -54,7 +54,8 @@ html {
 
 body {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* The header, the race to the next mark (none on a desktop), the table, the buttons. */
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   height: 100vh;
   height: 100dvh;
   background: var(--bg);
@@ -67,7 +68,6 @@ body {
 }
 
 .pb-hd {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -98,12 +98,6 @@ body {
   scale: 0.96;
 }
 
-.pb-balls {
-  color: var(--go);
-  font-size: 13px;
-  letter-spacing: 3px;
-}
-
 .pb-x {
   padding: 2px 8px;
   border-radius: 999px;
@@ -112,29 +106,14 @@ body {
   font: 700 12px var(--ff);
 }
 
-/* The points to the next mark, your best or a place (games/board.js). */
-.pb-best {
-  min-width: 0;
-  margin-left: auto;
-  overflow: hidden;
-  color: var(--f);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 .pb-sc {
   margin-left: auto;
-}
-
-.pb-best:not(:empty) + .pb-sc {
-  margin-left: 0;
   font: 700 22px/1 var(--ff);
   font-variant-numeric: tabular-nums;
 }
 
 .pb-main {
+  grid-row: 3;
   position: relative;
   display: flex;
   min-height: 0;
@@ -267,6 +246,7 @@ body:not(.pb-on) .pb-board {
 
 /* The two buttons along the bottom edge: flat, the logo's green. */
 .pb-btns {
+  grid-row: 4;
   display: flex;
   gap: 8px;
   padding: 8px 8px max(8px, env(safe-area-inset-bottom));
@@ -323,9 +303,8 @@ body:not(.pb-on) .pb-board {
   }
 
   /* The score leaves the header for the card at the board's head. */
-  .pb-hd .gm-next,
-  .pb-hd .pb-sc,
-  .pb-hd .pb-best {
+  body .gm-race,
+  .pb-hd .pb-sc {
     display: none;
   }
 
@@ -440,12 +419,27 @@ body:not(.pb-on) .pb-board {
   background: #fff;
 }
 
-.pb-hd .gm-next {
-  position: absolute;
-  left: max(16px, (100% - 928px) / 2);
-  right: max(16px, (100% - 928px) / 2);
-  bottom: 2px;
-  height: 3px;
+/* The bar and what is left of its tier, in a row of their own under the
+   header on a phone (it has no room for them), at the header's inset. */
+.gm-race {
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px max(16px, (100% - 928px) / 2);
+  line-height: 1;
+  color: var(--f);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gm-race:has(.gm-next[hidden]) {
+  display: none;
+}
+
+.gm-race .gm-next {
+  flex: 1;
   margin: 0;
 }
 

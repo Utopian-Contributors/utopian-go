@@ -49,6 +49,28 @@ export function nextPlace(top, score, best, me) {
   return { ...marks[i], need: to - score, done: Math.max(0, Math.min(1, (score - from) / (to - from))) };
 }
 
+/**
+ * Points to go, short enough for a phone's header: "950", "1.3K", "12K",
+ * "1.3M". Rounded up, so it never reads as less to go than there is.
+ * @param {number} n
+ */
+export function toGo(n) {
+  for (const [factor, suffix] of /** @type {const} */ ([
+    [1e6, "M"],
+    [1e3, "K"],
+  ])) {
+    if (n < factor) continue;
+    const x = n / factor;
+    // Tenths under ten (1.3K), whole ones over (12K, 340K).
+    const step = x < 10 ? 10 : 1;
+    const up = Math.ceil(x * step) / step;
+    // 999,999 rounds up to 1,000K: say 1M.
+    if (suffix === "K" && up >= 1000) return "1M";
+    return `${up}${suffix}`;
+  }
+  return fmt(n);
+}
+
 /** How long the bar takes to fill or to run out, in ms (the CSS transition's). */
 const FILL = 350;
 
@@ -62,7 +84,9 @@ const FILL = 350;
  * @param {boolean} up the score rose since the last paint
  */
 function paintNext(bars, labels, next, up) {
-  const text = !next ? "" : next.need ? `${fmt(next.need)} to ${next.label}` : next.label;
+  // Shown short; said in full to a screen reader and on hover.
+  const text = !next ? "" : next.need ? `${toGo(next.need)} to ${next.label}` : next.label;
+  const full = !next ? "" : next.need ? `${fmt(next.need)} to ${next.label}` : next.label;
   for (const bar of bars) {
     bar.hidden = !next;
     if (!next) continue;
@@ -103,9 +127,12 @@ function paintNext(bars, labels, next, up) {
       );
     }
     bar.setAttribute("aria-valuenow", String(Math.round(next.done * 100)));
-    bar.setAttribute("aria-valuetext", text);
+    bar.setAttribute("aria-valuetext", full);
   }
-  for (const label of labels) label.textContent = text;
+  for (const label of labels) {
+    label.textContent = text;
+    label.title = text === full ? "" : full;
+  }
 }
 
 /** @param {HTMLElement} list @param {{name?: string, score: number, at?: number}[]} rows @param {string} [me] */
