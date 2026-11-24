@@ -1050,13 +1050,14 @@ async function buildAuthHtml(css, hash) {
 
 /**
  * The games list's document: its own sheet inlined, its one script
- * fingerprinted, and the marks its tiles are drawn with too (ic-*.svg), for
+ * fingerprinted, and the marks its tiles are drawn with too (ic-*.svg and
+ * the sheet's url()s), for
  * the reason fingerprintUrls gives: a new drawing under the bare name went on
  * being served as the old one.
  */
 async function buildGamesHtml(hash) {
   let raw = readFileSync(path.join(clientDir, "games.html"), "utf8");
-  const css = await minifyCss(readFileSync(path.join(clientDir, "games.css"), "utf8"));
+  const css = await minifyCss(fingerprintUrls(readFileSync(path.join(clientDir, "games.css"), "utf8")));
   raw = replaceOnce(raw, /<link rel="stylesheet" href="\/games\.css"\s*\/?>/, `<style>${css}</style>`, "games stylesheet link");
   raw = replaceOnce(raw, /src="\/games\.js"/, `src="/games.js?v=${hash("games.js")}"`, "games.js src");
   let marks = 0;

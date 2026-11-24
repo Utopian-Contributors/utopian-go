@@ -250,7 +250,7 @@ main {
 }
 
 /* On a phone (app.css's 620px), one column: each game a full-width row,
-   Fruit Slots two tall so its reels still show under the words. */
+   Fruit Slots two tall. */
 @media (max-width: 620px) {
   .gm-list {
     grid-template-columns: 1fr;
@@ -261,45 +261,33 @@ main {
   }
 }
 
-/*
- * Fruit Slots and Pinball are drawn with their own games, screenshots after
- * dark filling the tile: the reels caught mid-spin (game-slots.webp, the
- * fruit blurred in motion) and the table (game-pinball.webp, from its
- * flippers up). A wash of the tile's colour (--wash) sits behind the words
- * only, so the picture below keeps its own.
- */
+/* Fruit Slots in grape purple, over a tilted pattern of the
+   reels' fruit (slots-fruit.svg, a 128px tile of eight st-*.svg) that fades
+   out under the words. */
 .gm-slots {
   --hi: #b98cff;
   --lo: #5a2bb0;
-  --wash: 58 24 120;
 }
 
-.gm-pinball {
-  --wash: 10 60 38;
+.gm-slots::before {
+  content: "";
+  position: absolute;
+  inset: -50%;
+  z-index: -1;
+  background: url(/slots-fruit.svg) 0 0 / 176px 176px;
+  rotate: -12deg;
+  opacity: 0.32;
+  pointer-events: none;
 }
 
-.gm-pinball .gm-shot {
-  object-position: 50% 88%;
-}
-
-.gm-card .gm-shot {
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  rotate: none;
-  filter: none;
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
-.gm-slots::after,
-.gm-pinball::after {
+.gm-slots::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(180deg, rgb(var(--wash) / 0.9) 0, rgb(var(--wash) / 0.6) 50px, rgb(var(--wash) / 0) 104px);
+  background: linear-gradient(180deg, var(--hi) 0, rgb(0 0 0 / 0) 110px);
+  opacity: 0.85;
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {

@@ -112,15 +112,15 @@ also the tab icon of the games page and of every game). It opens the games list:
 Back and the title, then the games laid out as the home page's tiles, as wide as home's column
 (584px) with its 104px rows: Fruit Slots the tall tile spanning three rows on the left,
 Pinball, Snake and Shotgun one row each on the right. On a phone (620px and narrower) it is one
-column, each game a full-width row and Fruit Slots two rows tall. Each tile has its name and a line about it. Fruit Slots and
-Pinball are drawn with their own games, screenshots of each after dark filling the tile: the
-reels caught mid-spin (`game-slots.webp`) and the table from its flippers up
-(`game-pinball.webp`), each under a wash of the tile's colour (grape purple, felt green) behind
-the words only. Snake is in amber under its apple (`ic-apple`), the mark large in the corner, and Shotgun in
+column, each game a full-width row and Fruit Slots two rows tall. Each tile has its name and a line about it, in its own colour
+with its mark large in the corner: Fruit Slots in grape purple over a tilted pattern of the reels'
+fruit (`slots-fruit.svg`, a tile of eight `st-*.svg`) that fades out under the words,
+Pinball in its
+table's felt green with a pair of flippers and the ball (`ic-flippers.svg`, drawn by hand in the
+skeu-icons manner, as the package has no flipper), Snake in amber under its apple (`ic-apple`), and Shotgun in
 gunmetal under a pair of red shells (`ic-shell.svg`, drawn by hand in the skeu-icons manner). The
-pictures are linked with their content hash and kept by the worker for good (`TILE_MARKS`), like
-the games themselves. `ic-flippers.svg` (drawn by hand in the skeu-icons manner, as the package
-has no flipper) and `game-snake*.webp` are no longer shown on the list. Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists four games.
+marks are linked with their content hash and kept by the worker for good (`TILE_MARKS`), like
+the games themselves. The screenshots (`game-*.webp`) are no longer shown on the list. Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists four games.
 
 The games list is offline first, and so is every game on it. `games.js` registers the service
 worker and, on a first visit, hands it the page (`ugSeed`, as the games do); and the worker's
