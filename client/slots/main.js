@@ -17,7 +17,7 @@ import { STATUSES } from "../../src/social/shop.ts";
 import { BETS, CHERRIES, FRUITS, REELS, START, STATUS_PRICE, THREE, lineOf, payout } from "../../src/social/slots.ts";
 import { keepOffline } from "../games/offline.js";
 import { NAME_RULE, handleOf } from "../js/handle.js";
-import { tone, wakeAudio } from "../games/sound.js";
+import { noise, tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
@@ -144,6 +144,9 @@ const reels = REELS.map((strip) => {
   return { strip, box, imgs, p: Math.floor(Math.random() * strip.length), mode: "idle", t0: 0, from: 0, to: 0, dur: 0, done: null };
 });
 
+/** The stop each reel last showed on the line, for its ticking. */
+const passed = reels.map((reel) => Math.floor(reel.p));
+
 /** @param {Reel} reel */
 function drawReel(reel) {
   const size = reel.strip.length;
@@ -168,7 +171,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - (last || now)) / 1000);
   last = now;
   let moving = false;
-  for (const reel of reels) {
+  for (const [i, reel] of reels.entries()) {
     if (reel.mode === "spin") {
       // Up to speed over a quarter of a second.
       reel.p += SPEED * Math.min(1, (now - reel.t0) / 250) * dt;
@@ -193,7 +196,13 @@ function frame(now) {
         }
       }
     }
-    if (reel.mode !== "idle") moving = true;
+    if (reel.mode !== "idle") {
+      moving = true;
+      // Each fruit past the line ticks, so the sound slows as the reel does.
+      const at = Math.floor(reel.p);
+      if (at !== passed[i]) clack(i);
+      passed[i] = at;
+    }
     drawReel(reel);
   }
   if (moving) run();
@@ -294,12 +303,76 @@ function fitReels() {
 
 /* ---------- Sound ---------- */
 
-const tick = () => tone(180, 0.05, "triangle", 120, 0.05);
+/**
+ * A coin: a struck metal disc, whose partials sit at a plate's uneven ratios
+ * rather than a string's, so it clinks instead of beeping. Mid-high and
+ * short, never shrill.
+ * @param {number} at @param {number} [vol]
+ */
+const coin = (at, vol = 1) => {
+  const f = 1500 + Math.random() * 350;
+  [
+    [1, 0.022, 0.3],
+    [1.59, 0.014, 0.2],
+    [2.14, 0.01, 0.14],
+    [2.65, 0.007, 0.1],
+  ].forEach(([r, v, d]) => tone(f * r, d, "sine", f * r, v * vol, at, 0.2));
+  noise(0.012, 5000, 5000, 0.05 * vol, at, "bandpass", 1.5);
+};
+/** A soft round chime: a note with its octave and twelfth under it. @param {number} f @param {number} at @param {number} [vol] @param {number} [dur] */
+const chime = (f, at, vol = 0.04, dur = 0.7) => {
+  tone(f, dur, "sine", f, vol, at, 0.3);
+  tone(f * 2, dur * 0.5, "sine", f * 2, vol * 0.3, at, 0.3);
+  tone(f * 3, dur * 0.25, "sine", f * 3, vol * 0.12, at);
+};
+/** A fruit passing the line: the reel's detent ticking, a little different per reel. */
+let clackAt = 0;
+/** @param {number} i the reel */
+const clack = (i) => {
+  const now = performance.now();
+  if (now - clackAt < 38) return;
+  clackAt = now;
+  const f = 1500 + i * 220 + Math.random() * 120;
+  noise(0.014, f, f * 0.8, 0.11, 0, "bandpass", 2.5);
+  tone(f * 0.5, 0.018, "triangle", f * 0.4, 0.012);
+};
+/** A reel landing: a dead thunk into its notch. */
+const tick = () => {
+  tone(130, 0.1, "triangle", 70, 0.08);
+  noise(0.07, 600, 150, 0.25, 0, "lowpass", 1);
+  noise(0.012, 2200, 2200, 0.06, 0, "bandpass", 3);
+};
 const SOUNDS = {
-  small: () => [660, 880].forEach((f, i) => tone(f, 0.12, "sine", f, 0.05, i * 0.08)),
-  big: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, "triangle", f, 0.06, i * 0.09)),
-  top: () => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone(f, 0.2, "triangle", f, 0.07, i * 0.11)),
-  out: () => tone(260, 0.5, "sine", 80, 0.05),
+  // A spin: the lever ratcheting down and knocking home. The reels tick for
+  // themselves.
+  spin: () => {
+    for (let i = 0; i < 6; i++) noise(0.012, 1100 - i * 40, 900, 0.09, i * 0.03 - i * i * 0.0015, "bandpass", 2.5);
+    tone(110, 0.12, "triangle", 60, 0.09, 0.16);
+    noise(0.08, 500, 120, 0.3, 0.16, "lowpass");
+  },
+  small: () => {
+    chime(1047, 0, 0.045);
+    chime(1319, 0.1, 0.045, 0.9);
+    for (let i = 0; i < 3; i++) coin(0.2 + i * 0.12, 0.8);
+  },
+  // A run up two octaves, then the payout bell ringing over the coins.
+  big: () => {
+    [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => chime(f, i * 0.07, 0.04, 0.5));
+    for (let i = 0; i < 12; i++) chime(i % 2 ? 1319 : 1568, 0.45 + i * 0.065, 0.02, 0.25);
+    for (let i = 0; i < 10; i++) coin(0.4 + i * 0.09 + Math.random() * 0.04, 0.8);
+  },
+  // A fanfare to a held chord, the bell, and a long shower of coins.
+  top: () => {
+    [[523, 0], [659, 0.1], [784, 0.2], [1047, 0.3], [784, 0.45], [1047, 0.55]].forEach(([f, at]) => chime(f, at, 0.045, 0.5));
+    [1047, 1319, 1568, 2093].forEach((f) => chime(f, 0.7, 0.03, 1.6));
+    for (let i = 0; i < 20; i++) chime(i % 2 ? 1568 : 2093, 0.8 + i * 0.06, 0.015, 0.2);
+    for (let i = 0; i < 18; i++) coin(0.75 + i * 0.08 + Math.random() * 0.04, 0.8);
+  },
+  // Out: three notes sinking, the last left to droop.
+  out: () => {
+    [392, 370, 349].forEach((f, i) => tone(f, 0.3, "triangle", f, 0.05, i * 0.28, 0.2));
+    tone(330, 0.9, "triangle", 290, 0.05, 0.84, 0.2);
+  },
 };
 
 /* ---------- What the page says ---------- */
@@ -596,6 +669,8 @@ async function spin() {
   busy = true;
   say("");
   paintControls();
+  // At the press, not after a fresh day's game has been fetched.
+  SOUNDS.spin();
   let n = -1;
   let started = 0;
   try {

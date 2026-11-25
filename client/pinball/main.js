@@ -13,7 +13,7 @@ import { leaderboard, placed } from "../games/board.js";
 import { live } from "../games/live.js";
 import { keepOffline } from "../games/offline.js";
 import { scores } from "../games/scores.js";
-import { tone, wakeAudio } from "../games/sound.js";
+import { melody, noise, tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
@@ -56,6 +56,7 @@ const sync = live("pinball", $("pb-lv"));
 function start() {
   document.body.classList.add("pb-on");
   newGame();
+  SOUNDS.start();
   sync.begin(() => ({ s: game.score, p: document.hidden ? 1 : 0 }));
 }
 
@@ -89,8 +90,23 @@ function paintCounters() {
 
 /** @type {Record<string, () => void>} */
 const SOUNDS = {
-  flip: () => tone(160, 0.05, "triangle", 90, 0.06),
-  bumper: () => tone(320 + Math.random() * 80, 0.09, "square", 160, 0.05),
+  // A game starting: a bright little arcade tune over a walking bass, up to
+  // a held high C. Notes in semitones from A4.
+  start: () => {
+    const lead = /** @type {Array<[number | null, number]>} */ ([[-2, 1], [3, 1], [7, 1], [10, 1], [7, 1], [10, 1], [15, 3], [null, 1], [12, 1], [14, 1], [15, 4]]);
+    melody(lead, 0.11, "square", 0.028);
+    melody(lead.map(([n, b]) => [n === null ? null : n + 12, b]), 0.11, "sine", 0.012);
+    melody([[-21, 2], [-14, 2], [-21, 2], [-14, 2], [-16, 2], [-14, 2], [-21, 4]], 0.11, "triangle", 0.08, 0, 0.1);
+  },
+  // The flipper's solenoid: a thunk and a click.
+  flip: () => {
+    tone(160, 0.05, "triangle", 90, 0.06);
+    noise(0.03, 2600, 1600, 0.08, 0, "bandpass", 2);
+  },
+  bumper: () => {
+    tone(320 + Math.random() * 80, 0.09, "square", 160, 0.05);
+    noise(0.05, 1400, 600, 0.12, 0, "bandpass", 1.5);
+  },
   sling: () => tone(500, 0.06, "square", 250, 0.04),
   lane: () => tone(880, 0.08, "sine", 1320, 0.05),
   drop: () => tone(700, 0.07, "square", 350, 0.04),

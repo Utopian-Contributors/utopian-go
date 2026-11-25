@@ -12,7 +12,7 @@ import { leaderboard, placed } from "../games/board.js";
 import { live } from "../games/live.js";
 import { keepOffline } from "../games/offline.js";
 import { scores } from "../games/scores.js";
-import { tone, wakeAudio } from "../games/sound.js";
+import { noise, tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
@@ -82,7 +82,18 @@ function paintCounters() {
 /* ---------- Sound ---------- */
 
 const SOUNDS = {
-  apple: () => tone(660, 0.08, "square", 990, 0.04),
+  // The snake waking: a breath in, then a long hiss through the teeth that
+  // wavers as it goes.
+  hiss: () => {
+    noise(0.12, 3000, 5200, 0.05, 0, "bandpass", 1.2, 0.08);
+    noise(1.1, 6200, 4800, 0.13, 0.1, "bandpass", 1.4, 0.18);
+    noise(0.9, 8800, 7000, 0.06, 0.16, "highpass", 0.8, 0.2);
+  },
+  // A bite: a crunch, then the little rising note it always had.
+  apple: () => {
+    noise(0.06, 1800, 900, 0.18, 0, "bandpass", 2);
+    tone(660, 0.08, "square", 990, 0.035, 0.02);
+  },
   over: () => tone(240, 0.4, "sawtooth", 60, 0.06),
   best: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.14, "square", f, 0.04, i * 0.09)),
 };
@@ -176,6 +187,7 @@ function start(dir) {
   );
   newGame(dir, session?.apples ? seeded(session.apples) : Math.random);
   document.body.classList.add("sn-on");
+  SOUNDS.hiss();
   // The first step is due at once, so the snake sets off with the swipe.
   owed = stepMs();
   last = 0;

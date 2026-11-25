@@ -20,7 +20,7 @@ import { live } from "../games/live.js";
 import { tally } from "../games/tally.js";
 import { keepOffline } from "../games/offline.js";
 import { readName } from "../js/me.js";
-import { tone, wakeAudio } from "../games/sound.js";
+import { bell, noise, tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { plainSwap } from "../js/plainswap.js";
 import { GUNS, STICK, TURRETS, canPlace, credits, draw, game, listen, newGame, placeTurret, scenery, settling, size, update } from "./game.js";
@@ -142,30 +142,113 @@ const due = (k, ms) => {
   lastAt[k] = now;
   return true;
 };
+/** A metal part snapping home. @param {number} at @param {number} [f] @param {number} [vol] */
+const click = (at, f = 3200, vol = 0.18) => {
+  noise(0.018, f, f, vol, at, "bandpass", 3);
+  tone(f * 0.7, 0.03, "square", f * 0.5, 0.01, at);
+};
+/** The pump: the fore-end racked back, then slammed home. @param {number} at */
+const rack = (at) => {
+  noise(0.08, 1300, 700, 0.3, at, "bandpass", 1.6);
+  tone(220, 0.06, "square", 120, 0.03, at);
+  click(at + 0.07, 2400, 0.2);
+  noise(0.07, 1700, 2600, 0.3, at + 0.17, "bandpass", 1.6);
+  click(at + 0.23, 3600, 0.28);
+  tone(160, 0.05, "triangle", 90, 0.06, at + 0.23);
+};
+/** A shell thumbed into the tube, its brass ringing a little. @param {number} at */
+const shell = (at) => {
+  noise(0.03, 1500, 900, 0.16, at, "bandpass", 2);
+  click(at + 0.05, 4200, 0.14);
+  tone(2600, 0.06, "sine", 2500, 0.012, at + 0.05);
+};
+/** A crate splitting open: the knock of wood and the crack of its slats. */
+const crate = () => {
+  noise(0.12, 600, 200, 0.4, 0, "lowpass", 1.5);
+  tone(130, 0.1, "triangle", 70, 0.08);
+  noise(0.05, 2200, 1200, 0.15, 0.015, "bandpass", 1);
+};
 const SOUNDS = {
-  pistol: () => tone(520, 0.07, "square", 180, 0.03),
-  shotgun: () => tone(200, 0.18, "sawtooth", 50, 0.07),
-  smg: () => tone(700, 0.04, "square", 300, 0.02),
-  rifle: () => tone(900, 0.12, "sawtooth", 120, 0.05),
-  minigun: () => tone(560, 0.03, "square", 260, 0.015),
+  // A game starting: three shells loaded, then the pump racked.
+  reload: () => {
+    shell(0);
+    shell(0.2);
+    shell(0.38);
+    rack(0.66);
+  },
+  pistol: () => {
+    noise(0.09, 2400, 600, 0.3, 0, "lowpass");
+    tone(420, 0.06, "square", 140, 0.025);
+  },
+  // The blast, its thump, and the pump racked for the next before it is due.
+  shotgun: () => {
+    noise(0.4, 2600, 180, 0.6, 0, "lowpass", 0.8);
+    tone(120, 0.25, "sine", 40, 0.18);
+    rack(0.3);
+  },
+  smg: () => {
+    noise(0.05, 3000, 1200, 0.18, 0, "lowpass");
+    tone(600, 0.035, "square", 250, 0.015);
+  },
+  rifle: () => {
+    noise(0.25, 3500, 250, 0.45, 0, "lowpass", 0.9);
+    tone(1100, 0.08, "sawtooth", 200, 0.03);
+    tone(90, 0.2, "sine", 40, 0.1);
+  },
+  minigun: () => {
+    noise(0.035, 2800, 1400, 0.12, 0, "lowpass");
+    tone(560, 0.03, "square", 260, 0.01);
+  },
   railgun: () => {
     tone(2200, 0.32, "sawtooth", 160, 0.05);
     tone(90, 0.3, "square", 40, 0.04);
+    noise(0.3, 6000, 800, 0.15, 0, "bandpass", 0.7);
   },
-  rocket: () => tone(140, 0.35, "sawtooth", 420, 0.05),
+  rocket: () => {
+    tone(140, 0.35, "sawtooth", 420, 0.04);
+    noise(0.5, 500, 2500, 0.22, 0, "bandpass", 1, 0.05);
+  },
   // The cell going live, then a hum while the beam burns.
   laser: () => tone(300, 0.25, "sawtooth", 1400, 0.05),
   lase: () => due("laser", 110) && tone(1300 + Math.random() * 120, 0.12, "sawtooth", 1250, 0.012),
   turretMini: () => due("mini", 70) && tone(620, 0.03, "square", 300, 0.012),
   dome: () => [520, 260].forEach((f, i) => tone(f, 0.2, "triangle", f * 0.6, 0.05, i * 0.1)),
-  kill: () => tone(160, 0.12, "triangle", 70, 0.05),
-  boom: () => {
-    tone(90, 0.5, "sawtooth", 30, 0.09);
-    tone(60, 0.6, "square", 25, 0.05, 0.03);
+  kill: () => {
+    noise(0.08, 900, 300, 0.15, 0, "bandpass", 2.5);
+    tone(160, 0.12, "triangle", 70, 0.04);
   },
-  hurt: () => tone(180, 0.15, "square", 90, 0.05),
+  boom: () => {
+    noise(1, 1200, 50, 0.7, 0, "lowpass", 0.7);
+    tone(70, 0.7, "sine", 28, 0.2);
+    tone(90, 0.5, "sawtooth", 30, 0.04);
+  },
+  hurt: () => {
+    tone(180, 0.15, "square", 90, 0.05);
+    noise(0.1, 500, 200, 0.2, 0, "lowpass");
+  },
+  // A gun out of its crate: the crate, then the gun cocked.
+  gun: () => {
+    crate();
+    click(0.12, 2200, 0.22);
+    noise(0.06, 1400, 2400, 0.22, 0.16, "bandpass", 1.6);
+    click(0.24, 3800, 0.26);
+  },
+  // Health: the crate, then a warm chord rising.
+  heal: () => {
+    crate();
+    [392, 494, 587, 784].forEach((f, i) => tone(f, 0.5, "sine", f, 0.05, 0.1 + i * 0.07, 0.3));
+  },
+  // A turret: the crate, then its motor spinning up and locking.
+  turretBox: () => {
+    crate();
+    tone(180, 0.35, "sawtooth", 700, 0.025, 0.1);
+    click(0.45, 2800, 0.22);
+  },
+  // A prize off the wheel.
   pickup: () => [660, 880, 1175].forEach((f, i) => tone(f, 0.09, "square", f, 0.04, i * 0.06)),
   wave: () => [392, 523].forEach((f, i) => tone(f, 0.16, "triangle", f, 0.05, i * 0.12)),
+  // A wave cleared: a deep church bell, tolled once.
+  toll: () => bell(98, 0.1, 0, 6),
   over: () => tone(240, 0.6, "sawtooth", 50, 0.06),
   tick: () => tone(1400, 0.02, "square", 1200, 0.02),
   turret: () => tone(820, 0.05, "square", 420, 0.015),
@@ -314,7 +397,7 @@ listen((type, data) => {
     SOUNDS.dome();
     flash("A dome went down");
   } else if (type === "turret") {
-    SOUNDS.pickup();
+    SOUNDS.turretBox();
     const name = TURRETS[/** @type {import("./game.js").TurretKind} */ (data)].name;
     flash(touch ? `${name}! Tap Place, then where it goes` : `${name}! Press E, then click where it goes`, 2600);
     paintPlace();
@@ -323,11 +406,11 @@ listen((type, data) => {
     paintPlace();
   } else if (type === "spent") flash(data === "bio" ? "The gas has cleared" : "A turret ran out of rounds");
   else if (type === "heal") {
-    SOUNDS.pickup();
+    SOUNDS.heal();
     flash("Health refilled");
   }
   else if (type === "pickup") {
-    SOUNDS.pickup();
+    SOUNDS.gun();
     flash(`${GUNS[/** @type {import("./game.js").GunId} */ (data)].name}!`);
   } else if (type === "empty") flash("Out of ammo: back to the pistol");
   else if (type === "wave") {
@@ -337,8 +420,10 @@ listen((type, data) => {
       data === 2 ? "Wave 2 · guns unlocked: shoot a crate" : data === 3 ? "Wave 3 · here come the blue ones" : fresh ? `Wave ${data} · ${fresh.name} unlocked: find its crate` : `Wave ${data}`,
       2600,
     );
-  } else if (type === "cleared") flash(`Wave ${data.wave} cleared · +${fmt(data.bonus)} credits`, 2200);
-  else if (type === "over") finish();
+  } else if (type === "cleared") {
+    SOUNDS.toll();
+    flash(`Wave ${data.wave} cleared · +${fmt(data.bonus)} credits`, 2200);
+  } else if (type === "over") finish();
   else if (type === "earn") paintCounters();
 });
 
@@ -364,6 +449,7 @@ function paint() {
 function start() {
   if (spinning) return;
   wakeAudio();
+  SOUNDS.reload();
   newGame(saved.kit);
   // The kit is spent on this game, and the wheel's prices start over.
   saved.kit = emptyKit();
