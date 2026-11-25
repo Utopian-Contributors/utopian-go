@@ -17,7 +17,13 @@
  * railgun from the sixth, the rocket blaster from the eighth and the laser
  * from the tenth, each arriving in a crate of its own; and better turrets,
  * minigun turrets from the fifth and, from the seventh, minigun turrets under
- * a dome that keeps zombies out until they have gnawed through it.
+ * a dome that keeps zombies out until they have gnawed through it. From the
+ * ninth, a biohazard: placed like a turret, it fires nothing but breathes a
+ * cloud of gas, and a zombie that walks into it is infected: it loses health
+ * slowly until it dies, and passes the infection to zombies that brush past
+ * it. From the fifth wave crates come several at once: a gun, a turret (or
+ * biohazard) and a health crate that fills the player's health back up, and
+ * from the tenth a second gun.
  */
 
 /** @typedef {"pistol" | "shotgun" | "smg" | "rifle" | "minigun" | "railgun" | "rocket" | "laser"} GunId */
@@ -60,7 +66,7 @@ const LASER = { charge: 1.1, run: 2.5 };
 /** The share of crates that hold a turret rather than a gun. */
 const TURRET_DROP = 0.25;
 
-/** @typedef {"sentry" | "minigun" | "dome"} TurretKind */
+/** @typedef {"sentry" | "minigun" | "dome" | "bio"} TurretKind */
 /**
  * The turrets: how far one sees, how often it fires, its rounds, the wave
  * whose crates first hold it, and its dome's strength (none but the last).
@@ -70,7 +76,13 @@ export const TURRETS = {
   sentry: { name: "Turret", tag: "", range: 34, every: 0.32, spread: 0.05, dmg: 1, speed: 130, rounds: 60, from: 2, dome: 0 },
   minigun: { name: "Minigun turret", tag: "MINIGUN", range: 38, every: 0.075, spread: 0.14, dmg: 1, speed: 150, rounds: 260, from: 5, dome: 0 },
   dome: { name: "Dome turret", tag: "DOME", range: 38, every: 0.075, spread: 0.14, dmg: 1, speed: 150, rounds: 320, from: 7, dome: 150 },
+  // Fires nothing: `range` is its gas cloud's reach, and `rounds` the seconds the gas lasts.
+  bio: { name: "Biohazard", tag: "BIOHAZARD", range: 15, every: 0, spread: 0, dmg: 0, speed: 0, rounds: 20, from: 9, dome: 0 },
 };
+/** An infected zombie: the health it loses a second, and how readily it passes it on to one it brushes past (a second). */
+const SICK = { dps: 0.55, spread: 1.4, reach: 2.2 };
+/** From this wave crates come several at once: a gun, a turret and a health crate; from `extra`, a second gun. */
+const BATCH = { from: 5, extra: 10, every: [13, 19] };
 /** Every turret: its size, how many stand at once, how many the player can carry, and a dome's reach. */
 const TURRET = { r: 2.6, max: 3, carry: 2, domeR: 10 };
 /** The turrets this wave's crates can hold. */
@@ -96,12 +108,12 @@ const BETWEEN = 2.6;
 /**
  * @typedef {{x: number, y: number, r: number, hp: number, max: number, blue: boolean,
  *   speed: number, bite: number, flash: number, face: number, wob: number,
- *   plan: {door: number, side: number, through: boolean} | null, gnaw: number}} Zombie
+ *   plan: {door: number, side: number, through: boolean} | null, gnaw: number, sick: number}} Zombie
  * @typedef {{x: number, y: number, vx: number, vy: number, life: number, dmg: number, pierce: number, hit: Set<object>,
  *   sentry?: boolean, kind?: "rocket"}} Bullet
  * @typedef {{x1: number, y1: number, x2: number, y2: number, life: number}} Beam
  * @typedef {{x: number, y: number, hp: number, fuse: number}} Barrel
- * @typedef {{x: number, y: number, gun: GunId | "turret", tier?: TurretKind, life: number}} Crate
+ * @typedef {{x: number, y: number, gun: GunId | "turret" | "health", tier?: TurretKind, life: number}} Crate
  * @typedef {{x: number, y: number, aim: number, cool: number, rounds: number, muzzle: number, kind: TurretKind, shield: number, hitFx: number}} Turret
  * @typedef {{x: number, y: number, vx: number, vy: number, life: number, max: number, color: string, size: number}} Part
  * @typedef {{x: number, y: number, r: number, color: string, a: number, rot: number}} Decal
@@ -165,9 +177,11 @@ export const game = {
   /** @type {Decal[]} */ decals: [],
   /** @type {Boom[]} */ booms: [],
   /** @type {Beam[]} the railgun's beams, fading */ beams: [],
+  /** The screen's bottom safe area, in device pixels, kept clear by the HUD. */
+  inset: 0,
 };
 
-/** @typedef {"shot" | "empty" | "kill" | "boom" | "hurt" | "pickup" | "cleared" | "wave" | "over" | "earn" | "turret" | "placed" | "spent" | "unlock" | "lase" | "dome"} Event */
+/** @typedef {"shot" | "empty" | "kill" | "boom" | "hurt" | "pickup" | "cleared" | "wave" | "over" | "earn" | "turret" | "placed" | "spent" | "unlock" | "lase" | "dome" | "heal"} Event */
 /** @type {(type: Event, data?: any) => void} */
 let on = () => {};
 
@@ -450,11 +464,11 @@ function spawn() {
   const speed = Math.min(13, 6 + w * 0.5) * (blue ? 0.92 : 1) * rand(0.85, 1.15);
   // A blue one's stamina grows with the waves: five shots at the third, a dozen by the fifteenth.
   const hp = blue ? 4 + Math.ceil(w / 2) : 2;
-  game.zombies.push({ x, y, r: blue ? 3.6 : 3, hp, max: hp, blue, speed, bite: 0, flash: 0, face: Math.atan2(game.py - y, game.px - x), wob: Math.random() * 6, plan: null, gnaw: 0.5 });
+  game.zombies.push({ x, y, r: blue ? 3.6 : 3, hp, max: hp, blue, speed, bite: 0, flash: 0, face: Math.atan2(game.py - y, game.px - x), wob: Math.random() * 6, plan: null, gnaw: 0.5, sick: 0 });
 }
 
 /**
- * @param {GunId | "turret"} [only] what it holds, else one of the wave's guns at random, or a turret
+ * @param {GunId | "turret" | "health"} [only] what it holds, else one of the wave's guns at random, or a turret
  * @param {TurretKind} [only_tier] which turret, else one of the wave's at random
  */
 function dropCrate(only, only_tier) {
@@ -463,6 +477,7 @@ function dropCrate(only, only_tier) {
     const y = rand(-game.hh + 8, game.hh - 8);
     const d = Math.hypot(x - game.px, y - game.py);
     if (d < 12 || wallGap(x, y) < 8 || game.barrels.some((b) => Math.hypot(b.x - x, b.y - y) < 8)) continue;
+    if (game.crates.some((c) => Math.hypot(c.x - x, c.y - y) < 12)) continue;
     const list = drops();
     const gun = only ?? (Math.random() < TURRET_DROP ? "turret" : list[Math.floor(Math.random() * list.length)]);
     const tiers = turretDrops();
@@ -470,6 +485,16 @@ function dropCrate(only, only_tier) {
     game.crates.push({ x, y, gun, tier, life: CRATE_LIFE });
     return;
   }
+}
+
+/** Later waves' crates, several at once: a gun, a turret (a biohazard among them, once it is unlocked) and health; later a second gun. */
+function dropBatch() {
+  const guns = drops();
+  const gun = () => guns[Math.floor(Math.random() * guns.length)];
+  dropCrate(gun());
+  dropCrate("turret");
+  dropCrate("health");
+  if (game.wave >= BATCH.extra) dropCrate(gun());
 }
 
 /* ---------- Damage ---------- */
@@ -671,6 +696,13 @@ function toPistol() {
 /** @param {Crate} c */
 function pickUp(c) {
   game.crates.splice(game.crates.indexOf(c), 1);
+  if (c.gun === "health") {
+    game.hp = HP;
+    burst(c.x, c.y, 14, "#ff6b6b", 20, 1.6);
+    burst(game.px, game.py, 12, "#ffffff", 16, 1.2);
+    on("heal");
+    return;
+  }
   if (c.gun === "turret") {
     // The best kept first; one too many, the weakest is left behind.
     const tier = c.tier ?? "sentry";
@@ -718,6 +750,10 @@ export function placeTurret(x, y) {
 function sentries(dt) {
   for (const t of game.turrets) {
     const spec = TURRETS[t.kind];
+    if (t.kind === "bio") {
+      gas(t, dt);
+      continue;
+    }
     t.cool -= dt;
     t.muzzle = Math.max(0, t.muzzle - dt);
     t.hitFx = Math.max(0, t.hitFx - dt);
@@ -745,10 +781,46 @@ function sentries(dt) {
     on("shot", t.kind === "sentry" ? "turret" : "turretMini");
   }
   for (const t of game.turrets.filter((t) => t.rounds <= 0)) {
-    burst(t.x, t.y, 14, "#8b949e", 18, 1.4);
-    on("spent");
+    burst(t.x, t.y, 14, t.kind === "bio" ? "#a6e22e" : "#8b949e", 18, 1.4);
+    on("spent", t.kind);
   }
   game.turrets = game.turrets.filter((t) => t.rounds > 0);
+}
+
+/**
+ * A biohazard's gas: it lasts its seconds (`rounds`), and every zombie in the
+ * cloud that it can reach past the walls is infected. `cool` keeps time for
+ * the cloud's drift.
+ * @param {Turret} t @param {number} dt
+ */
+function gas(t, dt) {
+  t.rounds -= dt;
+  t.cool += dt;
+  const reach = TURRETS.bio.range;
+  for (const z of game.zombies) {
+    if (z.sick || Math.hypot(z.x - t.x, z.y - t.y) > reach + z.r) continue;
+    if (!walled(t.x, t.y, z.x, z.y, 0.3)) z.sick = 0.001;
+  }
+}
+
+/**
+ * The infected: each loses health slowly until it dies (a kill like any
+ * other, paying its credits), and may pass it on to a zombie it brushes past.
+ * @param {number} dt
+ */
+function sickness(dt) {
+  const sick = game.zombies.filter((z) => z.sick);
+  for (const a of sick) {
+    for (const b of game.zombies) {
+      if (b.sick || Math.hypot(a.x - b.x, a.y - b.y) > a.r + b.r + SICK.reach) continue;
+      if (Math.random() < SICK.spread * dt) b.sick = 0.001;
+    }
+  }
+  for (const z of sick) {
+    z.sick += dt;
+    if (Math.random() < dt * 3) burst(z.x, z.y, 1, "#a6e22e", 4, 0.9);
+    hurtZombie(z, SICK.dps * dt, 0, 0, 0);
+  }
 }
 
 /** The player walks, kept on the field and out of the barrels; a crate walked over is theirs. @param {number} dt */
@@ -896,7 +968,13 @@ export function update(dt) {
 
   if (game.wave >= 2) {
     game.crateIn -= dt;
-    if (game.crateIn <= 0 && game.crates.length < 2) {
+    if (game.crateIn <= 0 && game.wave >= BATCH.from) {
+      // Later, several at once, once the last lot is mostly taken or gone.
+      if (game.crates.length <= 1) {
+        dropBatch();
+        game.crateIn = rand(BATCH.every[0], BATCH.every[1]);
+      }
+    } else if (game.crateIn <= 0 && game.crates.length < 2) {
       dropCrate();
       game.crateIn = rand(10, 17);
     }
@@ -905,6 +983,7 @@ export function update(dt) {
   game.crates = game.crates.filter((c) => c.life > 0);
 
   sentries(dt);
+  sickness(dt);
   game.bullets = game.bullets.filter((b) => fly(b, dt));
 
   for (const b of [...game.barrels]) {
@@ -1287,6 +1366,7 @@ function drawBarrel(ctx, b) {
 
 /** A sentry turret from above: three legs, a round housing, the barrel along its aim, its rounds left as a ring. @param {CanvasRenderingContext2D} ctx @param {Turret} t */
 function drawTurret(ctx, t) {
+  if (t.kind === "bio") return drawBio(ctx, t);
   const r = TURRET.r;
   const spec = TURRETS[t.kind];
   shadow(ctx, t.x, t.y, r * 1.2);
@@ -1342,6 +1422,71 @@ function drawTurret(ctx, t) {
   ctx.fill();
   ctx.restore();
   if (t.shield > 0) drawDome(ctx, t.x, t.y, t.shield / spec.dome, t.hitFx);
+}
+
+/**
+ * A biohazard from above: its cloud first, a green haze over the ground with
+ * puffs drifting round in it, thinning as the gas runs out; then the canister,
+ * yellow with the biohazard mark, and the seconds left as a ring round it.
+ * @param {CanvasRenderingContext2D} ctx @param {Turret} t
+ */
+function drawBio(ctx, t) {
+  const spec = TURRETS.bio;
+  const R = spec.range;
+  const left = Math.max(0, Math.min(1, t.rounds / spec.rounds));
+  const fade = Math.min(1, left * 4);
+  const haze = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, R);
+  haze.addColorStop(0, `rgba(166, 226, 46, ${0.34 * fade})`);
+  haze.addColorStop(0.7, `rgba(140, 200, 40, ${0.2 * fade})`);
+  haze.addColorStop(1, "rgba(140, 200, 40, 0)");
+  ctx.fillStyle = haze;
+  ctx.beginPath();
+  ctx.arc(t.x, t.y, R, 0, Math.PI * 2);
+  ctx.fill();
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + t.cool * (0.25 + (i % 3) * 0.08) * (i % 2 ? 1 : -1);
+    const d = R * (0.3 + 0.45 * ((i * 0.37) % 1)) + Math.sin(t.cool * 1.3 + i) * 1.2;
+    ctx.fillStyle = `rgba(190, 240, 90, ${0.16 * fade})`;
+    ctx.beginPath();
+    ctx.arc(t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, 2.6 + (i % 3) * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const r = TURRET.r;
+  shadow(ctx, t.x, t.y, r * 1.1);
+  ctx.save();
+  ctx.translate(t.x, t.y);
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
+  ctx.lineWidth = 0.45;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.15, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = left > 0.25 ? "#a6e22e" : "#ffb347";
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.15, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left);
+  ctx.stroke();
+  const g = ctx.createRadialGradient(-0.6, -0.6, 0.2, 0, 0, r * 0.9);
+  g.addColorStop(0, "#fff27a");
+  g.addColorStop(1, "#c99400");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#5a4300";
+  ctx.lineWidth = 0.3;
+  ctx.stroke();
+  // The mark: three lobes round a ring.
+  ctx.fillStyle = "#1c2400";
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * 0.95, Math.sin(a) * 0.95, 0.62, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#e9c21a";
+  ctx.beginPath();
+  ctx.arc(0, 0, 0.42, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 /**
@@ -1426,6 +1571,25 @@ function drawCrate(ctx, c) {
   ctx.lineTo(-r, r);
   ctx.strokeStyle = "rgba(90, 58, 23, 0.6)";
   ctx.stroke();
+  if (c.gun === "health") {
+    // A first-aid crate: white, a red cross on it.
+    ctx.fillStyle = "#f4f1ea";
+    ctx.strokeStyle = "#8a8378";
+    ctx.beginPath();
+    ctx.roundRect(-r, -r, r * 2, r * 2, 0.5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#e0281e";
+    ctx.fillRect(-0.55, -1.9, 1.1, 3.8);
+    ctx.fillRect(-1.9, -0.55, 3.8, 1.1);
+    ctx.restore();
+    ctx.strokeStyle = `rgba(126, 226, 160, ${0.55 + 0.3 * Math.sin(c.life * 8)})`;
+    ctx.lineWidth = 0.3;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y + bob, r * 1.75, 0, Math.PI * 2);
+    ctx.stroke();
+    return;
+  }
   ctx.fillStyle = "#fff8e6";
   const tag = c.gun === "turret" ? "TURRET" : GUNS[c.gun].tag;
   const sub = c.gun === "turret" && c.tier ? TURRETS[c.tier].tag : "";
@@ -1451,10 +1615,17 @@ function drawCrate(ctx, c) {
 /** A zombie from above: arms reaching for the player, shoulders, a head with red eyes. @param {CanvasRenderingContext2D} ctx @param {Zombie} z */
 function drawZombie(ctx, z) {
   shadow(ctx, z.x, z.y, z.r);
+  if (z.sick) {
+    // Infected: a sickly haze about it, pulsing.
+    ctx.fillStyle = `rgba(166, 226, 46, ${0.22 + 0.12 * Math.sin(z.wob * 1.7)})`;
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, z.r * 1.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.save();
   ctx.translate(z.x, z.y);
   ctx.rotate(z.face);
-  const skin = z.flash ? "#ffffff" : z.blue ? "#5d8ff0" : "#86b04a";
+  const skin = z.flash ? "#ffffff" : z.sick ? (z.blue ? "#6fc7a6" : "#b9d930") : z.blue ? "#5d8ff0" : "#86b04a";
   const dark = z.blue ? "#2b4f9e" : "#4d6b25";
   const cloth = z.blue ? "#27345c" : "#5b4a3a";
   const sway = Math.sin(z.wob) * 0.35;
@@ -1647,6 +1818,8 @@ function drawHud(ctx, w, h, u) {
   // Drawn at the page's text size, whatever the field's.
   const s = Math.min(3, window.devicePixelRatio || 1);
   const pad = 12 * s;
+  // Clear of a phone's home indicator, the field running under it.
+  const foot = pad + game.inset;
   ctx.save();
   ctx.font = `700 ${14 * s}px -apple-system, system-ui, sans-serif`;
   ctx.textBaseline = "top";
@@ -1662,7 +1835,7 @@ function drawHud(ctx, w, h, u) {
 
   const bw = Math.min(w * 0.6, 260 * s);
   const bx = (w - bw) / 2;
-  const by = h - pad - 10 * s;
+  const by = h - foot - 10 * s;
   ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
   ctx.beginPath();
   ctx.roundRect(bx, by, bw, 10 * s, 5 * s);

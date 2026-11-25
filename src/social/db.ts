@@ -7,6 +7,7 @@ import { type AdDevices, CHAT_PAGE, MAX_CHAT_KEEP, MAX_NOTES_KEEP, MAX_REPLIES, 
 import type { AudioKind } from "./audio";
 import type { Callout } from "./callouts";
 import type { Pack } from "./shop";
+import { type Kit, MAX_CREDITS as SHOTGUN_MAX, emptyKit, spinPrice } from "./shotgun";
 import { jpegSize } from "./jpeg";
 import {
   postPhotoFile,
@@ -424,6 +425,21 @@ ALTER TABLE slot_games ADD COLUMN IF NOT EXISTS peak integer NOT NULL DEFAULT 0;
 -- A prize bought with credits comes from no single game.
 ALTER TABLE slot_prizes ADD COLUMN IF NOT EXISTS item text;
 ALTER TABLE slot_prizes ALTER COLUMN game DROP NOT NULL;
+-- Shotgun's credits, banked for a signed-in player (src/social/shotgun.ts):
+-- the balance, the most one game has earned and the best wave, the spins
+-- since the last game (each costs twice the last), and the kit the wheel has
+-- won for the next game. Spent on its badges, 'bd:sg<n>' in unlocks.
+CREATE TABLE IF NOT EXISTS shotgun_banks (
+  name text PRIMARY KEY REFERENCES users(name) ON DELETE CASCADE,
+  credits integer NOT NULL DEFAULT 0,
+  most integer NOT NULL DEFAULT 0,
+  best_wave integer NOT NULL DEFAULT 0,
+  spins integer NOT NULL DEFAULT 0,
+  gun text,
+  ammo integer NOT NULL DEFAULT 0,
+  mult real NOT NULL DEFAULT 1,
+  at bigint NOT NULL
+);
 `;
 
 let ready: Promise<void> | null = null;
@@ -2546,4 +2562,113 @@ export async function addedBy(owner: string, epoch: number, friend: string): Pro
     [owner, epoch, friend],
   );
   return !!row?.yes;
+}
+
+// —— Shotgun's bank (src/social/shotgun.ts) ——
+
+export interface ShotgunBank {
+  credits: number;
+  most: number;
+  bestWave: number;
+  spins: number;
+  kit: Kit;
+}
+
+interface ShotgunBankRow {
+  credits: number;
+  most: number;
+  best_wave: number;
+  spins: number;
+  gun: string | null;
+  ammo: number;
+  mult: number;
+}
+
+const SHOTGUN_BANK = "SELECT credits, most, best_wave, spins, gun, ammo, mult FROM shotgun_banks";
+
+function shotgunBankFrom(row: ShotgunBankRow | null): ShotgunBank {
+  if (!row) return { credits: 0, most: 0, bestWave: 0, spins: 0, kit: emptyKit() };
+  const gun = row.gun === "shotgun" || row.gun === "smg" || row.gun === "rifle" ? row.gun : null;
+  // real is a float4: rounded back to the hundredths it was written in.
+  return { credits: row.credits, most: row.most, bestWave: row.best_wave, spins: row.spins, kit: { gun, ammo: gun ? row.ammo : 0, mult: Math.round(Number(row.mult) * 100) / 100 } };
+}
+
+/** `name`'s bank, locked for the rest of the transaction; made, empty, the first time. */
+async function lockShotgunBank(client: PoolClient, name: string, at: number): Promise<ShotgunBank> {
+  await client.query("INSERT INTO shotgun_banks (name, at) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING", [name, at]);
+  return shotgunBankFrom(await one<ShotgunBankRow>(`${SHOTGUN_BANK} WHERE name = $1 FOR UPDATE`, [name], client));
+}
+
+async function writeShotgunBank(client: PoolClient, name: string, bank: ShotgunBank, at: number): Promise<void> {
+  await client.query(
+    "UPDATE shotgun_banks SET credits = $2, most = $3, best_wave = $4, spins = $5, gun = $6, ammo = $7, mult = $8, at = $9 WHERE name = $1",
+    [name, bank.credits, bank.most, bank.bestWave, bank.spins, bank.kit.gun, bank.kit.ammo, bank.kit.mult, at],
+  );
+}
+
+/** `name`'s Shotgun bank; an empty one when they have never played signed in. */
+export async function shotgunBank(name: string): Promise<ShotgunBank> {
+  return shotgunBankFrom(await one<ShotgunBankRow>(`${SHOTGUN_BANK} WHERE name = $1`, [name]));
+}
+
+/**
+ * One spin of the wheel: `n` is the spins the page has seen since the last
+ * game, so a spin sent twice is played once (409, with the bank as it is).
+ * Its price is taken, then `draw` says where the wheel stopped and what the
+ * bank is after.
+ */
+export async function spinShotgun(input: {
+  name: string;
+  n: number;
+  at: number;
+  draw: (bank: ShotgunBank) => { segment: number; credits: number; kit: Kit };
+}): Promise<{ segment: number; bank: ShotgunBank }> {
+  return tx(async (client) => {
+    const bank = await lockShotgunBank(client, input.name, input.at);
+    if (bank.spins !== input.n) throw new SocialError(409, "The wheel has moved on. Try again.", { bank });
+    const price = spinPrice(bank.spins);
+    if (bank.credits < price) throw new SocialError(400, `A spin costs ${price.toLocaleString("en-US")} credits.`, { bank });
+    const out = input.draw({ ...bank, credits: bank.credits - price });
+    const next = { ...bank, credits: out.credits, spins: bank.spins + 1, kit: out.kit };
+    await writeShotgunBank(client, input.name, next, input.at);
+    return { segment: out.segment, bank: next };
+  });
+}
+
+/** A game starts: the kit is spent on it, and the wheel's prices start over. Returns the kit it was. */
+export async function takeShotgunKit(name: string, at: number): Promise<Kit> {
+  return tx(async (client) => {
+    const bank = await lockShotgunBank(client, name, at);
+    await writeShotgunBank(client, name, { ...bank, spins: 0, kit: emptyKit() }, at);
+    return bank.kit;
+  });
+}
+
+/** A synced game ended: what it earned banked, and the bests kept. */
+export async function bankShotgun(name: string, banked: number, wave: number, at: number): Promise<ShotgunBank> {
+  return tx(async (client) => {
+    const bank = await lockShotgunBank(client, name, at);
+    const next = {
+      ...bank,
+      credits: Math.min(SHOTGUN_MAX, bank.credits + banked),
+      most: Math.min(SHOTGUN_MAX, Math.max(bank.most, banked)),
+      bestWave: Math.max(bank.bestWave, wave),
+    };
+    await writeShotgunBank(client, name, next, at);
+    return next;
+  });
+}
+
+/** Spend `price` banked credits on a Shotgun badge, `bd:<id>`, kept for good. Refused when short, or had already. */
+export async function buyShotgunBadge(input: { name: string; badge: string; price: number; at: number }): Promise<ShotgunBank> {
+  return tx(async (client) => {
+    const bank = await lockShotgunBank(client, input.name, input.at);
+    const item = `bd:${input.badge}`;
+    if (await one("SELECT 1 FROM unlocks WHERE name = $1 AND item = $2", [input.name, item], client)) throw new SocialError(409, "You have this badge already.");
+    if (bank.credits < input.price) throw new SocialError(400, `A Shotgun badge costs ${input.price.toLocaleString("en-US")} credits.`);
+    await client.query("INSERT INTO unlocks (name, item, how, at) VALUES ($1,$2,'shotgun',$3)", [input.name, item, input.at]);
+    const next = { ...bank, credits: bank.credits - input.price };
+    await writeShotgunBank(client, input.name, next, input.at);
+    return next;
+  });
 }

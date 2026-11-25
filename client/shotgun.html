@@ -16,7 +16,9 @@
     <link rel="stylesheet" href="/shotgun.css" />
   </head>
   <body class="sg">
-    <!-- Back, and the credits this device holds: the game's one count. -->
+    <!-- Back and, beside it, Synced or Offline (signed in, the credits are the
+         account's, banked from synced games); the credits, the game's one
+         count, on the right. -->
     <header class="sg-hd">
       <button type="button" class="sg-back" id="sg-bk">
         <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -24,7 +26,10 @@
         </svg>
         Back
       </button>
-      <span class="sg-cr"><output id="sg-cr">0</output> credits</span>
+      <span class="live" id="sg-lv" role="status" hidden>Offline</span>
+      <span class="sg-r">
+        <span class="sg-cr"><output id="sg-cr">0</output> credits</span>
+      </span>
     </header>
 
     <main class="sg-main">
@@ -49,6 +54,8 @@
             <button type="button" class="sg-go" id="sg-go">Play</button>
           </div>
           <p class="sg-bs" id="sg-bs"></p>
+          <!-- What the credits buy: Shotgun's badges in the Shop. -->
+          <p class="sg-sh" id="sg-sh"></p>
         </section>
       </div>
     </main>

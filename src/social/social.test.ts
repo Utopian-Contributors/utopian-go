@@ -29,7 +29,8 @@ import { AUDIO_BYTES, MAX_AUDIO_MS, MAX_POST, SOCIAL_BYTES, TINY_BYTES, adKeywor
 import { sendAvatar, sendBadge, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
 import { badgeFor, isBadgePng, markOf, statusFor } from "./shop";
 import { BETS, CHERRIES, FRUITS, MAX_CREDITS, REELS, START, STATUS_PRICE, THREE, WEIGHTS, isBet, isOver, lineOf, payout, settle } from "./slots";
-import { GAP_MS, PAUSE_MS, PINBALL_BURST, endSession, openSessions, resetSessions, startSession, syncSession } from "./play";
+import { GAP_MS, PAUSE_MS, PINBALL_BURST, endSession, endShotgun, openSessions, resetSessions, setMult, startSession, syncSession } from "./play";
+import { BADGE_PRICE, SEGMENTS, WHEEL_AMMO, applyPrize, emptyKit, maxEarned, reachMs, spinPrice, waveSize } from "./shotgun";
 import { type Dir, type SnakeState, BACK, COLS, DIRS, LETTER, ROWS, advance, fresh, lay, seeded, stepMsAt } from "./snakeRules";
 import { badgesForRank } from "./shop";
 import { commitOf, drawStops, newSeed } from "./slotDraw";
@@ -3476,7 +3477,7 @@ test("the login page goes on only to a page on this site, and signed out the hom
     '<nav id="ac" aria-label="Account"><a class="ac-w ac-in" href="/wallet">Log in</a></nav>';
   assert.equal(homeNav(shell, true), shell);
   const out = homeNav(shell, false);
-  assert.ok(out.includes('<a href="/login?next=/wallet" data-to="/wallet">Wallet</a><a href="/login?next=/social" data-to="/social">Social</a>'));
+  assert.ok(out.includes('<a href="/wallet" data-to="/wallet">Wallet</a><a href="/login?next=/social" data-to="/social">Social</a>'), "the wallet is anyone's; Social goes by login");
   assert.ok(out.includes('<a href="/pinball">Pinball</a>'), "pinball needs no account");
   assert.ok(out.includes('class="ac-w ac-in" href="/wallet"'), "only the home rows");
 
@@ -3509,4 +3510,107 @@ test("a Social page paints in the frame its script leaves it in", () => {
   assert.ok(friends.includes('<aside id="sd" hidden>'));
   assert.equal(frameSocial(doc, "/social/nope"), doc);
   assert.throws(() => frameSocial(doc.replace('<aside id="sd">', "<aside>"), "/social/edit"), /sd/);
+});
+
+test("Shotgun: the wheel's prizes, its prices, and what the waves can pay", () => {
+  assert.equal(SEGMENTS.length, 12);
+  assert.equal(SEGMENTS.filter((p) => p.kind === "gun").length, 3, "a gun one spin in four");
+  assert.deepEqual([0, 1, 2, 3, 4].map(spinPrice), [0, 20, 40, 80, 160]);
+  const bank = { credits: 10, kit: emptyKit() };
+  assert.deepEqual(applyPrize(bank, { kind: "credits", n: 40 }), { credits: 50, kit: emptyKit() });
+  const armed = applyPrize(bank, { kind: "gun", gun: "smg" });
+  assert.deepEqual(armed.kit, { gun: "smg", ammo: WHEEL_AMMO.smg, mult: 1 });
+  assert.equal(applyPrize(armed, { kind: "gun", gun: "smg" }).kit.ammo, WHEEL_AMMO.smg * 2, "the same gun again: more ammo");
+  assert.deepEqual(applyPrize(armed, { kind: "gun", gun: "rifle" }).kit, { gun: "rifle", ammo: WHEEL_AMMO.rifle, mult: 1 });
+  assert.equal(applyPrize(applyPrize(bank, { kind: "mult", x: 1.5 }), { kind: "mult", x: 3 }).kit.mult, 4.5);
+  // Waves 1 and 2 have no blue zombies; from 3, every one could be.
+  assert.equal(maxEarned(1), waveSize(1) + 1);
+  assert.equal(maxEarned(3), waveSize(1) + 1 + waveSize(2) + 2 + waveSize(3) * 3 + 3);
+  assert.equal(reachMs(0), 0);
+  assert.ok(reachMs(2) > 5000 && reachMs(3) > reachMs(2));
+});
+
+test("Shotgun: a synced game's credits are held to its waves, and banked at the kit's multiplier", () => {
+  resetSessions();
+  const t0 = 1_000_000;
+  const s = startSession("amy", "shotgun", t0);
+  setMult(s.id, 2);
+  syncSession("amy", "shotgun", { id: s.id, w: 0, e: 0 }, t0);
+  syncSession("amy", "shotgun", { id: s.id, w: 1, e: 5 }, t0 + 2000);
+  // More than wave 1 can pay.
+  assert.throws(() => syncSession("amy", "shotgun", { id: s.id, w: 1, e: maxEarned(1) + 1 }, t0 + 4000), /pay that much/);
+  const g = startSession("amy", "shotgun", t0);
+  syncSession("amy", "shotgun", { id: g.id, w: 0, e: 0 }, t0);
+  // Wave 5 a few seconds in: sooner than its zombies can arrive.
+  assert.throws(() => syncSession("amy", "shotgun", { id: g.id, w: 5, e: 10 }, t0 + 3000), /sooner/);
+  /** A game synced every two seconds, as the page does, each wave as soon as it can come, paying all it can. */
+  function play(id: string, waves: number): number {
+    syncSession("amy", "shotgun", { id, w: 0, e: 0 }, t0);
+    let at = t0;
+    for (let w = 1; w <= waves; w++) {
+      while (at < t0 + reachMs(w)) {
+        at += 2000;
+        syncSession("amy", "shotgun", { id, w: w - 1, e: maxEarned(w - 1) }, at);
+      }
+      syncSession("amy", "shotgun", { id, w, e: maxEarned(w - 1) }, at);
+    }
+    return at;
+  }
+  const h = startSession("amy", "shotgun", t0);
+  const at = play(h.id, 4);
+  // Credits only go up.
+  assert.throws(() => syncSession("amy", "shotgun", { id: h.id, w: 4, e: 1 }, at + 1000), /credits/);
+  const k = startSession("amy", "shotgun", t0);
+  setMult(k.id, 1.5);
+  const end = play(k.id, 3);
+  assert.deepEqual(endShotgun("amy", { id: k.id, w: 3, e: 41 }, end + 2000), { earned: 41, wave: 3, banked: 61 });
+  assert.equal(openSessions(), 0);
+});
+
+test("Shotgun over HTTP: the bank spins the wheel, banks a synced game, and buys a badge", async () => {
+  const { sql, join, close } = await gameServer();
+  try {
+    const amy = await join("amy");
+    assert.deepEqual((await amy("GET", "/api/social/shotgun")).json.bank, { credits: 0, most: 0, bestWave: 0, spins: 0, kit: emptyKit() });
+    // The first spin is free; the next costs 20, which an empty bank can't pay unless the wheel paid it.
+    const first = await amy("POST", "/api/social/shotgun/spin", { n: 0 });
+    assert.equal(first.status, 200, first.text);
+    assert.ok(first.json.segment >= 0 && first.json.segment < 12);
+    assert.equal(first.json.bank.spins, 1);
+    // The same spin sent again is not played twice.
+    const again = await amy("POST", "/api/social/shotgun/spin", { n: 0 });
+    assert.equal(again.status, 409);
+    assert.equal(again.json.bank.spins, 1);
+    // A game: the kit is spent on its first sync, and its credits banked at the end.
+    await sql.query("UPDATE shotgun_banks SET mult = 2, gun = 'rifle', ammo = 60 WHERE name = 'amy'");
+    const { id } = (await amy("POST", "/api/social/shotgun/start")).json;
+    assert.equal((await amy("POST", "/api/social/shotgun/sync", { id, w: 0, e: 0 })).status, 200);
+    const kit = (await amy("GET", "/api/social/shotgun")).json.bank;
+    assert.deepEqual([kit.spins, kit.kit], [0, emptyKit()], "spent on the game, and the prices start over");
+    // A forged game is refused, and banks nothing.
+    const forged = await amy("POST", "/api/social/shotgun/end", { id, w: 1, e: 9000 });
+    assert.equal(forged.status, 409, forged.text);
+    const credits = (await amy("GET", "/api/social/shotgun")).json.bank.credits;
+    // An honest one, ended at wave 0 with nothing earned, banks nothing either, but counts.
+    const g = (await amy("POST", "/api/social/shotgun/start")).json;
+    await amy("POST", "/api/social/shotgun/sync", { id: g.id, w: 0, e: 0 });
+    const ended = await amy("POST", "/api/social/shotgun/end", { id: g.id, w: 0, e: 0 });
+    assert.equal(ended.status, 200, ended.text);
+    assert.equal(ended.json.bank.credits, credits);
+    // Badges: short of 10,000, refused; with it, bought once, worn, and the bank paid down.
+    assert.equal((await amy("POST", "/api/social/shotgun/buy", { badge: "sg3" })).status, 400);
+    await sql.query("UPDATE shotgun_banks SET credits = $1 WHERE name = 'amy'", [BADGE_PRICE + 5]);
+    assert.equal((await amy("POST", "/api/social/shop/wear", { badge: "sg3" })).status, 403, "not yet bought");
+    const bought = await amy("POST", "/api/social/shotgun/buy", { badge: "sg3" });
+    assert.equal(bought.status, 200, bought.text);
+    assert.equal(bought.json.bank.credits, 5);
+    assert.deepEqual(bought.json.items, ["bd:sg3"]);
+    assert.equal((await amy("POST", "/api/social/shotgun/buy", { badge: "sg3" })).status, 409, "had already");
+    assert.equal((await amy("POST", "/api/social/shotgun/buy", { badge: "sn1" })).status, 400, "not a Shotgun badge");
+    assert.equal((await amy("POST", "/api/social/shop/wear", { badge: "sg3" })).status, 200);
+    assert.equal((await amy("GET", "/api/social/u/amy")).json.user.mark, "sg3 ");
+    assert.equal((await amy("GET", "/api/social/shop")).json.shotgun, 5);
+  } finally {
+    await close();
+  }
 });

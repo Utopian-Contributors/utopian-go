@@ -1,29 +1,17 @@
 /**
- * Shotgun's wheel of fortune. Twelve equal segments: three guns to start a
- * game with (a little luck: one spin in four), six of credits, paid at once,
- * and three multipliers on the credits the next game earns. The pointer is at the top; a spin eases the wheel
- * to a segment chosen before it starts, ticking past each one.
+ * Shotgun's wheel of fortune. Twelve equal segments (src/social/shotgun.ts
+ * SEGMENTS, the server's too): three guns to start a game with (a little
+ * luck: one spin in four), six of credits, paid at once, and three
+ * multipliers on the credits the next game earns. The pointer is at the top;
+ * a spin eases the wheel to a segment chosen before it starts (by the server
+ * when the credits are the account's), ticking past each one.
  */
+import { SEGMENTS } from "../../src/social/shotgun.ts";
 import { GUNS } from "./game.js";
 
-/** @typedef {import("./game.js").GunId} GunId */
-/** @typedef {{kind: "gun", gun: GunId} | {kind: "credits", n: number} | {kind: "mult", x: number}} Prize */
+/** @typedef {import("../../src/social/shotgun.ts").Prize} Prize */
 
-/** @type {Prize[]} */
-export const SEGMENTS = [
-  { kind: "gun", gun: "shotgun" },
-  { kind: "credits", n: 5 },
-  { kind: "mult", x: 2 },
-  { kind: "credits", n: 10 },
-  { kind: "gun", gun: "smg" },
-  { kind: "credits", n: 5 },
-  { kind: "mult", x: 1.5 },
-  { kind: "credits", n: 20 },
-  { kind: "gun", gun: "rifle" },
-  { kind: "credits", n: 10 },
-  { kind: "mult", x: 3 },
-  { kind: "credits", n: 40 },
-];
+export { SEGMENTS };
 
 const N = SEGMENTS.length;
 const SEG = 360 / N;
@@ -120,13 +108,14 @@ const reduce = matchMedia("(prefers-reduced-motion: reduce)");
 let turned = 0;
 
 /**
- * Spin the wheel (its element turned by CSS transform) to a random segment.
+ * Spin the wheel (its element turned by CSS transform) to segment `i`, or a
+ * random one.
  * @param {HTMLElement} el
  * @param {() => void} tick a segment passed the pointer
+ * @param {number} [i]
  * @returns {Promise<Prize>}
  */
-export function spin(el, tick) {
-  const i = Math.floor(Math.random() * N);
+export function spin(el, tick, i = Math.floor(Math.random() * N)) {
   // Segment i sits under the pointer when the turn is −i·SEG (mod 360); land
   // somewhere inside it, not always dead centre.
   const jitter = (Math.random() - 0.5) * SEG * 0.7;

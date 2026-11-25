@@ -93,31 +93,99 @@ body {
   display: inline-flex;
   align-items: baseline;
   gap: 0.3em;
-  margin-left: auto;
   color: var(--f);
   font: 600 13px var(--ff);
   white-space: nowrap;
 }
 
+/* The change in credits, as games/tally.js makes it: rising from just left
+   of the number and fading, as Snake, Pinball and Slots show theirs. */
+.sg-cr {
+  position: relative;
+}
+
+.gm-delta {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 0;
+  font: 800 18px/1 var(--ff);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: gm-delta-up 1.1s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+.gm-delta.up {
+  color: #9cf5b0;
+  text-shadow: 0 0 12px rgb(156 245 176 / 0.5);
+}
+
+.gm-delta.down {
+  color: var(--f);
+  animation-name: gm-delta-down;
+}
+
+@keyframes gm-delta-up {
+  0% {
+    opacity: 0;
+    translate: 0 14px;
+    scale: 0.6;
+  }
+  20% {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1.15;
+  }
+  35% {
+    scale: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: 0 -18px;
+  }
+}
+
+@keyframes gm-delta-down {
+  0% {
+    opacity: 0;
+    translate: 0 -10px;
+  }
+  20% {
+    opacity: 1;
+    translate: 0 0;
+  }
+  70% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    translate: 0 16px;
+  }
+}
+
 .sg-cr output {
+  display: inline-block;
   color: #fff;
   font: 700 22px/1 var(--ff);
   font-variant-numeric: tabular-nums;
 }
 
+/* The field runs to the screen's bottom edge; the HUD keeps clear of a
+   phone's home indicator itself (game.js `inset`). */
 .sg-main {
   display: flex;
   min-height: 0;
-  padding: 0 0 max(0px, env(safe-area-inset-bottom));
 }
 
+/* The field, edge to edge under the header on every screen. */
 .sg-tbl {
   position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
-  max-width: 960px;
-  margin: 0 auto;
   overflow: hidden;
 }
 
@@ -152,7 +220,7 @@ body {
 .sg-place {
   position: absolute;
   right: 12px;
-  bottom: 40px;
+  bottom: calc(40px + env(safe-area-inset-bottom, 0px));
   z-index: 1;
   height: 40px;
   padding: 0 16px;
@@ -329,9 +397,60 @@ body:not(.sg-on) .sg-msg {
   display: none;
 }
 
-@media (min-width: 720px) {
-  .sg-tbl {
-    margin: 12px auto max(12px, env(safe-area-inset-bottom));
-    border-radius: 16px;
-  }
+
+/* The header's right side: the credits. */
+.sg-r {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+/* Synced or Offline: whether this game's credits go to the account (games/live.js), as snake.css draws it. */
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--f);
+  font: 600 12px var(--ff);
+  white-space: nowrap;
+}
+
+.live[hidden] {
+  display: none;
+}
+
+.live::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.4);
+}
+
+.live[data-on="1"] {
+  color: var(--t);
+}
+
+.live[data-on="1"]::before {
+  background: var(--go);
+  box-shadow: 0 0 6px var(--go);
+}
+
+/* What the credits buy, under the bests: a link to the Shop. */
+.sg-sh {
+  margin: 0;
+  color: var(--f);
+  font: 600 12px/1.3 var(--ff);
+  text-align: center;
+}
+
+.sg-sh:empty {
+  display: none;
+}
+
+.sg-sh a {
+  color: var(--t);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

@@ -22,8 +22,10 @@
  *
  * Nor are the badges won at the games (src/social/shop.ts GAME_BADGES):
  * bd-sn1…5.svg, five snakes creeping up in wide S-curves, tail to tongue, and bd-pb1…5.svg, five
- * mushrooms after the pinball table's bumpers. The package has neither, so
- * they too are drawn by hand in its manner and checked in.
+ * mushrooms after the pinball table's bumpers, and bd-sg1…5.svg, Shotgun's
+ * (crosshair, danger triangle, zombie, shell, biohazard). The
+ * package has none of them, so they too are drawn by hand in its manner and
+ * checked in.
  */
 import { writeFileSync } from "fs";
 import path from "path";

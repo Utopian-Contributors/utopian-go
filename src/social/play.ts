@@ -15,6 +15,9 @@
  *   not the server's), so its score is held to the table's limits instead:
  *   it only grows, by whole tens, and never faster than the table pays out
  *   in the time actually played.
+ * - Shotgun has no board, but its credits are banked from a synced game
+ *   (shotgun.ts): the wave only climbs, never sooner than its zombies could
+ *   arrive, and the credits never past what the waves so far could pay.
  *
  * Sessions live in this process's memory, a few hundred bytes each, one per
  * account, swept once they go quiet. Nothing is written per sync; the board
@@ -24,6 +27,7 @@
 import { randomBytes } from "crypto";
 import { SocialError } from "./limits";
 import type { BoardGame } from "./shop";
+import { MAX_WAVE, maxEarned, reachMs } from "./shotgun";
 import { type Dir, FASTEST, FROM_LETTER, SNAKE_MAX, type SnakeState, advance, canTurn, fresh, lay, seeded, stepMsAt } from "./snakeRules";
 
 /** How often the page syncs, and the longest a game in play may go without one. */
@@ -44,10 +48,13 @@ export const PINBALL_RATE = 1_000_000;
 /** Over a whole game, no more than this a second on average, beyond one burst. */
 export const PINBALL_AVERAGE = 400_000;
 
+/** A game played under a session: the boards' two, and Shotgun, whose credits are banked. */
+export type LiveGame = BoardGame | "shotgun";
+
 interface Session {
   id: string;
   name: string;
-  game: BoardGame;
+  game: LiveGame;
   /** Snake: the seed its apples come from. */
   seed: string;
   made: number;
@@ -65,6 +72,9 @@ interface Session {
   score: number;
   /** Pinball: play time at the last sync, for the rate. */
   playedAt: number;
+  /** Shotgun: the wave in play, and the kit's multiplier, taken from the bank as the game starts. */
+  wave: number;
+  mult: number;
 }
 
 const sessions = new Map<string, Session>();
@@ -103,7 +113,7 @@ export function resetSessions(): void {
  * where apples will fall plays no game for anyone. (Not called `seed`: every
  * `seed` is scrubbed from every answer by guard.ts.)
  */
-export function startSession(name: string, game: BoardGame, now = Date.now()): { id: string; apples: string; every: number } {
+export function startSession(name: string, game: LiveGame, now = Date.now()): { id: string; apples: string; every: number } {
   sweep(now);
   const old = byName.get(name);
   if (old) drop(sessions.get(old)!);
@@ -124,6 +134,8 @@ export function startSession(name: string, game: BoardGame, now = Date.now()): {
     minMs: 0,
     score: 0,
     playedAt: 0,
+    wave: 0,
+    mult: 1,
   };
   sessions.set(s.id, s);
   byName.set(name, s.id);
@@ -136,7 +148,7 @@ function broken(s: Session, why: string): never {
   throw new SocialError(409, why, { broken: true });
 }
 
-function sessionOf(name: string, game: BoardGame, id: unknown): Session {
+function sessionOf(name: string, game: LiveGame, id: unknown): Session {
   const s = typeof id === "string" ? sessions.get(id) : undefined;
   // Someone else's, or gone: the same answer, so an id tells nobody anything.
   if (!s || s.name !== name || s.game !== game) throw new SocialError(409, "This game isn’t synced any more.", { broken: true });
@@ -194,12 +206,38 @@ function bound(s: Session, score: unknown, now: number): void {
   s.playedAt = Math.max(0, total - SLACK_MS);
 }
 
+/** A Shotgun game as synced: the wave only up, no sooner than it can come, and the credits within what the waves pay. */
+function boundShotgun(s: Session, wave: unknown, earned: unknown, now: number): void {
+  if (!Number.isSafeInteger(wave) || (wave as number) < s.wave || (wave as number) > MAX_WAVE) broken(s, "That is not a wave.");
+  if (!Number.isSafeInteger(earned) || (earned as number) < s.score) broken(s, "Those are not the game’s credits.");
+  if (reachMs(wave as number) > played(s, now) + SLACK_MS) broken(s, "That wave came sooner than zombies can.");
+  if ((earned as number) > maxEarned(wave as number)) broken(s, "Those waves don’t pay that much.");
+  s.wave = wave as number;
+  s.score = earned as number;
+}
+
+/**
+ * Whether `id` is `name`'s Shotgun session and its game has yet to start:
+ * the first sync is when the bank's kit is spent on it (setMult).
+ */
+export function unstarted(name: string, id: unknown): boolean {
+  const s = typeof id === "string" ? sessions.get(id) : undefined;
+  return !!s && s.name === name && s.game === "shotgun" && s.started == null;
+}
+
+/** The multiplier a Shotgun game's credits are banked at, as its kit had it. */
+export function setMult(id: string, mult: number): void {
+  const s = sessions.get(id);
+  if (s) s.mult = mult;
+}
+
 /**
  * A sync: {id, p?, ...} with, for Snake, `k` (steps taken), `t` (the turns
  * since the last sync) and on the first, `d` (the first direction); for
- * Pinball, `s` (the score). `p: 1` says the game is paused until the next.
+ * Pinball, `s` (the score); for Shotgun, `w` (the wave) and `e` (the credits
+ * earned, before the multiplier). `p: 1` says the game is paused until the next.
  */
-export function syncSession(name: string, game: BoardGame, body: Record<string, unknown>, now = Date.now()): { score: number } {
+export function syncSession(name: string, game: LiveGame, body: Record<string, unknown>, now = Date.now()): { score: number } {
   const s = sessionOf(name, game, body.id);
   if (s.started == null) {
     s.started = now;
@@ -217,6 +255,7 @@ export function syncSession(name: string, game: BoardGame, body: Record<string, 
     s.pausedMs += now - s.last;
   }
   if (game === "snake") replay(s, body.k, body.t ?? "", now);
+  else if (game === "shotgun") boundShotgun(s, body.w, body.e, now);
   else bound(s, body.s, now);
   s.paused = body.p === 1;
   s.last = now;
@@ -238,4 +277,16 @@ export function endSession(name: string, game: BoardGame, body: Record<string, u
   }
   if (body.s !== undefined && body.s !== score) throw new SocialError(409, "That score isn’t the game’s.", { broken: true });
   return score;
+}
+
+/**
+ * The end of a Shotgun game: the last sync, then what it banks: its credits
+ * times the kit's multiplier, and the wave it reached. The session is gone
+ * after this either way.
+ */
+export function endShotgun(name: string, body: Record<string, unknown>, now = Date.now()): { earned: number; wave: number; banked: number } {
+  syncSession(name, "shotgun", { ...body, p: 0 }, now);
+  const s = sessions.get(body.id as string)!;
+  drop(s);
+  return { earned: s.score, wave: s.wave, banked: Math.floor(s.score * s.mult) };
 }

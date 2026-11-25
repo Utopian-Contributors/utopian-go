@@ -18,9 +18,15 @@
  * Fruit Slots credits, or given. And each game with a board has a set of
  * badges no one can buy (GAME_BADGES): a place in its top ten, at the end of
  * a game, unlocks that place's badge and every commoner one, for good.
+ *
+ * Shotgun's badges (SHOTGUN_BADGES) are bought one at a time with the
+ * credits a signed-in player has banked at Shotgun (src/social/shotgun.ts
+ * BADGE_PRICE each): Unlock on one asks first, then spends them.
  */
-import { BADGES, BADGE_PX, GAME_BADGES, PACKS, STATUSES, TIERS, badgeSrc } from "../../src/social/shop.ts";
+import { BADGES, BADGE_PX, GAME_BADGES, PACKS, SHOTGUN_BADGES, STATUSES, TIERS, badgeSrc } from "../../src/social/shop.ts";
+import { BADGE_PRICE } from "../../src/social/shotgun.ts";
 import { el } from "../js/dom.js";
+import { NAME_RULE, handleOf } from "../js/handle.js";
 import { payDialog, usd } from "../js/solpay.js";
 import { dialog, injectStyles } from "../js/ui.js";
 import { injectFormStyles } from "../swap/ui.js";
@@ -41,6 +47,9 @@ const CSS =
   // A won badge's card: the place that unlocks it, large in the top right, faded into the card.
   ".sh-w{position:relative;overflow:hidden;isolation:isolate}" +
   ".sh-rk{position:absolute;top:2px;right:7px;z-index:-1;font:800 28px/1 var(--ff);letter-spacing:-.04em;color:var(--t);opacity:.13;pointer-events:none}" +
+  // A Shotgun badge not yet bought: its price under its name, and lit when the credits cover it.
+  ".sh-t small{font-size:11px;color:var(--f)}" +
+  ".sh-t.sh-can{border-color:var(--ln)}" +
   ".sh-b{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}" +
   ".sh-b .go-pill{margin:0}" +
   ".sh-b .hint{margin:0}" +
@@ -147,14 +156,21 @@ async function mount({ main, me, pull, send, face, marks, show }) {
     const input = el("input", {
       id: "sh-to",
       class: "sh-in",
-      maxlength: "16",
+      required: true,
+      // 16 and an @, which handleOf takes off.
+      maxlength: "17",
       placeholder: "username",
       autocapitalize: "off",
       autocomplete: "off",
       spellcheck: "false",
     });
     const out = el("p", { class: "err", role: "alert" });
-    const who = () => input.value.trim().toLowerCase().replace(/^@/, "");
+    /** The name typed, or an error said in `out`; the server holds the same rule. */
+    const who = () => {
+      const name = handleOf(input.value);
+      if (!name) throw new Error(NAME_RULE);
+      return name;
+    };
     const pay = el("button", { type: "submit", class: "swx-go", text: `Pay ${usd(state.packs[pack].cents)}` });
     if (!state.payable) pay.disabled = true;
     const unlock = state.admin
@@ -223,6 +239,7 @@ async function mount({ main, me, pull, send, face, marks, show }) {
     const input = el("input", {
       id: "sh-pz",
       class: "sh-in",
+      required: true,
       maxlength: "17",
       placeholder: "username",
       autocapitalize: "off",
@@ -235,7 +252,9 @@ async function mount({ main, me, pull, send, face, marks, show }) {
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       press(go, out, async () => {
-        await send(`/api/social/shop/prize/${prize.id}/give`, { to: input.value.trim() });
+        const to = handleOf(input.value);
+        if (!to) throw new Error(NAME_RULE);
+        await send(`/api/social/shop/prize/${prize.id}/give`, { to });
         close();
         show();
       });
@@ -345,6 +364,68 @@ async function mount({ main, me, pull, send, face, marks, show }) {
     );
   }
 
+  /** Spend BADGE_PRICE banked Shotgun credits on `badge`, once asked. */
+  function buyShotgunDialog(badge) {
+    injectFormStyles();
+    const { body, close } = dialog(`Unlock ${badge.name}`);
+    const out = el("p", { class: "err", role: "alert" });
+    const go = el("button", { type: "submit", class: "swx-go", text: `Unlock · ${BADGE_PRICE.toLocaleString("en-US")} credits` });
+    const form = el(
+      "form",
+      { class: "sh-f" },
+      el("img", { src: badgeSrc("", badge.id), alt: "", width: "64", height: "64", style: "justify-self:center" }),
+      el("label", { text: `${BADGE_PRICE.toLocaleString("en-US")} of your ${state.shotgun.toLocaleString("en-US")} Shotgun credits. It’s yours for good, to wear after your name.` }),
+      go,
+      out,
+    );
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      press(go, out, async () => {
+        const done = await send("/api/social/shotgun/buy", { badge: badge.id });
+        state.shotgun = done.bank.credits;
+        state.items = done.items;
+        close();
+        paint();
+      });
+    });
+    body.replaceChildren(form);
+    go.focus();
+  }
+
+  /** Shotgun's badges: each worn once bought, else its price, and Unlock when the banked credits cover it. */
+  function shotgunBadges() {
+    const items = new Set(state.items || []);
+    const credits = state.shotgun || 0;
+    const price = BADGE_PRICE.toLocaleString("en-US");
+    return el(
+      "section",
+      { class: "sh-p" },
+      el("h3", {}, "Shotgun badges", el("span", { text: `${price} credits each` })),
+      el(
+        "div",
+        { class: "sh-g" },
+        ...SHOTGUN_BADGES.map((badge) => {
+          if (items.has(`bd:${badge.id}`)) return tile(badgeSrc("", badge.id), badge.name, state.badge === badge.id, true, () => put("badge", badge.id));
+          const can = credits >= BADGE_PRICE;
+          const card = tile(badgeSrc("", badge.id), badge.name, false, can, () => buyShotgunDialog(badge));
+          if (can) card.classList.add("sh-can");
+          card.append(el("small", { text: can ? "Unlock" : price }));
+          card.setAttribute("aria-label", can ? `Unlock ${badge.name} for ${price} credits` : `${badge.name}, ${price} credits`);
+          return card;
+        }),
+      ),
+      el(
+        "div",
+        { class: "sh-b" },
+        el("a", { class: "go-pill sh-2", href: "/shotgun", text: "Play" }),
+        el("p", {
+          class: "hint",
+          text: `You have ${credits.toLocaleString("en-US")} Shotgun credits. Play logged in and every synced game banks what it earns.`,
+        }),
+      ),
+    );
+  }
+
   function paint() {
     const items = new Set(state.items || []);
     const mark = `${state.badge} ${state.status}`;
@@ -391,6 +472,7 @@ async function mount({ main, me, pull, send, face, marks, show }) {
         ),
         won("snake", "Snake badges", "/snake"),
         won("pinball", "Pinball badges", "/pinball"),
+        shotgunBadges(),
         err,
       ),
     );

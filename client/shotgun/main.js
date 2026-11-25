@@ -6,11 +6,20 @@
  * after it costs twice the last. Then the zombie waves (game.js), which pay
  * credits for every zombie shot; spent at the wheel, they arm the next game.
  *
- * Everything lives on this device (localStorage `ug.sg`): the credits, the
- * kit the wheel has won for the next game, and the most one game has earned. Like the other
- * games it is offline first, and it never needs an account.
+ * Signed in, the credits are the account's bank (src/social/shotgun.ts): the
+ * wheel is spun on the server, each game is synced as it is played
+ * (games/live.js), and what a synced game earns is banked there, to spend on
+ * Shotgun's badges in the Shop. Signed out, or with the server out of reach
+ * as the page opens, everything lives on this device (localStorage `ug.sg`):
+ * the credits, the kit the wheel has won for the next game, and the most one
+ * game has earned. Like the other games it is offline first, and it never
+ * needs an account.
  */
+import { BADGE_PRICE, applyPrize, spinPrice } from "../../src/social/shotgun.ts";
+import { live } from "../games/live.js";
+import { tally } from "../games/tally.js";
 import { keepOffline } from "../games/offline.js";
+import { readName } from "../js/me.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { plainSwap } from "../js/plainswap.js";
@@ -33,6 +42,8 @@ const noteOut = $("sg-nt");
 const msgOut = $("sg-msg");
 const creditsOut = $("sg-cr");
 const placeBtn = /** @type {HTMLButtonElement} */ ($("sg-pl"));
+const liveOut = $("sg-lv");
+const shopOut = $("sg-sh");
 
 const fmt = (n) => n.toLocaleString("en-US");
 const touch = matchMedia("(hover: none)").matches;
@@ -45,7 +56,7 @@ const KEY = "ug.sg";
 const emptyKit = () => ({ gun: null, ammo: 0, mult: 1 });
 
 /** @type {{credits: number, most: number, bestWave: number, spins: number, kit: Kit}} */
-const saved = (() => {
+const device = (() => {
   const fresh = { credits: 0, most: 0, bestWave: 0, spins: 0, kit: emptyKit() };
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || "null");
@@ -67,7 +78,13 @@ const saved = (() => {
   }
 })();
 
+/** The credits in play: the device's, or, once the account's bank has loaded, the bank. */
+let saved = device;
+/** The account's games, synced as they are played; null on the device's credits. @type {ReturnType<typeof live> | null} */
+let synced = null;
+
 function save() {
+  if (saved !== device) return;
   try {
     localStorage.setItem(KEY, JSON.stringify(saved));
   } catch {
@@ -76,7 +93,43 @@ function save() {
 }
 
 /** The next spin's price: the first before each game free, then 20, 40, 80… */
-const cost = () => (saved.spins === 0 ? 0 : 20 * 2 ** (saved.spins - 1));
+const cost = () => spinPrice(saved.spins);
+
+/**
+ * Signed in, the account's bank: its credits from here on, and its games
+ * synced. Out of reach, the page plays on the device's credits.
+ */
+async function loadBank() {
+  if (!readName()) return;
+  try {
+    const res = await fetch("/api/social/shotgun", { cache: "no-store", credentials: "same-origin", headers: { Accept: "application/json" } });
+    const data = await res.json();
+    if (!res.ok || !data.signed || !data.bank) return;
+    if (game.state === "play" || spinning) return;
+    saved = data.bank;
+    shown = -1;
+    liveOut.hidden = false;
+    synced = live("shotgun", liveOut);
+    paintPanel();
+    paintBest();
+  } catch {
+    // Offline: the device's credits.
+  }
+}
+
+/** POST to the account's Shotgun, its answer or its refusal (with the bank as it is, when it says). */
+async function post(path, body) {
+  const res = await fetch(`/api/social/shotgun/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || "That didn’t go through."), { bank: data.bank });
+  return data;
+}
 
 /* ---------- Sound ---------- */
 
@@ -138,9 +191,33 @@ function flash(text, ms = 1600) {
   }, ms);
 }
 
+/** The credits as drawn, counting towards what they are; and the change shown beside them (games/tally.js), as Snake, Pinball and Slots show theirs. */
+let shown = -1;
+let target = -1;
+let counting = 0;
+const jolt = tally(creditsOut);
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
 function paintCounters() {
   const live = game.state === "play" ? credits() : 0;
-  creditsOut.textContent = fmt(saved.credits + live);
+  const to = saved.credits + live;
+  if (to === target) return;
+  const from = shown < 0 ? to : shown;
+  target = to;
+  cancelAnimationFrame(counting);
+  // The first paint, and the bank loading in, are no change to celebrate.
+  const quiet = shown < 0;
+  const dur = quiet || reduceMotion.matches || Math.abs(to - from) < 2 ? 0 : Math.min(900, 250 + Math.abs(to - from) * 4);
+  if (!quiet && to !== from) jolt(to - from, dur);
+  const t0 = performance.now();
+  const step = (/** @type {number} */ now) => {
+    const t = dur ? Math.min(1, (now - t0) / dur) : 1;
+    shown = Math.round(from + (to - from) * (1 - (1 - t) ** 3));
+    creditsOut.textContent = fmt(shown);
+    if (t < 1) counting = requestAnimationFrame(step);
+  };
+  if (dur) counting = requestAnimationFrame(step);
+  else step(t0);
 }
 
 /** The kit the wheel has won, as chips. */
@@ -181,27 +258,41 @@ spinBtn.addEventListener("click", async () => {
   const price = cost();
   if (spinning || saved.credits < price) return;
   wakeAudio();
-  saved.credits -= price;
-  saved.spins++;
-  save();
   spinning = true;
   noteOut.textContent = "";
   paintPanel();
-  const prize = await spin(wheelEl, SOUNDS.tick);
-  const { kit } = saved;
-  if (prize.kind === "gun") {
-    const ammo = GUNS[prize.gun].ammo * 2;
-    kit.ammo = kit.gun === prize.gun ? kit.ammo + ammo : ammo;
-    kit.gun = prize.gun;
-    noteOut.textContent = `${prize.gun === "smg" ? "An" : "A"} ${GUNS[prize.gun].name}! You start the next game with it.`;
-  } else if (prize.kind === "credits") {
-    saved.credits += prize.n;
-    noteOut.textContent = `${label(prize)} credits.`;
+  /** @type {import("../../src/social/shotgun.ts").Prize} */
+  let prize;
+  if (synced) {
+    // The account's wheel: the server says where it stops, and the bank after.
+    let out;
+    try {
+      out = await post("spin", { n: saved.spins });
+    } catch (err) {
+      const bank = /** @type {any} */ (err).bank;
+      if (bank) saved = bank;
+      noteOut.textContent = navigator.onLine ? /** @type {Error} */ (err).message : "You’re offline: the wheel needs a connection.";
+      spinning = false;
+      paintPanel();
+      return;
+    }
+    // Shown spent while it turns; the prize lands with it.
+    saved = { ...saved, credits: saved.credits - price };
+    paintCounters();
+    prize = await spin(wheelEl, SOUNDS.tick, out.segment);
+    saved = out.bank;
   } else {
-    kit.mult = Math.round(kit.mult * prize.x * 100) / 100;
-    noteOut.textContent = `${label(prize)} on the credits you earn next game.`;
+    saved.credits -= price;
+    saved.spins++;
+    save();
+    paintCounters();
+    prize = await spin(wheelEl, SOUNDS.tick);
+    Object.assign(saved, applyPrize(saved, prize));
+    save();
   }
-  save();
+  if (prize.kind === "gun") noteOut.textContent = `${prize.gun === "smg" ? "An" : "A"} ${GUNS[prize.gun].name}! You start the next game with it.`;
+  else if (prize.kind === "credits") noteOut.textContent = `${label(prize)} credits.`;
+  else noteOut.textContent = `${label(prize)} on the credits you earn next game.`;
   spinning = false;
   (prize.kind === "gun" ? SOUNDS.win : SOUNDS.pickup)();
   paintPanel();
@@ -230,7 +321,11 @@ listen((type, data) => {
   } else if (type === "placed") {
     SOUNDS.placed();
     paintPlace();
-  } else if (type === "spent") flash("A turret ran out of rounds");
+  } else if (type === "spent") flash(data === "bio" ? "The gas has cleared" : "A turret ran out of rounds");
+  else if (type === "heal") {
+    SOUNDS.pickup();
+    flash("Health refilled");
+  }
   else if (type === "pickup") {
     SOUNDS.pickup();
     flash(`${GUNS[/** @type {import("./game.js").GunId} */ (data)].name}!`);
@@ -274,6 +369,8 @@ function start() {
   saved.kit = emptyKit();
   saved.spins = 0;
   save();
+  // The account's: synced from here, the wave and the credits before the multiplier.
+  synced?.begin(() => ({ w: game.wave, e: game.earned }));
   paused = false;
   document.body.classList.add("sg-on");
   held.clear();
@@ -287,35 +384,63 @@ function start() {
   run();
 }
 
-function finish() {
+async function finish() {
   stopPlacing();
   const earned = credits();
-  saved.credits += earned;
   const best = earned > saved.most;
-  if (best) saved.most = earned;
-  if (game.wave > saved.bestWave) saved.bestWave = game.wave;
-  save();
   SOUNDS.over();
   clearTimeout(sayTimer);
   say(best ? "New best!" : "The zombies got you");
   const mult = game.mult > 1 ? ` (×${+game.mult.toFixed(2)})` : "";
-  noteOut.textContent = `Wave ${game.wave} · +${fmt(earned)} credits${mult}`;
+  const ended = Date.now();
+  if (synced) {
+    // Banked by the server, if the game stayed in sync from start to end.
+    const result = await synced.end({ w: game.wave, e: game.earned });
+    if (result?.bank) {
+      saved = result.bank;
+      noteOut.textContent = `Wave ${game.wave} · +${fmt(result.banked)} credits${mult}`;
+    } else {
+      noteOut.textContent = `Wave ${game.wave} · this game fell out of sync, so its ${fmt(earned)} credits weren’t banked`;
+    }
+  } else {
+    saved.credits += earned;
+    if (best) saved.most = earned;
+    if (game.wave > saved.bestWave) saved.bestWave = game.wave;
+    save();
+    noteOut.textContent = `Wave ${game.wave} · +${fmt(earned)} credits${mult}`;
+  }
   window.setTimeout(() => {
     document.body.classList.remove("sg-on");
     paintPanel();
     paintBest();
     playBtn.textContent = "Play again";
     playBtn.focus({ preventScroll: true });
-  }, 900);
+  }, Math.max(0, 900 - (Date.now() - ended)));
 }
 
 function paintBest() {
   $("sg-bs").textContent = saved.most ? `Most in a game ${fmt(saved.most)} · best wave ${saved.bestWave}` : "";
+  // What the credits are for: the Shop's badges, bought from the account's bank.
+  const link = document.createElement("a");
+  if (synced) {
+    const left = BADGE_PRICE - saved.credits;
+    link.href = "/social/shop";
+    link.textContent = left > 0 ? `${fmt(left)} more for a Shotgun badge` : "Spend 10,000 on a badge in the Shop";
+  } else if (readName()) {
+    // Signed in, but the bank was out of reach as the page opened.
+    shopOut.textContent = "Offline: these credits are this device’s";
+    return;
+  } else {
+    link.href = "/login?next=/shotgun";
+    link.textContent = "Log in to bank credits for Shop badges";
+  }
+  shopOut.replaceChildren(link);
 }
 
 function pause() {
   if (game.state !== "play" || paused) return;
   paused = true;
+  synced?.pause();
   game.firing = false;
   game.mx = game.my = 0;
   game.stick = game.aimStick = null;
@@ -327,6 +452,7 @@ function pause() {
 function resume() {
   if (!paused) return;
   paused = false;
+  synced?.resume();
   say("");
   last = 0;
   run();
@@ -582,8 +708,14 @@ document.addEventListener("visibilitychange", () => {
 
 /* ---------- Page ---------- */
 
+/** Measures the bottom safe area (env() is only readable through a style). */
+const safe = document.createElement("div");
+safe.style.cssText = "position:fixed;left:0;bottom:0;width:0;height:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none";
+document.body.append(safe);
+
 function resize() {
   const dpr = Math.min(3, window.devicePixelRatio || 1);
+  game.inset = safe.offsetHeight * dpr;
   const w = Math.round(box.clientWidth * dpr);
   const h = Math.round(box.clientHeight * dpr);
   if (!w || !h || (w === canvas.width && h === canvas.height)) return;
@@ -608,5 +740,6 @@ new ResizeObserver(() => paintWheel(wheelEl)).observe(wheelEl);
 paintWheel(wheelEl);
 paintPanel();
 paintBest();
+loadBank();
 keepOffline();
 plainSwap();

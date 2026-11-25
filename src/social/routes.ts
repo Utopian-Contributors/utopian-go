@@ -1,4 +1,4 @@
-import { createPublicKey, randomBytes } from "crypto";
+import { createPublicKey, randomBytes, randomInt } from "crypto";
 import express, { NextFunction, Request, Response, Router } from "express";
 import { ADS_PAY_TO, SITE_URL, TERMS_VERSION, UTCC_MINT, shopAdmins } from "../config";
 import { rateLimit } from "../lib/rateLimit";
@@ -61,10 +61,15 @@ import {
   getUser,
   insertUser,
   bumpBadge,
+  bankShotgun,
+  buyShotgunBadge,
   buyStatus,
   finishBoardGame,
   givePrize,
   itemsOf,
+  shotgunBank,
+  spinShotgun,
+  takeShotgunKit,
   grantPack,
   heldPrizes,
   openSlotGame,
@@ -149,8 +154,9 @@ import {
 } from "./limits";
 import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
-import { BADGE_BYTES, PACKS, STATUSES, type BoardGame, badgeFor, badgesForRank, isBadgePng, isPack, isStatus, markOf, statusFor } from "./shop";
-import { endSession, startSession, syncSession } from "./play";
+import { BADGE_BYTES, PACKS, STATUSES, type BoardGame, badgeFor, badgesForRank, isBadgePng, isPack, isShotgunBadge, isStatus, markOf, statusFor } from "./shop";
+import { endSession, endShotgun, setMult, startSession, syncSession, unstarted } from "./play";
+import { BADGE_PRICE, SEGMENTS, applyPrize } from "./shotgun";
 import { drawStops, newSeed } from "./slotDraw";
 import { BETS, DAY_MS, GAMES_A_DAY, START, STATUS_PRICE, dayOf, isBet, isOver, lineOf, payout, settle } from "./slots";
 import { avatarFile, badgeFile, bannerFile, chatAudioFile, chatPhotoFile, postAudioFile, postPhotoFile, writeAvatar, writeBadge } from "./store";
@@ -1197,6 +1203,106 @@ socialRouter.post(
     const { game, prize } = await buyStatus({ name: me.name, fruit, to, price: STATUS_PRICE, minBet: BETS[0], at: Date.now() });
     console.log(`[slots] ${me.name} spent ${STATUS_PRICE} on ${fruit}${to && to !== me.name ? ` for ${to}` : ""}`);
     res.json({ game: slotView(game), gift: !!prize, statuses: await statusesOf(me.name) });
+  }),
+);
+
+// —— Shotgun (src/social/shotgun.ts) ——
+//
+// Signed in, Shotgun's credits are the account's: the wheel is spun here, a
+// game is played under a live session (play.ts) whose credits are held to
+// what its waves can pay, and the bank buys the game's badges in the Shop.
+
+/** Signed in: the bank. Signed out: only that, so the page keeps credits on the device. */
+socialRouter.get(
+  "/shotgun",
+  readLimit,
+  wrap(async (_req, res) => {
+    const me = currentUser(res);
+    res.json(me ? { signed: true, bank: await shotgunBank(me.name) } : { signed: false });
+  }),
+);
+
+/** One spin: {n}, the spins the page has seen since the last game. Answers where it stopped, and the bank after. */
+socialRouter.post(
+  "/shotgun/spin",
+  requireAuth,
+  spinLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const n = req.body?.n;
+    if (!Number.isSafeInteger(n) || n < 0) throw new SocialError(400, "Which spin?");
+    const out = await spinShotgun({
+      name: me.name,
+      n,
+      at: Date.now(),
+      draw(bank) {
+        const segment = randomInt(SEGMENTS.length);
+        return { segment, ...applyPrize(bank, SEGMENTS[segment]) };
+      },
+    });
+    res.json(out);
+  }),
+);
+
+/** A session for the next game. Its kit is taken from the bank when its first sync arrives. */
+socialRouter.post(
+  "/shotgun/start",
+  requireAuth,
+  syncLimit,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    res.json(startSession(requireUser(res).name, "shotgun"));
+  }),
+);
+
+/** A sync: {id, w, e, p?}. The first spends the bank's kit on the game. */
+socialRouter.post(
+  "/shotgun/sync",
+  requireAuth,
+  syncLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const body = req.body ?? {};
+    if (unstarted(me.name, body.id)) setMult(body.id, (await takeShotgunKit(me.name, Date.now())).mult);
+    res.json(syncSession(me.name, "shotgun", body));
+  }),
+);
+
+/** The end of a game: the last sync, and its credits banked at the kit's multiplier. */
+socialRouter.post(
+  "/shotgun/end",
+  requireAuth,
+  syncLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const now = Date.now();
+    const body = req.body ?? {};
+    if (unstarted(me.name, body.id)) setMult(body.id, (await takeShotgunKit(me.name, now)).mult);
+    const { wave, banked } = endShotgun(me.name, body, now);
+    res.json({ banked, wave, bank: await bankShotgun(me.name, banked, wave, now) });
+  }),
+);
+
+/** Spend BADGE_PRICE banked credits on one of Shotgun's badges: {badge}. */
+socialRouter.post(
+  "/shotgun/buy",
+  requireAuth,
+  writeLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const badge = req.body?.badge;
+    if (!isShotgunBadge(badge)) throw new SocialError(400, "No such badge.");
+    const bank = await buyShotgunBadge({ name: me.name, badge, price: BADGE_PRICE, at: Date.now() });
+    console.log(`[shotgun] ${me.name} spent ${BADGE_PRICE} on ${badge}`);
+    res.json({ bank, items: await itemsOf(me.name) });
   }),
 );
 
@@ -2275,8 +2381,10 @@ socialRouter.get(
       admin: shopAdmins().has(me.name),
       // Won at Fruit Slots, or given: each unlocks a pack free, or goes on to someone else.
       prizes: await heldPrizes(me.name),
-      // Owned one at a time: statuses bought or given ('st:'), badges won by a place on a board ('bd:').
+      // Owned one at a time: statuses bought or given ('st:'), badges won by a place on a board or bought with Shotgun credits ('bd:').
       items: await itemsOf(me.name),
+      // Shotgun's banked credits, which buy its badges.
+      shotgun: (await shotgunBank(me.name)).credits,
     });
   }),
 );

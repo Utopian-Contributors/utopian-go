@@ -94,6 +94,23 @@ export const WON_BADGES: Record<string, { game: BoardGame; name: string; from: n
   ),
 );
 
+/**
+ * Badges bought with Shotgun credits (src/social/shotgun.ts BADGE_PRICE each),
+ * one at a time, from the credits an account has banked in synced games. Each
+ * is worn as a badge is, /bd-<id>.svg, drawn by hand as the game badges are.
+ */
+export const SHOTGUN_BADGES = [
+  { id: "sg1", name: "Crosshair" },
+  { id: "sg2", name: "Danger" },
+  { id: "sg3", name: "Zombie" },
+  { id: "sg4", name: "Buckshot" },
+  { id: "sg5", name: "Biohazard" },
+] as const;
+
+export function isShotgunBadge(value: unknown): boolean {
+  return SHOTGUN_BADGES.some((badge) => badge.id === value);
+}
+
 /** What each pack costs, in cents. */
 export const PACKS: Record<Pack, { cents: number; title: string }> = {
   checks: { cents: 500, title: "Checkmarks" },
@@ -117,7 +134,7 @@ export function isPack(value: unknown): value is Pack {
 export function badgeFor(choice: unknown, owned: Pack[], rev: number, items: string[] = []): string | null {
   if (choice === "") return "";
   if (choice === "u") return owned.includes("custom") && rev > 0 ? `u${rev}` : null;
-  if (typeof choice === "string" && Object.hasOwn(WON_BADGES, choice)) return items.includes(`bd:${choice}`) ? choice : null;
+  if (typeof choice === "string" && (Object.hasOwn(WON_BADGES, choice) || isShotgunBadge(choice))) return items.includes(`bd:${choice}`) ? choice : null;
   return (BADGES as readonly unknown[]).includes(choice) && owned.includes("checks") ? (choice as string) : null;
 }
 

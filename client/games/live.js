@@ -1,6 +1,6 @@
 /**
  * A game played live (src/social/play.ts): how a Snake or Pinball game gets
- * onto the board. Signed in, a session is opened before a game starts (so
+ * onto the board, and how a Shotgun game's credits are banked. Signed in, a session is opened before a game starts (so
  * Snake has its apple seed the moment the first swipe lands), synced every
  * couple of seconds while it runs, and closed when it ends. Only a game kept
  * in sync from start to end counts; one that falls out of sync plays on and
@@ -16,7 +16,7 @@
 import { readName } from "../js/me.js";
 
 /**
- * @param {"snake" | "pinball"} game
+ * @param {"snake" | "pinball" | "shotgun"} game
  * @param {HTMLElement} badge the header's Synced / Offline
  */
 export function live(game, badge) {
@@ -37,7 +37,16 @@ export function live(game, badge) {
   function show(on) {
     badge.dataset.on = on ? "1" : "";
     badge.textContent = on ? "Synced" : "Offline";
-    badge.title = on ? "In sync: this game counts for the board" : readName() ? "Not in sync: this game counts on this device only" : "Log in to put games on the board";
+    badge.title =
+      game === "shotgun"
+        ? on
+          ? "In sync: this game’s credits go to your account"
+          : "Not in sync: this game’s credits won’t be banked"
+        : on
+          ? "In sync: this game counts for the board"
+          : readName()
+            ? "Not in sync: this game counts on this device only"
+            : "Log in to put games on the board";
   }
 
   /** @param {string} path @param {object} body @param {boolean} [keepalive] */

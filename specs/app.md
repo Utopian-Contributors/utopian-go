@@ -274,9 +274,9 @@ POST /api/social/shop/prize/<id>/unlock → {pack, owned, prizes}
 POST /api/social/shop/prize/<id>/give {to} → {to, prizes}
 ```
 
-**Shotgun** is the fourth game: a wheel of fortune, then zombie waves. It is played entirely
-on the device, offline first like the others, and needs no account; nothing of it is asked of
-the API, and it has no shared board. Its credits are its own, not Fruit Slots'.
+**Shotgun** is the fourth game: a wheel of fortune, then zombie waves. It is played on the
+device, offline first like the others, and needs no account; it has no shared board. Its
+credits are its own, not Fruit Slots'.
 
 - **The wheel.** Twelve equal segments: three guns to start the next game with (Shotgun, SMG,
   Rifle, each with twice a crate's ammo; one spin in four), six of credits paid at once (+5,
@@ -324,11 +324,41 @@ the API, and it has no shared board. Its credits are its own, not Fruit Slots'.
   (the player can stand inside); those pressed against it gnaw it, 4 a second (a blue one 6),
   from a strength of 150, shown as a ring round it, until it goes down, leaving the turret.
   Of two turrets carried the better is placed first; taking a third leaves the weakest.
+- **Biohazard.** From wave 9 a crate (stencilled BIOHAZARD) may hold a biohazard, carried and
+  placed as a turret is. It fires nothing: for 20 seconds it breathes a green cloud (15 units
+  across from it, not through walls), and a zombie that enters it is infected. An infected
+  zombie (tinted sickly, in a pulsing haze) loses 0.55 health a second until it dies, a kill
+  that pays as any other, and passes the infection to zombies it brushes past.
+- **Crates in lots.** From wave 5, crates come several at once, every 13–19 seconds once at most
+  one is left on the field: a gun, a turret (or biohazard) and a **health crate** (white, a red
+  cross), which fills the player's health back up; from wave 10, a second gun.
 - **Credits, the one count.** There are no points: the header shows only credits, the wheel
   pays and costs them, and a game earns them. A zombie is 1 credit, a blue one 3, a cleared
   wave n is n. A game's credits are multiplied by the kit's multiplier and banked when the
-  zombies win. The device keeps the credits, the kit, the most one game has earned and the
-  best wave (`localStorage` `ug.sg`).
+  zombies win. Signed out (or with the server out of reach as the page opens), the device keeps
+  the credits, the kit, the most one game has earned and the best wave (`localStorage` `ug.sg`).
+- **The bank.** Signed in, the credits are the account's (`shotgun_banks`, rules in
+  `src/social/shotgun.ts`, shared with the page). The wheel is spun on the server, which says
+  which segment it stopped on (`n`, the spins seen, so a spin sent twice is played once). A
+  game is played under a live session (`games/live.js`, Synced or Offline in the header), synced
+  with the wave and the credits before the multiplier; its first sync spends the bank's kit.
+  The waves cannot be replayed, so a game is bounded: the wave only climbs, never sooner than
+  its zombies could arrive (`reachMs`), and the credits only climb, never past every zombie so
+  far blue and the wave in play cleared (`maxEarned`). At the end they are banked times the
+  kit's multiplier. A game that falls out of sync banks nothing. Device credits never move to
+  the account.
+- **Badges for credits.** Five Shotgun badges (Crosshair, Danger, Zombie, Buckshot, Biohazard;
+  `bd-sg1…5.svg`, drawn by hand) cost 10,000 banked credits each, bought in the Shop
+  (`unlocks`, `bd:sg<n>`, how `shotgun`).
+
+```
+GET  /api/social/shotgun                 → {signed, bank?: {credits, most, bestWave, spins, kit}}
+POST /api/social/shotgun/spin {n}        → {segment, bank}         409 {bank} when n is stale
+POST /api/social/shotgun/start           → {id, every}
+POST /api/social/shotgun/sync {id, w, e, p?} → {score}             409 {broken} once it stops counting
+POST /api/social/shotgun/end  {id, w, e} → {banked, wave, bank}
+POST /api/social/shotgun/buy {badge}     → {bank, items}
+```
 
 Every page wears the same header as search: the wordmark, the search field, and the
 account control. Signed in, the control is a **Wallet** button (a small pill with a wallet
@@ -849,7 +879,9 @@ POST /api/social/shop/badge  64×64 PNG → {badgeRev}
 owned one at a time: fruit statuses bought with credits or given (`st:<fruit>`), and the games'
 badges won by a place on a board (`bd:<id>`, see Live games). The Shop shows a status owned
 alone as wearable within the Fruit statuses pack, and each game's badge set as a pack no one can
-buy: its badges won, and for the rest the place that unlocks them.
+buy: its badges won, and for the rest the place that unlocks them. It also has `shotgun`, the
+Shotgun credits banked, and shows Shotgun's badges with their price and Unlock (a confirm
+dialog) once the bank covers one.
 
 ### Data Model
 
