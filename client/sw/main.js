@@ -66,8 +66,8 @@ const SHELLS = ["/", "/social", "/wallet"];
  */
 const GAMES = ["/games", "/pinball", "/snake", "/slots", "/shotgun"];
 
-/** The marks and the fruit pattern the games list's tiles are drawn with (client/games.html). */
-const TILE_MARKS = ["/ic-flippers.svg", "/ic-apple.svg", "/slots-fruit.svg", "/ic-shell.svg"];
+/** The marks and the fruit pattern the games list's tiles and rewards are drawn with (client/games.html). */
+const TILE_MARKS = ["/ic-flippers.svg", "/ic-apple.svg", "/slots-fruit.svg", "/ic-shell.svg", "/st-banana.svg", "/bd-sg1.svg", "/bd-sn1.svg"];
 
 /**
  * Whether a page or file is one of the games', which the caches never let go

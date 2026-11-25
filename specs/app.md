@@ -108,8 +108,8 @@ page is open, or a copy the service worker kept, sends the page there itself
 (`client/wallet/main.js`); offline, the session kept on the device still counts as signed in.
 
 **Games** is the home page's third row (a game controller, skeu-icons' `gamepad-2`, `ic-games`,
-also the tab icon of the games page and of every game). It opens the games list: a header with
-Back and the title, then the games laid out as the home page's tiles, as wide as home's column
+also the tab icon of the games page and of every game). It opens the games list: Back, then a big header on the red (**Games** large and a How
+rewards work pill down to the rewards), then, on the panel under Play, the games laid out as the home page's tiles, as wide as home's column
 (584px) with its 104px rows: Fruit Slots the tall tile spanning three rows on the left,
 Pinball, Snake and Shotgun one row each on the right. On a phone (620px and narrower) it is one
 column, each game a full-width row and Fruit Slots two rows tall. Each tile has its name and a line about it, in its own colour
@@ -120,7 +120,10 @@ table's felt green with a pair of flippers and the ball (`ic-flippers.svg`, draw
 skeu-icons manner, as the package has no flipper), Snake in amber under its apple (`ic-apple`), and Shotgun in
 gunmetal under a pair of red shells (`ic-shell.svg`, drawn by hand in the skeu-icons manner). The
 marks are linked with their content hash and kept by the worker for good (`TILE_MARKS`), like
-the games themselves. The screenshots (`game-*.webp`) are no longer shown on the list. Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists four games.
+the games themselves. The screenshots (`game-*.webp`) are no longer shown on the list. Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists four games. Under them, **Rewards**: a teal card saying
+what each game's credits or places buy (Fruit Slots: a fruit status per 1,000; Shotgun: a badge
+per 10,000 banked; Snake and Pinball: a top-ten place's badge); the whole card opens the Shop
+(`/social/shop`).
 
 The games list is offline first, and so is every game on it. `games.js` registers the service
 worker and, on a first visit, hands it the page (`ugSeed`, as the games do); and the worker's

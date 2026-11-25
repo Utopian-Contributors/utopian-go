@@ -18,6 +18,9 @@
   --a: #ffffff;
   --card: #962421;
   --card2: #ad302b;
+  /* Words on the panel: ink by day, white after dark. */
+  --ink: #2b1a12;
+  --ink-f: #6b5a52;
   --ff: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color-scheme: dark;
 }
@@ -29,6 +32,8 @@
     --panel: #240807;
     --card: #3a0f0d;
     --card2: #521714;
+    --ink: #ffffff;
+    --ink-f: rgba(255, 255, 255, 0.7);
   }
 }
 
@@ -127,9 +132,66 @@ body {
   scale: 0.96;
 }
 
-.gm-hd h1 {
+/*
+ * The big header: the page's name large on the red, and the way down to the
+ * rewards. Its contents keep to the list's column.
+ */
+.gm-hero {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(584px + 32px);
+  margin: 0 auto;
+  padding: 16px 16px 28px;
+}
+
+.gm-hero h1 {
   margin: 0;
-  font: 700 20px var(--ff);
+  font: 800 clamp(56px, 16vw, 88px) / 0.95 var(--ff);
+  letter-spacing: -0.035em;
+  text-shadow: 0 2px 0 rgb(0 0 0 / 0.12), 0 8px 24px rgb(0 0 0 / 0.18);
+}
+
+.gm-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  margin-top: 18px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--bar);
+  font: 650 14px var(--ff);
+  text-decoration: none;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+}
+
+.gm-cta::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-top: -3px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  rotate: 45deg;
+}
+
+.gm-cta:active {
+  scale: 0.97;
+}
+
+.gm-cta:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+/* A heading over the tiles, on the panel. */
+.gm-h2 {
+  max-width: 584px;
+  margin: 4px auto 0;
+  color: var(--ink);
+  font: 700 20px/1.2 var(--ff);
+  letter-spacing: -0.01em;
 }
 
 main {
@@ -294,4 +356,98 @@ main {
   @view-transition {
     navigation: auto;
   }
+}
+
+/*
+ * Rewards: what each game's credits or places buy, as a tile of its own in a
+ * deep teal; the whole card opens the Shop, a chevron by its title saying so.
+ * Each reward on a frosted row with its picture.
+ */
+.gm-rw {
+  --hi: #2fa3b8;
+  --lo: #134e69;
+  display: block;
+  max-width: 584px;
+  box-sizing: border-box;
+  margin: 22px auto 8px;
+  padding: 20px 18px 18px;
+  border-radius: 18px;
+  background: linear-gradient(150deg, var(--hi), var(--lo));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.28),
+    inset 0 -1px 0 rgb(0 0 0 / 0.18),
+    0 1px 2px rgb(0 0 0 / 0.2);
+  color: #fff;
+  text-decoration: none;
+  scroll-margin-top: 16px;
+  transition: filter 0.16s, scale 0.2s cubic-bezier(0.28, 1.4, 0.36, 1);
+}
+
+.gm-rw:hover {
+  filter: brightness(1.06) saturate(1.05);
+}
+
+.gm-rw:active {
+  scale: 0.99;
+}
+
+.gm-rw:focus-visible {
+  outline: 2px solid var(--lo);
+  outline-offset: 3px;
+}
+
+.gm-rw h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font: 700 22px/1.2 var(--ff);
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+.gm-rw h2::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border: solid currentColor;
+  border-width: 2.5px 2.5px 0 0;
+  rotate: 45deg;
+}
+
+.gm-rw-sub {
+  margin: 4px 0 14px;
+  font: 500 14px/1.35 var(--ff);
+  opacity: 0.92;
+}
+
+.gm-rw ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gm-rw li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.14);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12);
+  font: 500 14px/1.35 var(--ff);
+}
+
+.gm-rw li img {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.25));
+}
+
+.gm-rw li b {
+  display: block;
+  font-weight: 650;
 }
