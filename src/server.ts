@@ -18,6 +18,7 @@ import { newsLink, newsPhoto, renderHomeNews, startNews } from "./lib/news";
 import { WATCH_COOKIE, renderFundPrices, renderHomeTickerReady, warmHomeTiles, watchKeys } from "./lib/tokens/ticker";
 import { ACCOUNT_NAV, HOME_NAV, accountNav, authPath, homeNav, nextPath, frameSocial, profileCard, renderAuth, renderPage, socialFrame } from "./pages";
 import { apiRouter } from "./routes/api";
+import { loadSeoDocs, mountSeo, resolveWallet, sendNotFound, walletDoc } from "./seo";
 import { startAdPayments } from "./social/adPay";
 import { adFor, flushAds, startAds } from "./social/ads";
 import { readCookie, readSession } from "./social/auth";
@@ -68,6 +69,9 @@ const HOME_SLOT = 'class="home"';
 // arrow, tabs dimmed. Neither affects layout, but without it the shell paints
 // the idle chrome and flips to loading a round trip later.
 const RES_CLASS = 'class="res ld"';
+
+/** The home page's title (client/index.html), which a results page swaps for its query's. */
+const TITLE_SLOT = "<title>UtopianGO — Search the web. Instantly.</title>";
 
 /** Anchor for the query, so the field is filled at first paint. */
 const INPUT_SLOT = 'id="q"';
@@ -386,6 +390,7 @@ function loadDocs() {
 
 loadShell();
 loadDocs();
+loadSeoDocs(publicDir);
 try {
   // Picks up client rebuilds in dev without polling on the request path.
   //
@@ -405,6 +410,7 @@ try {
     const base = filename ? path.basename(String(filename)) : "";
     if (!base || base.startsWith("index.html")) loadShell();
     if (!base || /^(wallet|social|auth)\.html/.test(base)) loadDocs();
+    if (!base || /^404\.html/.test(base)) loadSeoDocs(publicDir);
   });
 } catch {
   // Watch is best-effort — a missing directory just means we fall back.
@@ -530,17 +536,19 @@ async function signedIn(req: express.Request): Promise<boolean> {
 }
 
 /**
- * The pages only an account may open: the wallet and every Social page.
- * Case-blind, as Express's own routes are, so /WALLET is the wallet too.
+ * The pages only an account may open: every Social page. The wallet is
+ * anyone's: its lists, prices and token panels are open, and signed out the
+ * portfolio's place asks them to log in (src/pages.ts SIGNED_OUT).
+ * Case-blind, as Express's own routes are, so /SOCIAL is Social too.
  */
-const PRIVATE_PAGE = /^\/(wallet|social)(?:\/|$)/i;
+const PRIVATE_PAGE = /^\/social(?:\/|$)/i;
 
 /** Social's files, not pages: search results show its avatars, and search ads its banners, to anyone. */
 const SOCIAL_FILE = /^\/social\/[abtivk]\//i;
 
 /**
- * The wallet and Social, signed in only. Anyone else asking for one of their
- * pages goes to the login page, which brings them back to it once they are in.
+ * Social, signed in only. Anyone else asking for one of its pages goes to the
+ * login page, which brings them back to it once they are in.
  */
 app.use((req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD") return next();
@@ -552,17 +560,36 @@ app.use((req, res, next) => {
   }, next);
 });
 
-app.get(WALLET_PATH, (req, res, next) => {
+/**
+ * The wallet: /wallet (Trending), /wallet/<list>, /wallet/<token>. One
+ * document, its head written for the address it was asked at and the list
+ * or token it opens on named on <body> (src/seo.ts walletDoc). Any other
+ * spelling of an address, and the ?t= and ?c= it used to take, go to the
+ * one canonical one.
+ */
+app.get([WALLET_PATH, `${WALLET_PATH}/:seg`], (req, res, next) => {
   const doc = docs.wallet;
-  if (doc) {
-    const signed = !!readSession(req);
-    sendDoc(req, res, doc[signed ? "in" : "out"], `wallet:${signed}`);
+  if (!doc) {
+    if (req.path !== WALLET_PATH) return next();
+    // Not built yet: express.static and the precompressed lookup both read
+    // the path off req.url, so pointing it at the built file is all this takes.
+    req.url = WALLET_FILE + req.originalUrl.slice(req.path.length);
+    return next();
+  }
+  const at = resolveWallet(req);
+  if (!at) return sendNotFound(req, res);
+  if (at.redirect) {
+    res.redirect(301, at.path);
     return;
   }
-  // express.static and the precompressed lookup both read the path off
-  // req.url, so pointing it at the built file is all this takes.
-  req.url = WALLET_FILE + req.originalUrl.slice(req.path.length);
-  next();
+  const signed = !!readSession(req);
+  try {
+    const html = walletDoc(doc[signed ? "in" : "out"], at.target, at.path);
+    // A list's rendering is everyone's, kept compressed; a token's, of 1,500, is not kept.
+    sendDoc(req, res, html, at.target.token ? null : `wallet:${signed}:${at.path}`);
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -886,6 +913,18 @@ app.use(
   }),
 );
 
+/**
+ * The legal documents' old addresses. They are PDFs now (client/legal), and
+ * the Terms still link to /privacy, which used to land on the home page.
+ */
+app.get(["/terms", "/privacy"], (req, res) => {
+  res.redirect(301, `${req.path}.pdf`);
+});
+
+// robots.txt, the sitemap and the token price pages (src/seo.ts). After the
+// static files, so a file of the same name would win, and after compression.
+mountSeo(app);
+
 app.use("/api/social", socialRouter);
 app.use(apiRouter);
 
@@ -936,7 +975,17 @@ async function sendIndex(
   // (NEWS_RESERVE in build-client.mjs). A wordmark tap home from results shows
   // no cards until the next load; the section hides itself while empty.
   if (variant === "home") html = replaceSlot(html, NEWS_SLOT, `<div id="hm-nw">${renderHomeNews()}</div>`);
-  if (variant === "res") html = replaceSlot(html, INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);
+  if (variant === "res") {
+    html = replaceSlot(html, INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);
+    // Named for its query, as client/js/url.js names it after a search in the page.
+    if (html.includes(TITLE_SLOT)) html = replaceSlot(html, TITLE_SLOT, `<title>${attr(q)} — UtopianGO</title>`);
+    else console.warn("[shell] no home <title>: results pages keep it");
+    // A page of someone else's search results is not a page to send people to
+    // from a search engine's own (Google's guidelines ask for exactly this).
+    // A header, so it costs the document nothing; robots.txt leaves /?q=
+    // crawlable so the crawler can read it.
+    res.setHeader("X-Robots-Tag", "noindex");
+  }
   // Tagged by what it shows, the ad left out (src/state.ts): a check from the
   // offline app holding this state gets a 304, and never an ad.
   const state = html;
@@ -975,10 +1024,16 @@ app.get("/healthz", (_req, res) => {
   res.type("text").send("ok");
 });
 
-// SPA deep-links: unknown non-API GETs fall back to the shell.
+/**
+ * Anything else is an address nothing lives at: a 404, and a page that says
+ * so. It used to be the search page under that address, with a 200, which a
+ * search engine indexes as another copy of home (a "soft 404") and a person
+ * reads as a page that ignored what they asked for. The search page answers
+ * at / alone; its state is in the query string, never the path.
+ */
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/api")) return next();
-  sendIndex(req, res, next).catch(next);
+  sendNotFound(req, res);
 });
 
 /**

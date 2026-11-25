@@ -46,11 +46,27 @@ export function buildUrl(q, t = "web") {
 }
 
 /**
+ * The tab's title, which follows the URL: a results page is named for its
+ * query, as the server names one it renders (src/server.ts sendIndex), and
+ * home for the site. Kept here so every write of the URL, and every step
+ * back through history, carries it.
+ */
+const HOME_TITLE = "UtopianGO — Search the web. Instantly.";
+
+/** @param {string} q */
+function retitle(q) {
+  document.title = q ? `${q} — UtopianGO` : HOME_TITLE;
+}
+
+window.addEventListener("popstate", () => retitle(readUrlState().q));
+
+/**
  * @param {string} q
  * @param {string} t
  * @param {"push" | "replace"} mode
  */
 export function writeUrl(q, t, mode = "push") {
+  retitle(q);
   const next = buildUrl(q, t);
   if (next === location.pathname + location.search) return;
   const fn = mode === "replace" ? history.replaceState : history.pushState;

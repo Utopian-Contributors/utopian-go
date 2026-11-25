@@ -1,0 +1,122 @@
+/*
+ * The page an address nothing lives at gets (404.html). No script, so this
+ * is the whole of its look: the home page's neutral ground, the wordmark at
+ * the top, and the controls as base.css draws them, pills on a wash.
+ */
+:root {
+  --bg: #ffffff;
+  --t: #1d1d1f;
+  --f: #6e6e73;
+  --wash: rgba(118, 118, 128, 0.12);
+  --wash2: rgba(118, 118, 128, 0.2);
+  --a: #0071e3;
+  --ff: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --t: #f5f5f7;
+    --f: #98989d;
+    --wash: rgba(118, 118, 128, 0.24);
+    --wash2: rgba(118, 118, 128, 0.32);
+    --a: #0a84ff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--t);
+  font: 16px/1.45 var(--ff);
+  -webkit-text-size-adjust: 100%;
+}
+
+/* One column, 720 wide with its gutters: the bar's are outside it, the page's inside. */
+.nf-hd {
+  padding: max(12px, env(safe-area-inset-top)) 16px 14px;
+}
+
+.nf-hd > div {
+  max-width: 688px;
+  margin: 0 auto;
+}
+
+.nf-mn {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+.nf-mn p {
+  color: var(--f);
+}
+
+.lg-mark {
+  width: 110px;
+  height: auto;
+  display: block;
+}
+
+.nf-sf {
+  display: flex;
+  gap: 8px;
+  margin: 20px 0;
+}
+
+.nf-sf input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--wash);
+  color: var(--t);
+  font: inherit;
+}
+
+.nf-sf input:focus {
+  outline: 2px solid var(--a);
+  outline-offset: 1px;
+}
+
+.nf-sf button {
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--t);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nf-go {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.nf-go a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+  background: var(--wash);
+  color: var(--t);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.nf-go a:hover {
+  background: var(--wash2);
+}

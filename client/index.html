@@ -7,7 +7,13 @@
          client/js/device.js refuses those. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <meta name="color-scheme" content="light dark" />
-    <title>Search</title>
+    <!-- The title and the description are what a search result shows of the
+         home page. A results URL gets its query for a title and is kept out
+         of the index (src/server.ts sendIndex); %SITE% is the public origin,
+         filled in by the build (scripts/build-client.mjs SITE). -->
+    <title>UtopianGO — Search the web. Instantly.</title>
+    <meta name="description" content="Search the web and get live Solana token prices, ready to trade from the results. A wallet, Social and free games, built in." />
+    <link rel="canonical" href="%SITE%/" />
     <link rel="icon" href="/go-favicon.png" sizes="64x64" type="image/png" />
     <link rel="icon" href="/go-favicon.svg" type="image/svg+xml" />
     <!-- The installed app: its name and icons are in the manifest. iOS reads the
@@ -25,10 +31,9 @@
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="utopian-go" />
-    <meta property="og:description" content="Search the web. Instantly." />
+    <meta property="og:title" content="UtopianGO" />
+    <meta property="og:description" content="Search the web and get live Solana token prices, ready to trade from the results. A wallet, Social and free games, built in." />
     <meta property="og:image" content="/og.png" />
-    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />

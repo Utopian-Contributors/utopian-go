@@ -13,10 +13,12 @@ import { rateLimit } from "../lib/rateLimit";
 import { isSignature, signatureStatus } from "../lib/txStatus";
 import { MAX_ASSETS, fetchAssets } from "../lib/tokens/asset";
 import { tokenDetail } from "../lib/tokens/detail";
+import { walletTokenPath, walletTokenTitle } from "../seo";
 import { ensureFavicon, faviconFile, faviconTint } from "../lib/tokens/favicons";
 import { tintOf } from "../lib/tokens/icons";
 import { isChartRange, priceSeries } from "../lib/tokens/history";
 import {
+  featuredTokens,
   isTokenList,
   listCounts,
   listTokens,
@@ -24,6 +26,7 @@ import {
   lookupTokens,
   quoteMints,
   searchTokens,
+  tokenByMint,
   watchTokens,
   topTokens,
 } from "../lib/tokens/store";
@@ -174,6 +177,14 @@ function readOffset(value: unknown): number {
   return Math.min(n, BRAVE_MAX_OFFSET);
 }
 
+/** A caller-supplied integer, `fallback` when unreadable, held to [min, max]. */
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  const raw = asString(value).trim();
+  const n = Math.floor(Number(raw));
+  if (!raw || !Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(n, min), max);
+}
+
 /**
  * The result language the caller asked for, or English.
  *
@@ -250,7 +261,11 @@ apiRouter.get("/api/images", imagesLimit, wrap(async (req: Request, res: Respons
   }
 
   try {
-    res.json(await braveImageSearch(q, lang));
+    // Slices of one cached Brave call (see braveImageSearch). Bounded so a
+    // caller can't ask for the whole list as one oversized response.
+    const start = clampInt(req.query.start, 0, 0, 199);
+    const count = clampInt(req.query.count, 20, 1, 48);
+    res.json(await braveImageSearch(q, lang, start, count));
   } catch (err) {
     const { message, status, query } = apiError(err, q);
     const body: ImageSearchApiResponse = {
@@ -528,6 +543,20 @@ apiRouter.get("/api/tokens/top", (_req: Request, res: Response) => {
   res.json({ tokens: topTokens(TOKEN_TOP_COUNT) });
 });
 
+/** How many the wallet page's Movers and New lists show. */
+const FEATURED_COUNT = 10;
+
+/** Movers (`s=movers`) or New (`s=new`), the wallet page's lists under the portfolio. Memory only. */
+apiRouter.get("/api/tokens/featured", searchLimit, (req: Request, res: Response) => {
+  const key = asString(req.query.s);
+  if (key !== "movers" && key !== "new") {
+    res.status(400).json({ error: "No such list." });
+    return;
+  }
+  res.setHeader("Cache-Control", "public, max-age=60");
+  res.json({ tokens: featuredTokens(key, FEATURED_COUNT) });
+});
+
 /**
  * The wallet page's lists (`c`, Trending when absent), a page at a time from
  * `after`; or with `q`, a search of the whole index. Memory only; nothing
@@ -629,7 +658,10 @@ apiRouter.get(
       return;
     }
     res.setHeader("Cache-Control", "public, max-age=30");
-    res.json(detail);
+    // Its wallet address and that page's title, which the page puts in the
+    // address bar when the token is picked (client/wallet/main.js).
+    const rec = tokenByMint(mint);
+    res.json({ ...detail, ...(rec ? { path: walletTokenPath(rec), title: walletTokenTitle(rec) } : {}) });
   }),
 );
 

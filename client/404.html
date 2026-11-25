@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Page not found — UtopianGO</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/go-favicon.png" sizes="64x64" type="image/png" />
+    <link rel="icon" href="/go-favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <link rel="stylesheet" href="/info.css" />
+  </head>
+  <!-- What an address nothing lives at gets, with a 404 (src/server.ts): it
+       used to be the home page under that address, which a search engine
+       indexes as a copy of home and a person reads as a page that forgot
+       what they asked for. No script; the search field is a plain GET to /. -->
+  <body class="nf">
+    <header class="nf-hd">
+      <div>
+        <a href="/" aria-label="UtopianGO home"><img class="lg-mark" src="/go-wordmark.svg" alt="" /></a>
+      </div>
+    </header>
+    <main class="nf-mn">
+      <h1>Page not found</h1>
+      <p>Nothing lives at this address. The link may be mistyped, or the page may have moved.</p>
+      <form class="nf-sf" role="search" action="/" method="get">
+        <input name="q" type="search" required maxlength="400" aria-label="Search" placeholder="Search the web" autocomplete="off" />
+        <button type="submit">Search</button>
+      </form>
+      <div class="nf-go">
+        <a href="/">Home</a>
+        <a href="/wallet">Wallet</a>
+        <a href="/games">Games</a>
+      </div>
+    </main>
+  </body>
+</html>

@@ -24,7 +24,8 @@
  *   same reason, and its document is capped at 14KB gzip. The login page is
  *   the fourth, and the smallest. Games, the list of games, is the fifth,
  *   Pinball the sixth, Snake the seventh, Fruit Slots the eighth, and
- *   Shotgun the ninth.
+ *   Shotgun the ninth. The page a missing address gets is the last: no
+ *   script, and one small sheet.
  */
 import * as esbuild from "esbuild";
 import { minify as minifyHtml } from "html-minifier-terser";
@@ -54,6 +55,16 @@ const outDir = path.join(root, "public");
  * This much leaves the server before it has to wait for an ACK.
  */
 const INIT_WINDOW = 14_600;
+
+/**
+ * The public origin, for the URLs a document has to spell out whole: its
+ * canonical link and the cards a shared link unfurls into. Written into the
+ * source as %SITE% and filled in here, at build time, because these pages
+ * are files the server hands over as they are. The default is
+ * src/config.ts DEFAULT_SITE_URL's, and SITE_URL overrides both the same
+ * way: a staging build that sets it points its tags at itself.
+ */
+const SITE = (process.env.SITE_URL || "https://utopiango.com").replace(/\/+$/, "");
 
 /**
  * The part of that window that is not ours to spend.
@@ -164,6 +175,12 @@ const PAGES = [
     // As Pinball: the document is held to the window, the game's bundle (the
     // wheel, the waves and every gun and turret in them) is left to be the game.
     doc: { file: "shotgun.html", gzip: FLIGHT },
+    parallel: [],
+  },
+  {
+    name: "Not found",
+    // The page an address nothing lives at gets (src/server.ts), with a 404.
+    doc: { file: "404.html", gzip: FLIGHT },
     parallel: [],
   },
   {
@@ -894,7 +911,7 @@ async function buildHtml(css, jsHash, swapHash, connectHash, qrHash, loginHash, 
 
 /** One HTML minifier configuration, so the two documents cannot drift. */
 function minifyDoc(raw) {
-  return minifyHtml(raw, {
+  return minifyHtml(raw.replaceAll("%SITE%", SITE), {
     collapseWhitespace: true,
     removeComments: true,
     removeRedundantAttributes: true,
@@ -1108,6 +1125,19 @@ async function buildSnakeHtml(hash) {
   writeFileSync(path.join(outDir, "snake.html"), await minifyDoc(raw));
 }
 
+/**
+ * The page a missing address gets: client/info.css inlined, no script, and
+ * the wordmark inline, as the login page wears it, so it costs no second
+ * request.
+ */
+async function buildInfoHtml() {
+  const css = await minifyCss(readFileSync(path.join(clientDir, "info.css"), "utf8"));
+  let raw = readFileSync(path.join(clientDir, "404.html"), "utf8");
+  raw = replaceOnce(raw, /<link rel="stylesheet" href="\/info\.css"\s*\/?>/, `<style>${css}</style>`, "404 stylesheet link");
+  raw = replaceOnce(raw, /<img\b[^>]*class="lg-mark"[^>]*\/>/, inlineWordmark(), "404 wordmark img");
+  writeFileSync(path.join(outDir, "404.html"), await minifyDoc(raw));
+}
+
 /** Typeset the legal documents into public/ as PDFs. */
 function buildLegal() {
   for (const doc of LEGAL) {
@@ -1264,6 +1294,7 @@ async function buildAssets() {
     buildSnakeHtml(hash),
     buildSlotsHtml(hash),
     buildShotgunHtml(hash),
+    buildInfoHtml(),
   ]);
   buildLegal();
   precompress();

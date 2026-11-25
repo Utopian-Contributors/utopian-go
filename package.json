@@ -9,6 +9,7 @@
     "dev": "node scripts/dev.mjs",
     "build:client": "node scripts/build-client.mjs",
     "build:og": "node scripts/og-image.mjs",
+    "build:cards": "node scripts/og-cards.mjs",
     "build:icons": "node scripts/app-icons.mjs",
     "build:skeu": "node scripts/skeu-icons.mjs && node scripts/app-icons.mjs",
     "build:server": "tsc",
