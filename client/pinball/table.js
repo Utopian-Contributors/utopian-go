@@ -100,10 +100,6 @@ wall([[50, 540], [50, 641.5], [116, 677.5]], { kind: "rail" });
 post(50, 540, 6);
 wall([[330, 540], [330, 641.5], [264, 677.5]], { kind: "rail" });
 post(330, 540, 5);
-// The outlane's head: above the divider the drop bank stands closer to the
-// lane wall than a ball is wide, so a deflector slants across under it and
-// turns a ball the kickback fires up the outlane out onto the table.
-wall([[354, 506], [339, 484]], { kind: "rail", e: 0.6 });
 
 /** Slingshots: the face toward the middle kicks. */
 export const SLINGS = [
@@ -224,7 +220,7 @@ const QUESTS = [
 /**
  * @typedef {{x:number, y:number, vx:number, vy:number, px:number, py:number, z:number,
  *   ramp:number, rampV:number, held:number, cool:number, lane:boolean, launched:boolean,
- *   still:number, sw:Set<string>, orbitT:number, auto:number}} Ball
+ *   still:number, sw:Set<string>, orbitT:number, auto:number, kicked:boolean}} Ball
  */
 
 /** @type {Ball[]} */
@@ -321,6 +317,7 @@ function newBall(lane = true) {
     sw: new Set(),
     orbitT: 0,
     auto: 0,
+    kicked: false,
   };
   balls.push(b);
   return b;
@@ -875,15 +872,25 @@ function stepBall(b, dt) {
   });
   // The kickback, at the foot of the outlane.
   if (game.kickback && b.x > 330 && b.x < LANE_X && b.y > 690) {
-    // Fired straight up the outlane's right side, clear of the divider's
-    // post, onto the deflector that turns it out over the table.
+    // Fired straight up the outlane's right side, clear of the divider's post.
     b.x = Math.max(b.x, LANE_X - R - 1);
     b.vy = -920;
     b.vx = 0;
+    b.kicked = true;
     game.kickback = false;
     flash("kick", 1);
     hooks.say("Kickback!", 2);
     hooks.sound("kickback");
+  }
+  // Past the top of the divider, a kicked ball goes out up and to the left,
+  // over the divider's post and under the drop bank, which stands too close
+  // to the lane wall for a ball to carry on straight up.
+  if (b.kicked && (b.vy > 0 || b.x < 330)) b.kicked = false;
+  if (b.kicked && b.y < 514) {
+    const v = Math.hypot(b.vx, b.vy);
+    b.vx = -0.66 * v;
+    b.vy = -0.75 * v;
+    b.kicked = false;
   }
   // The spinner: a ball through it sets it turning by how fast it went.
   if (b.x < 50 && crossed(b, 14, SPINNER.y, 50, SPINNER.y)) {
