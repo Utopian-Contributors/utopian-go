@@ -233,6 +233,18 @@ body {
   cursor: pointer;
 }
 
+/* On a touch screen the sticks hold the bottom corners, so it sits top right. */
+@media (hover: none) {
+  .sg-place {
+    top: 10px;
+    bottom: auto;
+  }
+
+  .sg-msg {
+    top: 58px;
+  }
+}
+
 .sg-place.on {
   background: #e5484d;
 }

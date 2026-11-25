@@ -179,6 +179,8 @@ export const game = {
   /** @type {Beam[]} the railgun's beams, fading */ beams: [],
   /** The screen's bottom safe area, in device pixels, kept clear by the HUD. */
   inset: 0,
+  /** @type {{x: number, y: number}[]} where a touch screen's two sticks stand, kept clear of barrels and crates */
+  pads: [],
 };
 
 /** @typedef {"shot" | "empty" | "kill" | "boom" | "hurt" | "pickup" | "cleared" | "wave" | "over" | "earn" | "turret" | "placed" | "spent" | "unlock" | "lase" | "dome" | "heal"} Event */
@@ -424,10 +426,13 @@ function layBarrels() {
     if (Math.abs(x) > game.hw - 5 || Math.abs(y) > game.hh - 5) continue;
     if (Math.hypot(x - game.px, y - game.py) < BLAST + PLAYER_R + 2) continue;
     if (wallGap(x, y) < 8 || DOORS.some((d) => Math.hypot(d.x - x, d.y - y) < 14)) continue;
-    if (game.barrels.some((b) => Math.hypot(b.x - x, b.y - y) < 12)) continue;
+    if (game.barrels.some((b) => Math.hypot(b.x - x, b.y - y) < 12) || byPad(x, y, BARREL_R)) continue;
     game.barrels.push({ x, y, hp: 3, fuse: 0 });
   }
 }
+
+/** Whether something of radius r at a point would sit on or about a thumb-stick. @param {number} x @param {number} y @param {number} r */
+const byPad = (x, y, r) => game.pads.some((p) => Math.hypot(p.x - x, p.y - y) < STICK + 7 + r);
 
 /** How many zombies a wave sends. @param {number} w */
 const waveSize = (w) => 5 + w * 3;
@@ -476,7 +481,7 @@ function dropCrate(only, only_tier) {
     const x = rand(-game.hw + 8, game.hw - 8);
     const y = rand(-game.hh + 8, game.hh - 8);
     const d = Math.hypot(x - game.px, y - game.py);
-    if (d < 12 || wallGap(x, y) < 8 || game.barrels.some((b) => Math.hypot(b.x - x, b.y - y) < 8)) continue;
+    if (d < 12 || wallGap(x, y) < 8 || game.barrels.some((b) => Math.hypot(b.x - x, b.y - y) < 8) || byPad(x, y, CRATE_R)) continue;
     if (game.crates.some((c) => Math.hypot(c.x - x, c.y - y) < 12)) continue;
     const list = drops();
     const gun = only ?? (Math.random() < TURRET_DROP ? "turret" : list[Math.floor(Math.random() * list.length)]);
@@ -1792,8 +1797,8 @@ function drawFallen(ctx) {
 }
 
 /**
- * A thumb-stick: a ring where the thumb went down, a knob where it is, red
- * while the aiming stick is firing.
+ * A thumb-stick: a ring where it stands, the knob where the thumb has
+ * pushed it (in the middle when let go), red while the aiming stick fires.
  * @param {CanvasRenderingContext2D} ctx @param {{x: number, y: number, dx: number, dy: number}} s @param {boolean} [hot]
  */
 function drawStick(ctx, s, hot = false) {
