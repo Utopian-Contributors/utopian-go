@@ -284,6 +284,33 @@ body:not(.pb-on) .pb-board {
   .pb-b span {
     display: none;
   }
+
+  /* On a touch screen the buttons stand taller, and each one's hit area runs
+     past its edges: into the gap between them, out to the screen's sides and
+     bottom, and in play up over the foot of the table, which takes no touches
+     of its own. A thumb that slides off a button still holds its flipper. */
+  .pb-b {
+    position: relative;
+    height: 96px;
+  }
+
+  .pb-b::before {
+    content: "";
+    position: absolute;
+    inset: -8px -4px calc(-1 * max(8px, env(safe-area-inset-bottom)));
+  }
+
+  .pb-b:first-child::before {
+    left: -8px;
+  }
+
+  .pb-b:last-child::before {
+    right: -8px;
+  }
+
+  body.pb-on .pb-b::before {
+    top: -72px;
+  }
 }
 
 /* A desktop: the table as tall as the window, centred, the leaderboard at its right. */
