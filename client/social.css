@@ -844,8 +844,8 @@ a.nt:hover b { color: var(--a); }
  * the next. Where posts between two were left out, as between a thread's
  * first post and a reply further down, the line is broken.
  */
-.thread > .post.up { padding-bottom: 4px; border-bottom: 0; }
-.thread > .post + .post { margin-top: 0; padding-top: 4px; }
+.thread > .post.up { padding-bottom: 12px; border-bottom: 0; }
+.thread > .post + .post { margin-top: 0; padding-top: 12px; }
 
 .thread .mini-link {
   align-self: stretch;
@@ -860,7 +860,7 @@ a.nt:hover b { color: var(--a); }
   content: "";
   flex: 1;
   width: 2px;
-  margin: 4px 0 -4px;
+  margin: 4px 0 -20px;
   border-radius: 1px;
   background: var(--b);
 }
