@@ -51,11 +51,11 @@ export function buildUrl(q, t = "web") {
  * home for the site. Kept here so every write of the URL, and every step
  * back through history, carries it.
  */
-const HOME_TITLE = "UtopianGO — Search the web. Instantly.";
+const HOME_TITLE = "UtopianGO | Search the web. Instantly.";
 
 /** @param {string} q */
 function retitle(q) {
-  document.title = q ? `${q} — UtopianGO` : HOME_TITLE;
+  document.title = q ? `${q} | UtopianGO` : HOME_TITLE;
 }
 
 window.addEventListener("popstate", () => retitle(readUrlState().q));

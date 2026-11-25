@@ -184,7 +184,7 @@ function tokenSentence(rec: TokenRecord): string {
 
 /** A token's wallet page title; the page's script sets the same one when the token is picked. */
 export function walletTokenTitle(rec: TokenRecord): string {
-  return `${labelOf(rec)} Price, Chart and Trade — UtopianGO Wallet`;
+  return `${labelOf(rec)} Price, Chart and Trade | UtopianGO Wallet`;
 }
 
 interface Head {
@@ -214,7 +214,7 @@ function headOf(target: WalletTarget, at: string): Head {
   }
   if (target.list === "trending") {
     return {
-      title: "UtopianGO Wallet — Solana Token Prices and Your Portfolio",
+      title: "UtopianGO Wallet | Solana Token Prices and Your Portfolio",
       description:
         "Live prices and charts for every Solana token we index: trending tokens, tokenized stocks, memecoins, DeFi and more. Trade any of them, and see your own portfolio once you log in.",
       path: at,
@@ -225,7 +225,7 @@ function headOf(target: WalletTarget, at: string): Head {
   }
   const name = LIST_TITLE[target.list];
   return {
-    title: `${name}: Prices Today — UtopianGO Wallet`,
+    title: `${name}: Prices Today | UtopianGO Wallet`,
     description: `Live prices, 24-hour moves and charts for ${LIST_PHRASE[target.list]}, busiest first. Open any one for its market, and trade it from the UtopianGO wallet.`,
     path: at,
     crumbs: [
@@ -252,7 +252,7 @@ function headTags(h: Head): string {
     `<meta name="description" content="${d}">` +
     `<link rel="canonical" href="${url}">` +
     '<meta property="og:type" content="website"><meta property="og:site_name" content="UtopianGO">' +
-    `<meta property="og:title" content="${esc(h.title.replace(/ — UtopianGO Wallet$/, ""))}">` +
+    `<meta property="og:title" content="${esc(h.title.replace(/ \| UtopianGO Wallet$/, ""))}">` +
     `<meta property="og:description" content="${d}"><meta property="og:url" content="${url}">` +
     `<meta property="og:image" content="${esc(SITE_URL + h.card)}">` +
     '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">' +

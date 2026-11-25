@@ -266,7 +266,7 @@ function shut() {
   chosen = "";
   for (const r of document.querySelectorAll(".wl-r.on, .wl-rc.on")) r.classList.remove("on");
   const on = chips.find((chip) => chip.dataset.c === cat);
-  setAddress(cat === "trending" ? "/wallet" : `/wallet/${cat}`, `${on?.firstChild?.textContent ?? "Trending"} — UtopianGO Wallet`);
+  setAddress(cat === "trending" ? "/wallet" : `/wallet/${cat}`, `${on?.firstChild?.textContent ?? "Trending"} | UtopianGO Wallet`);
 }
 
 /** Open a token in the drawer: its own address, and a card in Recently viewed. */
@@ -718,7 +718,7 @@ for (const chip of chips) {
     cat = chip.dataset.c;
     filter.value = "";
     // The list's own address (src/seo.ts walletListPath), named for it.
-    setAddress(cat === "trending" ? "/wallet" : `/wallet/${cat}`, `${chip.firstChild?.textContent ?? ""} — UtopianGO Wallet`);
+    setAddress(cat === "trending" ? "/wallet" : `/wallet/${cat}`, `${chip.firstChild?.textContent ?? ""} | UtopianGO Wallet`);
     toListTop();
     void paintTop();
   });

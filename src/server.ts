@@ -72,7 +72,7 @@ const HOME_SLOT = 'class="home"';
 const RES_CLASS = 'class="res ld"';
 
 /** The home page's title (client/index.html), which a results page swaps for its query's. */
-const TITLE_SLOT = "<title>UtopianGO — Search the web. Instantly.</title>";
+const TITLE_SLOT = "<title>UtopianGO | Search the web. Instantly.</title>";
 
 /** Anchor for the query, so the field is filled at first paint. */
 const INPUT_SLOT = 'id="q"';
@@ -998,7 +998,7 @@ async function sendIndex(
   if (variant === "res") {
     html = replaceSlot(html, INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);
     // Named for its query, as client/js/url.js names it after a search in the page.
-    if (html.includes(TITLE_SLOT)) html = replaceSlot(html, TITLE_SLOT, `<title>${attr(q)} — UtopianGO</title>`);
+    if (html.includes(TITLE_SLOT)) html = replaceSlot(html, TITLE_SLOT, `<title>${attr(q)} | UtopianGO</title>`);
     else console.warn("[shell] no home <title>: results pages keep it");
     // A page of someone else's search results is not a page to send people to
     // from a search engine's own (Google's guidelines ask for exactly this).
