@@ -1021,6 +1021,9 @@ body.hist .wl-ft {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+  /* Over the row's blur (.wl-fz), which reaches up past the cards into here. */
+  position: relative;
+  z-index: 1;
 }
 
 .wl-sh h2 {
