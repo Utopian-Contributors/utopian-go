@@ -22,6 +22,8 @@ const state = {
   data: null,
   images: null,
   imagesQuery: "",
+  /** The server has another slice of images for imagesQuery. */
+  imagesMore: false,
   tab: "web",
   lastQuery: "",
   requestId: 0,
@@ -160,6 +162,7 @@ function relanguage() {
   }
   state.images = null;
   state.imagesQuery = "";
+  state.imagesMore = false;
   runSearch(q, false, { keepTab: true });
 }
 
@@ -171,6 +174,7 @@ function goHome() {
   state.data = null;
   state.images = null;
   state.imagesQuery = "";
+  state.imagesMore = false;
   state.lastQuery = "";
   state.tab = "web";
   state.offset = 0;
@@ -220,6 +224,7 @@ async function runSearch(query, pushState, opts = {}) {
   if (state.imagesQuery !== query) {
     state.images = null;
     state.imagesQuery = "";
+    state.imagesMore = false;
   }
 
   state.people = [];

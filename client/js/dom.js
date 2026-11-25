@@ -72,20 +72,51 @@ export function setLoading(on) {
  */
 const WEB_SKEL = document.getElementById("sk")?.innerHTML ?? "";
 
-/** Every real tile is capped by the 220px width before it hits the 160px height. */
-const IMAGE_SKEL_W = 220;
-
 /**
- * Heights sampled from an actual result set: 19 of 20 tiles come back 220 wide,
- * with heights clustered 110–160. Matching that distribution — rather than the
- * scattered widths we used to draw — means the grid barely moves when real
- * images replace the placeholders. Fixed order, so it never reshuffles mid-wait.
+ * Tile shapes (height / width) for the image skeleton, in the mix a real result
+ * set comes back in: mostly landscape around 2:3–3:4, the odd square or
+ * portrait. Fixed order, so the placeholder never reshuffles mid-wait; each
+ * column starts at a different point in it so no two run in step.
  * @type {ReadonlyArray<number>}
  */
-const IMAGE_SKEL_HEIGHTS = [
-  124, 147, 133, 124, 140, 116, 147, 124, 131, 143, 124, 160, 133, 124, 147,
-  110, 140, 134, 144, 123,
+const IMAGE_SKEL_RATIOS = [
+  0.67, 0.75, 0.56, 1.33, 0.66, 0.8, 0.62, 0.75, 1, 0.68, 0.56, 0.75, 1.5,
+  0.67, 0.6, 0.71,
 ];
+
+/** Same breakpoint as the phone rules in app.css and render.js. */
+const PHONE = "(max-width: 620px)";
+
+/**
+ * A full screen of placeholder tiles in the real grid's own columns: six (two
+ * on a phone), each filled past the bottom of the viewport. #sk.is-ig clips
+ * it at the viewport edge, so the page reads as images continuing below.
+ * @param {HTMLElement} sk
+ */
+function imageSkeleton(sk) {
+  const n = matchMedia(PHONE).matches ? 2 : 6;
+  const top = Math.max(0, sk.getBoundingClientRect().top);
+  const tall = Math.max(320, innerHeight - top);
+  sk.style.height = `${tall}px`;
+  // Column width before layout: #sk may not be full-width yet when this runs,
+  // so measure against the window and err narrow — an extra tile below the
+  // clip costs nothing, a short column shows a gap.
+  const colW = Math.max(80, (Math.min(innerWidth, 1440) - 32) / n - 12);
+  const grid = el("div", { class: "ig ig-sk", "aria-hidden": "true" });
+  for (let c = 0; c < n; c++) {
+    const col = el("div", { class: "ig-col" });
+    let h = 0;
+    for (let i = c * 5; h < tall; i++) {
+      const r = IMAGE_SKEL_RATIOS[i % IMAGE_SKEL_RATIOS.length];
+      const cell = el("div", { class: "ig-sk-cell" });
+      cell.style.setProperty("--r", String(r));
+      col.append(cell);
+      h += colW * r + 12;
+    }
+    grid.append(col);
+  }
+  sk.replaceChildren(grid);
+}
 
 const CROSSFADE_MS = 280;
 
@@ -105,17 +136,10 @@ export function showSkeleton(kind = "web") {
       return;
     }
     sk.className = "is-ig";
-    const grid = el("div", { class: "ig ig-sk", "aria-hidden": "true" });
-    for (const h of IMAGE_SKEL_HEIGHTS) {
-      const cell = el("div", { class: "ig-sk-cell" });
-      cell.style.width = `${IMAGE_SKEL_W}px`;
-      cell.style.height = `${h}px`;
-      cell.style.setProperty("--r", String(h / IMAGE_SKEL_W));
-      grid.append(cell);
-    }
-    sk.replaceChildren(grid);
+    imageSkeleton(sk);
   } else {
     sk.className = "";
+    sk.style.height = "";
     sk.innerHTML = WEB_SKEL;
   }
 }
@@ -124,6 +148,7 @@ export function hideSkeleton() {
   const sk = $("sk");
   sk.hidden = true;
   sk.classList.remove("is-ig", "is-crossfade", "is-out");
+  sk.style.height = "";
   const col = sk.parentElement;
   if (col) col.style.minHeight = "";
 }

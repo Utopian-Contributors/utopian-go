@@ -94,12 +94,75 @@ export async function braveSearch(
   return normalize(query, data, offset);
 }
 
+/**
+ * Image search, served in slices from one Brave call.
+ *
+ * Brave's image endpoint is not paginated — no `offset` at any count, only a
+ * `count` of up to 200. So the first request for a query asks for all 200 at
+ * once (one metered call, the same as asking for 20) and the client scrolls
+ * through slices of that list. Later slices are cache hits, not Brave calls.
+ *
+ * The cache holds a query only as long as someone could plausibly still be
+ * scrolling it, and is bounded: the key is whatever an anonymous caller types,
+ * and an unbounded store of search queries is both a memory leak and a record
+ * this site has no business keeping.
+ */
+const IMAGES_PER_CALL = 200;
+const IMAGES_TTL_MS = 5 * 60_000;
+const MAX_CACHED_IMAGE_QUERIES = 500;
+const imageCache = new Map<string, { at: number; images: ImageItem[] }>();
+const imagesInFlight = new Map<string, Promise<ImageItem[]>>();
+
+function sweepImageCache(now: number): void {
+  for (const [key, entry] of imageCache) {
+    if (now - entry.at >= IMAGES_TTL_MS) imageCache.delete(key);
+  }
+  if (imageCache.size >= MAX_CACHED_IMAGE_QUERIES) imageCache.clear();
+}
+
+/** The full list for a query, from cache or from one Brave call. */
+async function allImages(query: string, lang: string): Promise<ImageItem[]> {
+  const key = `${lang}\u0000${query}`;
+  const now = Date.now();
+  const hit = imageCache.get(key);
+  if (hit && now - hit.at < IMAGES_TTL_MS) return hit.images;
+
+  // A first slice and an immediate scroll can overlap; one call serves both.
+  const pending = imagesInFlight.get(key);
+  if (pending) return pending;
+
+  const task = fetchImages(query, lang)
+    .then((images) => {
+      sweepImageCache(Date.now());
+      imageCache.set(key, { at: Date.now(), images });
+      return images;
+    })
+    .finally(() => imagesInFlight.delete(key));
+  imagesInFlight.set(key, task);
+  return task;
+}
+
+/**
+ * One slice of the results for `query`: `count` images starting at `start`,
+ * and whether any remain after them.
+ */
 export async function braveImageSearch(
   query: string,
   lang = DEFAULT_LANG,
+  start = 0,
+  count = 20,
 ): Promise<ImageSearchApiResponse> {
+  const all = await allImages(query, lang);
+  return {
+    query,
+    images: all.slice(start, start + count),
+    more: start + count < all.length,
+  };
+}
+
+async function fetchImages(query: string, lang: string): Promise<ImageItem[]> {
   const url =
-    `${BRAVE_IMAGES_ENDPOINT}?q=${encodeURIComponent(query)}&count=20` +
+    `${BRAVE_IMAGES_ENDPOINT}?q=${encodeURIComponent(query)}&count=${IMAGES_PER_CALL}` +
     langQuery(lang);
   const data = (await braveFetch(url)) as BraveImageSearchResponse;
 
@@ -121,7 +184,15 @@ export async function braveImageSearch(
     })
     .filter((i) => i.url && (i.thumbnail || i.image));
 
-  return { query, images };
+  // Brave can repeat a picture under a second listing; a scrolled grid would
+  // show it twice.
+  const seen = new Set<string>();
+  return images.filter((i) => {
+    const k = i.image || i.thumbnail || i.url;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 function meta(m?: {

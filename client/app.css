@@ -1618,19 +1618,56 @@ body:not(.home) #bm {
 }
 
 /* —— Image grid —— */
+/* Six equal columns (two on phones), each a vertical run of full-width tiles.
+   The columns are real elements filled shortest-first by render.js, not CSS
+   multi-column: infinite scroll appends to their bottoms, and CSS columns
+   would rebalance every tile already on screen. Tiles keep their aspect ratio
+   via --r (height / width, set in JS), so every box is sized before its image
+   arrives. Padding rather than aspect-ratio, which Safari 14 — still a build
+   target — doesn't have. */
 .ig {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
   align-items: flex-start;
+  gap: 12px;
   width: 100%;
+}
+
+.ig-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ig-item,
+.ig-sk-cell {
+  display: block;
+  width: 100% !important;
+  height: auto !important;
+  max-width: none;
+  max-height: none;
+}
+
+/* The scroll marker spans the grid, so its spinner sits under the middle. */
+.ig + .fd {
+  max-width: none;
+}
+
+.ig-item::before,
+.ig-sk-cell::before {
+  content: "";
+  display: block;
+  padding-top: calc(var(--r, 0.75) * 100%);
+}
+
+.ig-item img {
+  position: absolute;
+  inset: 0;
 }
 
 .ig-item {
   position: relative;
-  display: inline-block;
-  flex: 0 0 auto;
-  margin: 0;
   padding: 0;
   border: 0;
   border-radius: 10px;
@@ -1965,9 +2002,11 @@ body.lb-on {
   gap: 22px;
 }
 
-/* Image search: skeleton is an .ig grid, not result rows */
+/* Image search: skeleton is an .ig grid, not result rows — a full screen of
+   it, clipped at the viewport's bottom edge (height set in dom.js). */
 #sk.is-ig {
   display: block;
+  overflow: hidden;
 }
 
 /* During crossfade: overlay skeleton on the real grid (no double height) */
@@ -2026,15 +2065,31 @@ body.lb-on {
   margin: 0;
 }
 
-/* Placeholder tiles — same shell as .ig-item + max box as .ig-item img */
+/* Placeholder tiles, and real tiles until their image has loaded: the tile's
+   colour with a sheen sweeping across it. A mask rather than a gradient
+   background, so the sheen reads the same in either theme (as wallet.css). */
 .ig-sk-cell {
-  flex: 0 0 auto;
-  max-width: 220px;
-  max-height: 160px;
   border-radius: 10px;
+}
+
+.ig-sk-cell,
+.ig-item.is-wait {
   background: var(--ch);
-  /* Gentle pulse only — no entrance stagger (avoids busy loading) */
-  animation: sk-pulse 1.6s ease-in-out infinite;
+  -webkit-mask: linear-gradient(100deg, #000 35%, rgb(0 0 0 / 45%) 50%, #000 65%) 100% 0 / 300% 100%;
+  mask: linear-gradient(100deg, #000 35%, rgb(0 0 0 / 45%) 50%, #000 65%) 100% 0 / 300% 100%;
+  animation: shine 1.4s linear infinite;
+}
+
+/* The caption's shade is for a picture; over a placeholder it is a smudge. */
+.ig-item.is-wait .ig-cap {
+  visibility: hidden;
+}
+
+@keyframes shine {
+  to {
+    -webkit-mask-position: 0 0;
+    mask-position: 0 0;
+  }
 }
 
 /* Real grid: soft reveal after skeleton (no per-tile bounce) */
@@ -2047,14 +2102,9 @@ body.lb-on {
   opacity: 1;
 }
 
-@keyframes sk-pulse {
-  50% {
-    opacity: 0.65;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .ig-sk-cell,
+  .ig-item.is-wait,
   .tk {
     animation: none;
   }
@@ -2255,37 +2305,11 @@ body.lb-on {
   white-space: nowrap;
 }
 
-/* Image search on phones: two columns, each a vertical list of full-width
-   tiles. Tiles keep their aspect ratio via --r (height / width, set in JS), so
-   every box is still sized before its image arrives. Padding rather than
-   aspect-ratio, which Safari 14 — still a build target — doesn't have. */
+/* Image search on phones: the same columns, two of them. */
 @media (max-width: 620px) {
-  .ig {
-    display: block;
-    columns: 2;
-    column-gap: 10px;
+  .ig,
+  .ig-col {
+    gap: 10px;
   }
 
-  .ig-item,
-  .ig-sk-cell {
-    display: block;
-    width: 100% !important;
-    height: auto !important;
-    max-width: none;
-    max-height: none;
-    margin: 0 0 10px;
-    break-inside: avoid;
-  }
-
-  .ig-item::before,
-  .ig-sk-cell::before {
-    content: "";
-    display: block;
-    padding-top: calc(var(--r, 0.75) * 100%);
-  }
-
-  .ig-item img {
-    position: absolute;
-    inset: 0;
-  }
 }

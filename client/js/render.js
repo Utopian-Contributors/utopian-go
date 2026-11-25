@@ -32,6 +32,7 @@ import { tokenCards } from "./token.js";
  *   data: SearchApiResponse | null,
  *   images: ImageItem[] | null,
  *   imagesQuery: string,
+ *   imagesMore: boolean,
  *   tab: string,
  *   lastQuery: string,
  *   requestId: number,
@@ -42,6 +43,18 @@ import { tokenCards } from "./token.js";
  *   people: {name: string, bio: string, loc: string, avatarRev: number}[],
  * }} ViewState
  */
+
+/** Same breakpoint as the phone rules in app.css. */
+const PHONE = "(max-width: 620px)";
+
+/**
+ * Images per request: a desktop screen of six columns holds about 32, a phone
+ * of two about 20. Every slice after the first comes out of the server's cache
+ * of one Brave call, so this sizes the response, not the bill.
+ */
+function imagePageSize() {
+  return matchMedia(PHONE).matches ? 20 : 32;
+}
 
 /** Image tile cell — must stay in sync with `.ig-item` sizing in app.css. */
 const TILE_MAX_W = 220;
@@ -248,12 +261,16 @@ export function createRenderer(state) {
    */
   function syncFeed() {
     feedWatch?.disconnect();
-    if (state.tab !== "web") return stopFeed();
+    const images = state.tab === "images";
+    if (!images && state.tab !== "web") return stopFeed();
 
-    const done = !state.more;
+    const done = images ? !state.imagesMore : !state.more;
     // Ended without the reader ever having scrolled for it. A first page that
     // fits on one screen does not need a footnote saying it was the only one.
-    if (done && !state.offset) return stopFeed();
+    const scrolled = images
+      ? (state.images?.length || 0) > imagePageSize()
+      : state.offset > 0;
+    if (done && !scrolled) return stopFeed();
 
     if (!feedMark) feedMark = el("div", { class: "fd" });
     // Appending a node already in the tree moves it, so the marker follows the
@@ -297,6 +314,7 @@ export function createRenderer(state) {
    * there would spend another metered Brave call on the page already coming.
    */
   async function loadMore() {
+    if (state.tab === "images") return loadMoreImages();
     if (state.feeding || !state.more) return;
     state.feeding = true;
     feedWatch?.disconnect();
@@ -348,6 +366,74 @@ export function createRenderer(state) {
       // it or turns it into the end-of-results line.
       syncFeed();
     }
+  }
+
+  /**
+   * Append the next slice of images to the grid.
+   *
+   * Same one-in-flight rule as loadMore. Slices after the first are served
+   * from the server's cache of a single Brave call, so a fast scroll costs
+   * round trips to this server, not metered searches.
+   */
+  async function loadMoreImages() {
+    if (state.feeding || !state.imagesMore || !state.images) return;
+    state.feeding = true;
+    feedWatch?.disconnect();
+    // Placeholders at the foot of every column rather than a spinner: the next
+    // slice reads as images already on their way into their places.
+    const grid = results.querySelector(".ig");
+    const pending = grid ? pendingTiles(grid) : [];
+
+    const q = state.imagesQuery;
+    const start = state.images.length;
+    const id = state.requestId;
+
+    try {
+      const res = await fetch(
+        `/api/images?q=${encodeURIComponent(q)}&start=${start}&count=${imagePageSize()}${langParam()}`,
+        { headers: { Accept: "application/json" } },
+      );
+      /** @type {import('../../src/types').ImageSearchApiResponse} */
+      const json = await res.json();
+      if (id !== state.requestId || state.tab !== "images" || state.imagesQuery !== q) return;
+
+      if (json.error || !json.images?.length) {
+        state.imagesMore = false;
+      } else {
+        state.imagesMore = !!json.more;
+        // Into the model too, so a return to this tab repaints everything the
+        // reader had scrolled through.
+        state.images = state.images.concat(json.images);
+        for (const p of pending) p.remove();
+        if (grid) addTiles(grid, json.images);
+      }
+    } catch {
+      state.imagesMore = false;
+    } finally {
+      for (const p of pending) p.remove();
+      state.feeding = false;
+      syncFeed();
+    }
+  }
+
+  /**
+   * Two shimmering placeholder tiles under each column while a slice loads.
+   * Not counted in the column heights, so the real tiles that replace them are
+   * placed exactly as if they had never been there.
+   * @param {HTMLElement} grid
+   * @returns {HTMLElement[]}
+   */
+  function pendingTiles(grid) {
+    const made = [];
+    [...grid.children].forEach((col, c) => {
+      for (const r of c % 2 ? [0.75, 0.62] : [0.62, 0.75]) {
+        const cell = el("div", { class: "ig-sk-cell", "aria-hidden": "true" });
+        cell.style.setProperty("--r", String(r));
+        col.append(cell);
+        made.push(cell);
+      }
+    });
+    return made;
   }
 
   /**
@@ -409,7 +495,7 @@ export function createRenderer(state) {
     state.activeController = new AbortController();
 
     try {
-      const res = await fetch(`/api/images?q=${encodeURIComponent(q)}${langParam()}`, {
+      const res = await fetch(`/api/images?q=${encodeURIComponent(q)}&count=${imagePageSize()}${langParam()}`, {
         headers: { Accept: "application/json" },
         signal: state.activeController.signal,
       });
@@ -428,6 +514,7 @@ export function createRenderer(state) {
 
       state.images = json.images || [];
       state.imagesQuery = q;
+      state.imagesMore = !!json.more;
       // Soft crossfade skeleton → real grid (no hard cut)
       paintImagesView({ crossfade: true });
     } catch (err) {
@@ -469,6 +556,8 @@ export function createRenderer(state) {
     });
     if (opts.crossfade) crossfadeImageSkeleton(grid);
     else hideSkeleton();
+    // The scroll marker goes under the grid, or nowhere if this is all of it.
+    syncFeed();
     syncSideMax();
   }
 
@@ -509,6 +598,37 @@ export function createRenderer(state) {
     if (opts.reveal) classes.push("ig-reveal");
 
     const grid = el("div", { class: classes.join(" ") });
+    const n = matchMedia(PHONE).matches ? 2 : 6;
+    for (let i = 0; i < n; i++) grid.append(el("div", { class: "ig-col" }));
+    colHeights.set(grid, new Array(n).fill(0));
+
+    if (!addTiles(grid, items)) {
+      setStatus("No results.");
+      return null;
+    }
+    results.append(grid);
+    return grid;
+  }
+
+  /**
+   * Height of each column of a grid, in column widths — tracked rather than
+   * measured, because every tile's ratio is known before its image loads.
+   * @type {WeakMap<HTMLElement, number[]>}
+   */
+  const colHeights = new WeakMap();
+
+  /**
+   * Put each tile in whichever column is shortest so far. Columns are their
+   * own elements, not CSS multi-column: appending a slice then only adds to
+   * the bottoms, where CSS columns would rebalance — and move — every tile
+   * already on screen.
+   * @param {HTMLElement} grid
+   * @param {ImageItem[]} items
+   * @returns {number} tiles added
+   */
+  function addTiles(grid, items) {
+    const cols = /** @type {HTMLElement[]} */ ([...grid.children]);
+    const heights = colHeights.get(grid) || new Array(cols.length).fill(0);
     let shown = 0;
 
     for (const item of items) {
@@ -517,7 +637,8 @@ export function createRenderer(state) {
 
       const btn = el("button", {
         type: "button",
-        class: "ig-item",
+        // Shimmers until its own image has loaded (or failed).
+        class: "ig-item is-wait",
         title: plainText(item.title || item.source || "Image"),
         onclick: () => openImage(item, btn),
       });
@@ -542,7 +663,10 @@ export function createRenderer(state) {
       // Each image fades in on its own decode. Tying the reveal to the actual
       // load event — rather than a fixed stagger — means you never watch an
       // empty box animate in and then pop when the pixels arrive.
-      const reveal = () => img.classList.add("is-in");
+      const reveal = () => {
+        img.classList.add("is-in");
+        btn.classList.remove("is-wait");
+      };
       if (img.complete && img.naturalWidth) reveal();
       else img.addEventListener("load", reveal, { once: true });
 
@@ -553,6 +677,7 @@ export function createRenderer(state) {
           // and a dead thumbnail can arrive seconds late — measured as the
           // single largest layout shift on this view. Leave a neutral cell.
           btn.classList.add("is-broken");
+          btn.classList.remove("is-wait");
           img.remove();
           if (!grid.querySelector(".ig-item:not(.is-broken)")) {
             setStatus("No results.");
@@ -568,16 +693,17 @@ export function createRenderer(state) {
           text: plainText(item.source || item.title || ""),
         }),
       );
-      grid.append(btn);
+      // Ties go left, so a row of equal tiles still reads left to right. The
+      // 0.06 stands in for the gap under each tile.
+      let c = 0;
+      for (let i = 1; i < heights.length; i++) if (heights[i] < heights[c] - 1e-6) c = i;
+      cols[c].append(btn);
+      heights[c] += boxH / boxW + 0.06;
       shown += 1;
     }
 
-    if (!shown) {
-      setStatus("No results.");
-      return null;
-    }
-    results.append(grid);
-    return grid;
+    colHeights.set(grid, heights);
+    return shown;
   }
 
   /* —— Image dialog —— */
@@ -931,6 +1057,14 @@ export function createRenderer(state) {
     if (document.activeElement === edge || !imageBox.contains(document.activeElement)) {
       e.preventDefault();
       stops[e.shiftKey ? last : 0].focus();
+    }
+  });
+
+  // Two columns on a phone, six elsewhere: crossing the breakpoint (a rotated
+  // tablet, a resized window) rebuilds the grid from everything loaded so far.
+  matchMedia(PHONE).addEventListener?.("change", () => {
+    if (state.tab === "images" && state.images?.length && results.querySelector(".ig")) {
+      paintImagesView();
     }
   });
 
