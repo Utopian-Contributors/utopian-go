@@ -9,8 +9,8 @@
  * The rules follow how a real table is built: shots light lamps, lamps change
  * what a shot is worth, and most of it decays if left alone.
  * - Ramp: each one climbs the temple ladder a rung (60 s each). The temple
- *   cashes in the rung reached: points, jackpot, the ball-save post, extra
- *   ball, multiball.
+ *   cashes in the rung reached: points, jackpot, extra ball, the ball-save
+ *   post, multiball.
  * - G·O·! lanes: all three powers the mushrooms up a level (60 s). The
  *   flippers move the lit lanes, and on a launch a blinking lane is the skill shot.
  * - Drop targets: each bank cleared steps the multiplier, ×2 ×3 ×5 ×10.
@@ -100,6 +100,10 @@ wall([[50, 540], [50, 641.5], [116, 677.5]], { kind: "rail" });
 post(50, 540, 6);
 wall([[330, 540], [330, 641.5], [264, 677.5]], { kind: "rail" });
 post(330, 540, 5);
+// The outlane's head: above the divider the drop bank stands closer to the
+// lane wall than a ball is wide, so a deflector slants across under it and
+// turns a ball the kickback fires up the outlane out onto the table.
+wall([[354, 506], [339, 484]], { kind: "rail", e: 0.6 });
 
 /** Slingshots: the face toward the middle kicks. */
 export const SLINGS = [
@@ -204,7 +208,7 @@ export const flippers = [
 const MULTS = [1, 2, 3, 5, 10];
 export const RANKS = ["Seedling", "Sprout", "Scout", "Explorer", "Ranger", "Tracker", "Pathfinder", "Chief", "Legend"];
 /** The ladder's rungs, bottom up, as the temple pays them. */
-export const RUNGS = ["Jackpot", "Ball save", "Extra ball", "Multiball"];
+export const RUNGS = ["Jackpot", "Extra ball", "Ball save", "Multiball"];
 
 const QUESTS = [
   { key: "ramps", need: 3, text: "Climb the vine ramp" },
@@ -542,13 +546,15 @@ function templeAward() {
     flash("jackpot", 2);
     game.jackpot = 100000;
   } else if (rung === 2) {
-    game.post = true;
-    award(25000);
-    hooks.say("Ball save post is up", 2.5);
-  } else if (rung === 3) {
+    // The extra ball comes before the save post: a saved ball keeps the
+    // multiplier and every lamp, where an extra ball starts the table afresh.
     game.extraLit = true;
-    award(50000);
+    award(25000);
     hooks.say("Extra ball lit · shoot the ramp", 3);
+  } else if (rung === 3) {
+    game.post = true;
+    award(50000);
+    hooks.say("Ball save post is up", 2.5);
   } else {
     award(100000);
     startMultiball();
@@ -869,8 +875,11 @@ function stepBall(b, dt) {
   });
   // The kickback, at the foot of the outlane.
   if (game.kickback && b.x > 330 && b.x < LANE_X && b.y > 690) {
+    // Fired straight up the outlane's right side, clear of the divider's
+    // post, onto the deflector that turns it out over the table.
+    b.x = Math.max(b.x, LANE_X - R - 1);
     b.vy = -920;
-    b.vx = -10;
+    b.vx = 0;
     game.kickback = false;
     flash("kick", 1);
     hooks.say("Kickback!", 2);

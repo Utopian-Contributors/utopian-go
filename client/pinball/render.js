@@ -267,8 +267,8 @@ LANES_X.forEach((x, i) =>
   LAMPS.push({ x, y: i === 1 ? 124 : 128, r: 5, c: GREEN, on: () => game.power > i || (game.state !== "play" && attract(i, 3)) }),
 );
 // The temple ladder, bottom rung first, pointing up at the temple.
-const RUNG_COLOURS = [GOLD, BLUE, GREEN, PINK];
-const RUNG_TEXT = ["JACKPOT", "BALL SAVE", "EXTRA BALL", "MULTIBALL"];
+const RUNG_COLOURS = [GOLD, GREEN, BLUE, PINK];
+const RUNG_TEXT = ["JACKPOT", "EXTRA BALL", "BALL SAVE", "MULTIBALL"];
 for (let i = 0; i < 4; i++) {
   LAMPS.push({
     x: 190,
