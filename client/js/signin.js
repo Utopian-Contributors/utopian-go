@@ -8,6 +8,7 @@
  * goes straight on to that step: every account must have a passkey before it
  * can do anything (src/social/guard.ts).
  */
+import { NAME_RULE, handleOf } from "./handle.js";
 import { writeName } from "./me.js";
 import { b64u, needPasskey, u8 } from "./passkey.js";
 
@@ -66,14 +67,22 @@ export async function passkeyLogIn() {
  * @returns {Promise<{name: string, passkeySetup: {challenge: string, uid: string} | null} | null>}
  */
 export async function submit(mode, form) {
-  if (mode === "recover") return send("/api/social/recover", { phrase: form.phrase, password: form.password });
+  if (mode === "recover") {
+    // The words the server reads back (src/social/keys.ts): twelve, whatever spacing they were pasted with.
+    if (String(form.phrase).trim().split(/\s+/).length !== 12) throw new Error("A recovery phrase is 12 words.");
+    return send("/api/social/recover", { phrase: form.phrase, password: form.password });
+  }
+  // A new name is held to the server's rule here, so the form says so before
+  // a round trip does; "@Ada" goes as "ada". A login sends what was typed.
+  const name = mode === "register" ? handleOf(form.username) : form.username;
+  if (!name) throw new Error(NAME_RULE);
   if (mode === "register" && form.again !== form.password) throw new Error("The passwords don't match.");
   const data = await send(mode === "register" ? "/api/social/register" : "/api/social/login", {
-    username: form.username,
+    username: name,
     password: form.password,
     ...(mode === "register" && { terms: form.terms }),
   });
   if (!data.passkey) return data;
-  await passkey(data.passkey, String(form.username).trim().toLowerCase());
+  await passkey(data.passkey, String(name).trim().toLowerCase());
   return null;
 }

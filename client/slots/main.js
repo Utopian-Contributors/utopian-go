@@ -16,6 +16,7 @@
 import { STATUSES } from "../../src/social/shop.ts";
 import { BETS, CHERRIES, FRUITS, REELS, START, STATUS_PRICE, THREE, lineOf, payout } from "../../src/social/slots.ts";
 import { keepOffline } from "../games/offline.js";
+import { NAME_RULE, handleOf } from "../js/handle.js";
 import { tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { tally } from "../games/tally.js";
@@ -461,9 +462,10 @@ function openBuy() {
 async function buy() {
   if (!pick || busy) return;
   const err = $("sl-be");
-  const to = /** @type {HTMLInputElement} */ ($("sl-to")).value.trim();
+  const typed = /** @type {HTMLInputElement} */ ($("sl-to")).value.trim();
+  const to = handleOf(typed);
   if (gift && !to) {
-    err.textContent = "Who is it for?";
+    err.textContent = typed ? NAME_RULE : "Who is it for?";
     return;
   }
   busy = true;
