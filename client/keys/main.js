@@ -11,6 +11,7 @@ import { assertion, why } from "../js/passkey.js";
 import { confirmSend } from "../js/sendconfirm.js";
 import { dialog, injectStyles } from "../js/ui.js";
 import CSS from "./keys.css";
+import { mountHistory } from "../wallet/history.js";
 
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 /** Left behind on a Max SOL send: the account's own rent minimum and the fee. */
@@ -359,4 +360,6 @@ function tokens(list, { total = list.length, signed = false } = {}) {
   })();
 }
 
-window.__keys = { open: phrase, receive, send: transfer, tokens };
+// History rides along too: only someone who presses it needs it, and the
+// wallet page's own bundle has no room for it in its first flight.
+window.__keys = { open: phrase, receive, send: transfer, tokens, history: mountHistory };

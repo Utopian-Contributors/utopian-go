@@ -1,5 +1,5 @@
 /**
- * The right half of the wallet page: one token's line and market data.
+ * The wallet page's drawer: one token's line and market data.
  * Everything comes from /api/tokens/<mint>, which only answers for indexed
  * mints; a range of the line other than 24h, from the chart beside it.
  */
@@ -130,11 +130,14 @@ function stats(w) {
 
 /**
  * @param {HTMLElement} box
- * @param {(t: any) => HTMLElement} buy the page's buy button for a token
+ * @param {(t: any) => HTMLElement} buy the page's Buy and Sell buttons for a token
+ * @param {() => void} close puts the card away (the page's right column, wallet.css)
  */
-export function mountPanel(box, buy) {
+export function mountPanel(box, buy, close) {
   let run = 0;
   let current = "";
+  /** The answer for `current`, in flight or painted, so asking again for it resolves the same. */
+  let pending = Promise.resolve(undefined);
 
   function render(d) {
     const price = el("strong", { class: "wl-v" });
@@ -165,11 +168,11 @@ export function mountPanel(box, buy) {
     );
     const sol = d.priceSol == null ? null : tokenPrice(d.priceSol);
 
-    // On a phone Buy drops under the line, where the thumb is once the price
+    // Buy and Sell under the line, two equal halves (wallet.css), where the thumb is once the price
     // has been read (wallet.css). One of the two is ever shown, so it is not
     // read out twice.
 
-    // One card, which on a desktop scrolls in the right half (wallet.css).
+    // The drawer's contents, which on a desktop scroll in the right column (wallet.css).
     const card = el("div", { class: "tp-card" });
     box.replaceChildren(card);
     card.replaceChildren(
@@ -179,7 +182,7 @@ export function mountPanel(box, buy) {
           { class: "tp-h" },
           icon(d, 32),
           el("div", { class: "tp-t" }, el("strong", { text: d.symbol }), el("span", { class: "wl-nm", text: d.name })),
-          buy(d),
+          el("button", { class: "tp-x", type: "button", title: "Close", "aria-label": "Close", onclick: close }),
         ),
         price,
         move,
@@ -205,12 +208,19 @@ export function mountPanel(box, buy) {
   }
 
   /**
-   * Show one token. A newer choice wins over a slower answer. Resolves true
-   * once it has painted; `quiet` leaves the panel as it was when it cannot.
+   * Show one token. A newer choice wins over a slower answer. Resolves to
+   * what it painted (its `path` and `title` are the token's wallet address
+   * and that page's title, src/routes/api.ts); `quiet` leaves the panel as it
+   * was when it cannot.
    */
-  return async function select(mint, quiet = false) {
-    if (mint === current) return;
+  return function select(mint, quiet = false) {
+    if (mint === current) return pending;
     current = mint;
+    pending = load(mint, quiet);
+    return pending;
+  };
+
+  async function load(mint, quiet) {
     const id = ++run;
     box.setAttribute("aria-busy", "true");
     try {
@@ -219,7 +229,7 @@ export function mountPanel(box, buy) {
       if (id !== run) return;
       if (!res.ok) throw new Error(data.error || "Could not load this token.");
       render(data);
-      return true;
+      return data;
     } catch (err) {
       if (id !== run) return;
       current = "";
@@ -227,5 +237,5 @@ export function mountPanel(box, buy) {
     } finally {
       if (id === run) box.removeAttribute("aria-busy");
     }
-  };
+  }
 }

@@ -45,6 +45,21 @@ let ranked: TokenRecord[] = [];
 let watchable: TokenRecord[] = [];
 /** The wallet page's lists, each already in ranked order, so any page of one is a slice. */
 let lists = new Map<TokenList, TokenRecord[]>();
+/**
+ * The tokens with a price page of their own (src/seo.ts), busiest first:
+ * every verified one, and those named by hand (TOKEN_PINNED_MINTS). Wider
+ * than `ranked`, which wants a day's volume as well: a quiet token still has
+ * a price worth looking up.
+ */
+let paged: TokenRecord[] = [];
+/**
+ * The wallet page's two short lists under the portfolio. Movers: everything
+ * indexed but stablecoins, busiest first, unverified ones too (the index
+ * only takes those with a real market, TOKEN_MIN_LIQUIDITY_USD). New: the
+ * same, youngest market first.
+ */
+let movers: TokenRecord[] = [];
+let fresh: TokenRecord[] = [];
 
 /** In-flight price refreshes, keyed by mint, so N searches cause one fetch. */
 const inFlight = new Map<string, Promise<void>>();
@@ -82,7 +97,21 @@ function adopt(list: TokenRecord[]): void {
   ranked = list.filter((r) => r.verified && (r.volume24h ?? 0) > 0).sort(byVolume);
   lists = buildLists(ranked, list.filter((r) => TOKEN_PINNED_MINTS.has(r.mint)));
   watchable = ranked.filter((r) => !isStable(r));
+  paged = list.filter((r) => r.verified || TOKEN_PINNED_MINTS.has(r.mint)).sort(byVolume);
+  const traded = list.filter((r) => !isStable(r));
+  movers = traded.filter((r) => (r.volume24h ?? 0) > 0).sort(byVolume);
+  fresh = traded.filter((r) => r.bornAt != null).sort((a, b) => b.bornAt! - a.bornAt! || byVolume(a, b));
   updatedAt = Date.now();
+}
+
+/** The tokens with a price page, busiest first; a new array each rebuild. */
+export function pagedTokens(): readonly TokenRecord[] {
+  return paged;
+}
+
+/** One indexed token by mint, whatever its kind. */
+export function tokenByMint(mint: string): TokenRecord | undefined {
+  return index.byMint.get(mint);
 }
 
 /**
@@ -498,6 +527,12 @@ export function listTokens(key: TokenList, after: string, limit: number): TokenP
 /** A page of what the home watchlist's menu offers, busiest on Jupiter first. */
 export function watchTokens(after: string, limit: number): TokenPage {
   return pageOf(watchable, after, limit);
+}
+
+/** The top of Movers or New, the wallet page's lists under the portfolio. */
+export function featuredTokens(key: "movers" | "new", limit: number): TopToken[] {
+  if (key === "movers") return movers.slice(0, limit).map(toTop);
+  return fresh.slice(0, limit).map((rec) => ({ ...toTop(rec), bornAt: rec.bornAt }));
 }
 
 /** How long every list is. */

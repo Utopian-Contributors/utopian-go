@@ -26,9 +26,10 @@
     <meta name="application-name" content="UtopianGO" />
     <meta name="theme-color" content="#8a5528" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#4a2b15" media="(prefers-color-scheme: dark)" />
-    <!-- A page about one visitor's money has no business in a search index or
-         on a social card. -->
-    <meta name="robots" content="noindex, nofollow" />
+    <!-- Open to anyone, and indexed: the server writes each address's own
+         title, description, canonical link and card over <title> (src/seo.ts
+         walletDoc). The portfolio, the one part about a visitor's money, is
+         drawn by the script for whoever is signed in, never by the server. -->
     <link rel="stylesheet" href="/wallet.css" />
   </head>
   <body class="res wl-pg wl-loading" data-lg="/login.js" data-cn="/connect.js" data-sw="/swap.js" data-qr="/qr.js" data-ks="/keys.js" data-pw="/install.js">
@@ -73,83 +74,9 @@
     </div>
 
     <main class="wrap" id="wl">
-      <div class="wl-main">
-        <!-- In the portfolio's and the lists' place while open (body.hist);
-             wallet/history.js fills it. -->
-        <section class="wl-hs" id="wl-hs" aria-labelledby="wl-hs-h" hidden>
-          <div class="wl-hh">
-            <button type="button" class="wl-back" id="wl-hx">
-              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-              Back
-            </button>
-            <h2 id="wl-hs-h">History</h2>
-          </div>
-          <div id="wl-hl"></div>
-          <p class="wl-n" id="wl-hn" hidden></p>
-        </section>
-        <!-- Whose wallet: held open while loading, as a signed-in account shows it
-             (wallet/main.js paintKeys): a name and an address of the usual lengths,
-             so on a phone it wraps as a real one does. -->
-        <div class="wl-ph wl-sk" id="wl-ph" aria-hidden="true">
-          <span class="wl-k">@username</span><span class="wl-ka">GkQe7pWnZbM4vRtYx2HcDfLs9JaUo3KmNwB6iEhTqVgP</span><button class="wl-b" type="button" tabindex="-1">Show recovery phrase</button>
-        </div>
-        <section class="wl-pf" aria-label="Portfolio">
-          <!-- Shipped in its final geometry so the bundle taking over moves
-               nothing: a $0.00 total, a line in the chart's box, the range
-               row, the actions and a row each for SOL and UTCC (each with
-               its day under its worth), all
-               shimmering (body.wl-loading, wallet.css) until the first read
-               lands and wallet/main.js paints over them in place. -->
-          <div class="wl-tot">
-            <!-- History sits on the total's line, centred on it, so the
-                 button arriving moves nothing. -->
-            <div class="wl-hd">
-              <strong class="wl-v" id="wl-v">$0.00</strong>
-              <button type="button" class="wl-hb" id="wl-hb" hidden>History</button>
-            </div>
-            <span class="pc-m" id="wl-d">+$0.00 · 0.00%<span>past 24h</span></span>
-            <div class="pc" id="wl-c">
-              <svg viewBox="0 0 100 1000" preserveAspectRatio="none" aria-hidden="true">
-                <path d="M0 620 C 12 580, 20 660, 32 600 S 52 470, 64 520 S 86 430, 100 460" />
-              </svg>
-            </div>
-            <!-- The range row's place; wallet/main.js puts its own in. -->
-            <div class="pc-r wl-sk-r" aria-hidden="true">
-              <button type="button" tabindex="-1">1H</button>
-              <button type="button" tabindex="-1" aria-pressed="true">24H</button>
-              <button type="button" tabindex="-1">1W</button>
-              <button type="button" tabindex="-1">1M</button>
-            </div>
-            <div class="wl-acts" id="wl-acts">
-              <button type="button" class="wl-a" data-act="receive">Receive</button>
-              <button type="button" class="wl-a" data-act="send">Send</button>
-              <button type="button" class="wl-a" data-act="swap">Swap</button>
-            </div>
-          </div>
-          <!-- Total, then a line for each kind held (wallet/breakdown.js).
-               Hidden until there is a portfolio to break down. -->
-          <div class="wl-bk" id="wl-bk" role="group" aria-label="Portfolio by kind" hidden></div>
-          <div id="wl-l">
-            <div class="wl-r wl-own wl-sk" aria-hidden="true">
-              <span class="wl-id"><span class="wl-ic wl-coin">$</span><span class="wl-sym">SOL</span><span class="wl-nm">Solana</span></span>
-              <span class="wl-amt">0</span>
-              <span class="wl-usd">$0.00</span>
-              <span class="wl-d">+$0.00 · 0.00%</span>
-              <span class="wl-act"><span class="wl-t"></span><span class="wl-t wl-sell"></span></span>
-            </div>
-            <div class="wl-r wl-own wl-sk" aria-hidden="true">
-              <span class="wl-id"><span class="wl-ic wl-coin">$</span><span class="wl-sym">UTCC</span><span class="wl-nm">Utopian Contributor Coin</span></span>
-              <span class="wl-amt">0</span>
-              <span class="wl-usd">$0.00</span>
-              <span class="wl-d">+$0.00 · 0.00%</span>
-              <span class="wl-act"><span class="wl-t"></span><span class="wl-t wl-sell"></span></span>
-            </div>
-          </div>
-          <p class="wl-n" id="wl-n" hidden></p>
-          <div id="wl-x"></div>
-        </section>
+      <!-- Left: every token, searched or list by list. Its own scroller on a
+           desktop; under the portfolio on a phone (wallet.css). -->
+      <aside class="wl-bar" id="wl-bar" aria-label="Tokens">
         <section class="wl-top" aria-label="Tokens">
           <!-- Pinned over the rows as they scroll, on a desktop. -->
           <div class="wl-tb">
@@ -179,7 +106,119 @@
           <div id="wl-tl"></div>
           <p class="wl-n" id="wl-tn" hidden></p>
         </section>
+      </aside>
+      <!-- Centre: the portfolio, then what was looked at lately, then what is
+           moving and what is new. -->
+      <div class="wl-main">
+        <!-- In the portfolio's and the lists' place while open (body.hist);
+             wallet/history.js fills it. -->
+        <section class="wl-hs" id="wl-hs" aria-labelledby="wl-hs-h" hidden>
+          <div class="wl-hh">
+            <button type="button" class="wl-back" id="wl-hx">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Back
+            </button>
+            <h2 id="wl-hs-h">History</h2>
+          </div>
+          <div id="wl-hl"></div>
+          <p class="wl-n" id="wl-hn" hidden></p>
+        </section>
+        <!-- Whose wallet: held open while loading, as a signed-in account shows it
+             (wallet/main.js paintKeys): a name and an address of the usual lengths,
+             so on a phone it wraps as a real one does. -->
+        <div class="wl-ph wl-sk" id="wl-ph" aria-hidden="true">
+          <span class="wl-k">@username</span><span class="wl-ka">GkQe7pWnZbM4vRtYx2HcDfLs9JaUo3KmNwB6iEhTqVgP</span><button class="wl-b" type="button" tabindex="-1">Show recovery phrase</button>
+        </div>
+        <section class="wl-pf" id="wl-pf" aria-label="Portfolio">
+          <!-- Shipped in its final geometry so the bundle taking over moves
+               nothing: a $0.00 total, History under it (held in place while
+               loading, wallet.css), a line in the chart's box, the range row,
+               the actions and a row each for SOL and UTCC, all shimmering
+               (body.wl-loading) until the first read lands and
+               wallet/main.js paints over them in place. -->
+          <div class="wl-tot">
+            <strong class="wl-v" id="wl-v">$0.00</strong>
+            <span class="pc-m" id="wl-d">+$0.00 · 0.00%<span>past 24h</span></span>
+            <button type="button" class="wl-hb" id="wl-hb" hidden>History</button>
+            <div class="pc" id="wl-c">
+              <svg viewBox="0 0 100 1000" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M0 620 C 12 580, 20 660, 32 600 S 52 470, 64 520 S 86 430, 100 460" />
+              </svg>
+            </div>
+            <!-- The range row's place; wallet/main.js puts its own in. -->
+            <div class="pc-r wl-sk-r" aria-hidden="true">
+              <button type="button" tabindex="-1">1H</button>
+              <button type="button" tabindex="-1" aria-pressed="true">24H</button>
+              <button type="button" tabindex="-1">1W</button>
+              <button type="button" tabindex="-1">1M</button>
+            </div>
+            <div class="wl-acts" id="wl-acts">
+              <button type="button" class="wl-a" data-act="receive">Receive</button>
+              <button type="button" class="wl-a" data-act="send">Send</button>
+              <button type="button" class="wl-a" data-act="swap">Swap</button>
+            </div>
+          </div>
+          <!-- Total, then a line for each kind held (wallet/breakdown.js).
+               Hidden until there is a portfolio to break down. -->
+          <div class="wl-bk" id="wl-bk" role="group" aria-label="Portfolio by kind" hidden></div>
+          <div id="wl-l">
+            <div class="wl-r wl-own wl-sk" aria-hidden="true">
+              <span class="wl-id"><span class="wl-sym">SOL</span><span class="wl-nm">Solana</span></span>
+              <span class="wl-amt">0</span>
+              <span class="wl-usd">$0.00</span>
+              <span class="wl-d">+$0.00 · 0.00%</span>
+              <span class="wl-act"><span class="wl-t"></span><span class="wl-t wl-sell"></span></span>
+            </div>
+            <div class="wl-r wl-own wl-sk" aria-hidden="true">
+              <span class="wl-id"><span class="wl-sym">UTCC</span><span class="wl-nm">Utopian Contributor Coin</span></span>
+              <span class="wl-amt">0</span>
+              <span class="wl-usd">$0.00</span>
+              <span class="wl-d">+$0.00 · 0.00%</span>
+              <span class="wl-act"><span class="wl-t"></span><span class="wl-t wl-sell"></span></span>
+            </div>
+          </div>
+          <p class="wl-n" id="wl-n" hidden></p>
+          <div id="wl-x"></div>
+        </section>
+        <!-- The portfolio's place for someone signed out: shown by the server
+             (src/pages.ts SIGNED_OUT_ONLY), which points both links back at the
+             address asked for (src/seo.ts walletDoc), and by wallet/main.js
+             when a session ends with the page open. -->
+        <section class="wl-in" id="wl-in" aria-labelledby="wl-in-h" hidden>
+          <h2 id="wl-in-h">Your portfolio goes here</h2>
+          <p>
+            Log in to see what you hold, what it is worth and how it moved, and to receive, send and swap. Every token's
+            price and chart below is open to anyone.
+          </p>
+          <div class="wl-in-a">
+            <a class="wl-cta" href="/register?next=/wallet" id="wl-in-r">Create account</a>
+            <a class="wl-in-l" href="/login?next=/wallet" id="wl-in-l">Log in</a>
+          </div>
+        </section>
+        <!-- Each token opened, newest first, kept in this browser
+             (wallet/main.js); hidden until there is one. -->
+        <section class="wl-rv" id="wl-rv" aria-labelledby="wl-rv-h" hidden>
+          <div class="wl-sh">
+            <h2 id="wl-rv-h">Recently viewed</h2>
+            <button type="button" class="wl-b" id="wl-rvx">Clear</button>
+          </div>
+          <div class="wl-rvl" id="wl-rvl"></div>
+        </section>
+        <!-- Two rows of cards from the index (/api/tokens/featured). -->
+        <section class="wl-ft" aria-label="Movers and new tokens">
+          <div class="wl-fl">
+            <div class="wl-sh"><h2>Movers</h2><span class="wl-k">24h volume</span></div>
+            <div class="wl-rvl" id="wl-mv"></div>
+          </div>
+          <div class="wl-fl">
+            <div class="wl-sh"><h2>New</h2><span class="wl-k">Youngest first</span></div>
+            <div class="wl-rvl" id="wl-nw"></div>
+          </div>
+        </section>
       </div>
+      <!-- Right: the chosen token, on a card that can be closed. -->
       <aside class="wl-side" id="wl-s" aria-label="Selected token" aria-live="polite"></aside>
     </main>
 

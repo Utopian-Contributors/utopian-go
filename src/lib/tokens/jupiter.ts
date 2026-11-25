@@ -151,6 +151,7 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
   const mcap = Number(t.mcap);
   const decimals = Number(t.decimals);
   const volume24h = (Number(t.stats24h?.buyVolume) || 0) + (Number(t.stats24h?.sellVolume) || 0);
+  const bornAt = Date.parse(String(t.firstPool?.createdAt ?? ""));
   const icon = typeof t.icon === "string" && t.icon.startsWith("https://") ? t.icon : "";
   const aliases = isEquity
     ? equityAliases(symbol, name || symbol)
@@ -176,6 +177,7 @@ function toRecord(t: JupToken, now: number): TokenRecord | null {
     ...(icon ? { icon } : {}),
     priceAt: now,
     checkedAt: now,
+    ...(Number.isFinite(bornAt) && bornAt <= now ? { bornAt } : {}),
   };
 }
 

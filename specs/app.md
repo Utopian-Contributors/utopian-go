@@ -441,13 +441,19 @@ GET /                         search home
 GET /?q=<query>&lang=<code>   results; tabs: Web, Images
 GET /?q=<sym>&buy=<mint>      results with the buy dialog open (wallet in-app browsers, QR hand-off)
 GET /search?q=                302 → /?q=
-GET /wallet                   left: holdings (each with its balance, abbreviated, and its profit
-                              against its average entry), their line
-                              over 1H/24H/1W/1M (a line per kind beside it, with three kinds or
-                              more), History, Receive/Send/Swap, the token lists + search
+GET /wallet                   left: the token lists + search. centre: the total, centred, with
+                              History under it, its line over 1H/24H/1W/1M (a line per kind
+                              beside it, with three kinds or more), Receive/Send/Swap, the
+                              holdings (each with its balance, abbreviated, and its profit
+                              against its average entry); then Recently viewed (a card per
+                              token opened, newest first, kept in the browser), Movers (cards,
+                              busiest 24h volume first) and New (cards, youngest first pool
+                              first; /api/tokens/featured). right: a drawer with the chosen
+                              token's line and market data, shut until a token is picked and
+                              closed by its ×; at 1200px and wider it takes room from the
+                              centre, narrower it slides over it. Phones stack centre, then lists
 GET /wallet?c=<list>          the wallet page on one list: trending, stocks, memes, rwas, majors, defi
-GET /wallet?t=<mint>          the wallet page opened on that token's chart (Social's Trending assets link here)
-                              right: the chosen token's line and market data
+GET /wallet?t=<mint>          the wallet page with that token's drawer open (Social's Trending assets link here)
 GET /icon/<mint>              token thumbnail, image/webp, 64 px
 GET /social                   timeline
 GET /social/saved             the timeline with Saved on (Saved was a page before it was a filter)
@@ -535,7 +541,7 @@ moment; picking one
 brings its line forward, shows its worth in the figure, and narrows the holdings to it. With
 one or two kinds there is no split: the chart is the total's line alone.
 
-**History**, on the Portfolio heading's line, takes the left half's place with Back at the
+**History**, under the portfolio's total, takes the centre column's place with Back at the
 top left (the phone's own back gesture works too) and lists what the wallet has done, newest
 first under day headings: Sent, Received, Swapped, Failed, each opening on Solscan
 (`src/lib/history.ts`, `client/wallet/history.js`). Pages come from Helius's

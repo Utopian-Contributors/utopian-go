@@ -172,10 +172,16 @@ a:hover {
     margin-top: 0;
   }
 
-  /* One view at a time: the lists, or the token picked from them. Back (the
-     header's, in the search field's place) returns to the lists. */
+  /* One view at a time: the page, or the token picked from it. Back (the
+     header's, in the search field's place) returns to the page. */
   body:not(.deep) .wl-side,
-  body.deep .wl-main {
+  body.deep .wl-main,
+  body.deep .wl-bar {
+    display: none;
+  }
+
+  /* Back closes it here, so the drawer's × is not offered. */
+  .tp-h .tp-x {
     display: none;
   }
 
@@ -186,12 +192,59 @@ a:hover {
   }
 }
 
-/* —— The number the page exists for —— */
+/* Stacked, below a desktop: the portfolio and its lists, the token picked
+   (wider than a phone, under them), then every token. */
+@media (max-width: 959px) {
+  #wl {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .wl-side {
+    order: 2;
+  }
+
+  .wl-bar {
+    order: 3;
+  }
+
+  body:not(.wl-open) .wl-side {
+    display: none;
+  }
+}
+
+/* —— The number the page exists for ——
+   Centred: the figure, its move, History under them, then the line and what
+   can be done, the holdings after. */
 
 .wl-tot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
   border-bottom: 0.5px solid var(--sep);
   padding-bottom: 18px;
-  margin-bottom: 4px;
+}
+
+.wl-tot > .pc,
+.wl-tot > .pc-r,
+.wl-tot > .wl-acts {
+  align-self: stretch;
+}
+
+.wl-tot > .wl-v {
+  font-size: 48px;
+}
+
+.wl-tot > .wl-hb {
+  margin-top: 12px;
+}
+
+/* History's place, held while the first read is out, so it arriving moves
+   nothing. Outranks [hidden]. */
+body.wl-loading .wl-tot > .wl-hb[hidden] {
+  display: inline-flex !important;
+  visibility: hidden;
 }
 
 .wl-k {
@@ -417,31 +470,58 @@ a:hover {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
-  /* The rule runs the column's width; the cells sit in from it by the
-     breakdown's own inset, so the names and buttons of every list on the
-     left line up. */
+  /* Drawn as the home watchlist's menu draws its rows (watch/main.js): the
+     ticker over the name, and the token's logo big off the left edge,
+     fading into the row towards the words. Room is kept for it on the left. */
   position: relative;
-  padding: 9px 8px;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 56px;
+  padding: 8px 12px 8px 62px;
 }
 
-/* An iOS list's separator: a hairline that starts where the ticker does,
-   past the 20px logo and its 9px gap, and runs to the column's edge. */
+.wl-r:hover {
+  background: var(--wash);
+}
+
+/* The menu's separator: a hairline the row's whole width. */
 .wl-r::after {
   content: "";
   position: absolute;
   right: 0;
   bottom: 0;
-  left: 37px;
+  left: 0;
   border-bottom: 0.5px solid var(--sep);
   pointer-events: none;
+}
+
+/* Neither the row being hovered, nor the one over it, draws a line against the wash. */
+.wl-r:hover::after,
+.wl-r:has(+ .wl-r:hover)::after {
+  border-color: transparent;
+}
+
+/* The logo, square, whole, at the row's left, in its own colours, only
+   easing into the row at its far side. */
+.wl-lg {
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  left: 10px;
+  width: 40px;
+  height: 40px;
+  margin-top: -20px;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to right, #000 70%, rgb(0 0 0 / 0.6));
+  mask-image: linear-gradient(to right, #000 70%, rgb(0 0 0 / 0.6));
 }
 
 /* Ticker and name, linking to the token's own card — where the price, the
    day's shape and the market data already live. */
 .wl-id {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
+  display: grid;
+  justify-items: start;
+  row-gap: 1px;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -669,7 +749,9 @@ a:hover {
 
 body.hist .wl-ph,
 body.hist .wl-pf,
-body.hist .wl-top {
+body.hist .wl-in,
+body.hist .wl-rv,
+body.hist .wl-ft {
   display: none;
 }
 
@@ -843,27 +925,51 @@ body.hist .wl-top {
   }
 }
 
+/* —— Signed out: the prompt in the portfolio's place —— */
+
+.wl-in {
+  margin-top: 24px;
+  padding: 22px 20px;
+  border-radius: 20px;
+  background: var(--wash);
+}
+
+.wl-in[hidden] {
+  display: none;
+}
+
+.wl-in h2 {
+  margin: 0;
+  font: 600 22px/1.2 var(--ff);
+  letter-spacing: -0.01em;
+}
+
+.wl-in p {
+  margin: 8px 0 0;
+  color: var(--f);
+}
+
+.wl-in-a {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 18px;
+}
+
+.wl-in-a .wl-cta {
+  margin: 0;
+}
+
+.wl-in-l {
+  font: 600 15px/1.2 var(--ff);
+  color: var(--a);
+}
+
 /* —— Most traded —— */
 
 .wl-pf {
   margin-top: 24px;
-}
-
-/* The total, with History at the far end of its line, centred on it. */
-.wl-hd {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.wl-hd > .wl-v {
-  margin-top: 0;
-  min-width: 0;
-}
-
-.wl-hd > .wl-hb {
-  flex: none;
 }
 
 .wl-hb {
@@ -899,6 +1005,113 @@ body.hist .wl-top {
 
 .wl-top {
   margin-top: 36px;
+}
+
+/* —— Recently viewed, Movers and New —— */
+
+.wl-rv,
+.wl-ft {
+  margin-top: 32px;
+}
+
+/* A section's name, with a word or a button at the far end. */
+.wl-sh {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.wl-sh h2 {
+  margin: 0;
+  font: 600 17px/1.2 var(--ff);
+  letter-spacing: -0.01em;
+}
+
+/* One row of cards that scrolls sideways, newest at the left. */
+.wl-rvl {
+  display: flex;
+  gap: 10px;
+  margin-inline: -4px;
+  padding: 4px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.wl-rvl::-webkit-scrollbar {
+  display: none;
+}
+
+.wl-rc {
+  flex: none;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  width: 128px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--wash);
+  color: var(--t);
+  font: inherit;
+  text-align: left;
+  scroll-snap-align: start;
+  cursor: pointer;
+}
+
+.wl-rc:hover {
+  background: var(--wash2);
+}
+
+.wl-rc:focus-visible,
+.wl-rc.on {
+  outline: 2px solid var(--a);
+  outline-offset: -2px;
+}
+
+.wl-rc .wl-ic {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 6px;
+}
+
+.wl-rc .wl-coin {
+  font-size: 15px;
+}
+
+.wl-rc-s {
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-rc-p {
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-rc .wl-d {
+  font-size: 12px;
+}
+
+/* Movers, then New: a row of cards each. */
+.wl-fl + .wl-fl {
+  margin-top: 24px;
+}
+
+.wl-fl .wl-n {
+  margin: 8px 0;
+}
+
+/* The card's last line: Movers' volume, New's age. */
+.wl-rc-m {
+  color: var(--f);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /*
@@ -984,6 +1197,40 @@ body.hist .wl-top {
   margin-top: 32px;
 }
 
+/* The drawer's ×, at the end of the token's name row. */
+.tp-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--wash);
+  color: var(--m);
+  cursor: pointer;
+}
+
+.tp-x::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1 1l10 10M11 1L1 11' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1 1l10 10M11 1L1 11' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.tp-x:hover {
+  background: var(--wash2);
+  color: var(--t);
+}
+
+.tp-x:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: 2px;
+}
+
 .wl-side:empty {
   display: none;
 }
@@ -1019,33 +1266,42 @@ body.hist .wl-top {
   font-size: 18px;
 }
 
-.wl-cta.tp-buy {
+/* Buy and Sell, side by side: green to buy, red to sell, as the rows' + and −. */
+.tp-acts {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.wl-cta.tp-buy,
+.wl-cta.tp-sell {
   margin: 0;
+  padding-inline: 16px;
   background: var(--buy);
   color: var(--buy-ink);
 }
 
-/*
- * Phones: Buy under the line rather than across from the name. On wider
- * screens it stays in the panel's head, and this copy stays hidden.
- */
-.tp-bm {
-  display: none;
+.wl-cta.tp-sell {
+  background: var(--dn);
+  color: #fff;
 }
 
-@media (max-width: 900px) {
-  .tp-h .tp-buy {
-    display: none;
-  }
+/* Nothing held to sell. */
+.wl-cta.tp-sell:disabled {
+  background: var(--wash);
+  color: var(--f);
+  filter: none;
+  cursor: not-allowed;
+}
 
-  .tp-bm {
-    display: block;
-    margin-top: 16px;
-  }
+/* Buy and Sell under the line, at every width: two equal halves. */
+.tp-bm {
+  margin-top: 16px;
+}
 
-  .tp-bm .tp-buy {
-    width: 100%;
-  }
+.tp-bm .tp-acts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .tp-h + .wl-v {
@@ -1257,17 +1513,32 @@ body.hist .wl-top {
 }
 
 .wl-tr {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   cursor: pointer;
+}
+
+/* The ticker over the name, the name a step smaller, each cut short alone. */
+.wl-r .wl-sym,
+.wl-r .wl-nm {
+  max-width: 100%;
+  overflow: hidden;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-r .wl-sym {
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+
+.wl-r .wl-nm {
+  font-size: 12.5px;
 }
 
 /* The whole row picks the token (main.js), so the whole row lights the name. */
 .wl-tr:hover .wl-id {
   color: var(--a);
-}
-
-.wl-tr .wl-act {
-  cursor: auto;
 }
 
 .wl-px {
@@ -1372,16 +1643,13 @@ body.hist .wl-top {
   text-decoration: underline;
 }
 
-/* —— Two halves, one screen ——
-   On a desktop the page is exactly the viewport: the left half scrolls as one
-   column, and the page itself never does, so the token panel stays put.
-
-   The left half used to be fixed too, with the holdings and the market list
-   each scrolling in a share of it. The breakdown left no share to give: on a
-   laptop screen, the total, a line per kind and the holdings filled the
-   column, and the lists below them had no room at all. Scrolled as one, every
-   part keeps its full height, and the market list keeps its field and its
-   lists pinned while its rows scroll under them. */
+/* —— Three columns, one screen ——
+   On a desktop the page is exactly the viewport and never scrolls itself:
+   every token on the left, the portfolio in the centre, and the chosen token
+   in a drawer on the right, each column scrolling on its own. The drawer
+   opens by widening its track, so the centre gives it the room and moves
+   left; below 1200px there is no room to give, and it slides over the centre
+   instead. The footer floats across the foot of all three. */
 
 @media (min-width: 960px) {
   body {
@@ -1391,35 +1659,73 @@ body.hist .wl-top {
   }
 
   #wl {
+    --bar: 260px;
+    --drawer: 400px;
+    --foot: 46px;
+    --ease: 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    position: relative;
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 48px;
+    grid-template-columns: var(--bar) minmax(0, 1fr);
+    overflow: hidden;
   }
 
-  .wl-main {
+  .wl-bar,
+  .wl-main,
+  .wl-side {
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    padding-bottom: calc(var(--foot) + 16px);
   }
 
-  /* The scrollbar gets its own lane beside the rows, clear of the + and − buttons. */
-  .wl-main {
+  /* Every token: the field and the lists pinned while the rows scroll under
+     them. The column reaches out over the panel's left and top padding to its
+     edges, its contents staying where they were, so the blur behind the field
+     (below) has room to run out past the rows instead of stopping at them. */
+  .wl-bar {
+    margin: -18px 0 0 calc(-1 * var(--pad));
+    padding-left: var(--pad);
+    padding-right: 16px;
+    border-right: 0.5px solid var(--sep);
     scrollbar-gutter: stable;
-    padding-right: 12px;
   }
 
   .wl-top {
-    margin-top: 20px;
+    margin-top: 0;
   }
 
+  /* Clear at the top; once rows scroll under it (main.js sets .up), they
+     blur behind it, and nothing else: no tint, no brightness. The blur is a
+     layer of its own reaching out to the column's divider and on past the
+     chips, fading out over that last 40px so it never shows an edge.
+     The stretch takes no clicks, so the rows under it stay pickable. */
   .wl-tb {
     position: sticky;
     top: 0;
     z-index: 1;
-    padding-bottom: 2px;
-    backdrop-filter: blur(4px);
+    margin: 0 -16px 0 calc(-1 * var(--pad));
+    padding: 18px 16px 16px var(--pad);
+  }
+
+  .wl-tb::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0 0 -40px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    /* Unprefixed only: given both, the minifier keeps just the -webkit- one,
+       which Chrome ignores. It adds the prefix Safari needs itself. */
+    backdrop-filter: blur(12px);
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(#000 calc(100% - 40px), transparent);
+  }
+
+  .wl-tb.up::before {
+    opacity: 1;
   }
 
   .wl-cats {
@@ -1427,75 +1733,245 @@ body.hist .wl-top {
     overflow: visible;
   }
 
-  /* Fits on a laptop screen; scrolls on its own below that rather than moving the page. */
-  .wl-side {
-    min-height: 0;
-    margin-top: 0;
-    overflow-y: auto;
+  .wl-bar .wl-cats button {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 13px;
   }
 
-  /*
-   * Side by side, the two halves' figures and lines start at one height: the
-   * token's name row is held to one height, and whose wallet this is takes
-   * the same, with the same room under it.
-   *
-   * Both halves run to the foot of the window, the footer floating over
-   * them there; each ends with room enough to scroll its last line clear of
-   * it.
-   */
-  #wl {
-    --head: 46px;
-    --card: 20px;
-    --halo: 28px;
-    --foot: 46px;
+  .wl-bar .wl-r {
+    gap: 8px;
+    padding-right: 8px;
   }
 
-  /*
-   * The chosen token on a card of its own, scrolling inside the right half:
-   * its foot goes on under the window's edge while there is more of it, and
-   * comes into view, rounded and with its shadow, at the end. The half
-   * reaches past the card by the shadow's width at the sides and the foot,
-   * so those edges do not cut the shadow off, and back by as much so the
-   * card stays put. Not at the top, where it starts on the left half's line
-   * and scrolls under it.
-   * The left half comes down by the card's padding, so the two still start
-   * on one line.
-   */
-  .wl-side {
-    margin-inline: calc(-1 * var(--halo));
-    padding: 0 var(--halo) calc(var(--foot) + 16px);
-  }
-
-  .tp-card {
-    padding: var(--card);
-    border-radius: 24px;
-    background: var(--pn);
-    box-shadow:
-      0 1px 2px rgb(0 0 0 / 0.04),
-      0 8px 28px rgb(0 0 0 / 0.07);
-  }
-
+  /* The portfolio and its lists, on a measure of their own in the middle of
+     whatever room the drawer leaves. */
   .wl-main {
-    padding-top: var(--card);
+    padding-inline: 32px;
+    scrollbar-gutter: stable both-edges;
   }
 
-  .tp-h,
-  .wl-ph {
-    min-height: var(--head);
+  /* The portfolio on a measure of its own, centred; the card rows under it
+     take the column's whole width, and run out over its padding to its
+     edges, so a card is only ever cut off by the divider or the drawer. */
+  .wl-hs,
+  .wl-ph,
+  .wl-pf,
+  .wl-in {
+    max-width: 560px;
+    margin-inline: auto;
+  }
+
+  .wl-main .wl-rvl {
+    margin-inline: -32px;
+    padding-inline: 32px;
+    scroll-padding-inline: 32px;
   }
 
   .wl-ph {
-    align-content: center;
+    justify-content: center;
   }
 
   .wl-ph + .wl-pf {
     margin-top: 16px;
   }
 
-  .wl-main {
-    padding-bottom: var(--foot);
+  /* The drawer: shut, it is out of reach as well as out of sight once it has
+     slid away; open, it is there at once. Its contents keep their width
+     while it slides, rather than reflowing frame by frame. */
+  /* Plain white (the page's own ground, black after dark), out over the
+     panel's top and right padding to its edges, rather than the panel's
+     glow. */
+  .wl-side {
+    margin: -18px calc(-1 * var(--pad)) 0 0;
+    padding-top: 18px;
+    padding-right: var(--pad);
+    padding-left: 24px;
+    border-left: 0.5px solid var(--sep);
+    background: var(--bg);
+    overflow-x: hidden;
+    transition: visibility 0s;
   }
 
+  .wl-side > * {
+    min-width: calc(var(--drawer) - 40px);
+  }
+
+  /* The footer's height and no more under the token's last line, so it fits a laptop. */
+  .wl-side {
+    padding-bottom: calc(var(--foot) + 4px);
+  }
+
+  body:not(.wl-open) .wl-side {
+    visibility: hidden;
+    transition: visibility 0s var(--ease);
+  }
+
+  .wl-side:empty {
+    display: block;
+  }
+}
+
+/* Room for it: the drawer's track grows, and the centre gives way. */
+@media (min-width: 1200px) {
+  #wl {
+    --bar: 300px;
+    grid-template-columns: var(--bar) minmax(0, 1fr) 0px;
+    transition: grid-template-columns var(--ease);
+  }
+
+  body.wl-open #wl {
+    grid-template-columns: var(--bar) minmax(0, 1fr) var(--drawer);
+  }
+}
+
+@media (min-width: 1200px) and (prefers-reduced-motion: reduce) {
+  #wl {
+    transition: none;
+  }
+}
+
+/* No room: it slides in over the centre's right edge. */
+@media (min-width: 960px) and (max-width: 1199px) {
+  .wl-side {
+    position: absolute;
+    z-index: 2;
+    inset: 0 0 0 auto;
+    width: var(--drawer);
+    margin: 0;
+    padding-right: var(--pad);
+    box-shadow: -12px 0 32px rgb(0 0 0 / 0.08);
+    transform: translateX(105%);
+    transition:
+      transform var(--ease),
+      visibility 0s;
+  }
+
+  body.wl-open .wl-side {
+    transform: none;
+  }
+
+  body:not(.wl-open) .wl-side {
+    transition:
+      transform var(--ease),
+      visibility 0s var(--ease);
+  }
+}
+
+/*
+ * The token, made to fit a laptop's screen without scrolling: a shorter
+ * line, a smaller figure, and the market data in tighter cells.
+ */
+@media (min-width: 960px) {
+  .tp-card .tp-h {
+    min-height: 40px;
+  }
+
+  .tp-card .tp-h + .wl-v {
+    margin-top: 10px;
+    font-size: 28px;
+  }
+
+  .tp-card .pc-m {
+    font-size: 13px;
+  }
+
+  .tp-card .pc.tp-c {
+    height: 104px;
+  }
+
+  .tp-card .tp-bm {
+    margin-top: 10px;
+  }
+
+  .tp-card .pc-r {
+    margin-top: 6px;
+  }
+
+  .tp-card .tp-g {
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .tp-card .tp-cell {
+    padding: 6px 8px;
+    border-radius: 12px;
+  }
+
+  .tp-card .wl-k {
+    font-size: 10.5px;
+  }
+
+  .tp-card .tp-cell strong,
+  .tp-card .tp-st strong {
+    font-size: 13.5px;
+  }
+
+  .tp-card .tp-tabs {
+    margin-top: 10px;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .tp-card .tp-tabs button {
+    padding: 5px 4px;
+  }
+
+  .tp-card .tp-tabs strong {
+    font-size: 13px;
+  }
+
+  /* Txns, volume and traders on one line; the two splits side by side under it. */
+  .tp-card .tp-st {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 0 0 12px 12px;
+  }
+
+  .tp-card .tp-l {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0 0 10px;
+    border-right: 0;
+    border-bottom: 0.5px solid var(--sep);
+  }
+
+  .tp-card .tp-r {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  /* The links as a row of small tiles: the name alone, the mark smaller. */
+  /* Two to a row, as on a phone: one link alone keeps to its half. */
+  .tp-card .tp-ls {
+    grid-auto-rows: 40px;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .tp-card .tp-lt {
+    justify-content: center;
+    padding: 0 12px;
+    border-radius: 12px;
+  }
+
+  .tp-card .tp-lt strong {
+    font-size: 13.5px;
+  }
+
+  .tp-card .tp-lt span {
+    display: none;
+  }
+
+  .tp-card .tp-lt img {
+    right: -10px;
+    bottom: -14px;
+    width: 56px;
+    height: 56px;
+  }
+}
+
+@media (min-width: 960px) {
   /*
    * The footer floats along the window's foot, across both halves, over
    * whatever scrolls under it: on a strip of the panel's material that fades

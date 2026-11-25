@@ -1,8 +1,8 @@
 /**
  * History: what the wallet has done, newest first, a page at a time from
- * POST /api/history as the list scrolls. Opened from the button on the
- * Portfolio heading, it takes the left half's place (body.hist in
- * wallet.css) until Back.
+ * POST /api/history as the list scrolls. Opened from the button under the
+ * portfolio's total, it takes the centre column's place (body.hist in
+ * wallet.css) until Back. Shipped in the dialogs bundle (keys/main.js).
  *
  * Amounts only, never dollars. What a trade was worth is its price at the
  * time, which nothing here knows; today's price would put a figure on it that
@@ -129,8 +129,8 @@ function row(a) {
 }
 
 /**
- * @param {() => Element | null} root what the list scrolls with: the left
- *   half on a desktop, the page on a phone (as the token lists)
+ * @param {() => Element | null} root what the list scrolls with: the centre
+ *   column on a desktop, the page on a phone
  */
 export function mountHistory(root) {
   /** Bumped by every open and close, so a page that lands late is dropped. */

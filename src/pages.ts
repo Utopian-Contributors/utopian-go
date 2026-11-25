@@ -39,12 +39,20 @@ export function accountNav(page: Page, signed: boolean): string {
 
 /**
  * What else a page leaves out for someone signed out: the wallet's account
- * line and its Receive, Send and Swap, which only a Social account has
- * (client/wallet/main.js paintKeys, paintActions). Shipped hidden, so the
- * script hiding them moves nothing.
+ * line and its whole portfolio, which only a Social account has
+ * (client/wallet/main.js paintKeys, refresh). Shipped hidden, so the script
+ * hiding them moves nothing.
  */
 const SIGNED_OUT: Partial<Record<Page, string[]>> = {
-  wallet: ['<div class="wl-ph wl-sk" id="wl-ph" aria-hidden="true">', '<div class="wl-acts" id="wl-acts">'],
+  wallet: ['<div class="wl-ph wl-sk" id="wl-ph" aria-hidden="true">', '<section class="wl-pf" id="wl-pf" aria-label="Portfolio">'],
+};
+
+/**
+ * And what it shows them instead, shipped hidden for everyone else: the
+ * wallet's sign-in prompt, in the portfolio's place.
+ */
+const SIGNED_OUT_ONLY: Partial<Record<Page, string[]>> = {
+  wallet: ['<section class="wl-in" id="wl-in" aria-labelledby="wl-in-h" hidden>'],
 };
 
 /** A built page as someone signed in, or signed out, first sees it. Throws if the build moved what it renders into. */
@@ -54,6 +62,10 @@ export function renderPage(page: Page, html: string, signed: boolean): string {
   for (const tag of SIGNED_OUT[page] ?? []) {
     if (!out.includes(tag)) throw new Error(`no ${tag}`);
     if (!signed) out = out.replace(tag, () => tag.replace(/>$/, " hidden>"));
+  }
+  for (const tag of SIGNED_OUT_ONLY[page] ?? []) {
+    if (!out.includes(tag)) throw new Error(`no ${tag}`);
+    if (!signed) out = out.replace(tag, () => tag.replace(/ hidden>$/, ">"));
   }
   return out;
 }
@@ -89,12 +101,12 @@ export const HOME_NAV = /<nav id="hm-nv"[^>]*>[\s\S]*?<\/nav>/;
 
 /**
  * The home page's rows as someone signed in, or signed out, first sees them:
- * signed out, Wallet and Social go by the login page and on to their own from
- * there. Games is anyone's, so it goes straight there.
+ * signed out, Social goes by the login page and on to its own from there.
+ * The wallet and Games are anyone's, so they go straight there.
  */
 export function homeNav(html: string, signed: boolean): string {
   if (signed) return html;
-  return html.replace(HOME_NAV, (nav) => nav.replace(/ href="(\/(?:wallet|social))"/g, (_m, to: string) => ` href="${authPath("/login", to)}"`));
+  return html.replace(HOME_NAV, (nav) => nav.replace(/ href="(\/social)"/g, (_m, to: string) => ` href="${authPath("/login", to)}"`));
 }
 
 /** The page a ?next= goes on to, as the login page names it; nothing, for anywhere else. */

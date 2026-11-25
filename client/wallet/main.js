@@ -1,25 +1,30 @@
 /**
- * The wallet page. Left: what you hold, by kind and by token, and the tokens
- * you could add, list by list. Right: the chosen token's line and market data.
+ * The wallet page. Left: every token, searched or list by list. Centre: what
+ * you hold, by kind and by token, then the tokens looked at lately, then
+ * Movers and New. Right: a drawer with the chosen token's line and market
+ * data, opened by picking one and closed by its ×.
  *
- * The portfolio is the signed-in account's wallet. A wallet connected in the
- * trade dialog stands in when nobody is signed in. /api/holdings answers about
- * any public address, so neither needs a wallet prompt to paint.
+ * The portfolio is the signed-in account's wallet; signed out, its place asks
+ * them to log in, and everything else on the page is still anyone's.
+ *
+ * Each list and token has an address of its own: /wallet (Trending),
+ * /wallet/<list>, /wallet/<token>. The server says which one this page was
+ * opened at on <body> (data-c, data-t; src/seo.ts walletDoc), and a pick puts
+ * its own in the address bar.
  */
 import { $, el, nil } from "../js/dom.js";
-import { accountsButton, loginPath, mountAccount } from "../js/acct.js";
+import { accountsButton, authPath, loginPath, mountAccount } from "../js/acct.js";
 import { noZoom } from "../js/device.js";
 import { load } from "../js/lazy.js";
 import { account as whoami } from "../js/me.js";
 import { during } from "../js/progress.js";
 import { mountPwa } from "../js/pwa.js";
 import { UTCC } from "../js/utcc.js";
-import { amount, dollars, percent, tokenPrice } from "../js/num.js";
+import { amount, dollars, fiat, percent, tokenPrice } from "../js/num.js";
 import { onSession, readSession } from "../js/session.js";
 import { openSwap, swapUrl } from "../js/swap.js";
 import { dirOf, figure, lineChart, paintMove, rangeTabs, since, when } from "../js/chart.js";
 import { mountBreakdown } from "./breakdown.js";
-import { mountHistory } from "./history.js";
 import { icon, mountPanel } from "./panel.js";
 import { plainSwap } from "../js/plainswap.js";
 
@@ -38,6 +43,8 @@ const side = $("wl-s");
 const chips = /** @type {HTMLButtonElement[]} */ ([...$("wl-cats").querySelectorAll("button")]);
 
 const actions = $("wl-acts");
+const portfolioBox = $("wl-pf");
+const signIn = $("wl-in");
 /** Re-asked once the login dialog signs someone in. */
 let account = whoami();
 
@@ -194,37 +201,87 @@ function trade(h, mode, label) {
   const selling = mode === "sell";
   const title = `${selling ? "Sell" : "Buy"} ${h.symbol}`;
   return el("button", {
-    class: label ? "wl-cta tp-buy" : `wl-t${selling ? " wl-sell" : ""}`,
+    class: label ? `wl-cta ${selling ? "tp-sell" : "tp-buy"}` : `wl-t${selling ? " wl-sell" : ""}`,
     type: "button",
-    text: label ? title : null,
+    // The drawer's pills say just the act; the token is named beside them.
+    text: label ? (selling ? "Sell" : "Buy") : null,
     title,
     "aria-label": title,
+    "data-mint": h.mint,
+    "data-sym": h.symbol,
     onclick: async (e) => {
       const button = e.currentTarget;
       button.disabled = true;
       await openTrade(h, mode);
       button.disabled = false;
+      if (selling) paintSells();
     },
   });
+}
+
+/** Whether the portfolio on show holds any of this mint. */
+function holds(mint) {
+  if (portfolioBox.hidden) return false;
+  return (shown?.items ?? []).some((h) => h.mint === mint && /[1-9]/.test(h.amount));
+}
+
+/** The drawer's Sell, live only for a token the wallet holds; re-run whenever the holdings are read. */
+function paintSells() {
+  for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (side.querySelectorAll(".tp-sell"))) {
+    const held = holds(button.dataset.mint ?? "");
+    button.disabled = !held;
+    button.title = held ? button.getAttribute("aria-label") ?? "" : `You hold no ${button.dataset.sym}`;
+  }
 }
 
 /** Every token a row has shown, so Swap can open on the one in the panel. */
 const known = new Map();
 
-const select = mountPanel(side, (t) => {
-  // A linked token may be on neither list, and Swap opens on what the panel shows.
-  if (!known.has(t.mint)) known.set(t.mint, t);
-  return trade(t, "buy", true);
-});
+const select = mountPanel(
+  side,
+  (t) => {
+    // A linked token may be on neither list, and Swap opens on what the panel shows.
+    if (!known.has(t.mint)) known.set(t.mint, t);
+    const sell = trade(t, "sell", true);
+    /** @type {HTMLButtonElement} */ (sell).disabled = !holds(t.mint);
+    if (!holds(t.mint)) sell.title = `You hold no ${t.symbol}`;
+    return el("div", { class: "tp-acts" }, trade(t, "buy", true), sell);
+  },
+  () => shut(),
+);
 let chosen = "";
 
-function choose(mint, scroll) {
+/**
+ * The drawer: shut until a token is picked, and shut again by its ×, which
+ * also lets go of the token (its row unlit, the address back to the list's).
+ * On a desktop it pushes the centre column aside (wallet.css body.wl-open).
+ */
+function shut() {
+  if (phone.matches) {
+    if (history.state?.wlDeep) history.back();
+    else shallow();
+    return;
+  }
+  document.body.classList.remove("wl-open");
+  chosen = "";
+  for (const r of document.querySelectorAll(".wl-r.on, .wl-rc.on")) r.classList.remove("on");
+  const on = chips.find((chip) => chip.dataset.c === cat);
+  setAddress(cat === "trending" ? "/wallet" : `/wallet/${cat}`, `${on?.firstChild?.textContent ?? "Trending"} — UtopianGO Wallet`);
+}
+
+/** Open a token in the drawer: its own address, and a card in Recently viewed. */
+function choose(mint) {
   chosen = mint;
-  for (const r of document.querySelectorAll(".wl-r")) {
+  for (const r of document.querySelectorAll(".wl-r, .wl-rc")) {
     r.classList.toggle("on", /** @type {HTMLElement} */ (r).dataset.mint === mint);
   }
-  void select(mint);
-  if (!scroll || matchMedia("(min-width: 960px)").matches) return;
+  document.body.classList.add("wl-open");
+  void select(mint).then((data) => {
+    if (!data || chosen !== mint) return;
+    if (data.path) setAddress(data.path, data.title);
+    remember(data);
+  });
+  if (matchMedia("(min-width: 960px)").matches) return;
   // On a phone the panel replaces the lists (wallet.css); stacked a little
   // wider, it sits below them.
   if (phone.matches) {
@@ -235,6 +292,16 @@ function choose(mint, scroll) {
     document.body.classList.add("deep");
     side.scrollIntoView({ behavior: "smooth" });
   }
+}
+
+/**
+ * Put an address in the bar, in place of the one there: a pick is not a
+ * step back to retrace, and on a phone the step (into the panel) was already
+ * pushed by choose. The title goes with it.
+ */
+function setAddress(path, title) {
+  if (location.pathname + location.search !== path) history.replaceState(history.state, "", path);
+  if (title) document.title = title;
 }
 
 /** Where wallet.css shows the lists and the panel one at a time; header.css's Back breakpoint. */
@@ -259,36 +326,38 @@ $("bk").addEventListener("click", () => {
   else shallow();
 });
 
-/** The first thing listed is shown until someone picks something. */
-function chooseFirst(mint) {
-  if (!chosen && mint) choose(mint, false);
-}
-
 /**
- * `/wallet?t=<mint>` opens on that token as though its row had been picked;
- * Social's Trending assets link here. A mint the index cannot answer for
- * leaves the usual first choice, with no error for a link nobody typed.
+ * A token's address (/wallet/bonk) opens on it as though its row had been
+ * picked; Social's Trending assets link here. The server named its mint on
+ * <body>. One the index cannot answer for leaves the usual first choice.
  */
 async function openLinked() {
-  const mint = new URLSearchParams(location.search).get("t");
+  const mint = document.body.dataset.t;
   if (!mint) return;
-  chosen = mint; // holds off chooseFirst while it loads
   const ok = await select(mint, true);
-  if (chosen !== mint) return; // a row was picked meanwhile
-  if (ok) return choose(mint, true);
-  chosen = "";
-  chooseFirst(/** @type {HTMLElement | null} */ (document.querySelector(".wl-r"))?.dataset.mint);
+  if (ok && !chosen) choose(mint);
 }
 
 function ident(t) {
   known.set(t.mint, t);
   return el(
     "button",
-    { class: "wl-id", type: "button", onclick: () => choose(t.mint, true) },
-    icon(t),
+    { class: "wl-id", type: "button", onclick: () => choose(t.mint) },
     el("span", { class: "wl-sym", text: t.symbol }),
     el("span", { class: "wl-nm", text: t.name }),
   );
+}
+
+/**
+ * A row's logo, drawn big off its right edge (wallet.css .wl-lg), as the home
+ * watchlist's menu draws its rows. None for a token with no logo, or whose
+ * logo will not load: the row reads the same without it.
+ */
+function logo(t) {
+  if (!t.icon) return null;
+  const img = el("img", { class: "wl-lg", src: `/icon/big/${t.mint}`, alt: "", loading: "lazy", decoding: "async" });
+  img.addEventListener("error", () => img.remove(), { once: true });
+  return img;
 }
 
 /**
@@ -412,6 +481,7 @@ function row(h) {
   return el(
     "div",
     { class: `wl-r wl-own${h.mint === chosen ? " on" : ""}`, "data-mint": h.mint },
+    logo(h),
     ident(h),
     el("span", {
       class: "wl-amt",
@@ -435,11 +505,12 @@ function topRow(t) {
       class: `wl-r wl-tr${t.mint === chosen ? " on" : ""}`,
       "data-mint": t.mint,
       // The whole row picks the token, not just its name; the name stays the
-      // button a keyboard reaches, and Buy keeps its own click.
+      // button a keyboard reaches. Buy and Sell are the drawer's.
       onclick: (event) => {
-        if (!event.target.closest(".wl-id, .wl-act")) choose(t.mint, true);
+        if (!event.target.closest(".wl-id")) choose(t.mint);
       },
     },
+    logo(t),
     ident(t),
     el(
       "span",
@@ -447,15 +518,14 @@ function topRow(t) {
       el("span", { text: price.text, title: price.title }),
       move == null ? null : el("span", { class: `wl-d ${dirOf(move)}`, text: percent(move, true) }),
     ),
-    el("span", { class: "wl-act" }, trade(t, "buy")),
   );
 }
 
 let searchRun = 0;
 
-/** The list on show: Trending, or one kind. `?c=` picks it; the buttons pick it after that. */
+/** The list on show: Trending, or one kind. Its address picks it (data-c); the buttons after that. */
 let cat = (() => {
-  const asked = new URLSearchParams(location.search).get("c");
+  const asked = document.body.dataset.c;
   return chips.some((chip) => chip.dataset.c === asked) ? asked : "trending";
 })();
 /** Where the list's next page starts; empty once there is none, and while searching. */
@@ -504,7 +574,6 @@ async function paintTop() {
           ? nil("ic-up", "Nothing is trending right now", "Tokens show up here as their trading picks up. Check back soon.")
           : nil("ic-swap", "Nothing on this list right now", "Tokens join it as they qualify. Try another list meanwhile."),
     );
-    if (!q) chooseFirst(rows[0]?.mint);
     watch(q ? "" : data.after);
   } catch {
     if (id !== searchRun) return;
@@ -532,12 +601,17 @@ async function paintMore() {
 }
 
 /**
- * Where the list scrolls: with the left half on a desktop (wallet.css), with
+ * Where the list scrolls: with the left column on a desktop (wallet.css), with
  * the page on a phone. The watcher has to be told which, so it can ask for
  * the next page a screenful ahead rather than once the end is on screen.
+ * History scrolls with the centre column.
  */
 const desk = matchMedia("(min-width: 960px)");
 const column = /** @type {HTMLElement} */ (document.querySelector(".wl-main"));
+const bar = $("wl-bar");
+const barHead = /** @type {HTMLElement} */ (bar.querySelector(".wl-tb"));
+// The field and lists frost over the rows once any have scrolled under them (wallet.css).
+bar.addEventListener("scroll", () => barHead.classList.toggle("up", bar.scrollTop > 0), { passive: true });
 let pager = watcher();
 
 function watcher() {
@@ -545,7 +619,7 @@ function watcher() {
     (seen) => {
       if (seen.some((e) => e.isIntersecting)) void paintMore();
     },
-    { root: desk.matches ? column : null, rootMargin: "0px 0px 600px 0px" },
+    { root: desk.matches ? bar : null, rootMargin: "0px 0px 600px 0px" },
   );
   if (end.isConnected) next.observe(end);
   return next;
@@ -554,7 +628,7 @@ function watcher() {
 desk.addEventListener("change", () => {
   pager.disconnect();
   pager = watcher();
-  past.rewatch();
+  past?.rewatch();
 });
 
 /**
@@ -564,13 +638,20 @@ desk.addEventListener("change", () => {
  */
 const historyButton = $("wl-hb");
 const historyView = $("wl-hs");
-const past = mountHistory(() => (desk.matches ? column : null));
+/** History's list (wallet/history.js), in the dialogs bundle, fetched on the first press. */
+let past = null;
 /** Where the page was scrolled before History took its place. */
 let historyFrom = 0;
 
 async function openHistory() {
   const address = await owner();
   if (!address || document.body.classList.contains("hist")) return;
+  try {
+    past ??= (await load("ks", "__keys")).history(() => (desk.matches ? column : null));
+  } catch {
+    return setNote("Could not open History. Try again.", "err");
+  }
+  if (document.body.classList.contains("hist")) return;
   historyFrom = desk.matches ? column.scrollTop : window.scrollY;
   document.body.classList.add("hist");
   historyView.hidden = false;
@@ -583,7 +664,7 @@ async function openHistory() {
 
 function closeHistory() {
   if (!document.body.classList.contains("hist")) return;
-  past.close();
+  past?.close();
   document.body.classList.remove("hist");
   historyView.hidden = true;
   if (desk.matches) column.scrollTop = historyFrom;
@@ -617,10 +698,10 @@ function watch(cursor) {
  * on a desktop.
  */
 function toListTop() {
-  const floor = desk.matches ? column.getBoundingClientRect().top : $("chrome").getBoundingClientRect().bottom;
+  const floor = desk.matches ? bar.getBoundingClientRect().top : $("chrome").getBoundingClientRect().bottom;
   const over = /** @type {HTMLElement} */ (topList.parentElement).getBoundingClientRect().top - floor;
   if (over >= 0) return;
-  if (desk.matches) column.scrollTop += over;
+  if (desk.matches) bar.scrollTop += over;
   else window.scrollBy(0, over);
 }
 
@@ -636,10 +717,8 @@ for (const chip of chips) {
   chip.addEventListener("click", () => {
     cat = chip.dataset.c;
     filter.value = "";
-    const url = new URL(location.href);
-    if (cat === "trending") url.searchParams.delete("c");
-    else url.searchParams.set("c", cat);
-    history.replaceState(history.state, "", url);
+    // The list's own address (src/seo.ts walletListPath), named for it.
+    setAddress(cat === "trending" ? "/wallet" : `/wallet/${cat}`, `${chip.firstChild?.textContent ?? ""} — UtopianGO Wallet`);
     toListTop();
     void paintTop();
   });
@@ -755,6 +834,7 @@ function paint(data) {
   reset();
   firstPainted();
   shown = data;
+  paintSells();
   // New balances: last read's entries are for what was held then.
   const moved = signature(data) !== entriesFor;
   if (moved) entries = new Map();
@@ -773,19 +853,24 @@ function paint(data) {
   paintRows();
   if (moved) void readEntries(data);
   setNote(omitted(data));
-  chooseFirst(data.items[0].mint);
 }
 
 /**
- * Nobody signed in: the wallet is an account's only (src/server.ts), so off to
- * the login page, which comes back here once someone is. The server sends a
- * signed-out visitor there before this page is ever served; this is for a
- * session that ended while the page was open or kept (a copy the service
- * worker had). Offline the session kept on the device still answers owner(),
- * so this is never a network failure.
+ * Whose portfolio, if anyone's: signed out, the sign-in prompt stands in its
+ * place, its links coming back to this address once someone is in. The
+ * server ships the right one for the cookie it saw (src/pages.ts); this is
+ * for a session that began or ended with the page open.
  */
-function offer() {
-  location.replace(loginPath(location.pathname + location.search));
+function showPortfolio(yes) {
+  portfolioBox.hidden = !yes;
+  signIn.hidden = yes;
+  paintSells();
+  if (yes) return;
+  firstPainted();
+  historyButton.hidden = true;
+  const here = location.pathname + location.search;
+  $("wl-in-l").setAttribute("href", loginPath(here));
+  $("wl-in-r").setAttribute("href", authPath("/register", here));
 }
 
 /** POSTed so the address stays out of request logs. Throws on anything that is not an answer. */
@@ -809,7 +894,8 @@ async function refresh() {
   const id = ++run;
   const address = await owner();
   if (id !== run) return;
-  if (!address) return offer();
+  showPortfolio(!!address);
+  if (!address) return;
 
   historyButton.hidden = false;
   // The first read paints over the shimmering placeholder; later ones start from clear.
@@ -891,7 +977,138 @@ async function settle() {
   setNote("Trade sent, but your balance has not changed yet. It can take a moment — reload to check again.");
 }
 
-// Signed out, the page is not yours to stay on (src/server.ts): home, as Social goes.
+/* —— Recently viewed ——
+   Every token opened in the drawer, newest first, as a card under the
+   portfolio. Kept in this browser only: a convenience, not a record. */
+
+const SEEN = "ug.wl.seen";
+const SEEN_MAX = 12;
+const seenBox = $("wl-rv");
+const seenList = $("wl-rvl");
+
+/** @returns {import('../../src/types').TopToken[]} */
+function recallSeen() {
+  try {
+    const kept = JSON.parse(localStorage.getItem(SEEN) || "[]");
+    return Array.isArray(kept) ? kept.filter((t) => t && typeof t.mint === "string").slice(0, SEEN_MAX) : [];
+  } catch {
+    return [];
+  }
+}
+
+function keepSeen(list) {
+  try {
+    if (list.length) localStorage.setItem(SEEN, JSON.stringify(list));
+    else localStorage.removeItem(SEEN);
+  } catch {
+    // Not kept: the cards last as long as the page.
+  }
+}
+
+let seen = recallSeen();
+
+/**
+ * A token as a card: Recently viewed's, Movers' and New's. `meta`, when
+ * given, is a quiet last line: the volume, or the age.
+ * @param {import('../../src/types').TopToken} t
+ * @param {string} [meta]
+ */
+function tokenCard(t, meta) {
+  const price = tokenPrice(t.price);
+  const move = t.change24h;
+  return el(
+    "button",
+    {
+      class: `wl-rc${t.mint === chosen ? " on" : ""}`,
+      type: "button",
+      "data-mint": t.mint,
+      title: t.name,
+      onclick: () => choose(t.mint),
+    },
+    icon(t, 28),
+    el("span", { class: "wl-rc-s", text: t.symbol }),
+    el("span", { class: "wl-rc-p", text: price.text }),
+    el("span", { class: `wl-d ${dirOf(move)}`, text: move == null ? "\u00a0" : percent(move, true) }),
+    meta ? el("span", { class: "wl-rc-m", text: meta }) : null,
+  );
+}
+
+function paintSeen() {
+  seenBox.hidden = !seen.length;
+  seenList.replaceChildren(...seen.map((t) => tokenCard(t)));
+}
+
+/** A token opened: to the front of the row, once. */
+function remember(d) {
+  const t = {
+    mint: d.mint,
+    symbol: d.symbol,
+    name: d.name,
+    price: d.price,
+    ...(d.windows?.["24h"]?.change != null ? { change24h: d.windows["24h"].change } : {}),
+    ...(d.icon ? { icon: true } : {}),
+  };
+  seen = [t, ...seen.filter((s) => s.mint !== t.mint)].slice(0, SEEN_MAX);
+  keepSeen(seen);
+  paintSeen();
+  seenList.scrollLeft = 0;
+}
+
+/** The kept cards' prices are as of their last view; today's replace them. */
+async function freshenSeen() {
+  if (!seen.length) return;
+  try {
+    const res = await fetch(`/api/quotes?m=${seen.map((t) => t.mint).join(",")}`, { headers: { Accept: "application/json" } });
+    if (!res.ok) return;
+    const now = new Map(((await res.json()).tokens ?? []).map((t) => [t.mint, t]));
+    seen = seen.map((t) => {
+      const q = now.get(t.mint);
+      return q ? { ...t, price: q.price, change24h: q.change24h, icon: q.icon } : t;
+    });
+    keepSeen(seen);
+    paintSeen();
+  } catch {
+    // The kept prices stand.
+  }
+}
+
+$("wl-rvx").addEventListener("click", () => {
+  seen = [];
+  keepSeen(seen);
+  paintSeen();
+});
+
+/* —— Movers and New —— */
+
+/** How long a market has been open, in its largest whole unit. */
+function age(at) {
+  const m = Math.max(0, (Date.now() - at) / 60_000);
+  if (m < 60) return `${Math.max(1, Math.floor(m))}m`;
+  if (m < 48 * 60) return `${Math.floor(m / 60)}h`;
+  if (m < 60 * 24 * 60) return `${Math.floor(m / 1440)}d`;
+  if (m < 365 * 24 * 60) return `${Math.floor(m / 43_200)}mo`;
+  return `${Math.floor(m / 525_600)}y`;
+}
+
+async function paintFeatured(key, box, meta) {
+  try {
+    const res = await fetch(`/api/tokens/featured?s=${key}`, { headers: { Accept: "application/json" } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    const rows = data.tokens ?? [];
+    box.replaceChildren(
+      ...(rows.length ? rows.map((t) => tokenCard(t, meta(t))) : [el("p", { class: "wl-n", text: "Nothing here right now." })]),
+    );
+  } catch {
+    box.replaceChildren(el("p", { class: "wl-n", text: "Could not load these." }));
+  }
+}
+
+paintSeen();
+void freshenSeen();
+void paintFeatured("movers", $("wl-mv"), (t) => `${fiat(t.volume)} vol`);
+void paintFeatured("new", $("wl-nw"), (t) => (t.bornAt ? `${age(t.bornAt)} old` : ""));
+
 mountAccount($("ac"), {
   self: () => accountsButton(),
 });

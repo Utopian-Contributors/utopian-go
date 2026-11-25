@@ -190,6 +190,12 @@ export interface TokenRecord {
    * look new.
    */
   checkedAt: number;
+  /**
+   * Epoch ms its first pool opened (Jupiter's firstPool.createdAt): how old
+   * its market is, which the wallet page's New list sorts by. Absent on a
+   * snapshot written before it was kept, until the next rebuild.
+   */
+  bornAt?: number;
 }
 
 /**
@@ -278,6 +284,8 @@ export interface TopToken {
   icon?: true;
   /** Its logo's colours as a tile's `--hi` and `--lo` (the home watchlist's menu only). */
   tint?: string;
+  /** When its first pool opened, epoch ms (the wallet page's New list only). */
+  bornAt?: number;
 }
 
 /** One page of a wallet page list. */
@@ -528,6 +536,8 @@ export interface SearchApiResponse {
 export interface ImageSearchApiResponse {
   query: string;
   images: ImageItem[];
+  /** Another slice follows this one (`start` + `count` on /api/images). */
+  more?: boolean;
   error?: string;
 }
 
@@ -636,6 +646,8 @@ export interface JupToken {
   stats1h?: JupStats;
   stats6h?: JupStats;
   stats24h?: JupStats;
+  /** The token's first pool: when it opened is how old its market is. */
+  firstPool?: { id?: string; createdAt?: string };
 }
 
 /** Loose Helius DAS `getAsset` response (fields we read only). */
