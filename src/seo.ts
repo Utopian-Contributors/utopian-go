@@ -192,6 +192,9 @@ interface Head {
   description: string;
   path: string;
   crumbs: [string, string][];
+  /** Its share card (lib/og/cards.ts), and what the card shows for anyone who cannot see it. */
+  card: string;
+  cardAlt: string;
 }
 
 function headOf(target: WalletTarget, at: string): Head {
@@ -205,6 +208,8 @@ function headOf(target: WalletTarget, at: string): Head {
         ["Wallet", "/wallet"],
         [labelOf(rec), at],
       ],
+      card: `/og/wallet/${rec.mint}.png`,
+      cardAlt: `${labelOf(rec)}'s logo, price and chart over the last 24 hours`,
     };
   }
   if (target.list === "trending") {
@@ -214,6 +219,8 @@ function headOf(target: WalletTarget, at: string): Head {
         "Live prices and charts for every Solana token we index: trending tokens, tokenized stocks, memecoins, DeFi and more. Trade any of them, and see your own portfolio once you log in.",
       path: at,
       crumbs: [["Wallet", "/wallet"]],
+      card: "/og/wallet/trending.png",
+      cardAlt: "The UtopianGO wallet: the busiest Solana tokens, with their prices and moves today",
     };
   }
   const name = LIST_TITLE[target.list];
@@ -225,6 +232,8 @@ function headOf(target: WalletTarget, at: string): Head {
       ["Wallet", "/wallet"],
       [name, at],
     ],
+    card: `/og/wallet/${target.list}.png`,
+    cardAlt: `The top ${LIST_PHRASE[target.list]}, with their prices and moves today`,
   };
 }
 
@@ -245,8 +254,9 @@ function headTags(h: Head): string {
     '<meta property="og:type" content="website"><meta property="og:site_name" content="UtopianGO">' +
     `<meta property="og:title" content="${esc(h.title.replace(/ — UtopianGO Wallet$/, ""))}">` +
     `<meta property="og:description" content="${d}"><meta property="og:url" content="${url}">` +
-    `<meta property="og:image" content="${esc(SITE_URL)}/og-wallet.png">` +
+    `<meta property="og:image" content="${esc(SITE_URL + h.card)}">` +
     '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">' +
+    `<meta property="og:image:alt" content="${esc(h.cardAlt)}">` +
     '<meta name="twitter:card" content="summary_large_image">' +
     `<script type="application/ld+json">${ld}</script>`
   );

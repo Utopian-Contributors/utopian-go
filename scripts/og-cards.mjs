@@ -51,16 +51,6 @@ const CARDS = [
   { out: "og-pinball.png", hi: "#4cc488", lo: "#0f5c3b", title: "Pinball", line: "Flippers, ramps and multiball", marks: ["ic-flippers.svg"] },
   { out: "og-snake.png", hi: "#ffc75a", lo: "#c9681a", title: "Snake", line: "Eat, grow, mind your tail", marks: ["ic-apple.svg"] },
   { out: "og-shotgun.png", hi: "#8592a6", lo: "#2c3442", title: "Shotgun", line: "Spin the wheel, hold off the waves", marks: ["ic-shell.svg"] },
-  {
-    // The wallet's addresses (src/seo.ts): the wallet section's brown (client/base.css), and a day's line for a mark.
-    out: "og-wallet.png",
-    hi: "#c98a4f",
-    lo: "#5e3618",
-    title: "Wallet",
-    line: "Every Solana token, priced and tradable",
-    marks: [],
-    line24h: true,
-  },
 ];
 
 function esc(s) {
@@ -94,26 +84,10 @@ function mark(file, x, y, edge, n) {
   return `<svg x="${x}" y="${y}" width="${edge}" height="${edge}" viewBox="${viewBox}">${inner}</svg>`;
 }
 
-/** A day of a price, made up and smooth: the wallet card's mark. */
-function dayLine() {
-  const pts = [];
-  for (let i = 0; i <= 48; i++) {
-    const t = i / 48;
-    const y = 0.55 - 0.32 * t + 0.09 * Math.sin(t * 11) + 0.05 * Math.sin(t * 29);
-    pts.push(`${(700 + t * 430).toFixed(1)},${(120 + y * 330).toFixed(1)}`);
-  }
-  const line = pts.join(" ");
-  return (
-    `<polygon points="700,470 ${line} 1130,470" fill="#ffffff" opacity=".12"/>` +
-    `<polyline points="${line}" fill="none" stroke="#ffffff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>`
-  );
-}
-
 function svg(card) {
   // The marks: one large in the right half, or the games list's four in a 2×2.
   let art = "";
-  if (card.line24h) art = dayLine();
-  else if (card.marks.length === 1) art = mark(card.marks[0], 700, 95, 440, 0);
+  if (card.marks.length === 1) art = mark(card.marks[0], 700, 95, 440, 0);
   else card.marks.forEach((m, i) => (art += mark(m, 730 + (i % 2) * 230, 75 + Math.floor(i / 2) * 250, 200, i)));
 
   const s = 300 / (INK.x1 - INK.x0);

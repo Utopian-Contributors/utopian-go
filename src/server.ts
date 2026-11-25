@@ -13,7 +13,8 @@ import {
   SITE_URL,
 } from "./config";
 import { bigIconFile, iconFile } from "./lib/tokens/icons";
-import { startTokenIndex } from "./lib/tokens/store";
+import { CARD_TTL_MS, listCard, tokenCard } from "./lib/og/cards";
+import { isTokenList, startTokenIndex, tokenByMint } from "./lib/tokens/store";
 import { newsLink, newsPhoto, renderHomeNews, startNews } from "./lib/news";
 import { WATCH_COOKIE, renderFundPrices, renderHomeTickerReady, warmHomeTiles, watchKeys } from "./lib/tokens/ticker";
 import { ACCOUNT_NAV, HOME_NAV, accountNav, authPath, homeNav, nextPath, frameSocial, profileCard, renderAuth, renderPage, socialFrame } from "./pages";
@@ -714,6 +715,25 @@ app.get("/shotgun.html", (req, res) => {
 app.get("/shotgun", (req, _res, next) => {
   req.url = "/shotgun.html" + req.originalUrl.slice(req.path.length);
   next();
+});
+
+/**
+ * A wallet address's share card (lib/og/cards.ts): /og/wallet/<mint>.png for
+ * a token the index holds, /og/wallet/<list>.png for a list. Public and
+ * cacheable, as a crawler fetches it without the page's cookies.
+ */
+app.get("/og/wallet/:seg.png", (req, res, next) => {
+  const seg = req.params.seg;
+  const rec = isTokenList(seg) ? undefined : tokenByMint(seg);
+  const card = isTokenList(seg) ? listCard(seg) : rec ? tokenCard(rec) : null;
+  if (!card) {
+    sendNotFound(req, res);
+    return;
+  }
+  card.then((png) => {
+    res.setHeader("Cache-Control", `public, max-age=${CARD_TTL_MS / 1000}`);
+    res.type("png").send(png);
+  }, next);
 });
 
 /** The large copy, for a logo drawn big (TOKEN_ICON_BIG_EDGE). */
