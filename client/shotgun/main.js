@@ -538,16 +538,17 @@ let walker = -1;
 let aimer = -1;
 
 /**
- * On a touch screen the two sticks stand still in the field's bottom corners,
- * above the health bar and a phone's home indicator: walking on the left,
+ * On a touch screen the two sticks stand still low on the field, in from its
+ * sides and high enough to leave Place turret free under the right one, clear
+ * of the health bar and a phone's home indicator: walking on the left,
  * aiming and shooting on the right. Set again whenever the field changes
  * size; a stick let go has its knob back in the middle.
  */
 function placePads() {
   if (!touch) return;
   const per = box.clientHeight / (2 * game.hh) || 1;
-  const side = 24 / per + STICK;
-  const y = game.hh - (34 + game.inset / Math.min(3, window.devicePixelRatio || 1)) / per - STICK;
+  const side = 52 / per + STICK;
+  const y = game.hh - (96 + game.inset / Math.min(3, window.devicePixelRatio || 1)) / per - STICK;
   game.pads = [
     { x: -game.hw + side, y },
     { x: game.hw - side, y },

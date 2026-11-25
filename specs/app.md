@@ -293,12 +293,12 @@ credits are its own, not Fruit Slots'.
   a zombie with a wall in its way heads for the doorway that makes the shortest way round,
   then through it. Barrels are never laid in front of a doorway. They
   walk and aim apart. On a desktop, WASD or the arrows walk and the mouse aims, shooting while
-  held down. On a touch screen there are two thumb-sticks, fixed in the field's
-  bottom corners above the health bar and always shown: the left one walks, the right one
+  held down. On a touch screen there are two thumb-sticks, fixed low on the field,
+  in from its sides and above Place turret and the health bar, and always shown: the left one walks, the right one
   turns the gun as it leans and shoots while pushed most of the way out (its knob red),
   stopping when let go, its knob back in the middle. A thumb takes a stick by landing near it
   (within about two and a half rings); one landing elsewhere does nothing. Barrels and crates
-  are never laid on or about a stick, and Place turret sits top right instead. Zombies come in from the edges, 5 + 3 per wave of them, faster
+  are never laid on or about a stick. Zombies come in from the edges, 5 + 3 per wave of them, faster
   each wave, and bite on reaching the player (100 health). A shot barrel blows up everything
   within its blast, the barrels near it a beat later, and the player too if they stand close;
   the barrels are laid again each wave. From the second wave, gun crates drop now and then,
