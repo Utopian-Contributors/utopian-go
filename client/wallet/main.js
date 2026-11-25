@@ -1036,7 +1036,21 @@ function tokenCard(t, meta) {
 function paintSeen() {
   seenBox.hidden = !seen.length;
   seenList.replaceChildren(...seen.map((t) => tokenCard(t)));
+  edges();
 }
+
+/** Each card row's blurred end (wallet.css .wl-rvw), off once there is nothing more past it. */
+const rowsOfCards = /** @type {HTMLElement[]} */ ([...document.querySelectorAll(".wl-rvl")]);
+function edges() {
+  for (const row of rowsOfCards) {
+    row.parentElement?.classList.toggle("end", row.scrollLeft + row.clientWidth >= row.scrollWidth - 2);
+  }
+}
+for (const row of rowsOfCards) {
+  row.addEventListener("scroll", edges, { passive: true });
+  row.after(el("i", { class: "wl-fz", "aria-hidden": "true" }, el("i", {}), el("i", {}), el("i", {}), el("i", {})));
+}
+addEventListener("resize", edges, { passive: true });
 
 /** A token opened: to the front of the row, once. */
 function remember(d) {
@@ -1102,6 +1116,7 @@ async function paintFeatured(key, box, meta) {
   } catch {
     box.replaceChildren(el("p", { class: "wl-n", text: "Could not load these." }));
   }
+  edges();
 }
 
 paintSeen();

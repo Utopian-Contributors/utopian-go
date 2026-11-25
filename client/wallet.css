@@ -1040,6 +1040,73 @@ body.hist .wl-ft {
   scrollbar-width: none;
 }
 
+/*
+ * The row's right end blurs out the cards running on past it: blur only, no
+ * tint, ramping in from nothing. The ramp is four layers stacked from the
+ * right (main.js appends them), each a little wider and a little less
+ * blurred than the one over it, rather than one layer under a gradient
+ * mask: a browser that leaves a backdrop-filter unmasked would draw that as
+ * a hard edge at full blur. Each still softens its own edge where masks do
+ * apply. Off once the row is scrolled to its end (main.js sets .end), so the
+ * last card is read whole. --bleed is how far the row runs out past its box.
+ */
+.wl-rvw {
+  --bleed: 4px;
+  position: relative;
+}
+
+.wl-fz {
+  position: absolute;
+  /* Past the cards above and below, so the blur's own edges fall on the
+     plain ground, where they do not show. */
+  top: -16px;
+  right: calc(-1 * var(--bleed));
+  bottom: -16px;
+  width: 112px;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.wl-fz i {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  /* Unprefixed only; see .wl-tb::before. */
+  backdrop-filter: blur(1px);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 24px);
+  mask-image: linear-gradient(to right, transparent, #000 24px);
+}
+
+.wl-fz i:nth-child(1) {
+  width: 112px;
+}
+
+.wl-fz i:nth-child(2) {
+  width: 84px;
+  backdrop-filter: blur(2px);
+}
+
+.wl-fz i:nth-child(3) {
+  width: 56px;
+  backdrop-filter: blur(4px);
+}
+
+.wl-fz i:nth-child(4) {
+  width: 32px;
+  backdrop-filter: blur(8px);
+}
+
+.wl-rvw.end .wl-fz {
+  opacity: 0;
+}
+
+/* And the cards themselves fade out at the very edge, rather than being cut there. */
+.wl-rvw:not(.end) .wl-rvl {
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 48px);
+  mask-image: linear-gradient(to left, transparent, #000 48px);
+}
+
 .wl-rvl::-webkit-scrollbar {
   display: none;
 }
@@ -1760,6 +1827,10 @@ body.hist .wl-ft {
   .wl-in {
     max-width: 560px;
     margin-inline: auto;
+  }
+
+  .wl-main .wl-rvw {
+    --bleed: 32px;
   }
 
   .wl-main .wl-rvl {
