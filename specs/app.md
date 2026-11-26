@@ -72,7 +72,7 @@ Anything that is only needed after a click is a lazy bundle.
 | Surface | Path | Document | Bundle | Lazy |
 |---|---|---|---|---|
 | Search | `/`, `/?q=` | `index.html` | `app.js` | `swap.js`, `connect.js`, `qr.js`, `login.js` |
-| Wallet | `/wallet` | `wallet.html` | `wallet.js` | `connect.js`, `swap.js`, `qr.js`, `keys.js`, `login.js` |
+| Wallet | `/wallet` | `wallet.html` | `wallet.js` | `connect.js`, `swap.js`, `qr.js`, `keys.js`, `rows.js`, `login.js` |
 | Social | `/social/*` | `social.html` | `social.js` | `qr.js`, `chat.js`, `rec.js`, `rail.js`, `ads.js` |
 | Games | `/games` | `games.html` | `games.js` | — |
 | Pinball | `/pinball` | `pinball.html` | `pinball.js` | — |

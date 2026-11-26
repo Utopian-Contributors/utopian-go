@@ -364,6 +364,16 @@ const swOpts = {
   outfile: path.join(outDir, "sw.js"),
 };
 
+/**
+ * The wallet page's Movers and New rows, below the fold: their paging is
+ * fetched as the page starts rather than carried in wallet.js's first flight.
+ */
+const rowsOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "rows", "main.js")],
+  outfile: path.join(outDir, "rows.js"),
+};
+
 /** The wallet page's own bundle. Shares helpers with app.js, not bytes. */
 const walletOpts = {
   ...jsOpts,
@@ -954,7 +964,7 @@ function minifyDoc(raw) {
  * server-side state, because the server does not know whose wallet it is. That
  * is what lets it be a plain precompressed file rather than a template.
  */
-async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, keysHash, loginHash, installHash) {
+async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, keysHash, loginHash, installHash, rowsHash) {
   let raw = readFileSync(path.join(clientDir, "wallet.html"), "utf8");
 
   raw = replaceOnce(
@@ -1001,6 +1011,12 @@ async function buildWalletHtml(css, walletHash, connectHash, swapHash, qrHash, k
     /data-ks="\/keys\.js"/,
     `data-ks="/keys.js?v=${keysHash}"`,
     "wallet keys.js attribute",
+  );
+  raw = replaceOnce(
+    raw,
+    /data-rw="\/rows\.js"/,
+    `data-rw="/rows.js?v=${rowsHash}"`,
+    "wallet rows.js attribute",
   );
   raw = replaceOnce(
     raw,
@@ -1276,6 +1292,7 @@ async function buildAssets() {
     esbuild.build(qrOpts),
     esbuild.build(watchOpts),
     esbuild.build(walletOpts),
+    esbuild.build(rowsOpts),
     esbuild.build(recOpts),
     esbuild.build(railOpts),
     esbuild.build(adsOpts),
@@ -1314,7 +1331,7 @@ async function buildAssets() {
 
   await Promise.all([
     buildHtml(css, hash("app.js"), swapHash, connectHash, qrHash, loginHash, installHash, hash("watch.js")),
-    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash),
+    buildWalletHtml(walletCss, hash("wallet.js"), connectHash, swapHash, qrHash, hash("keys.js"), loginHash, installHash, hash("rows.js")),
     buildSocialHtml(socialCss, hash),
     buildAuthHtml(authCss, hash),
     buildGamesHtml(hash),

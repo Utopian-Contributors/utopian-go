@@ -1107,83 +1107,26 @@ $("wl-rvx").addEventListener("click", () => {
   paintSeen();
 });
 
-/* —— Movers and New —— */
+/* —— Movers and New ——
+   Below the fold, so their paging rides rows.js (client/rows/main.js); the
+   cards are this page's, since it knows which token is open. */
 
-/** How long a market has been open, in its largest whole unit. */
-function age(at) {
-  const m = Math.max(0, (Date.now() - at) / 60_000);
-  if (m < 60) return `${Math.max(1, Math.floor(m))}m`;
-  if (m < 48 * 60) return `${Math.floor(m / 60)}h`;
-  if (m < 60 * 24 * 60) return `${Math.floor(m / 1440)}d`;
-  if (m < 365 * 24 * 60) return `${Math.floor(m / 43_200)}mo`;
-  return `${Math.floor(m / 525_600)}y`;
-}
-
-/** Cards added to a featured row at a time, the server's page (FEATURED_PAGE). */
-const FEATURED_PAGE = 20;
-
-/**
- * Movers or New: a page more each time the row comes within a screen of its
- * end, to the most the server gives (100); past that, it runs on from its
- * first card again, lap after lap. A row that fits whole does not repeat.
- */
-function featuredRow(key, box, meta) {
-  /** @type {import('../../src/types').TopToken[]} */
-  const got = [];
-  let more = true;
-  let busy = false;
-  let shown = 0;
-  const card = (t) => tokenCard(t, meta(t));
-
-  /** One page more, fetched or a lap's; whether the row grew. */
-  async function grow() {
-    if (more) {
-      const res = await fetch(`/api/tokens/featured?s=${key}&o=${got.length}`, { headers: { Accept: "application/json" } });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      const rows = data.tokens ?? [];
-      more = Boolean(data.more) && rows.length > 0;
-      if (!rows.length) {
-        if (!got.length) box.replaceChildren(el("p", { class: "wl-n", text: "Nothing here right now." }));
-        return false;
-      }
-      // The first page over whatever the row said while it was empty.
-      if (got.length) box.append(...rows.map(card));
-      else box.replaceChildren(...rows.map(card));
-      got.push(...rows);
-      shown += rows.length;
-      return true;
-    }
-    if (!got.length || box.scrollWidth <= box.clientWidth) return false;
-    const lap = Array.from({ length: FEATURED_PAGE }, (_, i) => got[(shown + i) % got.length]);
-    box.append(...lap.map(card));
-    shown += lap.length;
-    return true;
-  }
-
-  async function near() {
-    if (busy || box.scrollLeft + box.clientWidth < box.scrollWidth - box.clientWidth) return;
-    busy = true;
-    let grew = false;
-    try {
-      grew = await grow();
-    } catch {
-      // On the next scroll, again; with nothing in the row yet, say so.
-      if (!got.length) box.replaceChildren(el("p", { class: "wl-n", text: "Could not load these." }));
-    }
-    busy = false;
-    edges();
-    if (grew) void near();
-  }
-
-  box.addEventListener("scroll", () => void near(), { passive: true });
-  void near();
+function paintFeatured() {
+  const boxes = [$("wl-mv"), $("wl-nw")];
+  load("rw", "__rows").then(
+    ({ featured, age }) => {
+      featured("movers", boxes[0], (t) => tokenCard(t, `${fiat(t.volume)} vol`), edges);
+      featured("new", boxes[1], (t) => tokenCard(t, t.bornAt ? `${age(t.bornAt)} old` : ""), edges);
+    },
+    () => {
+      for (const box of boxes) box.replaceChildren(el("p", { class: "wl-n", text: "Could not load these." }));
+    },
+  );
 }
 
 paintSeen();
 void freshenSeen();
-featuredRow("movers", $("wl-mv"), (t) => `${fiat(t.volume)} vol`);
-featuredRow("new", $("wl-nw"), (t) => (t.bornAt ? `${age(t.bornAt)} old` : ""));
+paintFeatured();
 
 mountAccount($("ac"), {
   self: () => accountsButton(),
