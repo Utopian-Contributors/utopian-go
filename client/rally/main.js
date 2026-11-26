@@ -759,7 +759,12 @@ let height = 1;
 let lift = 0;
 /** The sheet's height between races, kept by an observer rather than read every frame. */
 let sheetH = 0;
-new ResizeObserver(() => (sheetH = panel.offsetHeight)).observe(panel);
+{
+  // Whichever sheet is up between races: the start or result, the store, the board (a hidden one is 0 tall).
+  const sheets = [panel, $("rl-sh"), $("rl-lb")];
+  const measure = new ResizeObserver(() => (sheetH = Math.max(...sheets.map((el) => el.offsetHeight))));
+  for (const el of sheets) measure.observe(el);
+}
 
 /**
  * The coins, boosts and crates where they stand: worked out once, as the
@@ -1023,16 +1028,24 @@ const boardEl = $("rl-lb");
 
 function closeSheets() {
   storeEl.hidden = boardEl.hidden = true;
+  panel.hidden = false;
+}
+
+/** Open the store or the board, in place of the sheet under it. @param {HTMLElement} sheet */
+function openSheet(sheet) {
+  closeSheets();
+  panel.hidden = true;
+  sheet.hidden = false;
 }
 
 for (const x of document.querySelectorAll("[data-close]")) x.addEventListener("click", closeSheets);
 $("rl-so").addEventListener("click", () => {
   paintStore();
-  storeEl.hidden = false;
+  openSheet(storeEl);
 });
 $("rl-bd").addEventListener("click", () => {
   paintBoard();
-  boardEl.hidden = false;
+  openSheet(boardEl);
   loadBoard();
 });
 
