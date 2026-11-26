@@ -718,6 +718,20 @@ app.get("/shotgun", (req, _res, next) => {
 });
 
 /**
+ * Rally: one static document for anyone. It drives on the device; signed in,
+ * its races are synced and banked through /api/social/rally.
+ */
+app.get("/rally.html", (req, res) => {
+  const qs = req.originalUrl.slice(req.path.length);
+  res.redirect(308, `/rally${qs}`);
+});
+
+app.get("/rally", (req, _res, next) => {
+  req.url = "/rally.html" + req.originalUrl.slice(req.path.length);
+  next();
+});
+
+/**
  * A wallet address's share card (lib/og/cards.ts): /og/wallet/<mint>.png for
  * a token the index holds, /og/wallet/<list>.png for a list. Public and
  * cacheable, as a crawler fetches it without the page's cookies.
@@ -920,7 +934,7 @@ app.use(
       // `wallet.html`. Matching the bare name alone silently missed every
       // compressed response — which is every real one.
       const name = path.basename(filePath).replace(/\.(br|gz)$/, "");
-      if (name === "index.html" || name === "wallet.html" || name === "social.html" || name === "auth.html" || name === "games.html" || name === "pinball.html" || name === "snake.html" || name === "slots.html" || name === "shotgun.html") {
+      if (name === "index.html" || name === "wallet.html" || name === "social.html" || name === "auth.html" || name === "games.html" || name === "pinball.html" || name === "snake.html" || name === "slots.html" || name === "shotgun.html" || name === "rally.html") {
         res.setHeader("Cache-Control", "no-cache");
       }
       // The service worker and the manifest keep one URL across deploys, so

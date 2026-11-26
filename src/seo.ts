@@ -315,7 +315,7 @@ export function robotsTxt(): string {
 }
 
 /** The pages worth indexing that are not the wallet's. */
-const STATIC_PAGES = ["/", "/games", "/slots", "/pinball", "/snake", "/shotgun"];
+const STATIC_PAGES = ["/", "/games", "/slots", "/pinball", "/snake", "/shotgun", "/rally"];
 
 /**
  * Every indexable URL: the pages above, the wallet's lists, and a wallet

@@ -51,6 +51,7 @@ const CARDS = [
   { out: "og-pinball.png", hi: "#4cc488", lo: "#0f5c3b", title: "Pinball", line: "Flippers, ramps and multiball", marks: ["ic-flippers.svg"] },
   { out: "og-snake.png", hi: "#ffc75a", lo: "#c9681a", title: "Snake", line: "Eat, grow, mind your tail", marks: ["ic-apple.svg"] },
   { out: "og-shotgun.png", hi: "#8592a6", lo: "#2c3442", title: "Shotgun", line: "Spin the wheel, hold off the waves", marks: ["ic-shell.svg"] },
+  { out: "og-rally.png", hi: "#5cb8ff", lo: "#1c5aa8", title: "Rally", line: "Jumps, a loop and your ghost", marks: ["ic-car.svg"] },
 ];
 
 function esc(s) {

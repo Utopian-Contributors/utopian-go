@@ -79,6 +79,7 @@ Anything that is only needed after a click is a lazy bundle.
 | Snake | `/snake` | `snake.html` | `snake.js` | — |
 | Fruit Slots | `/slots` | `slots.html` | `slots.js` | — |
 | Shotgun | `/shotgun` | `shotgun.html` | `shotgun.js` | — |
+| Rally | `/rally` | `rally.html` | `rally.js` | — |
 
 **Each section is its home tile's colour.** The app is iOS's system palette, and the pages a
 home tile opens wear that tile's colour: the wallet brown, Social blue, the games list and every
@@ -110,19 +111,20 @@ page is open, or a copy the service worker kept, sends the page there itself
 **Games** is the home page's third row (a game controller, skeu-icons' `gamepad-2`, `ic-games`,
 also the tab icon of the games page and of every game). It opens the games list: Back, then a big header on the red (**Games** large and a How
 rewards work pill down to the rewards), then, on the panel under Play, the games laid out as the home page's tiles, as wide as home's column
-(584px) with its 104px rows: Fruit Slots the tall tile spanning three rows on the left,
-Pinball, Snake and Shotgun one row each on the right. On a phone (620px and narrower) it is one
+(584px) with its 104px rows: Fruit Slots the tall tile spanning four rows on the left,
+Pinball, Snake, Shotgun and Rally one row each on the right. On a phone (620px and narrower) it is one
 column, each game a full-width row and Fruit Slots two rows tall. Each tile has its name and a line about it, in its own colour
 with its mark large in the corner: Fruit Slots in grape purple over a tilted pattern of the reels'
 fruit (`slots-fruit.svg`, a tile of eight `st-*.svg`) that fades out under the words,
 Pinball in its
 table's felt green with a pair of flippers and the ball (`ic-flippers.svg`, drawn by hand in the
-skeu-icons manner, as the package has no flipper), Snake in amber under its apple (`ic-apple`), and Shotgun in
-gunmetal under a pair of red shells (`ic-shell.svg`, drawn by hand in the skeu-icons manner). The
+skeu-icons manner, as the package has no flipper), Snake in amber under its apple (`ic-apple`), Shotgun in
+gunmetal under a pair of red shells (`ic-shell.svg`, drawn by hand in the skeu-icons manner), and
+Rally in sky blue under a red rally car (`ic-car.svg`, drawn by hand the same way). The
 marks are linked with their content hash and kept by the worker for good (`TILE_MARKS`), like
-the games themselves. The screenshots (`game-*.webp`) are no longer shown on the list. Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists four games. Under them, **Rewards**: a teal card saying
+the games themselves. The screenshots (`game-*.webp`) are no longer shown on the list. Its sheet is inlined; its one script, `games.js`, only keeps it offline. It lists five games. Under them, **Rewards**: a teal card saying
 what each game's credits or places buy (Fruit Slots: a fruit status per 1,000; Shotgun: a badge
-per 10,000 banked; Snake and Pinball: a top-ten place's badge); the whole card opens the Shop
+per 10,000 banked; Rally: cars for its coins, and a badge per 2,500 banked; Snake and Pinball: a top-ten place's badge); the whole card opens the Shop
 (`/social/shop`).
 
 The games list is offline first, and so is every game on it. `games.js` registers the service
@@ -364,6 +366,62 @@ POST /api/social/shotgun/start           → {id, every}
 POST /api/social/shotgun/sync {id, w, e, p?} → {score}             409 {broken} once it stops counting
 POST /api/social/shotgun/end  {id, w, e} → {banked, wave, bank}
 POST /api/social/shotgun/buy {badge}     → {bank, items}
+```
+
+**Rally** is the fifth game: one lap of a 3D course, from a standing start, as fast as it can
+be driven. Like the others it is a page anyone may open signed out, offline first.
+
+- **The course.** One closed lap of about 4.4 km (`src/social/rallyTrack.ts`, shared by the
+  server and the page): rolling hills, bumps, a chicane with a crate at each apex, a banked
+  hairpin, a loop, two jumps over gaps (the second leans as it leaves, so the car rolls in the
+  air), boost pads, and a generated bend home to the line. It is laid out as a list of pieces
+  and built into a centreline sampled every metre, each sample with the road's frame. The page
+  draws it with its own small WebGL renderer (`client/rally/gl.js`, `scene.js`): asphalt, kerbs,
+  barriers, the bank the road sits on, a chequered gantry, trees, coins, boosts and crates.
+- **The car** (`client/rally/car.js`, fixed 120 Hz steps). On the road it is held in the road's
+  terms (how far along, how far across, which way it points), which carries it round the loop
+  and over every crest. It leaves the road when the road can no longer push on it (a crest
+  taken fast, the loop's top taken slow, a jump's lip) and flies free under gravity, turning as
+  it was when it left; in the air the stick rolls and pitches it. It lands if it is the right way
+  up and not too hard. On its roof, rolled, down too hard, into a barrier or a crate too fast,
+  it is **totalled**: the race stops, the wreck tumbles to rest and the camera circles it. Off
+  the course (into a gap, over a barrier) it is put back a run-up before where it left.
+- **Boosts.** Pads on the road push for a moment. Boost canisters on the course are collected,
+  two at most, and fired at will (Space, or a double tap of the pedal).
+- **Controls.** On a touch screen only a stick (steer; pulled back, brake and reverse; in the
+  air, roll and pitch) and a gas pedal (tapped twice, a boost). On a keyboard the arrows or WASD,
+  Space to boost, R to restart, Esc to pause; no controls are drawn.
+- **Credits.** Every coin is a credit and finishing pays 25 more. Signed out (or with the server
+  out of reach as the page opens) the device keeps the credits, the cars they bought, the
+  chosen car and its five best laps (`localStorage` `ug.rl`). Signed in, the credits are the
+  account's (`rally_banks`): a race is played under a live session (`games/live.js`) synced with
+  the checkpoints passed (sixteen to a lap) and the coins taken; none sooner than a car flat
+  out could get there, no more coins than lie before the next checkpoint. A finished race's
+  time is the page's own clock, which has to agree with the time the server saw it take, less
+  the network's trips. Its credits are banked even if it was totalled, and a finished lap goes
+  on the board (`rally`, each account's fastest).
+- **The store.** Six cars, each a body style drawn from what defines its kind of car (lofted
+  in `client/rally/scene.js`): Rally Red (free) a WRC hatch with a roof scoop, a roof wing, mud
+  flaps and spot lamps; Sky Blue a fastback coupe with a ducktail; Lime Rush a GT3 racer with
+  widebody arches, louvres, a splitter with dive planes and a swan-neck wing; Sunset and Gold
+  Rush hypercars, cab-forward under one arc of canopy, with shoulder intakes, a full-width wing
+  and a deep diffuser; Midnight a Le Mans prototype, its fenders proud of a narrow tub, with a
+  shark fin and a balance-beam wing. They cost 150 to 2,000 credits, and a buy takes a second
+  tap. Each tile shows its car in 3D (one off-page WebGL canvas draws every tile), standing at
+  three-quarters and turning while hovered or focused; on a touch screen the car being driven
+  turns. Cars bought with banked credits are `unlocks` (`car:<id>`, how `rally`). The badges
+  (Checkered Flag, Steering Wheel, Speedometer, Rally Tyre, Trophy; `bd-rl1…5.svg`, 2,500 banked
+  credits each, `bd:rl<n>`) are sold in the Shop, which the store links to.
+- **The ghost.** The device's best lap is recorded twenty times a second (`ug.rl.g`) and, with
+  the toggle on, driven again beside the car, see-through. Each checkpoint shows the gap to it.
+- **The board.** The device's best laps, then everyone's top ten, fastest first.
+
+```
+GET  /api/social/rally                     → {top: [{name, ms}], signed, best?, bank?: {credits, items}, badge?}
+POST /api/social/rally/start               → {id, every}
+POST /api/social/rally/sync {id, k, c, p?} → {score}               409 {broken} once it stops counting
+POST /api/social/rally/end  {id, k, c, t?} → {earned, ms, bank, best, rank, top}
+POST /api/social/rally/buy  {item}         → {bank, items}         item: car:<id> or bd:rl<n>
 ```
 
 Every page wears the same header as search: the wordmark, the search field, and the

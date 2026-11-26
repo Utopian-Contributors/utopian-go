@@ -18,6 +18,11 @@
  * - Shotgun has no board, but its credits are banked from a synced game
  *   (shotgun.ts): the wave only climbs, never sooner than its zombies could
  *   arrive, and the credits never past what the waves so far could pay.
+ * - Rally's board is of lap times, and its credits are banked (rally.ts,
+ *   rallyTrack.ts):
+ *   the checkpoints only climb, none sooner than a car flat out could reach
+ *   it, the coins never past those lying before the next checkpoint, and the
+ *   lap's time is the time the server saw it take, give or take the network.
  *
  * Sessions live in this process's memory, a few hundred bytes each, one per
  * account, swept once they go quiet. Nothing is written per sync; the board
@@ -28,6 +33,8 @@ import { randomBytes } from "crypto";
 import { SocialError } from "./limits";
 import type { BoardGame } from "./shop";
 import { MAX_WAVE, maxEarned, reachMs } from "./shotgun";
+import { CHECKPOINTS, FINISH_BONUS, MAX_LAP_MS } from "./rally";
+import { coinsBefore, reachMs as rallyReachMs } from "./rallyTrack";
 import { type Dir, FASTEST, FROM_LETTER, SNAKE_MAX, type SnakeState, advance, canTurn, fresh, lay, seeded, stepMsAt } from "./snakeRules";
 
 /** How often the page syncs, and the longest a game in play may go without one. */
@@ -48,8 +55,8 @@ export const PINBALL_RATE = 1_000_000;
 /** Over a whole game, no more than this a second on average, beyond one burst. */
 export const PINBALL_AVERAGE = 400_000;
 
-/** A game played under a session: the boards' two, and Shotgun, whose credits are banked. */
-export type LiveGame = BoardGame | "shotgun";
+/** A game played under a session: the boards' two, Shotgun, whose credits are banked, and Rally, both. */
+export type LiveGame = BoardGame | "shotgun" | "rally";
 
 interface Session {
   id: string;
@@ -75,6 +82,8 @@ interface Session {
   /** Shotgun: the wave in play, and the kit's multiplier, taken from the bank as the game starts. */
   wave: number;
   mult: number;
+  /** Rally: the checkpoints passed (its coins are `score`). */
+  cp: number;
 }
 
 const sessions = new Map<string, Session>();
@@ -136,6 +145,7 @@ export function startSession(name: string, game: LiveGame, now = Date.now()): { 
     playedAt: 0,
     wave: 0,
     mult: 1,
+    cp: 0,
   };
   sessions.set(s.id, s);
   byName.set(name, s.id);
@@ -216,6 +226,15 @@ function boundShotgun(s: Session, wave: unknown, earned: unknown, now: number): 
   s.score = earned as number;
 }
 
+/** A Rally race as synced: checkpoints only on, none sooner than flat out, and no more coins than lie before the next. */
+function boundRally(s: Session, k: unknown, coins: unknown, now: number): void {
+  if (!Number.isSafeInteger(k) || (k as number) < s.cp || (k as number) > CHECKPOINTS) broken(s, "That is not a checkpoint.");
+  if (!Number.isSafeInteger(coins) || (coins as number) < s.score || (coins as number) > coinsBefore(k as number)) broken(s, "Those coins aren’t on the course.");
+  if (rallyReachMs(k as number) > played(s, now) + SLACK_MS) broken(s, "No car gets there that fast.");
+  s.cp = k as number;
+  s.score = coins as number;
+}
+
 /**
  * Whether `id` is `name`'s Shotgun session and its game has yet to start:
  * the first sync is when the bank's kit is spent on it (setMult).
@@ -235,7 +254,8 @@ export function setMult(id: string, mult: number): void {
  * A sync: {id, p?, ...} with, for Snake, `k` (steps taken), `t` (the turns
  * since the last sync) and on the first, `d` (the first direction); for
  * Pinball, `s` (the score); for Shotgun, `w` (the wave) and `e` (the credits
- * earned, before the multiplier). `p: 1` says the game is paused until the next.
+ * earned, before the multiplier); for Rally, `k` (checkpoints passed) and `c`
+ * (coins collected). `p: 1` says the game is paused until the next.
  */
 export function syncSession(name: string, game: LiveGame, body: Record<string, unknown>, now = Date.now()): { score: number } {
   const s = sessionOf(name, game, body.id);
@@ -256,6 +276,7 @@ export function syncSession(name: string, game: LiveGame, body: Record<string, u
   }
   if (game === "snake") replay(s, body.k, body.t ?? "", now);
   else if (game === "shotgun") boundShotgun(s, body.w, body.e, now);
+  else if (game === "rally") boundRally(s, body.k, body.c, now);
   else bound(s, body.s, now);
   s.paused = body.p === 1;
   s.last = now;
@@ -289,4 +310,27 @@ export function endShotgun(name: string, body: Record<string, unknown>, now = Da
   const s = sessions.get(body.id as string)!;
   drop(s);
   return { earned: s.score, wave: s.wave, banked: Math.floor(s.score * s.mult) };
+}
+
+/** How far a lap's own clock may run behind the server's: the first sync's trip and the last's. */
+export const RALLY_LAG_MS = 3000;
+
+/**
+ * The end of a Rally race: the last sync, then what it earned (its coins,
+ * and the bonus for finishing) and, when it finished, its time: `t`, the
+ * page's own clock, which has to agree with the time the server saw the race
+ * take, less the network's trips, and be no faster than flat out. The
+ * session is gone after this either way.
+ */
+export function endRally(name: string, body: Record<string, unknown>, now = Date.now()): { coins: number; earned: number; ms: number | null } {
+  syncSession(name, "rally", { ...body, p: 0 }, now);
+  const s = sessions.get(body.id as string)!;
+  drop(s);
+  if (s.cp < CHECKPOINTS) return { coins: s.score, earned: s.score, ms: null };
+  const t = body.t;
+  const took = played(s, now);
+  if (!Number.isSafeInteger(t) || (t as number) < rallyReachMs(CHECKPOINTS) || (t as number) > MAX_LAP_MS || (t as number) < took - RALLY_LAG_MS || (t as number) > took + SLACK_MS) {
+    throw new SocialError(409, "That time isn’t the race’s.", { broken: true });
+  }
+  return { coins: s.score, earned: s.score + FINISH_BONUS, ms: t as number };
 }

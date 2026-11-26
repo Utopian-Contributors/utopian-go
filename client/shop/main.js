@@ -21,10 +21,35 @@
  *
  * Shotgun's badges (SHOTGUN_BADGES) are bought one at a time with the
  * credits a signed-in player has banked at Shotgun (src/social/shotgun.ts
- * BADGE_PRICE each): Unlock on one asks first, then spends them.
+ * BADGE_PRICE each), and Rally's (RALLY_BADGES) with Rally's
+ * (src/social/rally.ts): Unlock on one asks first, then spends them.
  */
-import { BADGES, BADGE_PX, GAME_BADGES, PACKS, SHOTGUN_BADGES, STATUSES, TIERS, badgeSrc } from "../../src/social/shop.ts";
+import { BADGES, BADGE_PX, GAME_BADGES, PACKS, RALLY_BADGES, SHOTGUN_BADGES, STATUSES, TIERS, badgeSrc } from "../../src/social/shop.ts";
 import { BADGE_PRICE } from "../../src/social/shotgun.ts";
+import { BADGE_PRICE as RALLY_PRICE } from "../../src/social/rally.ts";
+
+/**
+ * The games whose banked credits buy badges: each one's set, its price, where
+ * to play it, and how its buy route names a badge.
+ */
+const BOUGHT = {
+  shotgun: {
+    title: "Shotgun",
+    badges: SHOTGUN_BADGES,
+    price: BADGE_PRICE,
+    href: "/shotgun",
+    how: "Play logged in and every synced game banks what it earns.",
+    body: (/** @type {string} */ id) => ({ badge: id }),
+  },
+  rally: {
+    title: "Rally",
+    badges: RALLY_BADGES,
+    price: RALLY_PRICE,
+    href: "/rally",
+    how: "Race logged in and every synced race banks its coins.",
+    body: (/** @type {string} */ id) => ({ item: `bd:${id}` }),
+  },
+};
 import { busy as pressed } from "../js/busy.js";
 import { el } from "../js/dom.js";
 import { NAME_RULE, handleOf } from "../js/handle.js";
@@ -364,25 +389,30 @@ async function mount({ main, me, pull, send, face, marks, show }) {
     );
   }
 
-  /** Spend BADGE_PRICE banked Shotgun credits on `badge`, once asked. */
-  function buyShotgunDialog(badge) {
+  /**
+   * Spend a game's banked credits on one of its badges, once asked.
+   * @param {keyof typeof BOUGHT} game @param {{id: string, name: string}} badge
+   */
+  function buyDialog(game, badge) {
+    const g = BOUGHT[game];
+    const price = g.price.toLocaleString("en-US");
     injectFormStyles();
     const { body, close } = dialog(`Unlock ${badge.name}`);
     const out = el("p", { class: "err", role: "alert" });
-    const go = el("button", { type: "submit", class: "swx-go", text: `Unlock · ${BADGE_PRICE.toLocaleString("en-US")} credits` });
+    const go = el("button", { type: "submit", class: "swx-go", text: `Unlock · ${price} credits` });
     const form = el(
       "form",
       { class: "sh-f" },
       el("img", { src: badgeSrc("", badge.id), alt: "", width: "64", height: "64", style: "justify-self:center" }),
-      el("label", { text: `${BADGE_PRICE.toLocaleString("en-US")} of your ${state.shotgun.toLocaleString("en-US")} Shotgun credits. It’s yours for good, to wear after your name.` }),
+      el("label", { text: `${price} of your ${(state[game] || 0).toLocaleString("en-US")} ${g.title} credits. It’s yours for good, to wear after your name.` }),
       go,
       out,
     );
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       press(go, out, async () => {
-        const done = await send("/api/social/shotgun/buy", { badge: badge.id });
-        state.shotgun = done.bank.credits;
+        const done = await send(`/api/social/${game}/buy`, g.body(badge.id));
+        state[game] = done.bank.credits;
         state.items = done.items;
         close();
         paint();
@@ -392,22 +422,27 @@ async function mount({ main, me, pull, send, face, marks, show }) {
     go.focus();
   }
 
-  /** Shotgun's badges: each worn once bought, else its price, and Unlock when the banked credits cover it. */
-  function shotgunBadges() {
+  /**
+   * A game's bought badges: each worn once bought, else its price, and Unlock
+   * when the banked credits cover it.
+   * @param {keyof typeof BOUGHT} game
+   */
+  function boughtBadges(game) {
+    const g = BOUGHT[game];
     const items = new Set(state.items || []);
-    const credits = state.shotgun || 0;
-    const price = BADGE_PRICE.toLocaleString("en-US");
+    const credits = state[game] || 0;
+    const price = g.price.toLocaleString("en-US");
     return el(
       "section",
       { class: "sh-p" },
-      el("h3", {}, "Shotgun badges", el("span", { text: `${price} credits each` })),
+      el("h3", {}, `${g.title} badges`, el("span", { text: `${price} credits each` })),
       el(
         "div",
         { class: "sh-g" },
-        ...SHOTGUN_BADGES.map((badge) => {
+        ...g.badges.map((badge) => {
           if (items.has(`bd:${badge.id}`)) return tile(badgeSrc("", badge.id), badge.name, state.badge === badge.id, true, () => put("badge", badge.id));
-          const can = credits >= BADGE_PRICE;
-          const card = tile(badgeSrc("", badge.id), badge.name, false, can, () => buyShotgunDialog(badge));
+          const can = credits >= g.price;
+          const card = tile(badgeSrc("", badge.id), badge.name, false, can, () => buyDialog(game, badge));
           if (can) card.classList.add("sh-can");
           card.append(el("small", { text: can ? "Unlock" : price }));
           card.setAttribute("aria-label", can ? `Unlock ${badge.name} for ${price} credits` : `${badge.name}, ${price} credits`);
@@ -417,11 +452,8 @@ async function mount({ main, me, pull, send, face, marks, show }) {
       el(
         "div",
         { class: "sh-b" },
-        el("a", { class: "go-pill sh-2", href: "/shotgun", text: "Play" }),
-        el("p", {
-          class: "hint",
-          text: `You have ${credits.toLocaleString("en-US")} Shotgun credits. Play logged in and every synced game banks what it earns.`,
-        }),
+        el("a", { class: "go-pill sh-2", href: g.href, text: "Play" }),
+        el("p", { class: "hint", text: `You have ${credits.toLocaleString("en-US")} ${g.title} credits. ${g.how}` }),
       ),
     );
   }
@@ -472,7 +504,8 @@ async function mount({ main, me, pull, send, face, marks, show }) {
         ),
         won("snake", "Snake badges", "/snake"),
         won("pinball", "Pinball badges", "/pinball"),
-        shotgunBadges(),
+        boughtBadges("shotgun"),
+        boughtBadges("rally"),
         err,
       ),
     );

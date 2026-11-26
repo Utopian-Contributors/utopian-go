@@ -440,6 +440,21 @@ CREATE TABLE IF NOT EXISTS shotgun_banks (
   mult real NOT NULL DEFAULT 1,
   at bigint NOT NULL
 );
+-- Rally (src/social/rally.ts): the board, each account's fastest lap in
+-- milliseconds, quickest first; written by the server as a synced race ends.
+CREATE TABLE IF NOT EXISTS rally (
+  name text PRIMARY KEY REFERENCES users(name) ON DELETE CASCADE,
+  ms integer NOT NULL,
+  at bigint NOT NULL
+);
+CREATE INDEX IF NOT EXISTS rally_ms ON rally (ms, at);
+-- Rally's credits, banked from synced races; spent on its cars ('car:<id>'
+-- in unlocks) and its badges ('bd:rl<n>'), how 'rally'.
+CREATE TABLE IF NOT EXISTS rally_banks (
+  name text PRIMARY KEY REFERENCES users(name) ON DELETE CASCADE,
+  credits integer NOT NULL DEFAULT 0,
+  at bigint NOT NULL
+);
 `;
 
 let ready: Promise<void> | null = null;
@@ -2670,5 +2685,85 @@ export async function buyShotgunBadge(input: { name: string; badge: string; pric
     const next = { ...bank, credits: bank.credits - input.price };
     await writeShotgunBank(client, input.name, next, input.at);
     return next;
+  });
+}
+
+// —— Rally's board and bank (src/social/rally.ts) ——
+
+export interface RallyRow {
+  name: string;
+  ms: number;
+}
+
+export interface RallyBank {
+  credits: number;
+  /** What the credits have bought: 'car:<id>' and 'bd:rl<n>'. */
+  items: string[];
+}
+
+/** The board: fastest laps first, the earlier of two equal ones ahead. */
+export async function rallyTop(limit = 10): Promise<RallyRow[]> {
+  return many<RallyRow>("SELECT name, ms FROM rally ORDER BY ms, at LIMIT $1", [limit]);
+}
+
+/** An account's fastest lap; 0 before its first. */
+export async function rallyBest(name: string): Promise<number> {
+  return (await one<{ ms: number }>("SELECT ms FROM rally WHERE name = $1", [name]))?.ms ?? 0;
+}
+
+async function rallyItems(name: string, client?: PoolClient): Promise<string[]> {
+  const sql = "SELECT item FROM unlocks WHERE name = $1 AND how = 'rally' ORDER BY at";
+  const rows = client ? (await client.query<{ item: string }>(sql, [name])).rows : await many<{ item: string }>(sql, [name]);
+  return rows.map((row) => row.item);
+}
+
+/** `name`'s bank: its credits and what they bought; empty before they race signed in. */
+export async function rallyBank(name: string): Promise<RallyBank> {
+  const row = await one<{ credits: number }>("SELECT credits FROM rally_banks WHERE name = $1", [name]);
+  return { credits: row?.credits ?? 0, items: await rallyItems(name) };
+}
+
+/** The bank, locked for the rest of the transaction; made, empty, the first time. */
+async function lockRallyBank(client: PoolClient, name: string, at: number): Promise<number> {
+  await client.query("INSERT INTO rally_banks (name, at) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING", [name, at]);
+  return (await one<{ credits: number }>("SELECT credits FROM rally_banks WHERE name = $1 FOR UPDATE", [name], client))?.credits ?? 0;
+}
+
+/**
+ * A synced race ended: what it earned banked and, when it finished, its lap
+ * on the board if it is the account's fastest. Then the bank, the best, and
+ * the place on the board.
+ */
+export async function finishRally(input: { name: string; earned: number; ms: number | null; max: number; at: number }): Promise<{ bank: RallyBank; best: number; rank: number | null }> {
+  return tx(async (client) => {
+    const credits = Math.min(input.max, (await lockRallyBank(client, input.name, input.at)) + input.earned);
+    await client.query("UPDATE rally_banks SET credits = $2, at = $3 WHERE name = $1", [input.name, credits, input.at]);
+    if (input.ms) {
+      await client.query(
+        `INSERT INTO rally (name, ms, at) VALUES ($1, $2, $3)
+         ON CONFLICT (name) DO UPDATE SET ms = EXCLUDED.ms, at = EXCLUDED.at
+         WHERE rally.ms > EXCLUDED.ms`,
+        [input.name, input.ms, input.at],
+      );
+    }
+    const mine = await one<{ ms: number; at: number }>("SELECT ms, at FROM rally WHERE name = $1", [input.name], client);
+    let rank: number | null = null;
+    if (mine) {
+      const ahead = await one<{ n: number }>("SELECT count(*)::int AS n FROM rally WHERE ms < $1 OR (ms = $1 AND at < $2)", [mine.ms, mine.at], client);
+      rank = (ahead?.n ?? 0) + 1;
+    }
+    return { bank: { credits, items: await rallyItems(input.name, client) }, best: mine?.ms ?? 0, rank };
+  });
+}
+
+/** Spend `price` banked credits on `item` (a car or a badge), kept for good. Refused when short, or had already. */
+export async function buyRally(input: { name: string; item: string; price: number; at: number }): Promise<RallyBank> {
+  return tx(async (client) => {
+    const credits = await lockRallyBank(client, input.name, input.at);
+    if (await one("SELECT 1 FROM unlocks WHERE name = $1 AND item = $2", [input.name, input.item], client)) throw new SocialError(409, "You have this already.");
+    if (credits < input.price) throw new SocialError(400, `That costs ${input.price.toLocaleString("en-US")} credits.`);
+    await client.query("INSERT INTO unlocks (name, item, how, at) VALUES ($1,$2,'rally',$3)", [input.name, input.item, input.at]);
+    await client.query("UPDATE rally_banks SET credits = $2, at = $3 WHERE name = $1", [input.name, credits - input.price, input.at]);
+    return { credits: credits - input.price, items: await rallyItems(input.name, client) };
   });
 }

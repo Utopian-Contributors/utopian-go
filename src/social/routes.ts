@@ -62,7 +62,12 @@ import {
   insertUser,
   bumpBadge,
   bankShotgun,
+  buyRally,
   buyShotgunBadge,
+  finishRally,
+  rallyBank,
+  rallyBest,
+  rallyTop,
   buyStatus,
   finishBoardGame,
   givePrize,
@@ -155,7 +160,8 @@ import {
 import { solanaPubkey } from "./pay";
 import { sendFor } from "./send";
 import { BADGE_BYTES, PACKS, STATUSES, type BoardGame, badgeFor, badgesForRank, isBadgePng, isPack, isShotgunBadge, isStatus, markOf, statusFor } from "./shop";
-import { endSession, endShotgun, setMult, startSession, syncSession, unstarted } from "./play";
+import { endRally, endSession, endShotgun, setMult, startSession, syncSession, unstarted } from "./play";
+import { MAX_CREDITS as RALLY_MAX, priceOf } from "./rally";
 import { BADGE_PRICE, SEGMENTS, applyPrize } from "./shotgun";
 import { drawStops, newSeed } from "./slotDraw";
 import { BETS, DAY_MS, GAMES_A_DAY, START, STATUS_PRICE, dayOf, isBet, isOver, lineOf, payout, settle } from "./slots";
@@ -1306,6 +1312,84 @@ socialRouter.post(
   }),
 );
 
+// —— Rally (src/social/rally.ts) ——
+//
+// Its board is of lap times, fastest first; signed in, its credits are the
+// account's, banked from races played under a live session (play.ts) and
+// spent on its cars and badges.
+
+/** The board, and signed in: the fastest lap, the bank, and the badge worn. */
+socialRouter.get(
+  "/rally",
+  readLimit,
+  wrap(async (_req, res) => {
+    const me = currentUser(res);
+    const top = await rallyTop();
+    if (!me) {
+      res.json({ top, signed: false });
+      return;
+    }
+    res.json({ top, signed: true, best: await rallyBest(me.name), bank: await rallyBank(me.name), badge: me.badge ?? "" });
+  }),
+);
+
+/** A session for the next race. Any earlier one of yours ends uncounted. */
+socialRouter.post(
+  "/rally/start",
+  requireAuth,
+  syncLimit,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    res.json(startSession(requireUser(res).name, "rally"));
+  }),
+);
+
+/** A sync: {id, k, c, p?}, the checkpoints passed and the coins collected. */
+socialRouter.post(
+  "/rally/sync",
+  requireAuth,
+  syncLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    res.json(syncSession(requireUser(res).name, "rally", req.body ?? {}));
+  }),
+);
+
+/** The end of a race: {id, k, c, t?}. Its credits banked, its lap on the board when it finished. */
+socialRouter.post(
+  "/rally/end",
+  requireAuth,
+  syncLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const now = Date.now();
+    const { earned, ms } = endRally(me.name, req.body ?? {}, now);
+    const out = await finishRally({ name: me.name, earned, ms, max: RALLY_MAX, at: now });
+    res.json({ earned, ms, ...out, top: await rallyTop() });
+  }),
+);
+
+/** Spend banked credits on a car or a badge: {item}, 'car:<id>' or 'bd:rl<n>'. */
+socialRouter.post(
+  "/rally/buy",
+  requireAuth,
+  writeLimit,
+  readJson,
+  wrap(async (req, res) => {
+    assertSameOrigin(req);
+    const me = requireUser(res);
+    const item = req.body?.item;
+    const price = priceOf(item);
+    if (price === null) throw new SocialError(400, "That isn’t for sale.");
+    const bank = await buyRally({ name: me.name, item, price, at: Date.now() });
+    console.log(`[rally] ${me.name} spent ${price} on ${item}`);
+    res.json({ bank, items: await itemsOf(me.name) });
+  }),
+);
+
 socialRouter.get(
   "/friends",
   requireAuth,
@@ -2385,6 +2469,8 @@ socialRouter.get(
       items: await itemsOf(me.name),
       // Shotgun's banked credits, which buy its badges.
       shotgun: (await shotgunBank(me.name)).credits,
+      // Rally's, which buy its badges (and its cars, on its own page).
+      rally: (await rallyBank(me.name)).credits,
     });
   }),
 );

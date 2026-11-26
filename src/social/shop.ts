@@ -7,6 +7,8 @@
  * drawn by scripts/skeu-icons.mjs, and client/js/marks.js has the words.
  */
 
+import { RALLY_BADGES, isRallyBadge } from "./rally";
+
 export const BADGES = ["blue", "green", "red", "orange", "yellow", "purple", "pink", "black", "white"] as const;
 
 export const STATUSES = {
@@ -111,6 +113,9 @@ export function isShotgunBadge(value: unknown): boolean {
   return SHOTGUN_BADGES.some((badge) => badge.id === value);
 }
 
+/** Badges bought with Rally credits (src/social/rally.ts BADGE_PRICE each), as Shotgun's are. */
+export { RALLY_BADGES, isRallyBadge };
+
 /** What each pack costs, in cents. */
 export const PACKS: Record<Pack, { cents: number; title: string }> = {
   checks: { cents: 500, title: "Checkmarks" },
@@ -134,7 +139,7 @@ export function isPack(value: unknown): value is Pack {
 export function badgeFor(choice: unknown, owned: Pack[], rev: number, items: string[] = []): string | null {
   if (choice === "") return "";
   if (choice === "u") return owned.includes("custom") && rev > 0 ? `u${rev}` : null;
-  if (typeof choice === "string" && (Object.hasOwn(WON_BADGES, choice) || isShotgunBadge(choice))) return items.includes(`bd:${choice}`) ? choice : null;
+  if (typeof choice === "string" && (Object.hasOwn(WON_BADGES, choice) || isShotgunBadge(choice) || isRallyBadge(choice))) return items.includes(`bd:${choice}`) ? choice : null;
   return (BADGES as readonly unknown[]).includes(choice) && owned.includes("checks") ? (choice as string) : null;
 }
 

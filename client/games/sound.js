@@ -179,3 +179,37 @@ export function melody(notes, beat, type, vol, at = 0, wet = 0.2) {
     when += len;
   }
 }
+
+/**
+ * A held note, for an engine: a sawtooth and a square an octave under it,
+ * through a filter that opens as it revs. Null until a press has allowed
+ * audio. `set` glides it to a pitch and a loudness (0 for silent).
+ */
+export function hum() {
+  if (!audio) return null;
+  const a = audio;
+  const saw = a.createOscillator();
+  saw.type = "sawtooth";
+  const low = a.createOscillator();
+  low.type = "square";
+  const filter = a.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.Q.value = 2;
+  const gain = a.createGain();
+  gain.gain.value = 0;
+  saw.connect(filter);
+  low.connect(filter);
+  filter.connect(gain).connect(bus);
+  saw.start();
+  low.start();
+  return {
+    /** @param {number} freq @param {number} vol */
+    set(freq, vol) {
+      const t = a.currentTime;
+      saw.frequency.setTargetAtTime(freq, t, 0.04);
+      low.frequency.setTargetAtTime(freq / 2, t, 0.04);
+      filter.frequency.setTargetAtTime(300 + freq * 5, t, 0.05);
+      gain.gain.setTargetAtTime(vol, t, 0.05);
+    },
+  };
+}

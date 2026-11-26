@@ -114,21 +114,46 @@ body {
   }
 }
 
-/* The app's Back pill (header.css .hb). */
-.gm-back {
+/* The wordmark, white on the red (header.css .lg, inlined by the build), and
+   the account control at the row's far end. Its pills are acct.css's, built
+   in after this sheet; these are the colours they draw on here. */
+.gm-hd {
+  justify-content: space-between;
+  --wash: var(--card);
+  --wash2: var(--card2);
+  --c-wallet: #8c5528;
+  --c-social: #2563c4;
+}
+
+.lg {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 36px;
-  padding: 0 15px 0 10px;
-  border-radius: 999px;
-  background: var(--card);
-  color: var(--a);
-  font: 600 14px var(--ff);
+  line-height: 0;
   text-decoration: none;
 }
 
-.gm-back:active {
+.lg-mark {
+  display: block;
+  height: 40px;
+  width: auto;
+  fill: #fff;
+}
+
+#ac {
+  min-height: 36px;
+}
+
+/* The pills set their own display, which would beat the hidden attribute. */
+#ac [hidden] {
+  display: none;
+}
+
+.ac-sw {
+  color: var(--a);
+}
+
+.ac-sw:active,
+.ac-w:active {
   scale: 0.96;
 }
 
@@ -302,13 +327,18 @@ main {
   --lo: #2c3442;
 }
 
-/* Each tile fills its cell, the tall one all three rows. */
+/* Each tile fills its cell, the tall one all four rows. */
+.gm-rally {
+  --hi: #5cb8ff;
+  --lo: #1c5aa8;
+}
+
 .gm-list > li {
   display: grid;
 }
 
 .gm-tall {
-  grid-row: span 3;
+  grid-row: span 4;
 }
 
 /* On a phone (app.css's 620px), one column: each game a full-width row,

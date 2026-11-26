@@ -29,7 +29,9 @@ import { AUDIO_BYTES, MAX_AUDIO_MS, MAX_POST, SOCIAL_BYTES, TINY_BYTES, adKeywor
 import { sendAvatar, sendBadge, sendPostAudio, sendPostPhoto, socialRouter } from "./routes";
 import { badgeFor, isBadgePng, markOf, statusFor } from "./shop";
 import { BETS, CHERRIES, FRUITS, MAX_CREDITS, REELS, START, STATUS_PRICE, THREE, WEIGHTS, isBet, isOver, lineOf, payout, settle } from "./slots";
-import { GAP_MS, PAUSE_MS, PINBALL_BURST, endSession, endShotgun, openSessions, resetSessions, setMult, startSession, syncSession } from "./play";
+import { GAP_MS, PAUSE_MS, PINBALL_BURST, RALLY_LAG_MS, endRally, endSession, endShotgun, openSessions, resetSessions, setMult, startSession, syncSession } from "./play";
+import { CARS, CHECKPOINTS, FINISH_BONUS, lapTime, priceOf } from "./rally";
+import { buildTrack, coinCount, coinsBefore, reachMs as rallyReachMs } from "./rallyTrack";
 import { BADGE_PRICE, SEGMENTS, WHEEL_AMMO, applyPrize, emptyKit, maxEarned, reachMs, spinPrice, waveSize } from "./shotgun";
 import { type Dir, type SnakeState, BACK, COLS, DIRS, LETTER, ROWS, advance, fresh, lay, seeded, stepMsAt } from "./snakeRules";
 import { badgesForRank } from "./shop";
@@ -1792,7 +1794,6 @@ test("a voice memo posts, plays from its own address, and rides a re-post", asyn
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("no port");
   const base = `http://127.0.0.1:${address.port}`;
-  let ip = 0;
 
   async function join(name: string) {
     let jar = "";
@@ -1919,7 +1920,6 @@ test("the timeline filters in the query, and pages through what is left", async 
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("no port");
   const base = `http://127.0.0.1:${address.port}`;
-  let ip = 0;
 
   function visitor() {
     let jar = "";
@@ -2074,7 +2074,6 @@ test("a reply is a post on the timeline, under what it answers and the thread's 
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("no port");
   const base = `http://127.0.0.1:${address.port}`;
-  let ip = 0;
 
   async function join(name: string) {
     let jar = "";
@@ -2504,7 +2503,6 @@ test("an ad runs once paid: the higher bid first, on search and in timelines, ea
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("no port");
   const base = `http://127.0.0.1:${address.port}`;
-  let ip = 0;
   async function join(name: string) {
     let jar = "";
     const call = async (method: string, urlPath: string, body?: Buffer | Record<string, unknown>, agent = "Mozilla/5.0 (Macintosh)") => {
@@ -2736,7 +2734,6 @@ test("a Shop pack is owned once paid, and what is worn follows the name everywhe
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("no port");
   const base = `http://127.0.0.1:${address.port}`;
-  let ip = 0;
   async function join(name: string) {
     let jar = "";
     const call = async (method: string, urlPath: string, body?: Buffer | Record<string, unknown>) => {
@@ -2922,6 +2919,9 @@ test("Fruit Slots' odds: what a line pays, exactly, and stops drawn evenly and o
 });
 
 /** An HTTP harness of its own for a test: accounts with passkeys, each with its cookie, and direct SQL for setting a scene. */
+/** The client addresses the test servers' requests come from: counted across the file, so no test inherits another's rate limits. */
+let ip = 0;
+
 async function gameServer() {
   await useTestDatabase();
   await ensureSchema();
@@ -2939,7 +2939,6 @@ async function gameServer() {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("no port");
   const base = `http://127.0.0.1:${address.port}`;
-  let ip = 0;
   type Res = { status: number; json: Record<string, any>; text: string };
   async function raw(method: string, urlPath: string, body?: unknown, extra: Record<string, string> = {}, jar = "") {
     const headers: Record<string, string> = { Origin: base, Accept: "application/json", "X-Forwarded-For": `10.6.${++ip % 250}.${ip % 199}`, ...extra };
@@ -3385,7 +3384,6 @@ test("a called-out ticker rides its post to the timeline, the post page, a profi
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("no port");
   const base = `http://127.0.0.1:${address.port}`;
-  let ip = 0;
 
   async function join(name: string) {
     let jar = "";
@@ -3565,6 +3563,93 @@ test("Shotgun: a synced game's credits are held to its waves, and banked at the 
   const end = play(k.id, 3);
   assert.deepEqual(endShotgun("amy", { id: k.id, w: 3, e: 41 }, end + 2000), { earned: 41, wave: 3, banked: 61 });
   assert.equal(openSessions(), 0);
+});
+
+test("Rally: the course closes on itself, and its coins, checkpoints and prices add up", () => {
+  const track = buildTrack();
+  const gap = Math.hypot(track.p[0] - track.p[(track.n - 1) * 3], track.p[2] - track.p[(track.n - 1) * 3 + 2]);
+  assert.ok(gap < 2, `the lap ends ${gap} m from its start`);
+  assert.equal(coinsBefore(CHECKPOINTS), coinCount());
+  for (let k = 1; k <= CHECKPOINTS; k++) assert.ok(coinsBefore(k) >= coinsBefore(k - 1));
+  assert.ok(track.road.includes(0), "a jump has a gap");
+  assert.ok(track.inLoop.includes(1), "there is a loop");
+  assert.equal(priceOf("car:red"), null);
+  assert.equal(priceOf(`car:${CARS[1].id}`), CARS[1].price);
+  assert.equal(priceOf("bd:rl3"), 2500);
+  assert.equal(priceOf("bd:sg1"), null);
+  assert.equal(lapTime(64_371), "1:04.37");
+});
+
+test("Rally: a synced race is held to the course, and its time to the server's clock", () => {
+  resetSessions();
+  const t0 = 1_000_000;
+  /** A race synced every two seconds, each checkpoint as soon as it can be reached, every coin taken. */
+  function drive(id: string, upTo = CHECKPOINTS): number {
+    syncSession("amy", "rally", { id, k: 0, c: 0 }, t0);
+    let at = t0;
+    for (let k = 1; k <= upTo; k++) {
+      at = Math.max(at + 1, t0 + Math.ceil(rallyReachMs(k)));
+      syncSession("amy", "rally", { id, k, c: coinsBefore(k) }, at);
+    }
+    return at;
+  }
+  const s = startSession("amy", "rally", t0);
+  syncSession("amy", "rally", { id: s.id, k: 0, c: 0 }, t0);
+  // A checkpoint sooner than flat out.
+  assert.throws(() => syncSession("amy", "rally", { id: s.id, k: 5, c: 0 }, t0 + 1000), /that fast/);
+  const g = startSession("amy", "rally", t0);
+  syncSession("amy", "rally", { id: g.id, k: 0, c: 0 }, t0);
+  // Coins that lie past the next checkpoint.
+  assert.throws(() => syncSession("amy", "rally", { id: g.id, k: 0, c: coinsBefore(0) + 1 }, t0 + 2000), /coins/);
+  // Crashed before the line: its coins, no time.
+  const c = startSession("amy", "rally", t0);
+  const crashed = drive(c.id, 4);
+  assert.deepEqual(endRally("amy", { id: c.id, k: 4, c: coinsBefore(4) }, crashed + 500), { coins: coinsBefore(4), earned: coinsBefore(4), ms: null });
+  // Finished: a time that agrees with the server's clock counts, with the bonus.
+  const f = startSession("amy", "rally", t0);
+  const done = drive(f.id);
+  const took = done + 1000 - t0;
+  assert.deepEqual(endRally("amy", { id: f.id, k: CHECKPOINTS, c: coinCount(), t: took - 500 }, done + 1000), { coins: coinCount(), earned: coinCount() + FINISH_BONUS, ms: took - 500 });
+  // A time much faster than the race took is refused.
+  const h = startSession("amy", "rally", t0);
+  const done2 = drive(h.id);
+  assert.throws(() => endRally("amy", { id: h.id, k: CHECKPOINTS, c: coinCount(), t: done2 - t0 - RALLY_LAG_MS - 2000 }, done2), /time/);
+  assert.equal(openSessions(), 0);
+});
+
+test("Rally over HTTP: a synced race banks its coins, puts its lap on the board, and buys a car and a badge", async () => {
+  const { sql, join, close } = await gameServer();
+  try {
+    const amy = await join("amy");
+    const first = await amy("GET", "/api/social/rally");
+    assert.deepEqual([first.json.signed, first.json.best, first.json.bank], [true, 0, { credits: 0, items: [] }]);
+    // A race that stopped at the start: no time, nothing banked, and nothing on the board.
+    const { id } = (await amy("POST", "/api/social/rally/start")).json;
+    assert.equal((await amy("POST", "/api/social/rally/sync", { id, k: 0, c: 0 })).status, 200);
+    const short = await amy("POST", "/api/social/rally/end", { id, k: 0, c: 0 });
+    assert.equal(short.status, 200, short.text);
+    assert.deepEqual([short.json.ms, short.json.rank, short.json.bank.credits], [null, null, 0]);
+    // A finish claimed seconds into a race is refused.
+    const g = (await amy("POST", "/api/social/rally/start")).json;
+    await amy("POST", "/api/social/rally/sync", { id: g.id, k: 0, c: 0 });
+    assert.equal((await amy("POST", "/api/social/rally/end", { id: g.id, k: CHECKPOINTS, c: 3, t: 60_000 })).status, 409);
+    // The store: short of a car, refused; with the credits, bought once, a badge too, then worn.
+    assert.equal((await amy("POST", "/api/social/rally/buy", { item: "car:sky" })).status, 400);
+    assert.equal((await amy("POST", "/api/social/rally/buy", { item: "car:red" })).status, 400, "the free car isn't sold");
+    await sql.query("INSERT INTO rally_banks (name, credits, at) VALUES ('amy', $1, 0) ON CONFLICT (name) DO UPDATE SET credits = $1", [2500 + 150 + 7]);
+    const car = await amy("POST", "/api/social/rally/buy", { item: "car:sky" });
+    assert.equal(car.status, 200, car.text);
+    assert.deepEqual(car.json.bank, { credits: 2507, items: ["car:sky"] });
+    assert.equal((await amy("POST", "/api/social/rally/buy", { item: "car:sky" })).status, 409, "had already");
+    const badge = await amy("POST", "/api/social/rally/buy", { item: "bd:rl5" });
+    assert.equal(badge.status, 200, badge.text);
+    assert.equal(badge.json.bank.credits, 7);
+    assert.equal((await amy("POST", "/api/social/shop/wear", { badge: "rl5" })).status, 200);
+    assert.equal((await amy("GET", "/api/social/u/amy")).json.user.mark, "rl5 ");
+    assert.equal((await amy("GET", "/api/social/shop")).json.rally, 7);
+  } finally {
+    await close();
+  }
 });
 
 test("Shotgun over HTTP: the bank spins the wheel, banks a synced game, and buys a badge", async () => {

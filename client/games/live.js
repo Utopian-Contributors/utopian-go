@@ -16,7 +16,7 @@
 import { readName } from "../js/me.js";
 
 /**
- * @param {"snake" | "pinball" | "shotgun"} game
+ * @param {"snake" | "pinball" | "shotgun" | "rally"} game
  * @param {HTMLElement} badge the header's Synced / Offline
  */
 export function live(game, badge) {

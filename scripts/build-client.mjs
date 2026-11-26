@@ -23,8 +23,8 @@
  *   would cost more than the whole page weighs. Social is a third, for the
  *   same reason, and its document is capped at 14KB gzip. The login page is
  *   the fourth, and the smallest. Games, the list of games, is the fifth,
- *   Pinball the sixth, Snake the seventh, Fruit Slots the eighth, and
- *   Shotgun the ninth. The page a missing address gets is the last: no
+ *   Pinball the sixth, Snake the seventh, Fruit Slots the eighth,
+ *   Shotgun the ninth, and Rally the tenth. The page a missing address gets is the last: no
  *   script, and one small sheet.
  */
 import * as esbuild from "esbuild";
@@ -178,6 +178,13 @@ const PAGES = [
     parallel: [],
   },
   {
+    name: "Rally",
+    // As Pinball: the document is held to the window, the game's bundle (the
+    // course, the car, and the renderer that draws them) is left to be the game.
+    doc: { file: "rally.html", gzip: FLIGHT },
+    parallel: [],
+  },
+  {
     name: "Not found",
     // The page an address nothing lives at gets (src/server.ts), with a 404.
     doc: { file: "404.html", gzip: FLIGHT },
@@ -231,7 +238,7 @@ const PRECOMPRESS_EXT = new Set([".js", ".css", ".svg"]);
  * public/ waiting for something to serve it by mistake. The wallet page has no
  * per-request content at all, so for it the file *is* the response.
  */
-const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "games.html", "pinball.html", "snake.html", "slots.html", "shotgun.html"];
+const PRECOMPRESS_HTML = ["wallet.html", "social.html", "auth.html", "games.html", "pinball.html", "snake.html", "slots.html", "shotgun.html", "rally.html"];
 
 const watch = process.argv.includes("--watch");
 
@@ -537,6 +544,13 @@ const shotgunOpts = {
   ...jsOpts,
   entryPoints: [path.join(clientDir, "shotgun", "main.js")],
   outfile: path.join(outDir, "shotgun.js"),
+};
+
+/** Rally's bundle: the course, the car, the renderer, and the page around them; all of it on the device. */
+const rallyOpts = {
+  ...jsOpts,
+  entryPoints: [path.join(clientDir, "rally", "main.js")],
+  outfile: path.join(outDir, "rally.js"),
 };
 
 /** Social's own bundle. It shares nothing with search or the wallet page. */
@@ -1074,8 +1088,12 @@ async function buildAuthHtml(css, hash) {
  */
 async function buildGamesHtml(hash) {
   let raw = readFileSync(path.join(clientDir, "games.html"), "utf8");
-  const css = await minifyCss(fingerprintUrls(readFileSync(path.join(clientDir, "games.css"), "utf8")));
+  // The account control's pills (acct.css) after the page's own sheet, which sets their colours.
+  const sheet = ["games.css", "acct.css"].map((name) => readFileSync(path.join(clientDir, name), "utf8")).join("");
+  const css = await minifyCss(fingerprintUrls(sheet));
   raw = replaceOnce(raw, /<link rel="stylesheet" href="\/games\.css"\s*\/?>/, `<style>${css}</style>`, "games stylesheet link");
+  raw = replaceOnce(raw, /<img\b[^>]*class="lg-mark"[^>]*\/>/, inlineWordmark(), "games wordmark img");
+  raw = replaceOnce(raw, /data-lg="\/login\.js"/, `data-lg="/login.js?v=${hash("login.js")}"`, "games login.js attribute");
   raw = replaceOnce(raw, /src="\/games\.js"/, `src="/games.js?v=${hash("games.js")}"`, "games.js src");
   let marks = 0;
   raw = raw.replace(/(src|srcset)="\/((?:game-[\w-]+\.webp)|(?:ic-[\w-]+\.svg))"/g, (match, attr, name) => {
@@ -1105,6 +1123,15 @@ async function buildSlotsHtml(hash) {
   raw = replaceOnce(raw, /<link rel="stylesheet" href="\/slots\.css"\s*\/?>/, `<style>${css}</style>`, "slots stylesheet link");
   raw = replaceOnce(raw, /src="\/slots\.js"/, `src="/slots.js?v=${hash("slots.js")}"`, "slots.js src");
   writeFileSync(path.join(outDir, "slots.html"), await minifyDoc(raw));
+}
+
+/** Rally's document: like Shotgun's, its own sheet inlined and nothing else. */
+async function buildRallyHtml(hash) {
+  let raw = readFileSync(path.join(clientDir, "rally.html"), "utf8");
+  const css = await minifyCss(readFileSync(path.join(clientDir, "rally.css"), "utf8"));
+  raw = replaceOnce(raw, /<link rel="stylesheet" href="\/rally\.css"\s*\/?>/, `<style>${css}</style>`, "rally stylesheet link");
+  raw = replaceOnce(raw, /src="\/rally\.js"/, `src="/rally.js?v=${hash("rally.js")}"`, "rally.js src");
+  writeFileSync(path.join(outDir, "rally.html"), await minifyDoc(raw));
 }
 
 /** Shotgun's document: like snake's, its own sheet inlined and nothing else. */
@@ -1270,6 +1297,7 @@ async function buildAssets() {
     esbuild.build(snakeOpts),
     esbuild.build(slotsOpts),
     esbuild.build(shotgunOpts),
+    esbuild.build(rallyOpts),
     buildCss("app.css", "ad.css", "chart.css"),
     buildCss("wallet.css", "chart.css"),
   ]);
@@ -1294,6 +1322,7 @@ async function buildAssets() {
     buildSnakeHtml(hash),
     buildSlotsHtml(hash),
     buildShotgunHtml(hash),
+    buildRallyHtml(hash),
     buildInfoHtml(),
   ]);
   buildLegal();
