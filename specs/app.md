@@ -389,7 +389,7 @@ be driven. Like the others it is a page anyone may open signed out, offline firs
 - **Boosts.** Pads on the road push for a moment. Boost canisters on the course are collected,
   two at most, and fired at will (Space, or the boost button).
 - **Controls.** On a touch screen a stick (steer; pulled back, brake and reverse; in the
-  air, roll and pitch), a round boost button in the middle (lit, with the boosts carried on its
+  air, roll and pitch), a round boost button over the pedal (lit, with the boosts carried on its
   corner; grey with none) and a gas pedal. On a keyboard the arrows or WASD,
   Space to boost, R to restart, Esc to pause; no controls are drawn.
 - **Credits.** Every coin is a credit and finishing pays 25 more. Signed out (or with the server

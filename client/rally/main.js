@@ -987,7 +987,7 @@ function paintPanel() {
   const label = /** @type {HTMLElement} */ (ghostBox.nextElementSibling);
   label.innerHTML = best ? `Race against your ghost <small>Your best lap, ${lapTime(best.ms)}</small>` : "Race against your ghost <small>Finish a lap to set one</small>";
   $("rl-ky").innerHTML = touch
-    ? "Stick steers, pull it back to brake · Hold the pedal for gas · The middle button boosts"
+    ? "Stick steers, pull it back to brake · Hold the pedal for gas · The button over it boosts"
     : "<kbd>↑</kbd> gas · <kbd>↓</kbd> brake · <kbd>←</kbd><kbd>→</kbd> steer · <kbd>Space</kbd> boost · <kbd>R</kbd> restart · <kbd>Esc</kbd> pause";
 }
 

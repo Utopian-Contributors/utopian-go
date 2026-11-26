@@ -379,13 +379,13 @@ body.rl-touch.rl-on .rl-gas {
   display: grid;
 }
 
-/* The boost: round, in the middle of the gap between the stick (22px in,
-   132px wide) and the pedal (22px in, 96px wide), level with the stick's
-   middle. Lit blue with a boost to fire; how many on its corner; grey and
+/* The boost: round, over the pedal (22px in, 96px wide, 120px tall),
+   centred on it with a gap between, so the right thumb goes from one to the
+   other. Lit blue with a boost to fire; how many on its corner; grey and
    flat with none. */
 .rl-boost {
-  left: calc(50% + 18px);
-  bottom: calc(50px + env(safe-area-inset-bottom, 0px));
+  right: 32px;
+  bottom: calc(158px + env(safe-area-inset-bottom, 0px));
   width: 76px;
   height: 76px;
   place-items: center;
@@ -395,7 +395,6 @@ body.rl-touch.rl-on .rl-gas {
   background: radial-gradient(circle at 40% 32%, #6fd0ff, var(--boost) 55%, #0f74c9);
   box-shadow: 0 4px 0 #0a4f8a, 0 6px 14px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.4);
   color: #fff;
-  transform: translateX(-50%);
   touch-action: none;
   transition: translate 0.06s, opacity 0.2s;
 }
