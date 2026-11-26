@@ -16,6 +16,7 @@ import { noise, tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
+import { noStickyHover } from "../js/hover.js";
 import { LETTER, seeded } from "../../src/social/snakeRules.ts";
 import { COLS, ROWS, game, lay, newGame, step, stepMs, takeLog, turn } from "./game.js";
 import { onWorn, worn } from "../games/skin.js";
@@ -358,3 +359,4 @@ keepOffline();
 
 // Back to the list at once: no fade of its header in (js/plainswap.js).
 plainSwap();
+noStickyHover();

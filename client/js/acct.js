@@ -6,6 +6,7 @@
  * wallet is not a header action; the trade dialog asks for one when it needs
  * to sign.
  */
+import { busy } from "./busy.js";
 import { el } from "./dom.js";
 import { load } from "./lazy.js";
 import { onName, readName, writeName } from "./me.js";
@@ -112,7 +113,7 @@ export const ACCOUNTS = "Accounts";
  * @param {Parameters<typeof openAccounts>[0]} [o]
  */
 export function accountsButton(o) {
-  return el("button", { class: "ac-sw", type: "button", text: ACCOUNTS, onclick: () => openAccounts(o) });
+  return el("button", { class: "ac-sw", type: "button", text: ACCOUNTS, onclick: (e) => busy(e.currentTarget, () => openAccounts(o)) });
 }
 
 /**

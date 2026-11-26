@@ -17,11 +17,13 @@ import { logOut } from "../js/acct.js";
 import { noZoom } from "../js/device.js";
 import { $ } from "../js/dom.js";
 import { NO_PASSKEY, canPasskey, enrol, register, why } from "../js/passkey.js";
-import { during } from "../js/progress.js";
+import { busy as pressed } from "../js/busy.js";
 import { passkeyLogIn, send, submit } from "../js/signin.js";
 import { plainSwap } from "../js/plainswap.js";
+import { noStickyHover } from "../js/hover.js";
 
 plainSwap();
+noStickyHover();
 
 /** Each mode's title, the tab's as well as the heading's. */
 const TITLES = { login: "Log in", register: "Create account", recover: "Recover account", key: "Add a passkey" };
@@ -100,12 +102,13 @@ function onward() {
  * Every way in ends the same: on to the next page, or first to the passkey an
  * account without one must add, with the challenge the server answered with.
  */
-async function attempt(task) {
+/** @param {() => Promise<any>} task @param {HTMLElement} button the one pressed, which spins until the answer */
+async function attempt(task, button) {
   err.textContent = "";
   busy = true;
   paintButtons();
   try {
-    const data = await during(task());
+    const data = await pressed(button, task);
     pass.value = again.value = phrase.value = "";
     if (!data?.passkeySetup) return onward();
     setup = { name: data.name, opt: data.passkeySetup };
@@ -124,8 +127,7 @@ async function addPasskey() {
   busy = true;
   paintButtons();
   try {
-    if (setup.opt) await enrol(setup.name, setup.opt, send);
-    else await register(setup.name, keyPass.value, send);
+    await pressed(go, () => (setup.opt ? enrol(setup.name, setup.opt, send) : register(setup.name, keyPass.value, send)));
     keyPass.value = "";
     onward();
   } catch (cause) {
@@ -155,11 +157,12 @@ form.addEventListener("submit", (e) => {
       phrase: phrase.value,
       terms: terms.checked,
     }),
+    go,
   );
 });
 
 key.addEventListener("click", () => {
-  if (!busy) attempt(passkeyLogIn);
+  if (!busy) attempt(passkeyLogIn, key);
 });
 
 /**
@@ -192,16 +195,12 @@ $("au-bk").addEventListener("click", () => {
   focusFirst();
 });
 
-$("au-out").addEventListener("click", async (e) => {
-  const out = /** @type {HTMLButtonElement} */ (e.currentTarget);
-  out.disabled = true;
-  try {
-    await logOut();
-  } catch {
-    // Still signed in, which the reload finds and goes on past this page.
-  }
-  location.reload();
-});
+$("au-out").addEventListener("click", (e) =>
+  // Still signed in should it fail, which the reload finds and goes on past this page.
+  pressed(/** @type {HTMLElement} */ (e.currentTarget), logOut)
+    .catch(() => {})
+    .then(() => location.reload()),
+);
 
 show(location.pathname.startsWith("/register") ? "register" : "login");
 // Not on a touchscreen, where a focused field would put the keyboard over the page.

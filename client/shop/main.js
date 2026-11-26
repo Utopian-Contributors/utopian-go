@@ -25,6 +25,7 @@
  */
 import { BADGES, BADGE_PX, GAME_BADGES, PACKS, SHOTGUN_BADGES, STATUSES, TIERS, badgeSrc } from "../../src/social/shop.ts";
 import { BADGE_PRICE } from "../../src/social/shotgun.ts";
+import { busy as pressed } from "../js/busy.js";
 import { el } from "../js/dom.js";
 import { NAME_RULE, handleOf } from "../js/handle.js";
 import { payDialog, usd } from "../js/solpay.js";
@@ -106,19 +107,25 @@ async function mount({ main, me, pull, send, face, marks, show }) {
   let busy = false;
 
   /** Wear one thing, or take it off, and draw the page again. */
+  /** Worn at the press, or taken off; the server's answer settles it, and a refusal puts it back. */
   async function put(field, value) {
     if (busy) return;
     busy = true;
     err.textContent = "";
+    const was = { badge: state.badge, status: state.status };
+    const next = state[field] === value || (value === "u" && state.badge[0] === "u") ? "" : value;
+    state[field] = next === "u" ? `u${state.badgeRev}` : next;
+    paint();
     try {
-      const worn = await send("/api/social/shop/wear", { [field]: state[field] === value || (value === "u" && state.badge[0] === "u") ? "" : value });
+      const worn = await send("/api/social/shop/wear", { [field]: next });
       state.badge = worn.badge;
       state.status = worn.status;
-      paint();
     } catch (cause) {
+      Object.assign(state, was);
       err.textContent = cause.message;
     } finally {
       busy = false;
+      paint();
     }
   }
 
@@ -137,16 +144,9 @@ async function mount({ main, me, pull, send, face, marks, show }) {
   }
 
   /** Press a button that asks the server something; its error shows in `out`. */
-  async function press(button, out, run) {
+  function press(button, out, run) {
     out.textContent = "";
-    button.disabled = true;
-    try {
-      await run();
-    } catch (cause) {
-      out.textContent = cause.message;
-    } finally {
-      button.disabled = false;
-    }
+    return pressed(button, run).catch((cause) => (out.textContent = cause.message));
   }
 
   /** Who a pack is for, then Pay (a gift by Solana Pay) or, for an admin, Unlock. */

@@ -7,6 +7,7 @@
  * when it remembers someone signed in, so the page still paints once, with
  * the composer on it. Handed social.js's helpers so it carries no copies.
  */
+import { busy as pressed } from "../js/busy.js";
 import { el } from "../js/dom.js";
 import { B64, clock } from "../js/memo.js";
 import { bin, lens, shrink } from "../js/shrink.js";
@@ -274,9 +275,11 @@ function composer(kit, page = false, reply = null) {
 
   mic.addEventListener("click", async () => {
     note.hidden = true;
-    mic.disabled = true;
     try {
-      const rec = await load("rc", "__rec");
+      // Busy for the recorder's bundle only: record() resolves once the recording is done.
+      const rec = await pressed(mic, () => load("rc", "__rec"));
+      if (!rec) return;
+      mic.disabled = true;
       const got = await rec.record({ clock, B64 });
       if (got) {
         const url = URL.createObjectURL(got.blob);
@@ -401,21 +404,22 @@ function composer(kit, page = false, reply = null) {
     e.preventDefault();
     if (!ready()) return;
     note.hidden = true;
-    button.disabled = true;
     add.disabled = mic.disabled = true;
     try {
-      const text = area.value.trim();
-      const body = shots.length || voice ? packPost(text, shots, voice) : JSON.stringify({ text });
-      if (reply) {
-        const made = await pull(`/api/social/reply?post=${encodeURIComponent(reply.post.id)}`, { method: "POST", body });
-        clear();
-        return reply.done(made.reply);
-      }
-      await pull("/api/social/post", { method: "POST", body });
-      keepDraft("");
-      // From its own page, back to the timeline, which shows the post.
-      if (page) leave();
-      else show();
+      await pressed(button, async () => {
+        const text = area.value.trim();
+        const body = shots.length || voice ? packPost(text, shots, voice) : JSON.stringify({ text });
+        if (reply) {
+          const made = await pull(`/api/social/reply?post=${encodeURIComponent(reply.post.id)}`, { method: "POST", body });
+          clear();
+          return reply.done(made.reply);
+        }
+        await pull("/api/social/post", { method: "POST", body });
+        keepDraft("");
+        // From its own page, back to the timeline, which shows the post.
+        if (page) leave();
+        else show();
+      });
     } catch (cause) {
       note.hidden = false;
       note.textContent = cause.message;

@@ -20,8 +20,11 @@ import { openSwap, swapUrl } from "../js/swap.js";
 import { mountPwa } from "../js/pwa.js";
 import { UTCC, utccShort, utccText } from "../js/utcc.js";
 import { plainSwap } from "../js/plainswap.js";
+import { noStickyHover } from "../js/hover.js";
+import { busy } from "../js/busy.js";
 
 plainSwap();
+noStickyHover();
 
 const main = $("m");
 /** A post, laid over the timeline (social.css #pv) so the timeline under it keeps its place. */
@@ -236,7 +239,10 @@ async function pull(path, opts = {}) {
   const body = opts.body;
   if (body instanceof Blob) headers["Content-Type"] = body.type || "image/jpeg";
   else if (body != null) headers["Content-Type"] = "application/json";
-  const res = await fetch(path, { method: opts.method || "GET", headers, body });
+  // A failed fetch says "Failed to fetch" or "Load failed", by browser; a button saying why it undid itself says this.
+  const res = await fetch(path, { method: opts.method || "GET", headers, body }).catch(() => {
+    throw new Error("No connection.");
+  });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) {
     applyMe(null);
@@ -389,22 +395,16 @@ function payButton(person) {
     type: "button",
     class: "pa pay",
     text: "Pay",
-    onclick: async () => {
-      button.disabled = true;
-      try {
+    onclick: () =>
+      busy(button, async () =>
         (await load("py", "__pay")).open({
           to: { name: person.name, address: person.address },
           me,
           login: () => openAuth("login"),
           // Not yet confirmed when it returns, and /api/balances keeps an answer for 5 s.
           sent: () => setTimeout(() => showBalance(true), 6000),
-        });
-      } catch {
-        button.textContent = "Could not open Pay";
-      } finally {
-        button.disabled = false;
-      }
-    },
+        }),
+      ).catch(() => (button.textContent = "Could not open Pay")),
   });
   return button;
 }
@@ -420,23 +420,17 @@ function swapButton() {
     class: "pa",
     "data-ic": "swap",
     text: "Swap",
-    onclick: async () => {
-      button.disabled = true;
-      try {
-        await openSwap({
+    onclick: () =>
+      busy(button, () =>
+        openSwap({
           ...UTCC,
           fallback: swapUrl(UTCC.mint),
           mode: "buy",
           // Not yet confirmed when it closes, and /api/balances keeps an answer for 5 s.
           onClose: (sent) => sent && setTimeout(() => showBalance(true), 6000),
-        });
-      } catch {
+        }),
         // The bundle would not load; Jupiter's own page is the floor.
-        location.href = swapUrl(UTCC.mint);
-      } finally {
-        button.disabled = false;
-      }
-    },
+      ).catch(() => (location.href = swapUrl(UTCC.mint))),
   });
   return button;
 }
@@ -468,10 +462,18 @@ function renderSide(person) {
     class: "pa",
     "data-ic": "add",
     text: "Add",
-    onclick: () =>
-      me
-        ? send("/api/social/friends", { username: person.name }).then(added, () => (add.textContent = "Something went wrong."))
-        : openAuth("login"),
+    // Friends at once; should the server say no, it says why for a moment and is Add again.
+    onclick: () => {
+      if (!me) return openAuth("login");
+      added();
+      send("/api/social/friends", { username: person.name }).catch((cause) => {
+        add.textContent = cause.message;
+        setTimeout(() => {
+          add.textContent = "Add";
+          add.disabled = false;
+        }, 3000);
+      });
+    },
   });
   if (person.friend) added();
   // The card came with the page (src/pages.ts): keep its picture, so it is not drawn twice.
@@ -574,39 +576,59 @@ function replyBox(post, done) {
 }
 
 /**
- * Save or re-post, then redraw only that post's buttons. An error borrows the
- * label for a moment and gives it back, so the button still says what it does.
+ * Save or re-post, shown at the press and sent after it, then redraw only that
+ * post's buttons. Should the server say no, the post goes back to how it was
+ * and the error borrows the button's label for a moment, so it still says
+ * what it does.
  */
 function react(kind, post, inDetail, label, props) {
   const button = el("button", { type: "button", class: "act", text: label, ...props });
-  button.addEventListener("click", async () => {
+  button.addEventListener("click", () => {
     if (!me) return openAuth("login");
-    button.disabled = true;
-    try {
-      const data = await send(`/api/social/${kind}`, { post: post.id });
-      if (kind === "plus") post.saved = data.saved;
-      else post.reposted = true;
-      const card = button.closest("article");
-      // Un-saving on a timeline of saved posts only takes the post off it,
-      // with what it was drawn under. A post drawn above a reply stays.
-      if (!post.saved && kind === "plus" && route().page === "timeline" && shown.saved && card.id) {
-        (card.closest(".thread") || card).remove();
-      }
-      // Only the action row: swapping the whole card would rebuild its images,
-      // which blink as they decode again.
-      else {
-        const acts = renderPost(post, inDetail).querySelector(".acts");
-        button.closest(".acts").replaceWith(acts);
-        // Just saved: the new mark springs in (social.css .act.plus.pop).
-        if (kind === "plus" && post.saved) acts.querySelector(".plus").classList.add("pop");
-      }
-    } catch (cause) {
-      button.textContent = cause.message;
-      setTimeout(() => {
-        button.textContent = label;
-        button.disabled = false;
-      }, 3000);
-    }
+    // One at a time: the server flips a save, so two presses in flight could be answered in either order.
+    if (post.pending) return;
+    post.pending = true;
+    const was = { saved: post.saved, reposted: post.reposted };
+    if (kind === "plus") post.saved = !post.saved;
+    else post.reposted = true;
+    let row = button.closest(".acts");
+    /** The action row again, as `post` now says. Only the row: swapping the whole card would rebuild its images, which blink as they decode again. */
+    const redraw = () => {
+      const acts = renderPost(post, inDetail).querySelector(".acts");
+      row.replaceWith(acts);
+      return (row = acts);
+    };
+    const card = button.closest("article");
+    // Un-saving on a timeline of saved posts only takes the post off it,
+    // with what it was drawn under. A post drawn above a reply stays.
+    const gone =
+      !post.saved && kind === "plus" && route().page === "timeline" && shown.saved && card.id ? card.closest(".thread") || card : null;
+    const back = gone && [gone.parentNode, gone.nextSibling];
+    if (gone) gone.remove();
+    // Just saved: the new mark springs in (social.css .act.plus.pop).
+    else if (kind === "plus" && post.saved) redraw().querySelector(".plus").classList.add("pop");
+    else redraw();
+    send(`/api/social/${kind}`, { post: post.id }).then(
+      (data) => {
+        post.pending = false;
+        if (kind === "plus" && data.saved !== post.saved) {
+          post.saved = data.saved;
+          if (!gone) redraw();
+        }
+      },
+      (cause) => {
+        post.pending = false;
+        Object.assign(post, was);
+        if (back) back[0].insertBefore(gone, back[1]);
+        const said = back ? button : kind === "plus" ? redraw().firstElementChild : redraw().lastElementChild;
+        said.textContent = cause.message;
+        said.disabled = true;
+        setTimeout(() => {
+          said.textContent = label;
+          said.disabled = kind === "repost" && post.reposted;
+        }, 3000);
+      },
+    );
   });
   return button;
 }
@@ -1649,7 +1671,7 @@ for (const tab of document.querySelectorAll('#tb [data-nav="friends"], #tb [data
  * (src/server.ts): home, as the wallet goes.
  */
 function accounts() {
-  openAccounts({
+  return openAccounts({
     onSwitch: (name) => {
       const { page } = route();
       const own = page === "edit" || (page === "profile" && route().name === me?.name);
@@ -1658,7 +1680,7 @@ function accounts() {
     },
   });
 }
-$("out").addEventListener("click", accounts);
+$("out").addEventListener("click", (e) => busy(/** @type {HTMLElement} */ (e.currentTarget), accounts));
 
 // A long press on My Profile opens the picker, as iOS apps do with their
 // profile tab. The tap that ends the press is not a visit to the profile.

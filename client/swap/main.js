@@ -10,6 +10,7 @@
  * whichever side matches the fee account it is handed, so the SOL account
  * collects on `SOL → X` (input side) and on `X → SOL` (output side) alike.
  */
+import { busy as pressed } from "../js/busy.js";
 import { el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 // Dollars for someone who does not think in lamports. Shared with the wallet
@@ -1367,15 +1368,13 @@ function open(t) {
         const form = el("form", {}, pass, ok);
         form.addEventListener("submit", async (e) => {
           e.preventDefault();
-          ok.disabled = true;
           try {
-            await register(session.name, pass.value, post);
+            await pressed(ok, () => register(session.name, pass.value, post));
             form.remove();
             setRNote("Passkey added. Trading from this account is confirmed with it from now on.");
           } catch (cause) {
             setRNote(why(cause), "err");
             rnote.append(form);
-            ok.disabled = false;
           }
         });
         rnote.append(form);

@@ -46,20 +46,19 @@ function people(list, { send, face, openAuth, me, marks }) {
   if (!list.length) return null;
   const rows = list.map((person) => {
     const add = el("button", { type: "button", class: "rl-add", text: "Add", "aria-label": `Add ${person.name}` });
-    add.addEventListener("click", async () => {
+    // Added at the press. Should the server say no, the label says why for a
+    // moment, then goes back to what the button does.
+    add.addEventListener("click", () => {
       if (!me()) return openAuth("login");
       add.disabled = true;
-      try {
-        await send("/api/social/friends", { username: person.name });
-        add.textContent = "Added";
-      } catch (cause) {
-        // The label says why for a moment, then goes back to what the button does.
+      add.textContent = "Added";
+      send("/api/social/friends", { username: person.name }).catch((cause) => {
         add.textContent = cause.message;
         setTimeout(() => {
           add.textContent = "Add";
           add.disabled = false;
         }, 3000);
-      }
+      });
     });
     return el(
       "li",

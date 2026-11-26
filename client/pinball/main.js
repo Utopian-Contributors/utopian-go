@@ -17,6 +17,7 @@ import { melody, noise, tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
+import { noStickyHover } from "../js/hover.js";
 import { onWorn, worn } from "../games/skin.js";
 import { ASPECT, ballsLeft, draw, fit, wear } from "./render.js";
 import { flip, game, newGame, onEvents, pull, update, waiting } from "./table.js";
@@ -265,3 +266,4 @@ keepOffline();
 
 // Back to the list at once: no fade of its header in (js/plainswap.js).
 plainSwap();
+noStickyHover();

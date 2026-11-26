@@ -6,6 +6,7 @@
  * screens. The buy panel renders this into the dialog it already has open;
  * the login bundle opens a dialog for it. Same markup either way.
  */
+import { busy } from "./busy.js";
 import { el } from "./dom.js";
 import { connect } from "./wallet.js";
 
@@ -41,15 +42,14 @@ export function renderPicker(body, found, onPicked, note) {
     }
     row.append(el("span", { text: wallet.name }));
     row.addEventListener("click", async () => {
-      row.disabled = true;
       msg.textContent = "";
       msg.className = "swx-note";
       try {
         // connect() is what writes the address down, so a wallet chosen here
         // is remembered whichever screen asked the question.
-        onPicked({ wallet, account: await connect(wallet) });
+        const account = await busy(row, () => connect(wallet));
+        if (account) onPicked({ wallet, account });
       } catch (err) {
-        row.disabled = false;
         msg.textContent = err?.message || "Connection declined.";
         msg.className = "swx-note err";
       }

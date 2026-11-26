@@ -14,6 +14,7 @@
  * The amount is typed, built up from quick steps, or the whole balance, and
  * draws on the trade form's controls (swap/form.css) to do it.
  */
+import { busy } from "../js/busy.js";
 import { el } from "../js/dom.js";
 import { load } from "../js/lazy.js";
 import { confirmSend } from "../js/sendconfirm.js";
@@ -287,16 +288,14 @@ function open({ to, me, login, sent }) {
       typedTo = input.value.trim();
       note.textContent = "";
       note.className = "swx-note";
-      go.disabled = true;
       try {
-        const who = await lookup(typedTo);
+        const who = await busy(go, () => lookup(typedTo));
+        if (!who) return;
         if (who.address === me.address) throw new Error("That is this wallet's own address.");
         if (step.isConnected) review(amt, who, () => recipient(amt));
       } catch (cause) {
         note.textContent = cause.message;
         note.className = "swx-note err";
-      } finally {
-        go.disabled = false;
       }
     });
     body.replaceChildren(step);

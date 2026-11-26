@@ -5,7 +5,9 @@
  */
 import { keepOffline } from "./offline.js";
 import { plainSwap } from "../js/plainswap.js";
+import { noStickyHover } from "../js/hover.js";
 
 plainSwap();
+noStickyHover();
 
 keepOffline();

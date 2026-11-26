@@ -22,6 +22,7 @@
  * `ctx` rather than carrying copies of them; the photo scaler is its own,
  * since social.js no longer carries one.
  */
+import { busy } from "../js/busy.js";
 import { el, nil } from "../js/dom.js";
 import { B64, clock } from "../js/memo.js";
 import { b64u, needPasskey, register, u8, why } from "../js/passkey.js";
@@ -484,21 +485,16 @@ export function mount(ctx) {
       input,
       el("button", { type: "submit", text: "Add passkey" }),
     );
-    form.addEventListener("submit", async (e) => {
+    form.addEventListener("submit", (e) => {
       e.preventDefault();
-      const button = form.querySelector("button");
-      button.disabled = true;
       err.textContent = "";
-      try {
+      busy(form.querySelector("button"), async () => {
         await register(name, input.value, ctx.send);
         input.value = "";
         added = true;
         await loadStatus();
         openThread(peer);
-      } catch (cause) {
-        err.textContent = why(cause);
-        button.disabled = false;
-      }
+      }).catch((cause) => (err.textContent = why(cause)));
     });
     setTimeout(() => input.focus(), 0);
     return form;
@@ -520,19 +516,15 @@ export function mount(ctx) {
     if (state === "nopasskey") kids.push(passkeyForm(err));
     else {
       const button = el("button", { type: "button", class: "go-pill", text: label });
-      button.addEventListener("click", async () => {
-        button.disabled = true;
+      button.addEventListener("click", () => {
         err.textContent = "";
-        try {
+        busy(button, async () => {
           if (state === "locked") await unlock();
           else await turnOn();
           await Promise.all([...chats.values()].map((c) => ((c.last.text = undefined), open(c.with, c.last))));
           paintList();
           openThread(peer);
-        } catch (cause) {
-          err.textContent = why(cause);
-          button.disabled = false;
-        }
+        }).catch((cause) => (err.textContent = why(cause)));
       });
       kids.push(button);
     }
@@ -790,7 +782,7 @@ export function mount(ctx) {
 
   function composer(who) {
     const shots = [];
-    let busy = 0;
+    let working = 0;
     const area = el("textarea", {
       maxlength: String(MAX_CHAT),
       rows: "1",
@@ -807,9 +799,8 @@ export function mount(ctx) {
     // Pay them $UTCC in the profile's Pay dialog (client/pay). The payment comes back as a card here.
     const pay = el("button", { type: "button", class: "tool", "aria-label": `Pay ${who}`, title: `Pay ${who}`, hidden: !peerOf(who).address });
     pay.innerHTML = '<i class="mk ic-cash" aria-hidden="true"></i>';
-    pay.addEventListener("click", async () => {
-      pay.disabled = true;
-      try {
+    pay.addEventListener("click", () =>
+      busy(pay, async () =>
         (await ctx.load("py", "__pay")).open({
           to: { name: who, address: peerOf(who).address },
           me: ctx.me(),
@@ -819,20 +810,18 @@ export function mount(ctx) {
             clearTimeout(timer);
             poll();
           },
-        });
-      } catch {
+        }),
+      ).catch(() => {
         note.hidden = false;
         note.textContent = "Could not open Pay.";
-      } finally {
-        pay.disabled = false;
-      }
-    });
+      }),
+    );
     /** The recorded memo, until it is sent or removed: {blob, ms, wave, url}. */
     let memo = null;
     const voiceRow = el("div", { class: "voice", hidden: true });
     const button = el("button", { type: "submit", class: "post-go", text: "Send", disabled: true });
     const note = el("span", { class: "wait", hidden: true });
-    const ready = () => !busy && (area.value.trim().length > 0 || shots.length > 0 || !!memo);
+    const ready = () => !working && (area.value.trim().length > 0 || shots.length > 0 || !!memo);
     const sync = () => {
       button.disabled = !ready();
     };
@@ -871,9 +860,12 @@ export function mount(ctx) {
 
     mic.addEventListener("click", async () => {
       note.hidden = true;
-      mic.disabled = true;
       try {
-        const got = await (await ctx.load("rc", "__rec")).record({ clock, B64 });
+        // Busy for the recorder's bundle only: record() resolves once the recording is done.
+        const rec = await busy(mic, () => ctx.load("rc", "__rec"));
+        if (!rec) return;
+        mic.disabled = true;
+        const got = await rec.record({ clock, B64 });
         if (got) {
           const url = URL.createObjectURL(got.blob);
           urls.push(url);
@@ -898,7 +890,7 @@ export function mount(ctx) {
         note.hidden = false;
         note.textContent = "Four photos at most.";
       }
-      busy++;
+      working++;
       sync();
       for (const item of picked.slice(0, Math.max(0, room))) {
         try {
@@ -911,7 +903,7 @@ export function mount(ctx) {
           note.textContent = cause.message;
         }
       }
-      busy--;
+      working--;
       paintShots();
       sync();
     });
@@ -935,43 +927,66 @@ export function mount(ctx) {
       el("div", { class: "compose-bar" }, add, mic, pay, file, button),
       note,
     );
-    form.addEventListener("submit", async (e) => {
+    /**
+     * The message goes into the conversation at the press, faded, and the
+     * composer empties; sealing and sending follow. Sent, the faded bubble
+     * gives way to the real one. Should it fail, the bubble goes and what was
+     * written comes back into the composer, with why. The next can be written
+     * and sent meanwhile; they go one after another, in the order sent.
+     */
+    let line = Promise.resolve();
+    form.addEventListener("submit", (e) => {
       e.preventDefault();
       if (!ready()) return;
-      busy++;
-      sync();
       note.hidden = true;
       const text = area.value.trim();
       const spoken = memo;
+      const sent = shots.splice(0);
+      // Played back from the recording itself; the sealed copy is for the other person.
+      const shown = { text, urls: sent.map((s) => s.url), photos: sent.length };
+      if (spoken) Object.assign(shown, { voice: { ms: spoken.ms, wave: spoken.wave }, voiceUrl: spoken.url });
+      area.value = "";
+      area.style.height = "auto";
+      paintShots();
+      memo = null;
+      paintVoice();
+      sync();
+      const pending = bubble(who, { ...shown, id: "sending", at: Date.now(), from: name });
+      pending.removeAttribute("id");
+      pending.style.opacity = ".5";
+      box?.querySelector(".hello")?.remove();
+      box?.append(pending);
+      toBottom();
+      const finish = ctx.progress.start();
+      line = line.then(() => sendOne(text, sent, spoken, shown, pending, finish));
+    });
+    async function sendOne(text, sent, spoken, shown, pending, finish) {
       try {
-        const m = await deliver(who, text, shots, spoken);
-        m.text = text;
-        m.urls = shots.map((s) => s.url);
-        // Played back from the recording itself; the sealed copy is for the other person.
-        if (spoken) {
-          m.voice = { ms: spoken.ms, wave: spoken.wave };
-          m.voiceUrl = spoken.url;
-        }
-        area.value = "";
-        area.style.height = "auto";
-        shots.length = 0;
-        paintShots();
-        memo = null;
-        paintVoice();
+        const m = Object.assign(await deliver(who, text, sent, spoken), shown);
+        pending.remove();
         const p = peerOf(who);
         learn({ with: who, avatarRev: p.avatarRev, at: m.at, unread: 0, pub: p.keys.get(p.cur) || null, last: m });
         paintList();
         append([m]);
         toBottom();
       } catch (cause) {
+        pending.remove();
+        // Back as it was, unless something new has been started meanwhile.
+        if (!area.value) area.value = text;
+        area.dispatchEvent(new Event("input"));
+        shots.unshift(...sent);
+        paintShots();
+        if (spoken && !memo) {
+          memo = spoken;
+          paintVoice();
+        }
         note.hidden = false;
         note.textContent = cause.message;
         if (!mine) openThread(peer);
       } finally {
-        busy--;
-        sync();
+        finish();
       }
-    });
+    }
     setTimeout(() => area.focus(), 0);
     return form;
   }

@@ -12,6 +12,7 @@
  * custom properties.
  */
 import { logOut } from "./acct.js";
+import { busy } from "./busy.js";
 import { el } from "./dom.js";
 import { NO_PASSKEY, canPasskey, enrol, register, why } from "./passkey.js";
 import { send } from "./signin.js";
@@ -83,10 +84,8 @@ function buildSetup() {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     err.textContent = "";
-    go.disabled = true;
     try {
-      if (setupFor.opt) await enrol(setupFor.name, setupFor.opt, send);
-      else await register(setupFor.name, pass.value, send);
+      await busy(go, () => (setupFor.opt ? enrol(setupFor.name, setupFor.opt, send) : register(setupFor.name, pass.value, send)));
       pass.value = "";
       d.close();
       setupFor.done();
@@ -98,19 +97,14 @@ function buildSetup() {
         paint();
       }
       err.textContent = why(cause);
-    } finally {
-      go.disabled = false;
     }
   });
-  out.addEventListener("click", async () => {
-    out.disabled = true;
-    try {
-      await logOut();
-    } catch {
-      // Still signed in, and still held here; the reload says which.
-    }
-    location.reload();
-  });
+  // Still signed in should it fail, and still held here; the reload says which.
+  out.addEventListener("click", () =>
+    busy(out, logOut)
+      .catch(() => {})
+      .then(() => location.reload()),
+  );
   document.body.append(d);
   return { dialog: d, paint, pass };
 }

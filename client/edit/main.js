@@ -7,6 +7,7 @@
  * carries neither these settings nor the passkey and dialog code under them.
  * Handed social.js's helpers so it carries no copies.
  */
+import { busy } from "../js/busy.js";
 import { el } from "../js/dom.js";
 import { assertion, register, why } from "../js/passkey.js";
 import { dismissible } from "../js/sheet.js";
@@ -54,15 +55,10 @@ function passDialog(title, label, run) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     err.textContent = "";
-    go.disabled = true;
-    try {
+    busy(go, async () => {
       await run(input.value);
       input.value = "";
-    } catch (cause) {
-      err.textContent = why(cause);
-    } finally {
-      go.disabled = false;
-    }
+    }).catch((cause) => (err.textContent = why(cause)));
   });
   document.body.append(dialog);
   dialog.showModal();
@@ -90,18 +86,15 @@ function keyDialog(title, text, first) {
   dialog.addEventListener("close", () => dialog.remove());
   go.addEventListener("click", async () => {
     err.textContent = "";
-    go.disabled = true;
-    try {
-      const next = await step.run();
-      if (next) {
-        step = next;
-        go.textContent = next.label;
-      }
-    } catch (cause) {
-      err.textContent = why(cause);
-    } finally {
-      go.disabled = false;
-    }
+    busy(go, step.run).then(
+      (next) => {
+        if (next) {
+          step = next;
+          go.textContent = next.label;
+        }
+      },
+      (cause) => (err.textContent = why(cause)),
+    );
   });
   document.body.append(dialog);
   dialog.showModal();
@@ -183,7 +176,7 @@ function phraseDialog(me, send) {
  *   useSide: (on: boolean) => void, renderSide: (person: any) => void,
  * }} kit
  */
-async function mount({ main, me: who, pull, send, show, photo, load, useSide, renderSide }) {
+async function mount({ main, me: who, pull, send, show, photo, load, useSide, renderSide, progress }) {
   if (!who()) await pull("/api/social/me");
   const me = who();
   if (!me) {
@@ -217,27 +210,37 @@ async function mount({ main, me: who, pull, send, show, photo, load, useSide, re
     el("button", { type: "submit", text: "Save" }),
     saveErr,
   );
-  save.addEventListener("submit", async (e) => {
+  save.addEventListener("submit", (e) => {
     e.preventDefault();
     saveErr.textContent = "";
-    try {
-      // The answer carries the saved `me`, which the redraw fills the fields from.
-      await send("/api/social/profile", {
-        bio: bioInput.value,
-        loc: locInput.value,
-      });
-      show();
-    } catch (cause) {
-      saveErr.textContent = cause.message;
-    }
+    // The answer carries the saved `me`, which the redraw fills the fields from.
+    busy(save.querySelector("button"), () => send("/api/social/profile", { bio: bioInput.value, loc: locInput.value })).then(
+      (done) => done && show(),
+      (cause) => (saveErr.textContent = cause.message),
+    );
   });
 
   const photoErr = el("p", { class: "err ed-err", role: "alert" });
   const file = el("input", { type: "file", accept: "image/*", id: "pic" });
+  const old = photo(me.name, me.avatarRev);
+  const word = me.avatarRev ? "Change photo" : "Add photo";
+  const says = el("span", { text: word });
+  /** The photo on show while one is sent: the old one's <img>, or one made for it. */
+  const face = old || el("img", { class: "pfp", alt: "", width: "200", height: "200" });
+  /**
+   * The photo picked is the one on show at once, saying it is on its way up,
+   * while it is made small and sent; should that fail, the old one is back.
+   */
   file.addEventListener("change", async () => {
     const picked = file.files && file.files[0];
     photoErr.textContent = "";
     if (!picked) return;
+    const was = face.src;
+    const preview = URL.createObjectURL(picked);
+    face.src = preview;
+    says.before(face);
+    says.textContent = "Uploading…";
+    const finish = progress.start();
     try {
       // The profile copy stays within 14KB at the uploaded shape. The
       // timeline copy is at most 80px wide and 2KB: enough to see a face
@@ -257,6 +260,12 @@ async function mount({ main, me: who, pull, send, show, photo, load, useSide, re
       show();
     } catch (cause) {
       photoErr.textContent = cause.message;
+      if (old) face.src = was;
+      else face.remove();
+      says.textContent = word;
+    } finally {
+      finish();
+      URL.revokeObjectURL(preview);
     }
     file.value = "";
   });
@@ -275,8 +284,8 @@ async function mount({ main, me: who, pull, send, show, photo, load, useSide, re
       el(
         "label",
         { class: "file", for: "pic" },
-        photo(me.name, me.avatarRev),
-        el("span", { text: me.avatarRev ? "Change photo" : "Add photo" }),
+        old,
+        says,
         file,
       ),
       photoErr,

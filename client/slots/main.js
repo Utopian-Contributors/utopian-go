@@ -21,6 +21,7 @@ import { noise, tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { tally } from "../games/tally.js";
 import { plainSwap } from "../js/plainswap.js";
+import { noStickyHover } from "../js/hover.js";
 import { sheetDialog } from "../js/sheet.js";
 
 /** @param {string} id */
@@ -835,5 +836,6 @@ keepOffline();
 
 // Back to the list at once: no fade of its header in (js/plainswap.js).
 plainSwap();
+noStickyHover();
 // Every fruit, early, so no reel waits on a picture mid-spin.
 for (const fruit of FRUITS) new Image().src = src(fruit);

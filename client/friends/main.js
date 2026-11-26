@@ -15,9 +15,10 @@ import { el, nil } from "../js/dom.js";
  *   pull: (path: string, opts?: object) => Promise<any>, send: (path: string, body?: object) => Promise<any>,
  *   thumb: (name: string, rev: number) => HTMLElement | null, face: (name: string, rev: number) => HTMLElement | null,
  *   useSide: (on: boolean) => void, marks: (name: string, mark?: string) => (HTMLElement | null)[],
+ *   progress: { start: () => () => void },
  * }} kit
  */
-function mount(data, { main, me: who, pull, send, thumb, face, useSide, marks }) {
+function mount(data, { main, me: who, pull, send, thumb, face, useSide, marks, progress }) {
   const me = who();
   useSide(false);
   const input = el("input", {
@@ -38,8 +39,9 @@ function mount(data, { main, me: who, pull, send, thumb, face, useSide, marks })
   const list = el("div", { class: "friends" });
   let wait = 0;
   let gen = 0;
-  let busy = false;
   let shown = "";
+  /** The list as drawn: the server's, with a press not yet answered already in it. */
+  let friends = data.friends;
 
   function row(friend) {
     return el(
@@ -63,7 +65,8 @@ function mount(data, { main, me: who, pull, send, thumb, face, useSide, marks })
   }
 
   /** A to Z like a contact book, one heading per letter. Digits and _ go last, under #. */
-  function paint(friends) {
+  function paint(next) {
+    friends = next;
     if (!friends.length)
       return list.replaceChildren(
         nil("ic-friend", "No friends yet", "Find someone by name above and add them. Their posts show under Friends, and you can chat with them."),
@@ -94,13 +97,17 @@ function mount(data, { main, me: who, pull, send, thumb, face, useSide, marks })
     );
   }
 
+  /** Off the list at the press; back on it, with why, should the server say no. */
   function remove(name) {
+    const was = friends.find((f) => f.name === name);
+    paint(friends.filter((f) => f !== was));
     pull(`/api/social/friends/${name}`, { method: "DELETE" })
       .then((fresh) => {
         err.textContent = "";
         paint(fresh.friends);
       })
       .catch((cause) => {
+        if (was && !friends.some((f) => f.name === name)) paint([...friends, was]);
         err.textContent = cause.message;
       });
   }
@@ -141,7 +148,7 @@ function mount(data, { main, me: who, pull, send, thumb, face, useSide, marks })
               user.loc ? el("span", { class: "muted", text: user.loc }) : null,
               el("span", { class: "tag", text: user.friend ? "Friends" : "Add" }),
             );
-            if (!user.friend) row.addEventListener("click", () => add(user.name));
+            if (!user.friend) row.addEventListener("click", () => add(user.name, row));
             return el("li", {}, row);
           }),
           q,
@@ -154,11 +161,20 @@ function mount(data, { main, me: who, pull, send, thumb, face, useSide, marks })
       });
   }
 
-  function add(name) {
-    if (busy) return;
-    busy = true;
+  /**
+   * A person picked from the list says Friends at the press, and a name typed
+   * and entered starts the loading bar; the list comes with the answer. Should
+   * the server say no, the pick says Add again and the error says why.
+   */
+  function add(name, row) {
     err.textContent = "";
     gen += 1;
+    const tag = row?.querySelector(".tag");
+    if (row) {
+      row.disabled = true;
+      tag.textContent = "Friends";
+    }
+    const finish = progress.start();
     send("/api/social/friends", { username: name })
       .then((fresh) => {
         input.value = "";
@@ -167,11 +183,13 @@ function mount(data, { main, me: who, pull, send, thumb, face, useSide, marks })
         input.focus();
       })
       .catch((cause) => {
+        if (row) {
+          row.disabled = false;
+          tag.textContent = "Add";
+        }
         err.textContent = cause.message;
       })
-      .finally(() => {
-        busy = false;
-      });
+      .finally(finish);
   }
 
   function picks() {

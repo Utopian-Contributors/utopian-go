@@ -10,6 +10,7 @@
  * Part of the login bundle, which every page already fetches lazily.
  */
 import { logOut } from "./acct.js";
+import { busy } from "./busy.js";
 import { el } from "./dom.js";
 import { readName } from "./me.js";
 import { dismissible } from "./sheet.js";
@@ -157,12 +158,12 @@ function build() {
     opts.addAccount();
   });
   $.out.addEventListener("click", async () => {
-    $.out.disabled = true;
+    // A second press while the first is out: busy() would answer undefined, which reads as nobody left.
+    if ($.out.hasAttribute("aria-busy")) return;
     let next = null;
     try {
-      next = await logOut();
+      next = await busy($.out, logOut);
     } catch (cause) {
-      $.out.disabled = false;
       $.foot.textContent = cause.message;
       return;
     }

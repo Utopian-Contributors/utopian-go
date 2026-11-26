@@ -23,6 +23,7 @@ import { readName } from "../js/me.js";
 import { bell, noise, tone, wakeAudio } from "../games/sound.js";
 import { noZoom } from "../js/device.js";
 import { plainSwap } from "../js/plainswap.js";
+import { noStickyHover } from "../js/hover.js";
 import { GUNS, STICK, TURRETS, canPlace, credits, draw, game, listen, newGame, placeTurret, scenery, settling, size, update } from "./game.js";
 import { label, paintWheel, spin } from "./wheel.js";
 
@@ -859,3 +860,4 @@ paintBest();
 loadBank();
 keepOffline();
 plainSwap();
+noStickyHover();
