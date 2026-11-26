@@ -481,9 +481,21 @@ function hitStandup(i) {
     hooks.say("Spinner lit · 50,000", 2.5);
   } else {
     award(75000);
-    game.extraLit = true;
-    hooks.say("Extra ball lit · shoot the ramp", 3);
+    lightExtra();
   }
+}
+
+/** The extra ball lit for the ramp; one earned while it already is goes to the player at once. */
+function lightExtra() {
+  if (game.extraLit) {
+    game.left++;
+    hooks.say("Extra ball!", 3);
+    hooks.sound("rank");
+    hooks.change();
+    return;
+  }
+  game.extraLit = true;
+  hooks.say("Extra ball lit · shoot the ramp", 3);
 }
 
 function spin(turns) {
@@ -517,7 +529,8 @@ function rampMade() {
     game.jackpot = 100000;
     return;
   }
-  if (game.extraLit) {
+  const extra = game.extraLit;
+  if (extra) {
     game.extraLit = false;
     game.left++;
     hooks.say("Extra ball!", 3);
@@ -527,7 +540,7 @@ function rampMade() {
   if (game.rung < RUNGS.length) game.rung++;
   game.rungT = 60;
   award(combo ? 20000 : 5000);
-  if (!game.extraLit) hooks.say(`${combo ? "Combo ramp" : "Ramp"} · temple lit for ${RUNGS[game.rung - 1].toLowerCase()}`, 2.5);
+  if (!extra) hooks.say(`${combo ? "Combo ramp" : "Ramp"} · temple lit for ${RUNGS[game.rung - 1].toLowerCase()}`, 2.5);
 }
 
 function templeAward() {
@@ -545,9 +558,8 @@ function templeAward() {
   } else if (rung === 2) {
     // The extra ball comes before the save post: a saved ball keeps the
     // multiplier and every lamp, where an extra ball starts the table afresh.
-    game.extraLit = true;
     award(25000);
-    hooks.say("Extra ball lit · shoot the ramp", 3);
+    lightExtra();
   } else if (rung === 3) {
     game.post = true;
     award(50000);
