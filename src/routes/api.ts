@@ -544,18 +544,25 @@ apiRouter.get("/api/tokens/top", (_req: Request, res: Response) => {
   res.json({ tokens: topTokens(TOKEN_TOP_COUNT) });
 });
 
-/** How many the wallet page's Movers and New lists show. */
-const FEATURED_COUNT = 10;
+/** The wallet page's Movers and New lists: a page at a time, as the row scrolls, to the most either goes. */
+const FEATURED_PAGE = 20;
+const FEATURED_MAX = 100;
 
-/** Movers (`s=movers`) or New (`s=new`), the wallet page's lists under the portfolio. Memory only. */
+/**
+ * Movers (`s=movers`) or New (`s=new`), the wallet page's lists under the
+ * portfolio, a page from offset `o`. Memory only.
+ */
 apiRouter.get("/api/tokens/featured", searchLimit, (req: Request, res: Response) => {
   const key = asString(req.query.s);
   if (key !== "movers" && key !== "new") {
     res.status(400).json({ error: "No such list." });
     return;
   }
+  const from = Math.min(FEATURED_MAX, Math.max(0, Math.floor(Number(asString(req.query.o)) || 0)));
+  const to = Math.min(FEATURED_MAX, from + FEATURED_PAGE);
+  const tokens = featuredTokens(key, from, to);
   res.setHeader("Cache-Control", "public, max-age=60");
-  res.json({ tokens: featuredTokens(key, FEATURED_COUNT) });
+  res.json({ tokens, more: to < FEATURED_MAX && tokens.length === to - from });
 });
 
 /**

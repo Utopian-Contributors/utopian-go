@@ -312,6 +312,10 @@ export interface TokenWindow {
   buys?: number;
   sells?: number;
   traders?: number;
+  /** Wallets that bought more than they sold in the window. */
+  buyers?: number;
+  /** The rest of the traders. */
+  sellers?: number;
 }
 
 /**
@@ -623,6 +627,7 @@ export interface JupStats {
   numBuys?: number;
   numSells?: number;
   numTraders?: number;
+  numNetBuyers?: number;
 }
 
 export interface JupToken {

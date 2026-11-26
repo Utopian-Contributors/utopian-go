@@ -779,11 +779,37 @@ async function paintKeys() {
   keys.removeAttribute("aria-hidden");
   keys.replaceChildren(
     el("span", { class: "wl-k", text: `@${me.name}` }),
-    el("span", { class: "wl-ka", text: me.address, title: me.address }),
+    addressButton(me.address),
     button,
   );
   keys.hidden = false;
 }
+
+/**
+ * The account's address, dotted out past its sixth character until a pointer rests on it
+ * (wallet.css .wl-ka); a press copies the whole of it, on any screen.
+ */
+function addressButton(address) {
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "wl-ka",
+      title: "Copy address",
+      onclick: () =>
+        navigator.clipboard.writeText(address).then(() => {
+          button.classList.add("is-cp");
+          setTimeout(() => button.classList.remove("is-cp"), 1400);
+        }, () => {}),
+    },
+    address.slice(0, 6),
+    // The rest, or dots in its place until a pointer rests on it (wallet.css .wl-ka-h).
+    el("span", { class: "wl-ka-h", text: address.slice(6) }),
+    el("span", { class: "wl-ka-m", "aria-hidden": "true", text: "••••••••" }),
+  );
+  return button;
+}
+
 
 /**
  * What the page left out, said plainly, so a filtered list does not read as
@@ -1093,25 +1119,71 @@ function age(at) {
   return `${Math.floor(m / 525_600)}y`;
 }
 
-async function paintFeatured(key, box, meta) {
-  try {
-    const res = await fetch(`/api/tokens/featured?s=${key}`, { headers: { Accept: "application/json" } });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    const rows = data.tokens ?? [];
-    box.replaceChildren(
-      ...(rows.length ? rows.map((t) => tokenCard(t, meta(t))) : [el("p", { class: "wl-n", text: "Nothing here right now." })]),
-    );
-  } catch {
-    box.replaceChildren(el("p", { class: "wl-n", text: "Could not load these." }));
+/** Cards added to a featured row at a time, the server's page (FEATURED_PAGE). */
+const FEATURED_PAGE = 20;
+
+/**
+ * Movers or New: a page more each time the row comes within a screen of its
+ * end, to the most the server gives (100); past that, it runs on from its
+ * first card again, lap after lap. A row that fits whole does not repeat.
+ */
+function featuredRow(key, box, meta) {
+  /** @type {import('../../src/types').TopToken[]} */
+  const got = [];
+  let more = true;
+  let busy = false;
+  let shown = 0;
+  const card = (t) => tokenCard(t, meta(t));
+
+  /** One page more, fetched or a lap's; whether the row grew. */
+  async function grow() {
+    if (more) {
+      const res = await fetch(`/api/tokens/featured?s=${key}&o=${got.length}`, { headers: { Accept: "application/json" } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const rows = data.tokens ?? [];
+      more = Boolean(data.more) && rows.length > 0;
+      if (!rows.length) {
+        if (!got.length) box.replaceChildren(el("p", { class: "wl-n", text: "Nothing here right now." }));
+        return false;
+      }
+      // The first page over whatever the row said while it was empty.
+      if (got.length) box.append(...rows.map(card));
+      else box.replaceChildren(...rows.map(card));
+      got.push(...rows);
+      shown += rows.length;
+      return true;
+    }
+    if (!got.length || box.scrollWidth <= box.clientWidth) return false;
+    const lap = Array.from({ length: FEATURED_PAGE }, (_, i) => got[(shown + i) % got.length]);
+    box.append(...lap.map(card));
+    shown += lap.length;
+    return true;
   }
-  edges();
+
+  async function near() {
+    if (busy || box.scrollLeft + box.clientWidth < box.scrollWidth - box.clientWidth) return;
+    busy = true;
+    let grew = false;
+    try {
+      grew = await grow();
+    } catch {
+      // On the next scroll, again; with nothing in the row yet, say so.
+      if (!got.length) box.replaceChildren(el("p", { class: "wl-n", text: "Could not load these." }));
+    }
+    busy = false;
+    edges();
+    if (grew) void near();
+  }
+
+  box.addEventListener("scroll", () => void near(), { passive: true });
+  void near();
 }
 
 paintSeen();
 void freshenSeen();
-void paintFeatured("movers", $("wl-mv"), (t) => `${fiat(t.volume)} vol`);
-void paintFeatured("new", $("wl-nw"), (t) => (t.bornAt ? `${age(t.bornAt)} old` : ""));
+featuredRow("movers", $("wl-mv"), (t) => `${fiat(t.volume)} vol`);
+featuredRow("new", $("wl-nw"), (t) => (t.bornAt ? `${age(t.bornAt)} old` : ""));
 
 mountAccount($("ac"), {
   self: () => accountsButton(),

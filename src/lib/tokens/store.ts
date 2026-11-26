@@ -529,10 +529,10 @@ export function watchTokens(after: string, limit: number): TokenPage {
   return pageOf(watchable, after, limit);
 }
 
-/** The top of Movers or New, the wallet page's lists under the portfolio. */
-export function featuredTokens(key: "movers" | "new", limit: number): TopToken[] {
-  if (key === "movers") return movers.slice(0, limit).map(toTop);
-  return fresh.slice(0, limit).map((rec) => ({ ...toTop(rec), bornAt: rec.bornAt }));
+/** Movers or New from `from` up to `to`, the wallet page's lists under the portfolio. */
+export function featuredTokens(key: "movers" | "new", from: number, to: number): TopToken[] {
+  if (key === "movers") return movers.slice(from, to).map(toTop);
+  return fresh.slice(from, to).map((rec) => ({ ...toTop(rec), bornAt: rec.bornAt }));
 }
 
 /** How long every list is. */

@@ -35,13 +35,18 @@ function https(v: unknown): string | undefined {
 
 function toWindow(s: JupStats | undefined): TokenWindow | undefined {
   if (!s) return undefined;
+  const traders = num(s.numTraders);
+  const buyers = num(s.numNetBuyers);
+  const split = traders != null && buyers != null && buyers >= 0 && buyers <= traders;
   return {
     change: num(s.priceChange),
     buyVolume: num(s.buyVolume),
     sellVolume: num(s.sellVolume),
     buys: num(s.numBuys),
     sells: num(s.numSells),
-    traders: num(s.numTraders),
+    traders,
+    buyers: split ? buyers : undefined,
+    sellers: split ? traders - buyers : undefined,
   };
 }
 

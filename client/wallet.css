@@ -221,12 +221,47 @@ a:hover {
    can be done, the holdings after. */
 
 .wl-tot {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   border-bottom: 0.5px solid var(--sep);
   padding-bottom: 18px;
+}
+
+/* A grid mesh under the figure, its move and History only, fading out at
+   its edges. Its height follows which of the move and History are showing. */
+.wl-tot {
+  --mesh-d: 0px;
+  --mesh-h: 0px;
+}
+
+.wl-tot:has(> #wl-d:not([hidden])) {
+  --mesh-d: 22px;
+}
+
+body:not(.wl-loading) .wl-tot:has(> .wl-hb[hidden]) {
+  --mesh-h: -40px;
+}
+
+.wl-tot::before {
+  content: "";
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  width: min(100%, 360px);
+  height: calc(125px + var(--mesh-d) + var(--mesh-h));
+  transform: translateX(-50%);
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--sep) 1px, transparent 1px) 50% 0 / 12px 12px,
+    linear-gradient(90deg, var(--sep) 1px, transparent 1px) 50% 0 / 12px 12px;
+  opacity: 0.25;
+  -webkit-mask-image: radial-gradient(closest-side, #000 25%, transparent);
+  mask-image: radial-gradient(closest-side, #000 25%, transparent);
 }
 
 .wl-tot > .pc,
@@ -1544,18 +1579,20 @@ body.hist .wl-ft {
 .tp-st {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 20px;
+  grid-template-rows: repeat(3, auto);
+  gap: 14px 20px;
   padding: 14px;
   border-top: 0.5px solid var(--sep);
   border-radius: 0 0 16px 16px;
   background: var(--wash);
 }
 
+/* Rows shared through subgrid, so each figure sits level with the split beside it. */
 .tp-l,
 .tp-r {
   display: grid;
-  align-content: start;
-  gap: 14px;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
 }
 
 .tp-l {
@@ -1649,6 +1686,51 @@ body.hist .wl-ft {
   white-space: nowrap;
   font-size: 12.5px;
   color: var(--f);
+}
+
+/* The account's own (wallet/main.js addressButton): a button that copies it,
+   dotted out past its sixth character until a pointer rests on it. */
+button.wl-ka {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: inherit;
+  cursor: copy;
+}
+
+/* Dotted out on a screen with a mouse only: a phone keeps the whole
+   address, cut short with an ellipsis. */
+.wl-ka-m {
+  display: none;
+  letter-spacing: 0.08em;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .wl-ka:not(:hover, :focus-visible) .wl-ka-h {
+    display: none;
+  }
+
+  .wl-ka:not(:hover, :focus-visible) .wl-ka-m {
+    display: inline;
+  }
+}
+
+.wl-ka:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Copied: the address makes way for a word saying so. */
+.wl-ka.is-cp {
+  font-size: 0;
+}
+
+.wl-ka.is-cp::before {
+  content: "Address copied";
+  font-size: 12.5px;
+  color: var(--t);
 }
 
 /* The dialogs these buttons open draw themselves: keys/keys.css. */
@@ -1997,25 +2079,15 @@ body.hist .wl-ft {
     font-size: 13px;
   }
 
-  /* Txns, volume and traders on one line; the two splits side by side under it. */
+  /* Txns, volume and traders down the left; the three splits stacked beside them. */
   .tp-card .tp-st {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
+    gap: 10px 14px;
     padding: 10px 12px;
     border-radius: 0 0 12px 12px;
   }
 
   .tp-card .tp-l {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    padding: 0 0 10px;
-    border-right: 0;
-    border-bottom: 0.5px solid var(--sep);
-  }
-
-  .tp-card .tp-r {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+    padding-right: 14px;
   }
 
   /* The links as a row of small tiles: the name alone, the mark smaller. */
@@ -2150,6 +2222,6 @@ body.wl-loading .wl-sk { color: var(--f); }
     animation: none;
     -webkit-mask: none;
     mask: none;
-    opacity: 0.55;
+    opacity: 0.4;
   }
 }

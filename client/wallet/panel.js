@@ -124,6 +124,7 @@ function stats(w) {
       { class: "tp-r" },
       split("Buys", "Sells", w?.buys, w?.sells, count),
       split("Buy vol", "Sell vol", w?.buyVolume, w?.sellVolume, usd),
+      split("Buyers", "Sellers", w?.buyers, w?.sellers, count),
     ),
   ];
 }
