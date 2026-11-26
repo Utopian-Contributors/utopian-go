@@ -651,9 +651,10 @@ export function car(d) {
         [-0.85, 0.44, 0.62, 0.28, 1.04],
         [-1.15, 0.36, 0.62, 0.05, 0.9],
       ], glass, roof, stripe, m);
-      // Balance-beam wing on tall end plates, standing on the rear fenders' flanks.
+      // The wing across the tail, held up from the middle of the tail on two
+      // slim posts (no end plates standing over the wheels).
       slab(g, 0, 2.0, [[-2.05, 1.18], [-2.48, 1.23], [-2.5, 1.28], [-2.08, 1.24]], carbon);
-      for (const s of [-1, 1]) slab(g, s * (m.side(0.5, -2.2) - 0.02), 0.05, [[-1.9, 0.5], [-2.42, 0.5], [-2.5, 1.3], [-2.05, 1.27]], body);
+      for (const s of [-1, 1]) slab(g, s * 0.3, 0.06, [[-2.12, m.top(0.3, -2.12) - 0.03], [-2.3, m.top(0.3, -2.3) - 0.03], [-2.36, 1.24], [-2.2, 1.22]], carbon);
       g.box(0, 0.15, 2.4, 1.85, 0.04, 0.4, carbon);
       slab(g, 0, 1.7, [[-2.42, 0.18], [-2.05, 0.18], [-2.05, 0.28], [-2.5, 0.42]], carbon);
       // Louvres over the front fenders.
@@ -712,6 +713,37 @@ export function wheel(d) {
   g.prism("x", 0, 0, 0, w.r * 0.66, w.w + 0.012, 10, rgb("#8f969f"), rgb("#c3c9d1"));
   g.prism("x", 0, 0, 0, w.r * 0.2, w.w + 0.02, 6, rgb("#5a6068"), rgb("#2a2d33"));
   return g;
+}
+
+/**
+ * Where a car's two boost flames come out: the back of the car, wherever
+ * that is for its body style, found on its own geometry. From behind, a line
+ * at exhaust height runs forward until it meets the car; the flame starts
+ * there, just touching it, and points back.
+ * @param {CarDesign} d
+ * @returns {number[][]}
+ */
+export function exhaustsOf(d) {
+  const v = car(d).v;
+  const y = 0.5;
+  return [0.45, -0.45].map((x) => {
+    let nearest = Infinity;
+    // Each triangle the line (x, y, z) meets, as z runs forward from far behind.
+    for (let i = 0; i < v.length; i += 27) {
+      const a = [v[i], v[i + 1], v[i + 2]];
+      const b = [v[i + 9], v[i + 10], v[i + 11]];
+      const c = [v[i + 18], v[i + 19], v[i + 20]];
+      // Where (x, y) falls in the triangle's projection on the x-y plane.
+      const det = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+      if (Math.abs(det) < 1e-9) continue;
+      const u = ((x - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (y - a[1])) / det;
+      const w = ((b[0] - a[0]) * (y - a[1]) - (x - a[0]) * (b[1] - a[1])) / det;
+      if (u < 0 || w < 0 || u + w > 1) continue;
+      nearest = Math.min(nearest, a[2] + u * (b[2] - a[2]) + w * (c[2] - a[2]));
+    }
+    // Its root a hair inside the tail, so no gap shows between them.
+    return [x, y, (Number.isFinite(nearest) ? nearest : -2.1) + 0.03];
+  });
 }
 
 /** A boost's flame: a cone pointing back along -z from the origin, yellow at its root. */

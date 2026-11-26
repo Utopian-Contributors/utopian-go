@@ -118,7 +118,7 @@ const meshes = gfx && {
   cars: new Map(),
 };
 
-/** @typedef {{body: any, wheel: any, hubs: number[][]}} CarMeshes */
+/** @typedef {{body: any, wheel: any, hubs: number[][], exhausts: number[][]}} CarMeshes */
 
 /**
  * A car's meshes in a renderer: its body in its paint, its body style's
@@ -130,7 +130,7 @@ function carMeshes(r, cache, id) {
   let m = cache.get(id);
   if (!m) {
     const d = carById(id) ?? CARS[0];
-    cache.set(id, (m = { body: r.mesh(scene.car(d)), wheel: r.mesh(scene.wheel(d)), hubs: scene.wheelsOf(d) }));
+    cache.set(id, (m = { body: r.mesh(scene.car(d)), wheel: r.mesh(scene.wheel(d)), hubs: scene.wheelsOf(d), exhausts: scene.exhaustsOf(d) }));
   }
   return m;
 }
@@ -844,9 +844,11 @@ function draw(dt) {
   drawCar(device.car, p.pos, p.F, p.U, cur.steer, WHITE);
   if (cur.boostT > 0 && !cur.crashed) {
     const L = cross(p.U, p.F);
-    for (const x of [-0.45, 0.45]) {
+    // Out of the back of this car's body, wherever its tail is.
+    const pipes = carMesh(device.car)?.exhausts ?? [];
+    for (const [x, y, z] of pipes) {
       const flick = 0.75 + Math.random() * 0.5;
-      gfx.draw(meshes.flame, place(scale(L, flick), scale(p.U, flick), scale(p.F, flick), along(along(along(p.pos, p.F, -2.05), p.U, 0.5), L, x), 1, M), WHITE, 1.1);
+      gfx.draw(meshes.flame, place(scale(L, flick), scale(p.U, flick), scale(p.F, flick), along(along(along(p.pos, p.F, z), p.U, y), L, x), 1, M), WHITE, 1.1);
     }
   }
   if (cur.mode === "ground") gfx.draw(meshes.shadow, place(cross(p.rawU, p.rawF), p.rawU, p.rawF, along(p.pos, p.rawU, 0.05), 1, M), SHADE);
