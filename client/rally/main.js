@@ -259,6 +259,8 @@ function start() {
   pausePanel.hidden = true;
   $("rl-pa").hidden = false;
   paintBoosts();
+  // The clock and the speed back to nought on the grid, not the last race's.
+  paintHud();
   say("3", 0.95, true);
   SOUNDS.beep();
   paintCredits();
@@ -324,7 +326,25 @@ async function finish() {
   phase = "menu";
   document.body.classList.remove("rl-on");
   $("rl-pa").hidden = true;
-  const r = cur;
+  const line = await bankRace(cur, rec, splits);
+  counted = true;
+  $("rl-rs").innerHTML = line;
+  // The name is the start screen's; after a race the sheet leads with how it went.
+  $("rl-h1").hidden = true;
+  $("rl-go").textContent = "Race again";
+  paintPanel();
+  paintCredits();
+  $("rl-go").focus({ preventScroll: true });
+}
+
+/**
+ * Bank a race that is over, whatever comes next: its lap kept on the device
+ * (and as the ghost, when it is the best), its credits banked on the account
+ * or kept on the device. Resolves to how it went, in a line for the sheet.
+ * The race's recording is passed in, as a restart starts a new one at once.
+ * @param {Race} r @param {number[]} recorded @param {number[]} times
+ */
+async function bankRace(r, recorded, times) {
   const ms = r.finished ? raceMs(r) : 0;
   const earned = r.coins + (r.finished ? FINISH_BONUS : 0);
   const newBest = r.finished && (!best || ms < best.ms);
@@ -333,7 +353,7 @@ async function finish() {
     device.times.sort((a, b) => a.ms - b.ms || a.at - b.at);
     device.times = device.times.slice(0, 5);
     if (newBest) {
-      best = { ms, car: device.car, f: rec, splits };
+      best = { ms, car: device.car, f: recorded, splits: times };
       write(GHOST_KEY, best);
     }
   }
@@ -354,15 +374,9 @@ async function finish() {
     device.credits += earned;
     line = `${head}+${fmt(earned)} credits`;
   }
-  counted = true;
   save();
-  $("rl-rs").innerHTML = line;
-  // The name is the start screen's; after a race the sheet leads with how it went.
-  $("rl-h1").hidden = true;
-  $("rl-go").textContent = "Race again";
-  paintPanel();
   paintCredits();
-  $("rl-go").focus({ preventScroll: true });
+  return line;
 }
 
 const LEFT = "Left the race";
@@ -1008,16 +1022,18 @@ $("rl-re").addEventListener("click", resume);
 $("rl-rs2").addEventListener("click", restart);
 $("rl-qt").addEventListener("click", abandon);
 
-/** Start the lap again: the race left counts its coins, as a quit does, then the grid. */
-async function restart() {
+/** Start the lap again, straight to the countdown: the race left counts its coins, as a quit does, without a sheet in between. */
+function restart() {
   if (phase === "menu") return;
-  if (phase === "count") {
-    pausePanel.hidden = true;
-    paused = false;
-    start();
-    return;
+  pausePanel.hidden = true;
+  paused = false;
+  if (phase !== "count") {
+    // The race left behind is banked quietly (its coins count, its time only
+    // if it had finished); the new one is on the grid at once.
+    const r = cur;
+    if (!r.finished) r.crashed = r.crashed ?? LEFT;
+    bankRace(r, rec, splits);
   }
-  await abandon();
   start();
 }
 
