@@ -755,6 +755,11 @@ function aim(dt, p) {
 
 let width = 1;
 let height = 1;
+/** How far the picture is shifted up, in half-screens, to clear the sheet between races. */
+let lift = 0;
+/** The sheet's height between races, kept by an observer rather than read every frame. */
+let sheetH = 0;
+new ResizeObserver(() => (sheetH = panel.offsetHeight)).observe(panel);
 
 /**
  * The coins, boosts and crates where they stand: worked out once, as the
@@ -786,6 +791,12 @@ function draw(dt) {
   const aspect = width / height;
   const fovy = Math.min(1.45, Math.max(cam.fov, 2 * Math.atan(Math.tan(0.62) / aspect)));
   const proj = perspective(fovy, aspect, 0.3, FAR);
+  // Between races the sheet covers the bottom of the screen: the picture is
+  // shifted up (as a shift lens does, the camera unmoved) so the car stands in
+  // the middle of what is left above it, easing in as the sheet comes up.
+  const cover = phase === "menu" ? Math.min(0.7, sheetH / Math.max(1, stage.clientHeight)) : 0;
+  lift += (cover - lift) * ease(5, dt);
+  proj[9] = -lift;
   const view = lookAt(cam.eye, target, cam.up);
   gfx.begin(width, height, mul(proj, view), cam.eye, SKY, FAR * 0.75);
   gfx.draw(meshes.ground, IDENTITY);
