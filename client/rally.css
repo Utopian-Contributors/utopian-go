@@ -362,9 +362,10 @@ body:not(.rl-on) .rl-hud {
   cursor: pointer;
 }
 
-/* ---------- The stick and the pedal, on a touch screen only ---------- */
+/* ---------- The stick, the boost and the pedal, on a touch screen only ---------- */
 
 .rl-stick,
+.rl-boost,
 .rl-gas {
   position: absolute;
   bottom: calc(22px + env(safe-area-inset-bottom, 0px));
@@ -373,8 +374,64 @@ body:not(.rl-on) .rl-hud {
 }
 
 body.rl-touch.rl-on .rl-stick,
+body.rl-touch.rl-on .rl-boost,
 body.rl-touch.rl-on .rl-gas {
   display: grid;
+}
+
+/* The boost: round, in the middle of the gap between the stick (22px in,
+   132px wide) and the pedal (22px in, 96px wide), level with the stick's
+   middle. Lit blue with a boost to fire; how many on its corner; grey and
+   flat with none. */
+.rl-boost {
+  left: calc(50% + 18px);
+  bottom: calc(50px + env(safe-area-inset-bottom, 0px));
+  width: 76px;
+  height: 76px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 32%, #6fd0ff, var(--boost) 55%, #0f74c9);
+  box-shadow: 0 4px 0 #0a4f8a, 0 6px 14px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.4);
+  color: #fff;
+  transform: translateX(-50%);
+  touch-action: none;
+  transition: translate 0.06s, opacity 0.2s;
+}
+
+.rl-boost span {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #fff;
+  color: #0f74c9;
+  font: 800 13px/22px var(--ff);
+  text-align: center;
+}
+
+.rl-boost.on {
+  translate: 0 3px;
+  box-shadow: 0 1px 0 #0a4f8a, 0 3px 8px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.4);
+}
+
+.rl-boost[data-n="0"] {
+  background: radial-gradient(circle at 40% 32%, #6b7079, #3a3f47);
+  box-shadow: 0 4px 0 #22262c, 0 6px 14px rgb(0 0 0 / 0.3);
+  color: rgb(255 255 255 / 0.55);
+}
+
+.rl-boost[data-n="0"] span {
+  background: rgb(255 255 255 / 0.3);
+  color: #fff;
+}
+
+/* Burning: it pulses. */
+.rl-boost.burn {
+  animation: rl-pulse 0.3s infinite alternate;
 }
 
 .rl-stick {

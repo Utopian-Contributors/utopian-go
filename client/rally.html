@@ -64,10 +64,14 @@
         </button>
 
         <!-- On a touch screen: a stick to steer (pulled back, it brakes; in
-             the air it rolls and pitches) and the gas pedal (tapped twice, a
-             boost). -->
+             the air it rolls and pitches), the boost button between, showing
+             how many boosts are carried, and the gas pedal. -->
         <div class="rl-stick" id="rl-sk" aria-hidden="true"><i id="rl-kn"></i></div>
-        <button type="button" class="rl-gas" id="rl-gs" aria-label="Gas, tap twice to boost">
+        <button type="button" class="rl-boost" id="rl-bt" aria-label="Boost" data-n="0">
+          <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L9.8 22 19 9.8h-6.1z" fill="currentColor" /></svg>
+          <span id="rl-bn">0</span>
+        </button>
+        <button type="button" class="rl-gas" id="rl-gs" aria-label="Gas">
           <svg width="48" height="48" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10l-1.6 17.2a1 1 0 0 1-1 .8H9.6a1 1 0 0 1-1-.8z" fill="currentColor" opacity=".9" /><path d="M9.5 7h5M9.3 10.5h5.4M9.1 14h5.8" stroke="rgba(0,0,0,.35)" stroke-width="1.4" stroke-linecap="round" /></svg>
         </button>
 

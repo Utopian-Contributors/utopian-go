@@ -387,9 +387,10 @@ be driven. Like the others it is a page anyone may open signed out, offline firs
   it is **totalled**: the race stops, the wreck tumbles to rest and the camera circles it. Off
   the course (into a gap, over a barrier) it is put back a run-up before where it left.
 - **Boosts.** Pads on the road push for a moment. Boost canisters on the course are collected,
-  two at most, and fired at will (Space, or a double tap of the pedal).
-- **Controls.** On a touch screen only a stick (steer; pulled back, brake and reverse; in the
-  air, roll and pitch) and a gas pedal (tapped twice, a boost). On a keyboard the arrows or WASD,
+  two at most, and fired at will (Space, or the boost button).
+- **Controls.** On a touch screen a stick (steer; pulled back, brake and reverse; in the
+  air, roll and pitch), a round boost button in the middle (lit, with the boosts carried on its
+  corner; grey with none) and a gas pedal. On a keyboard the arrows or WASD,
   Space to boost, R to restart, Esc to pause; no controls are drawn.
 - **Credits.** Every coin is a credit and finishing pays 25 more. Signed out (or with the server
   out of reach as the page opens) the device keeps the credits, the cars they bought, the

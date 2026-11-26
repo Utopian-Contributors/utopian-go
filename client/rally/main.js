@@ -411,7 +411,6 @@ const input = { gas: 0, brake: 0, steer: 0, pitch: 0 };
 const held = new Set();
 const stick = { x: 0, y: 0, id: -1 };
 let pedal = false;
-let pedalAt = 0;
 
 /** What the keys, the stick and the pedal say together. */
 function readInput() {
@@ -442,7 +441,7 @@ function release() {
 }
 
 function boost() {
-  if (phase === "race" && !paused && fire(cur)) $("rl-gs").classList.add("boost");
+  if (phase === "race" && !paused && fire(cur)) paintBoosts();
 }
 
 window.addEventListener("keydown", (e) => {
@@ -523,22 +522,30 @@ function moveStick(e) {
   knob.style.transform = `translate(${dx * reach}px, ${dy * reach}px)`;
 }
 
-// The pedal: held for gas; tapped twice quickly, a boost.
+// The boost button: a press fires one, when one is carried.
+const boostBtn = $("rl-bt");
+boostBtn.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  wakeAudio();
+  boostBtn.classList.add("on");
+  boost();
+});
+for (const type of ["pointerup", "pointercancel", "pointerleave"]) boostBtn.addEventListener(type, () => boostBtn.classList.remove("on"));
+boostBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// The pedal: held for gas.
 const gasEl = $("rl-gs");
 gasEl.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   wakeAudio();
   gasEl.setPointerCapture?.(e.pointerId);
-  const now = performance.now();
-  if (now - pedalAt < 320) boost();
-  pedalAt = now;
   pedal = true;
   gasEl.classList.add("on");
 });
 for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
   gasEl.addEventListener(type, () => {
     pedal = false;
-    gasEl.classList.remove("on", "boost");
+    gasEl.classList.remove("on");
   });
 }
 gasEl.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -552,6 +559,9 @@ const boostsEl = $("rl-bo");
 
 function paintBoosts() {
   [...boostsEl.children].forEach((slot, i) => slot.classList.toggle("on", i < cur.boosts));
+  boostBtn.dataset.n = String(cur.boosts);
+  $("rl-bn").textContent = String(cur.boosts);
+  boostBtn.setAttribute("aria-label", `Boost, ${cur.boosts} left`);
 }
 
 let lastHud = "";
@@ -564,6 +574,7 @@ function paintHud() {
   timeOut.textContent = t;
   speedOut.textContent = v;
   boostsEl.classList.toggle("burn", cur.boostT > 0);
+  boostBtn.classList.toggle("burn", cur.boostT > 0);
   if (performance.now() > splitUntil) $("rl-sp").textContent = "";
 }
 
@@ -965,7 +976,7 @@ function paintPanel() {
   const label = /** @type {HTMLElement} */ (ghostBox.nextElementSibling);
   label.innerHTML = best ? `Race against your ghost <small>Your best lap, ${lapTime(best.ms)}</small>` : "Race against your ghost <small>Finish a lap to set one</small>";
   $("rl-ky").innerHTML = touch
-    ? "Stick steers, pull it back to brake · Hold the pedal for gas, tap it twice to boost"
+    ? "Stick steers, pull it back to brake · Hold the pedal for gas · The middle button boosts"
     : "<kbd>↑</kbd> gas · <kbd>↓</kbd> brake · <kbd>←</kbd><kbd>→</kbd> steer · <kbd>Space</kbd> boost · <kbd>R</kbd> restart · <kbd>Esc</kbd> pause";
 }
 
