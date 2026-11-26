@@ -58,18 +58,22 @@ const short = (a) => `${a.slice(0, 4)}…${a.slice(-4)}`;
  *   back: () => void,
  *   close: () => void,
  *   sent?: () => void,
- * }} p
+ *   inDollars?: boolean,
+ * }} p `inDollars`: say what is sent, and the fee, in dollars alone, never the token's quantity
  */
 export function confirmSend(body, p) {
   injectFormStyles();
   injectStyles("pay-css", PAY_CSS);
   p.setTitle("Confirm send");
 
-  const sum = `${p.amount.text} ${p.token.symbol}`;
+  const qty = `${p.amount.text} ${p.token.symbol}`;
+  /** What the buttons and the receipt call the sum: the quantity, or its dollars when asked for and priced. */
+  let sum = qty;
   const who = p.to.name ? `@${p.to.name}` : short(p.to.address);
   const head = el("div", { class: "swx-recv" });
   const sub = el("div", { class: "swx-sub" });
   const go = el("button", { class: "swx-go", type: "button", text: `Send ${sum}`, onclick: () => attempt(go, send) });
+  const fee = el("span", { class: "swx-v", text: p.token.mint === SOL_MINT ? FEE_SOL : FEE_TOKEN });
   const back = el("button", { class: "swx-2nd", type: "button", text: "Back", onclick: () => !busy && p.back() });
   /** Where the password goes while the account has no passkey to confirm with. */
   const setup = el("div");
@@ -84,8 +88,12 @@ export function confirmSend(body, p) {
     const priced = Number.isFinite(price) && price > 0;
     head.className = `swx-recv${priced ? "" : " qty"}`;
     head.textContent = priced ? usd((Number(p.amount.units) / 10 ** p.token.decimals) * price) : p.amount.text;
-    sub.textContent = priced ? sum : "";
-    sub.hidden = !priced;
+    sub.textContent = priced ? qty : "";
+    sub.hidden = !priced || !!p.inDollars;
+    if (p.inDollars && priced) {
+      sum = head.textContent;
+      if (!busy && !go.hidden) go.textContent = `Send ${sum}`;
+    }
   }
 
   body.replaceChildren(
@@ -106,7 +114,7 @@ export function confirmSend(body, p) {
     el(
       "div",
       { class: "swx-sum" },
-      detail("Network fee", p.token.mint === SOL_MINT ? FEE_SOL : FEE_TOKEN),
+      el("div", { class: "swx-row" }, el("span", { class: "swx-k", text: "Network fee" }), fee),
       detail("From", short(p.me.address)),
     ),
     el("p", {
@@ -121,6 +129,13 @@ export function confirmSend(body, p) {
   void livePrice(p.token.mint).then((price) => {
     if (price != null && head.isConnected) state(price);
   });
+  // The fee in dollars too: 0.000005 SOL, or a new token account's rent at most.
+  if (p.inDollars) {
+    void (p.token.mint === SOL_MINT && p.token.price ? Promise.resolve(p.token.price) : livePrice(SOL_MINT)).then((sol) => {
+      if (!sol || !fee.isConnected) return;
+      fee.textContent = p.token.mint === SOL_MINT ? usd(0.000005 * sol) : `Up to ${usd(0.0021 * sol)}`;
+    });
+  }
   if (p.me.passkey) go.focus();
   else needPasskey();
 

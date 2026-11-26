@@ -3,11 +3,13 @@
  * we do not list says about itself. One lazy bundle, fetched the first time
  * any of them is opened.
  */
+import { busy } from "../js/busy.js";
 import { el } from "../js/dom.js";
 import { dismissible } from "../js/sheet.js";
 import { load } from "../js/lazy.js";
-import { amount } from "../js/num.js";
+import { amount, dollars } from "../js/num.js";
 import { assertion, why } from "../js/passkey.js";
+import { livePrice } from "../js/price.js";
 import { confirmSend } from "../js/sendconfirm.js";
 import { dialog, injectStyles } from "../js/ui.js";
 import CSS from "./keys.css";
@@ -44,15 +46,6 @@ function modal(title, ...kids) {
   return dialog;
 }
 
-/** Decimal text to base units, without a float in between. Null when it isn't a number. */
-function toUnits(text, decimals) {
-  const t = String(text).trim();
-  if (!/^\d*\.?\d*$/.test(t) || t === "" || t === ".") return null;
-  const [whole = "0", frac = ""] = t.split(".");
-  if (frac.length > decimals) return null;
-  return BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt((frac + "0".repeat(decimals)).slice(0, decimals) || "0");
-}
-
 function toDecimal(units, decimals) {
   const s = units.toString().padStart(decimals + 1, "0");
   const whole = s.slice(0, s.length - decimals);
@@ -81,17 +74,12 @@ function phrase(me) {
     setTimeout(() => out.replaceChildren(), 120_000);
   }
 
-  async function viaPasskey() {
+  function viaPasskey() {
     err.textContent = "";
-    key.disabled = true;
-    try {
+    busy(key, async () => {
       const proof = await assertion(await send("/api/social/phrase/passkey/options"));
       show((await send("/api/social/phrase/passkey", proof)).phrase);
-    } catch (cause) {
-      err.textContent = why(cause);
-    } finally {
-      key.disabled = false;
-    }
+    }).catch((cause) => (err.textContent = why(cause)));
   }
 
   modal(
@@ -134,35 +122,187 @@ function receive(me) {
   );
 }
 
+const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const HANDLE = /^@?([a-z0-9_]{3,16})$/i;
+/** What the dropdown searches on: a name being typed, one letter in. */
+const TYPING = /^@?([a-z0-9_]{1,16})$/i;
+
+/** A @name or an address, as {name, address}. A bare address has no name. */
+async function recipient(text) {
+  if (ADDRESS.test(text)) return { name: "", address: text };
+  const handle = text.match(HANDLE);
+  if (!handle) throw new Error("Enter a @name or a Solana address.");
+  const res = await fetch(`/api/social/u/${handle[1].toLowerCase()}`, { headers: { Accept: "application/json" } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.user?.address) throw new Error(res.status === 404 ? `No one is called @${handle[1].toLowerCase()}.` : data.error || "Could not look that name up.");
+  return { name: data.user.name, address: data.user.address };
+}
+
+/** The picture, or initials on a grey disc, as the account switcher draws them. */
+function face(user) {
+  if (user.avatarRev) {
+    return el("img", { class: "ks-av", src: `/social/t/${user.name}?v=${user.avatarRev}`, alt: "", width: "32", height: "32", decoding: "async" });
+  }
+  return el("span", { class: "ks-av", "aria-hidden": "true", text: user.name.replace(/_/g, "").slice(0, 2).toUpperCase() });
+}
+
 /**
- * The wallet's Send: which token, to whom, how much, then the confirmation
- * every send goes through (js/sendconfirm.js), in the trade dialog's shell.
+ * The wallet's Send: how many dollars, of which token, to whom, then the
+ * confirmation every send goes through (js/sendconfirm.js), in the trade
+ * dialog's shell.
+ *
+ * Everything is in dollars: the amount is typed in them and turned into the
+ * token's base units at today's price, and no quantity of a token is shown.
+ * A token with no price cannot be priced in dollars, so it is not offered.
+ *
+ * To takes a @name or an address. A name is looked up as it is typed, people
+ * already added as friends first, and turned into its address on Review: the
+ * confirmation shows both, the address in full.
  *
  * @param {{name: string, address: string, passkey: false | {id: string}}} me
- * @param {import('../../src/types').Holding[]} holdings
+ * @param {import('../../src/types').Holding[]} all
  * @param {() => void} onSent
  */
-function transfer(me, holdings, onSent) {
+function transfer(me, all, onSent) {
+  const holdings = all.filter((h) => Number.isFinite(h.price) && h.price > 0 && BigInt(h.amount) > 0n);
   const err = el("p", { class: "ks-err", role: "alert" });
-  const pick = el(
-    "select",
-    { id: "ks-t" },
-    ...holdings.map((h, i) => el("option", { value: String(i), text: `${h.symbol} — ${toDecimal(BigInt(h.amount), h.decimals)}` })),
-  );
+  /** Today's price per mint: the holding's, then the last minute's once that is in. */
+  const prices = new Map(holdings.map((h) => [h.mint, h.price]));
+  const worth = (h, units) => (Number(units) / 10 ** h.decimals) * prices.get(h.mint);
+  /** What can go: all of it, but SOL keeps the account's rent and the fee. */
+  const sendable = (h) => {
+    const units = BigInt(h.amount);
+    if (h.mint !== SOL_MINT) return units;
+    return units > SOL_KEEP ? units - SOL_KEEP : 0n;
+  };
+  const optionText = (h) => `${h.symbol} — ${dollars(worth(h, BigInt(h.amount)))}`;
+  const options = holdings.map((h, i) => el("option", { value: String(i), text: optionText(h) }));
+  const pick = el("select", { id: "ks-t" }, ...options);
+  const held = () => holdings[Number(pick.value)];
+
   const to = el("input", {
     id: "ks-to",
-    class: "ks-mono",
     required: true,
     autocomplete: "off",
     spellcheck: "false",
-    placeholder: "Solana address",
+    placeholder: "@name or address",
     autocapitalize: "off",
     autocorrect: "off",
     maxlength: "44",
+    role: "combobox",
+    "aria-autocomplete": "list",
+    "aria-expanded": "false",
+    "aria-controls": "ks-people",
   });
-  const amount = el("input", { id: "ks-am", inputmode: "decimal", enterkeyhint: "done", required: true, autocomplete: "off", placeholder: "0.0" });
+  const people = el("ul", { id: "ks-people", class: "ks-pp", role: "listbox", "aria-label": "People", hidden: true });
+
+  // —— the amount, in dollars, as big as it fits ——
+
+  const amount = el("input", {
+    id: "ks-am",
+    class: "ks-big",
+    inputmode: "decimal",
+    enterkeyhint: "done",
+    autocomplete: "off",
+    spellcheck: "false",
+    placeholder: "0",
+    "aria-label": "Amount in dollars",
+  });
+  const figure = el("div", { class: "ks-amt" }, el("span", { class: "ks-cur", "aria-hidden": "true", text: "$" }), amount);
+  /** A share of what can go, in percent; 100 is Max. */
+  const SHARES = [10, 25, 50, 100];
+  const pills = SHARES.map((pct) =>
+    el("button", {
+      type: "button",
+      class: "ks-pill",
+      text: pct === 100 ? "Max" : `${pct}%`,
+      "aria-pressed": "false",
+      onclick: () => share(pct),
+    }),
+  );
   const go = el("button", { type: "submit", class: "ios-btn", text: "Send" });
-  const held = () => holdings[Number(pick.value)];
+  /** Base units Max chose, kept exact until the amount is typed over: dollars back to units would round. */
+  let exact = null;
+
+  /** Dollars as typed, cleaned to a number with at most two places. */
+  function tidy() {
+    let t = amount.value.replace(/[^\d.]/g, "");
+    const dot = t.indexOf(".");
+    if (dot >= 0) t = `${t.slice(0, dot + 1)}${t.slice(dot + 1).replace(/\./g, "").slice(0, 2)}`;
+    t = t.replace(/^0+(?=\d)/, "");
+    if (t.startsWith(".")) t = `0${t}`;
+    if (t.length > 12) t = t.slice(0, 12);
+    if (t !== amount.value) amount.value = t;
+  }
+
+  /** Big while it is short, smaller as it grows, so it always fits the row. */
+  function size() {
+    const text = amount.value || amount.placeholder;
+    const n = text.length;
+    const px = n <= 4 ? 72 : n <= 6 ? 60 : n <= 8 ? 48 : n <= 10 ? 40 : 34;
+    figure.style.fontSize = `${px}px`;
+    // As wide as what it holds: the $ sits right against the number, both centred.
+    amount.style.width = `${Math.max(1, n) * 0.62 + 0.1}em`;
+  }
+
+  /** The dollars typed, or null. */
+  const typedDollars = () => {
+    const v = Number(amount.value);
+    return amount.value && Number.isFinite(v) && v > 0 ? v : null;
+  };
+
+  /** The base units the dollars come to, or null. Typing the whole balance, to the cent, is all of it. */
+  function units() {
+    const h = held();
+    if (exact != null) return exact;
+    const usd = typedDollars();
+    if (usd == null) return null;
+    const price = prices.get(h.mint);
+    let u = BigInt(Math.round((usd / price) * 10 ** h.decimals));
+    const top = sendable(h);
+    if (u > top && Math.round(usd * 100) <= Math.round(worth(h, top) * 100)) u = top;
+    return u;
+  }
+
+  /** That share of what can go, in exact base units; the figure shows it cut to the cent. */
+  function share(pct) {
+    const h = held();
+    exact = (sendable(h) * BigInt(pct)) / 100n;
+    amount.value = (Math.floor(worth(h, exact) * 100) / 100).toFixed(2);
+    label();
+    pills.forEach((pill, i) => pill.setAttribute("aria-pressed", String(SHARES[i] === pct)));
+  }
+
+  function label() {
+    size();
+    const addr = to.value.trim();
+    const h = held();
+    const u = units();
+    go.textContent = u && (ADDRESS.test(addr) || HANDLE.test(addr)) ? "Review" : "Send";
+    // An address reads in the address face; a name in the text's own.
+    to.classList.toggle("ks-mono", !TYPING.test(addr) && addr.length > 16);
+    if (!h) return;
+    // More than there is: the figure goes red, and Review says by how much.
+    figure.classList.toggle("over", u != null && u > sendable(h));
+    if (exact == null) for (const pill of pills) pill.setAttribute("aria-pressed", "false");
+  }
+
+  amount.addEventListener("input", () => {
+    exact = null;
+    tidy();
+    label();
+  });
+  amount.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      to.value.trim() ? form.requestSubmit() : to.focus();
+    }
+  });
+  pick.addEventListener("change", () => {
+    exact = null;
+    freshen();
+    label();
+  });
 
   const paste = navigator.clipboard?.readText
     ? el("button", {
@@ -172,6 +312,7 @@ function transfer(me, holdings, onSent) {
         onclick: async () => {
           try {
             to.value = (await navigator.clipboard.readText()).trim();
+            shut();
             label();
           } catch {
             err.textContent = "The browser did not allow pasting. Paste into the field instead.";
@@ -179,37 +320,153 @@ function transfer(me, holdings, onSent) {
         },
       })
     : null;
-  const max = el("button", {
-    type: "button",
-    class: "ios-mini",
-    text: "Max",
-    onclick: () => {
-      const h = held();
-      let units = BigInt(h.amount);
-      if (h.mint === SOL_MINT) units = units > SOL_KEEP ? units - SOL_KEEP : 0n;
-      amount.value = toDecimal(units, h.decimals);
-      label();
-    },
-  });
 
-  function label() {
-    const addr = to.value.trim();
-    go.textContent = amount.value && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) ? "Review" : "Send";
+  // —— To: the people dropdown ——
+
+  let wait = 0;
+  let gen = 0;
+  /** The text the dropdown's rows were found for. */
+  let shown = "";
+  let active = -1;
+
+  function rows() {
+    return /** @type {HTMLElement[]} */ ([...people.querySelectorAll("[role=option]")]);
   }
+
+  function shut() {
+    gen += 1;
+    clearTimeout(wait);
+    shown = "";
+    active = -1;
+    people.hidden = true;
+    people.replaceChildren();
+    to.setAttribute("aria-expanded", "false");
+    to.removeAttribute("aria-activedescendant");
+  }
+
+  function highlight(i) {
+    const list = rows();
+    active = i;
+    list.forEach((row, n) => row.setAttribute("aria-selected", String(n === i)));
+    if (list[i]) {
+      to.setAttribute("aria-activedescendant", list[i].id);
+      list[i].scrollIntoView({ block: "nearest" });
+    } else to.removeAttribute("aria-activedescendant");
+  }
+
+  function choose(name) {
+    to.value = `@${name}`;
+    shut();
+    label();
+    to.blur();
+  }
+
+  function fill(users, q) {
+    shown = q;
+    active = -1;
+    // Under the To row, wherever the form has put it.
+    const row = /** @type {HTMLElement} */ (to.parentElement);
+    people.style.top = `${row.offsetTop + row.offsetHeight + 4}px`;
+    people.replaceChildren(
+      ...(users.length
+        ? users.map((user, i) => {
+            const li = el(
+              "li",
+              { id: `ks-p${i}`, class: "ks-p", role: "option", "aria-selected": "false" },
+              face(user),
+              el("span", { class: "ks-pn", text: `@${user.name}` }),
+              user.friend ? el("span", { class: "ks-pf", text: "Friend" }) : null,
+            );
+            // Pressed, not clicked: a click lands after the field's blur has shut the list.
+            li.addEventListener("pointerdown", (e) => {
+              e.preventDefault();
+              choose(user.name);
+            });
+            return li;
+          })
+        : [el("li", { class: "ks-p0", text: "No one by that name." })]),
+    );
+    people.hidden = false;
+    to.setAttribute("aria-expanded", "true");
+  }
+
+  function look() {
+    const typed = to.value.trim();
+    const m = typed.match(TYPING);
+    if (!m) return shut();
+    const q = m[1].toLowerCase();
+    if (q === shown) return;
+    const mine = ++gen;
+    fetch(`/api/social/users?q=${q}`, { headers: { Accept: "application/json" } })
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => {
+        if (mine !== gen || document.activeElement !== to) return;
+        const users = [...(data.users ?? [])].sort((a, b) => Number(b.friend) - Number(a.friend));
+        // Typed out in full already: nothing left to pick.
+        if (users.length === 1 && users[0].name === q && typed.startsWith("@")) return shut();
+        fill(users, q);
+      })
+      .catch(() => {
+        if (mine === gen) shut();
+      });
+  }
+
+  to.addEventListener("input", () => {
+    clearTimeout(wait);
+    label();
+    if (!TYPING.test(to.value.trim())) return shut();
+    wait = setTimeout(look, 150);
+  });
+  to.addEventListener("focus", () => {
+    if (TYPING.test(to.value.trim())) look();
+  });
+  to.addEventListener("blur", shut);
+  to.addEventListener("keydown", (e) => {
+    const list = rows();
+    if (people.hidden || !list.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      highlight((active + step + list.length + (active < 0 && step < 0 ? 1 : 0)) % list.length);
+    } else if (e.key === "Enter" && active >= 0) {
+      e.preventDefault();
+      choose(list[active].querySelector(".ks-pn").textContent.slice(1));
+    } else if (e.key === "Escape") {
+      // The list, not the whole dialog.
+      e.stopPropagation();
+      shut();
+    }
+  });
 
   const form = el(
     "form",
     { class: "ks-f" },
+    figure,
+    el("div", { class: "ks-avl", role: "group", "aria-label": "Share of the balance" }, ...pills),
     el(
       "div",
       { class: "ios-gp" },
       el("div", { class: "ios-fr" }, el("label", { for: "ks-t", text: "Token" }), pick),
       el("div", { class: "ios-fr" }, el("label", { for: "ks-to", text: "To" }), to, paste),
-      el("div", { class: "ios-fr" }, el("label", { for: "ks-am", text: "Amount" }), amount, max),
     ),
+    people,
     go,
   );
-  for (const input of [pick, to, amount]) input.addEventListener("input", label);
+
+  /** The last minute's price for a token, once asked: an index price can be an hour old. */
+  const asked = new Set();
+  function freshen() {
+    const h = held();
+    if (!h || asked.has(h.mint)) return;
+    asked.add(h.mint);
+    void livePrice(h.mint).then((price) => {
+      if (price == null) return;
+      prices.set(h.mint, price);
+      const i = holdings.indexOf(h);
+      if (options[i]) options[i].textContent = optionText(h);
+      label();
+    });
+  }
 
   injectStyles("ks-css", CSS);
   const { body, close, setTitle } = dialog("Send");
@@ -218,34 +475,60 @@ function transfer(me, holdings, onSent) {
   function back() {
     setTitle("Send");
     body.replaceChildren(form, err);
-    to.focus();
+    amount.focus();
   }
 
-  form.addEventListener("submit", (e) => {
+  let looking = false;
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (looking) return;
     err.textContent = "";
+    shut();
     const h = held();
-    const addr = to.value.trim();
-    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return void (err.textContent = "That isn't a Solana address.");
-    const units = toUnits(amount.value, h.decimals);
-    if (units == null || units <= 0n) return void (err.textContent = "Enter an amount.");
-    if (units > BigInt(h.amount)) return void (err.textContent = `You hold ${toDecimal(BigInt(h.amount), h.decimals)} ${h.symbol}.`);
+    const typed = to.value.trim();
+    const u = units();
+    if (u == null || u <= 0n) return void (err.textContent = "Enter an amount in dollars.");
+    if (u > sendable(h)) return void (err.textContent = `You have ${dollars(Math.floor(worth(h, sendable(h)) * 100) / 100)} of ${h.symbol} to send.`);
+    if (!ADDRESS.test(typed) && !HANDLE.test(typed)) return void (err.textContent = "Enter a @name or a Solana address.");
+    looking = true;
+    go.disabled = true;
+    let who;
+    try {
+      who = await recipient(typed);
+    } catch (cause) {
+      err.textContent = cause instanceof Error ? cause.message : "Could not look that name up.";
+      return;
+    } finally {
+      looking = false;
+      go.disabled = false;
+    }
+    if (who.address === me.address) return void (err.textContent = "That is this wallet's own address.");
+    if (!form.isConnected) return;
     // The whole address is spelled out on the next screen, never shortened: a
     // lookalike that matches only its first and last few characters is
     // exactly how a poisoned address works.
     confirmSend(body, {
       me,
-      token: { mint: h.mint, symbol: h.symbol, decimals: h.decimals, price: h.price },
-      amount: { units, text: toDecimal(units, h.decimals) },
-      to: { address: addr },
+      token: { mint: h.mint, symbol: h.symbol, decimals: h.decimals, price: prices.get(h.mint) },
+      amount: { units: u, text: toDecimal(u, h.decimals) },
+      to: who.name ? who : { address: who.address },
       setTitle,
       back,
       close,
       sent: onSent,
+      inDollars: true,
     });
   });
 
-  body.append(holdings.length ? form : el("p", { class: "ks-n", text: "This wallet holds nothing to send yet." }), err);
+  body.append(
+    holdings.length ? form : el("p", { class: "ks-n", text: "This wallet holds nothing with a price to send yet." }),
+    err,
+  );
+  if (!holdings.length) return;
+  label();
+  freshen();
+  // No keyboard thrown up over a phone's sheet, as in the trade dialog.
+  if (window.matchMedia("(min-width: 521px)").matches) amount.focus();
 }
 
 /** The mint's two ends, enough to tell a row of them apart, as History shows them. */

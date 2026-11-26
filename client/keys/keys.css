@@ -105,6 +105,167 @@
   text-align: left;
 }
 
+/* Send's amount, in dollars: one big centred figure that shrinks as it grows
+   (keys/main.js size), the $ set against it a step lighter. */
+.ks-amt {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  max-width: 100%;
+  height: 96px;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--t);
+  font: 700 72px/96px var(--ff);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  transition: font-size 0.12s ease;
+}
+
+.ks-cur {
+  flex: none;
+  margin-right: 0.04em;
+  font-size: 0.62em;
+  font-weight: 600;
+  color: var(--m);
+  transform: translateY(-0.42em);
+}
+
+.ks-big {
+  min-width: 0.7em;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  outline: 0;
+  caret-color: var(--a);
+}
+
+.ks-big::placeholder {
+  color: var(--f);
+}
+
+/* 10%, 25%, 50% and Max of what can go, under the figure. */
+.ks-avl {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 2px 0 18px;
+}
+
+.ks-pill {
+  flex: 0 1 72px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--wash);
+  color: var(--t);
+  font: 600 15px/1 var(--ff);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.ks-pill[aria-pressed="true"] {
+  background: var(--a);
+  color: var(--a-ink, #fff);
+}
+
+/* More than the token held. */
+.ks-amt.over,
+.ks-amt.over .ks-cur {
+  color: var(--dn);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ks-amt {
+    transition: none;
+  }
+}
+
+/* To's people: a card over the fields under it, from the To row down. */
+.ks-f {
+  position: relative;
+}
+
+.ks-pp {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  max-height: 232px;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  border-radius: 16px;
+  background: var(--pn);
+  box-shadow: 0 0 0 0.5px var(--sep), 0 10px 30px rgb(0 0 0 / 0.16);
+}
+
+.ks-p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.ks-p[aria-selected="true"] {
+  background: var(--wash);
+}
+
+@media (hover: hover) {
+  .ks-p:hover {
+    background: var(--wash);
+  }
+}
+
+.ks-av {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: linear-gradient(#a5abb9, #858a98);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ks-pn {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ks-pf {
+  flex: none;
+  color: var(--f);
+  font-size: 13px;
+}
+
+.ks-p0 {
+  padding: 10px;
+  color: var(--m);
+  font-size: 15px;
+}
+
 .ks-f .ios-fr select {
   max-width: 70%;
   margin-left: auto;

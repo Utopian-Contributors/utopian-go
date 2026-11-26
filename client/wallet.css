@@ -33,6 +33,9 @@
   --buy-ink: #ffffff;
   --buy-text: #007aff;
   --dn: #ff3b30;
+  /* A red to press: --dn under white type is 3.5:1; this one is 5.4:1, in either theme. */
+  --sell: #d70015;
+  --sell-ink: #ffffff;
   --pn: #ffffff;
   --hover: #f2f2f7;
   /* Fields: white by day, #202124 after dark; see the note in app.css. */
@@ -1352,14 +1355,14 @@ body.hist .wl-ft {
 }
 
 .wl-cta.tp-sell {
-  background: var(--dn);
-  color: #fff;
+  background: var(--sell);
+  color: var(--sell-ink);
 }
 
 /* Nothing held to sell. */
 .wl-cta.tp-sell:disabled {
   background: var(--wash);
-  color: var(--f);
+  color: var(--m);
   filter: none;
   cursor: not-allowed;
 }

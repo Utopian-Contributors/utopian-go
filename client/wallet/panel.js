@@ -139,6 +139,17 @@ export function mountPanel(box, buy, close) {
   /** The answer for `current`, in flight or painted, so asking again for it resolves the same. */
   let pending = Promise.resolve(undefined);
 
+  /** The token's mark and names, and the × that puts the card away. */
+  function head(t) {
+    return el(
+      "div",
+      { class: "tp-h" },
+      icon(t, 32),
+      el("div", { class: "tp-t" }, el("strong", { text: t.symbol }), el("span", { class: "wl-nm", text: t.name })),
+      el("button", { class: "tp-x", type: "button", title: "Close", "aria-label": "Close", onclick: close }),
+    );
+  }
+
   function render(d) {
     const price = el("strong", { class: "wl-v" });
     const move = el("span", { class: "pc-m", hidden: true });
@@ -177,13 +188,7 @@ export function mountPanel(box, buy, close) {
     box.replaceChildren(card);
     card.replaceChildren(
       ...[
-        el(
-          "div",
-          { class: "tp-h" },
-          icon(d, 32),
-          el("div", { class: "tp-t" }, el("strong", { text: d.symbol }), el("span", { class: "wl-nm", text: d.name })),
-          el("button", { class: "tp-x", type: "button", title: "Close", "aria-label": "Close", onclick: close }),
-        ),
+        head(d),
         price,
         move,
         ranges && chartBox,
@@ -208,14 +213,35 @@ export function mountPanel(box, buy, close) {
   }
 
   /**
+   * What the row that was picked knows, drawn at the press while the rest is
+   * read: the token's name, price and Buy, and the line's room, empty. On a
+   * phone the panel takes the lists' place, so without it a slow answer left
+   * the screen blank, or showing the last token, until it came.
+   */
+  function sketch(t) {
+    box.replaceChildren(
+      el(
+        "div",
+        { class: "tp-card" },
+        head(t),
+        el("strong", { class: "wl-v", text: tokenPrice(t.price).text }),
+        el("div", { class: "pc tp-c" }),
+        el("div", { class: "tp-bm" }, buy(t)),
+      ),
+    );
+  }
+
+  /**
    * Show one token. A newer choice wins over a slower answer. Resolves to
    * what it painted (its `path` and `title` are the token's wallet address
    * and that page's title, src/routes/api.ts); `quiet` leaves the panel as it
-   * was when it cannot.
+   * was when it cannot. `seed`, the token as a list showed it, is drawn
+   * straight away.
    */
-  return function select(mint, quiet = false) {
+  return function select(mint, quiet = false, seed = null) {
     if (mint === current) return pending;
     current = mint;
+    if (seed && !quiet) sketch(seed);
     pending = load(mint, quiet);
     return pending;
   };

@@ -27,8 +27,11 @@ import { dirOf, figure, lineChart, paintMove, rangeTabs, since, when } from "../
 import { mountBreakdown } from "./breakdown.js";
 import { icon, mountPanel } from "./panel.js";
 import { plainSwap } from "../js/plainswap.js";
+import { noStickyHover } from "../js/hover.js";
+import { busy } from "../js/busy.js";
 
 plainSwap();
+noStickyHover();
 
 const total = $("wl-v");
 const delta = $("wl-d");
@@ -210,10 +213,7 @@ function trade(h, mode, label) {
     "data-mint": h.mint,
     "data-sym": h.symbol,
     onclick: async (e) => {
-      const button = e.currentTarget;
-      button.disabled = true;
-      await openTrade(h, mode);
-      button.disabled = false;
+      await busy(e.currentTarget, () => openTrade(h, mode));
       if (selling) paintSells();
     },
   });
@@ -276,7 +276,7 @@ function choose(mint) {
     r.classList.toggle("on", /** @type {HTMLElement} */ (r).dataset.mint === mint);
   }
   document.body.classList.add("wl-open");
-  void select(mint).then((data) => {
+  void select(mint, false, known.get(mint)).then((data) => {
     if (!data || chosen !== mint) return;
     if (data.path) setAddress(data.path, data.title);
     remember(data);
@@ -672,7 +672,7 @@ function closeHistory() {
   historyButton.focus({ preventScroll: true });
 }
 
-historyButton.addEventListener("click", () => void openHistory());
+historyButton.addEventListener("click", () => void busy(historyButton, openHistory));
 $("wl-hx").addEventListener("click", () => {
   if (history.state?.wlHist) history.back();
   else closeHistory();
@@ -743,22 +743,17 @@ async function paintActions() {
   wired = true;
   const dialogs = () => load("ks", "__keys");
   for (const button of actions.querySelectorAll("button")) {
-    button.addEventListener("click", async () => {
-      const me = await account;
-      if (!me) return;
-      button.disabled = true;
-      try {
+    button.addEventListener("click", () =>
+      busy(button, async () => {
+        const me = await account;
+        if (!me) return;
         const act = button.dataset.act;
         // Swap is UTCC's, from SOL: "Trade UTCC". Any other token trades from its own row.
         if (act === "swap") await openTrade(UTCC, "buy");
         else if (act === "receive") (await dialogs()).receive(me);
         else (await dialogs()).send(me, shown?.items ?? [], () => void settle());
-      } catch {
-        setNote("Could not open that. Try again.", "err");
-      } finally {
-        button.disabled = false;
-      }
-    });
+      }).catch(() => setNote("Could not open that. Try again.", "err")),
+    );
   }
 }
 
@@ -774,16 +769,10 @@ async function paintKeys() {
     class: "wl-b",
     type: "button",
     text: "Show recovery phrase",
-    onclick: async () => {
-      button.disabled = true;
-      try {
-        (await load("ks", "__keys")).open(me);
-      } catch {
-        setNote("Could not open the recovery phrase.", "err");
-      } finally {
-        button.disabled = false;
-      }
-    },
+    onclick: () =>
+      busy(button, async () => (await load("ks", "__keys")).open(me)).catch(() =>
+        setNote("Could not open the recovery phrase.", "err"),
+      ),
   });
   // The placeholder's marks off, now that it holds the account.
   keys.classList.remove("wl-sk");
@@ -812,7 +801,7 @@ function omitted(data) {
             class: "wl-unk",
             type: "button",
             text: what,
-            onclick: () => openTokens(list, { total: data.unpriced }),
+            onclick: (e) => busy(e.currentTarget, () => openTokens(list, { total: data.unpriced })),
           })
         : what,
     );
