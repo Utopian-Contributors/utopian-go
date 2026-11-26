@@ -4,8 +4,7 @@
  * The server renders the three chosen tiles, priced (src/lib/tokens/ticker.ts),
  * from the "wl" cookie this writes: their mints, joined by dots.
  *
- * The menu is an iOS pull-down menu: frosted, rounded, rows with a leading
- * checkmark, opening out of the button's corner. Each row carries its token's
+ * The menu is an iOS pull-down menu (watch/menu.js). Each row carries its token's
  * logo off its right edge, fading into the menu, as the tiles carry theirs.
  * At its top, the three on the watchlist now, so one can be let go without
  * hunting for it; under them every token the index ranks, busiest on Jupiter
@@ -15,52 +14,18 @@
  * the rest wait until one is unticked.
  *
  * Its own bundle, fetched on the first tap of Edit or of an empty slot
- * (js/watch.js), and published as a global as js/lazy.js expects.
+ * (js/watch.js), and published as a global as js/lazy.js expects. The news
+ * section's menu (watch/news.js) rides in it: the same menu, choosing topics.
  */
 import { $, el } from "../js/dom.js";
 import { readName } from "../js/me.js";
 import { percent, tokenPrice } from "../js/num.js";
+import { CHECK, place as placeAt, style, walk } from "./menu.js";
+import { mountNews } from "./news.js";
 
 /** @typedef {import('../../src/types').TopToken} TopToken */
 
 const SLOTS = 3;
-
-const CHECK =
-  '<svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M2 7.5 5.5 11 12 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
-const CSS = `
-.wl-m{position:absolute;z-index:50;right:0;width:260px;overflow:auto;
- overscroll-behavior:contain;border-radius:14px;background:rgba(246,246,248,.8);
- -webkit-backdrop-filter:blur(40px) saturate(1.8);backdrop-filter:blur(40px) saturate(1.8);
- box-shadow:0 0 0 .5px rgba(0,0,0,.1),0 14px 44px rgba(0,0,0,.22);transform-origin:top right;
- scrollbar-width:thin;scrollbar-color:var(--sep) transparent;animation:wl-in .36s var(--out)}
-.wl-m.up{transform-origin:bottom right}
-@keyframes wl-in{from{opacity:0;scale:.5}}
-.wl-m p{margin:0;padding:11px 16px 9px;font-size:13px;line-height:1.2;color:var(--f)}
-.wl-m .wl-h{padding:10px 16px 6px;border-top:8px solid rgba(var(--rgb),.06);font-weight:600}
-.wl-o{position:relative;isolation:isolate;overflow:hidden;display:grid;grid-template-columns:22px 1fr;
- align-items:center;gap:4px;width:100%;min-height:52px;padding:0 64px 0 12px;border:0;
- border-top:.5px solid var(--sep);border-radius:0;background:none;color:var(--t);text-align:left;
- font:17px/1.15 var(--ff);letter-spacing:-.01em;cursor:pointer;--press:1}
-.wl-h+div>.wl-o:first-child{border-top:0}
-.wl-o:hover,.wl-o:focus-visible{background:var(--wash);outline:0}
-.wl-o:active:not(:disabled){background:var(--wash2)}
-.wl-o:disabled{cursor:default}
-.wl-o:disabled>:not(img){opacity:.35}
-.wl-o svg{visibility:hidden}
-.wl-o[aria-checked=true] svg{visibility:visible}
-.wl-o span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.wl-o small{display:block;margin-top:2px;overflow:hidden;font-size:13px;color:var(--f);letter-spacing:0;
- white-space:nowrap;text-overflow:ellipsis}
-.wl-o img{position:absolute;z-index:-1;top:50%;right:-14px;width:72px;height:72px;margin-top:-36px;
- border-radius:50%;opacity:.85;pointer-events:none;
- -webkit-mask-image:linear-gradient(to left,#000 25%,transparent 90%);mask-image:linear-gradient(to left,#000 25%,transparent 90%)}
-.wl-o:disabled img{opacity:.3}
-.wl-m .wl-end{min-height:52px;padding:0 16px;display:flex;align-items:center;justify-content:center;
- border:0;border-top:.5px solid var(--sep);background:none;color:var(--f);font:15px var(--ff);width:100%}
-@media (prefers-color-scheme:dark){.wl-m{background:rgba(38,38,40,.78);box-shadow:0 0 0 .5px rgba(255,255,255,.1),0 14px 44px rgba(0,0,0,.5)}}
-@media (prefers-reduced-motion:reduce){.wl-m{animation:none}}
-`;
 
 /** A symbol as a tile labels it: without the "$" some carry, in its own case, as ticker.ts does. */
 const label = (/** @type {string} */ symbol) => symbol.replace(/^\$/, "");
@@ -190,7 +155,7 @@ function mount(section) {
   }
 
   function build() {
-    document.head.append(el("style", { text: CSS }));
+    style();
     end.addEventListener("click", () => void more());
     const m = el(
       "div",
@@ -228,23 +193,9 @@ function mount(section) {
     void more();
   }
 
-  /**
-   * Out of Edit's corner, downwards, unless there is more room above and too
-   * little below for the whole menu, as an iOS menu flips near the screen's
-   * foot; and no taller than the side it opens to, scrolling inside past that.
-   * @param {HTMLElement} m
-   */
+  /** Out of Edit's corner. The list goes on, so it always wants the full height. @param {HTMLElement} m */
   function place(m) {
-    const at = edit.getBoundingClientRect();
-    const box = section.getBoundingClientRect();
-    const below = innerHeight - at.bottom - 16;
-    const above = at.top - 16;
-    // The list goes on, so it always wants the full height.
-    const up = below < 420 && above > below;
-    m.classList.toggle("up", up);
-    m.style.maxHeight = `${Math.max(160, Math.min(420, up ? above : below))}px`;
-    m.style.top = up ? "" : `${at.bottom - box.top + 6}px`;
-    m.style.bottom = up ? `${box.bottom - at.top + 6}px` : "";
+    placeAt(m, edit, section);
   }
 
   function close(refocus = false) {
@@ -266,11 +217,7 @@ function mount(section) {
   /** Escape closes; the arrows walk the rows that can be chosen. @param {KeyboardEvent} e */
   function keys(e) {
     if (e.key === "Escape") return close(true);
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const live = rows().filter((r) => !r.disabled);
-    const at = live.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
-    live[(at + (e.key === "ArrowDown" ? 1 : -1) + live.length) % live.length]?.focus();
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && menu) walk(e, menu);
   }
 
   return (onlyOpen) => (menu?.isConnected ? !onlyOpen && close() : open());
@@ -278,6 +225,8 @@ function mount(section) {
 
 /** @type {((onlyOpen: boolean) => void) | undefined} */
 let toggle;
+/** @type {(() => void) | undefined} */
+let news;
 
 window.__wl = {
   /**
@@ -286,5 +235,9 @@ window.__wl = {
    */
   toggle(section, onlyOpen) {
     (toggle ??= mount(section))(onlyOpen);
+  },
+  /** @param {HTMLElement} section #hm-ns */
+  news(section) {
+    (news ??= mountNews(section))();
   },
 };

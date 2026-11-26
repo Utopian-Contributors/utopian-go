@@ -118,14 +118,16 @@
           <div id="hm-tk"></div>
         </section>
 
-        <!-- Home only: the four busiest topics on 40 Newsroom as iOS cards
-             in a 2 × 2 grid, each with the headlines that have freshly come
-             up in it, each a link out to its story. The server renders them
-             into #hm-nw, refreshed every four hours (src/lib/news.ts); with
-             none, the section hides itself. -->
+        <!-- Home only: four topics on 40 Newsroom as iOS cards in a 2 × 2
+             grid, each with the headlines that have freshly come up in it,
+             each a link out to its story. The server renders them into
+             #hm-nw (src/lib/news.ts): the topics the "nw" cookie watches,
+             then the busiest for the places left; with none, the section
+             hides itself. Edit opens the menu that chooses them (js/watch.js). -->
         <section id="hm-ns" aria-labelledby="hm-nh">
           <div class="hm-wh">
             <h2 id="hm-nh">News</h2>
+            <button id="hm-ne" type="button" aria-haspopup="menu" aria-expanded="false">Edit</button>
           </div>
           <div id="hm-nw"></div>
         </section>

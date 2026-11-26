@@ -15,7 +15,7 @@ import {
 import { bigIconFile, iconFile } from "./lib/tokens/icons";
 import { CARD_TTL_MS, listCard, tokenCard } from "./lib/og/cards";
 import { isTokenList, startTokenIndex, tokenByMint } from "./lib/tokens/store";
-import { newsLink, newsPhoto, renderHomeNews, startNews } from "./lib/news";
+import { NEWS_COOKIE, newsLink, newsPhoto, newsPicks, newsReady, renderHomeNews, startNews } from "./lib/news";
 import { WATCH_COOKIE, renderFundPrices, renderHomeTickerReady, warmHomeTiles, watchKeys } from "./lib/tokens/ticker";
 import { ACCOUNT_NAV, HOME_NAV, accountNav, authPath, homeNav, nextPath, frameSocial, profileCard, renderAuth, renderPage, socialFrame } from "./pages";
 import { apiRouter } from "./routes/api";
@@ -984,7 +984,14 @@ async function sendIndex(
   // and the home rows by the login page for anyone signed out.
   const signed = !!readSession(req);
   // Waited for, so a tile is in its logo's colour on the first load too.
-  const ticker = await renderHomeTickerReady(watchKeys(readCookie(req.headers.cookie ?? "", WATCH_COOKIE)), signed);
+  const cookies = req.headers.cookie ?? "";
+  // The watched news topics, on the home variant: a first card for one just
+  // chosen is waited for alongside the tiles' colours (src/lib/news.ts).
+  const picks = variant === "home" ? newsPicks(readCookie(cookies, NEWS_COOKIE)) : [];
+  const [ticker] = await Promise.all([
+    renderHomeTickerReady(watchKeys(readCookie(cookies, WATCH_COOKIE)), signed),
+    picks.length ? newsReady(picks) : undefined,
+  ]);
   let html = replaceSlot(
     homeNav((variant === "res" ? resShell : shell).replace(ACCOUNT_NAV, () => accountNav("index", signed)), signed),
     TICKER_SLOT,
@@ -994,7 +1001,7 @@ async function sendIndex(
   // instead, and the build reserves room for one or the other, not both
   // (NEWS_RESERVE in build-client.mjs). A wordmark tap home from results shows
   // no cards until the next load; the section hides itself while empty.
-  if (variant === "home") html = replaceSlot(html, NEWS_SLOT, `<div id="hm-nw">${renderHomeNews()}</div>`);
+  if (variant === "home") html = replaceSlot(html, NEWS_SLOT, `<div id="hm-nw">${renderHomeNews(picks)}</div>`);
   if (variant === "res") {
     html = replaceSlot(html, INPUT_SLOT, `${INPUT_SLOT} value="${attr(q)}"`);
     // Named for its query, as client/js/url.js names it after a search in the page.

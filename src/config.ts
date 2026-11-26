@@ -383,5 +383,20 @@ export const NEWS_PER_TOPIC = 3;
 /** Headlines a card shows: two lines each fit a half-width card twice. */
 export const NEWS_SHOWN = 2;
 
+/**
+ * Topics the home news menu offers to watch: the busiest on 40 Newsroom, as
+ * many as one free /v1/topics call lists.
+ */
+export const NEWS_TOPICS = 100;
+
+/**
+ * Articles a day spent on topics someone chose to watch, over what the four
+ * busiest cost: a watched card is brought up to date when a page shows it,
+ * at most every NEWS_REFRESH_MS and only when its topic has news, until this
+ * runs out for the day, and is then shown as it last stood. ~3,600 a month at
+ * most, which with the busiest topics' ~2,200 stays well inside the quota.
+ */
+export const NEWS_PICK_DAILY = 120;
+
 /** Photos are drawn at about half the 584px column, so 640 wide covers a 2x screen. */
 export const NEWS_IMG_WIDTH = 640;

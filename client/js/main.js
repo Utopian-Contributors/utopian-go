@@ -8,12 +8,13 @@ import { mountTileZoom } from "./tilezoom.js";
 import { $, clearResults, hideSkeleton, setLoading, setStatus, showSkeleton } from "./dom.js";
 import { mountAccount, mountHomeNav } from "./acct.js";
 import { noZoom } from "./device.js";
+import { noStickyHover } from "./hover.js";
 import { mountPwa } from "./pwa.js";
 import { readUrlState, writeUrl } from "./url.js";
 import { langParam, mountLang, setLang } from "./lang.js";
 import { createRenderer } from "./render.js";
 import { paintSaved } from "./saved.js";
-import { mountWatch } from "./watch.js";
+import { mountNewsEdit, mountWatch } from "./watch.js";
 
 /** @typedef {import('../../src/types').SearchApiResponse} SearchApiResponse */
 
@@ -71,8 +72,10 @@ mountTileZoom($("hm-nv"));
 mountHomeNav($("hm-tk"));
 mountTileZoom($("hm-tk"));
 mountWatch($("hm-wl"));
+mountNewsEdit($("hm-ns"));
 paintSaved();
 noZoom();
+noStickyHover();
 mountPwa();
 
 logo.addEventListener("click", (e) => {

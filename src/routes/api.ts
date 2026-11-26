@@ -17,6 +17,7 @@ import { walletTokenPath, walletTokenTitle } from "../seo";
 import { ensureFavicon, faviconFile, faviconTint } from "../lib/tokens/favicons";
 import { tintOf } from "../lib/tokens/icons";
 import { isChartRange, priceSeries } from "../lib/tokens/history";
+import { newsPicks, newsReady, newsTopics, renderHomeNews } from "../lib/news";
 import {
   featuredTokens,
   isTokenList,
@@ -599,6 +600,33 @@ apiRouter.get(
     );
     res.setHeader("Cache-Control", "public, max-age=60");
     res.json({ ...page, tokens });
+  }),
+);
+
+/**
+ * What the home news menu offers (client/watch/news.js): the busiest topics
+ * on 40 Newsroom, after any of `t` (watched, slugs joined by dots) that have
+ * fallen off the list. No quota: the list is the one the cards refresh with.
+ */
+apiRouter.get("/api/news/topics", searchLimit, (req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-cache");
+  res.json({ topics: newsTopics(newsPicks(asString(req.query.t).slice(0, 400))) });
+});
+
+/**
+ * The home news cards for `t`, the watched topics as the "nw" cookie names
+ * them (none for Auto), as the page would render them, for the menu to
+ * swap in when the choice changes. A topic just chosen is asked for its
+ * first card here, from the day's allowance (src/lib/news.ts).
+ */
+apiRouter.get(
+  "/api/news/cards",
+  searchLimit,
+  wrap(async (req: Request, res: Response) => {
+    const picks = newsPicks(asString(req.query.t).slice(0, 400));
+    await newsReady(picks);
+    res.setHeader("Cache-Control", "no-cache");
+    res.json({ html: renderHomeNews(picks) });
   }),
 );
 
