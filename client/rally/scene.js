@@ -58,7 +58,7 @@ export function at(tr, i) {
 const off = (p, u, a, v = [0, 0, 0], b = 0) => [p[0] + u[0] * a + v[0] * b, p[1] + u[1] * a + v[1] * b, p[2] + u[2] * a + v[2] * b];
 
 /** A seeded random, so the trees grow in the same places every visit. @param {number} seed */
-function random(seed) {
+export function random(seed) {
   let s = seed >>> 0;
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -200,10 +200,11 @@ function gantry(g, tr) {
 
 /**
  * The ground, in big squares of two greens out to the fog, and trees and
- * rocks scattered over it clear of the road.
- * @param {Track} tr
+ * rocks scattered over it clear of the road, and of anything else `taken`
+ * says stands there (the villages and their roads).
+ * @param {Track} tr @param {(x: number, z: number) => boolean} [taken]
  */
-export function ground(tr) {
+export function ground(tr, taken = () => false) {
   const g = new Geo();
   let x0 = Infinity;
   let x1 = -Infinity;
@@ -255,7 +256,7 @@ export function ground(tr) {
   for (let tries = 0; tries < 6000 && trees < 650; tries++) {
     const x = x0 - 300 + rand() * (x1 - x0 + 600);
     const z = z0 - 300 + rand() * (z1 - z0 + 600);
-    if (!clear(x, z)) continue;
+    if (!clear(x, z) || taken(x, z)) continue;
     trees++;
     if (rand() < 0.18) {
       const s = 1 + rand() * 2.5;
@@ -503,11 +504,16 @@ export function wheelsOf(d) {
 }
 
 /**
- * A car in a paint, without its wheels (they turn, so are drawn apart).
+ * A car in a paint, without its wheels (they turn, so are drawn apart). Its
+ * lamps are meshes of their own, `head` and `tail`, so they can shine: the
+ * headlamps at night, the tail lamps brighter as it brakes.
  * @param {CarDesign} d
+ * @returns {Geo & {head: Geo, tail: Geo}}
  */
 export function car(d) {
-  const g = new Geo();
+  const g = /** @type {Geo & {head: Geo, tail: Geo}} */ (new Geo());
+  g.head = new Geo();
+  g.tail = new Geo();
   const body = rgb(d.body);
   const stripe = rgb(d.stripe);
   const roof = rgb(d.roof);
@@ -526,10 +532,10 @@ export function car(d) {
   };
   /** Headlamps at the nose: two slanted bars. @param {number} z @param {number} x @param {number} y @param {number} w */
   const lamps = (z, x, y, w = 0.34) => {
-    for (const s of [-1, 1]) g.box(s * x, y, z, w, 0.07, 0.12, lamp);
+    for (const s of [-1, 1]) g.head.box(s * x, y, z, w, 0.07, 0.12, lamp);
   };
-  /** The rear lights: a bar across, or a pair. @param {number} z @param {number} y @param {number} w */
-  const tail = (z, y, w) => g.box(0, y, z, w, 0.07, 0.04, red);
+  /** The rear lights: a bar across. @param {number} z @param {number} y @param {number} w */
+  const tail = (z, y, w) => g.tail.box(0, y, z, w, 0.07, 0.04, red);
 
   switch (d.shape) {
     case "coupe": {

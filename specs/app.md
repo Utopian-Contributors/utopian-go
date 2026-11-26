@@ -378,6 +378,17 @@ be driven. Like the others it is a page anyone may open signed out, offline firs
   and built into a centreline sampled every metre, each sample with the road's frame. The page
   draws it with its own small WebGL renderer (`client/rally/gl.js`, `scene.js`): asphalt, kerbs,
   barriers, the bank the road sits on, a chequered gantry, trees, coins, boosts and crates.
+- **Day and night** (`client/rally/world.js`). Night is the device's dark mode, followed live.
+  The renderer lights each frame by a look: the sky's light from above and the ground's bounce
+  from below, a sun or a moon, fog into the horizon's colour, and things that shine on their
+  own (lamp heads, lit windows, car lights). By day a warm, low sun under a sky that fades to a
+  hazy horizon. By night a dim moon, stars, dark-blue fog, street lamps every 42 m along the
+  course (none on the loop or near the jumps) whose warm pools light the road (the eight
+  nearest the car light each frame), the car's headlights lighting a cone of road ahead, and
+  the loop lit by studs down its middle and strips along its sides, with softer lights hung
+  inside it. Car lights work by day and night: tail lights brighten when braking, and at night
+  headlights and tail lights shine. Round the course, two country roads with villages of
+  houses (windows lit at night, glass by day), their own lamps, and traffic going both ways.
 - **The car** (`client/rally/car.js`, fixed 120 Hz steps). On the road it is held in the road's
   terms (how far along, how far across, which way it points), which carries it round the loop
   and over every crest. It leaves the road when the road can no longer push on it (a crest

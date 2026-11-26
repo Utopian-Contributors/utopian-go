@@ -28,8 +28,9 @@ import { noStickyHover } from "../js/hover.js";
 import { onName, readName } from "../js/me.js";
 import { plainSwap } from "../js/plainswap.js";
 import { MAX_BOOSTS, STEP, fire, pose, race, raceMs, roadAt, speed, step } from "./car.js";
-import { IDENTITY, lookAt, mul, perspective, place, renderer } from "./gl.js";
+import { IDENTITY, LAMPS, lookAt, mul, perspective, place, renderer } from "./gl.js";
 import * as scene from "./scene.js";
+import { DAY, NIGHT, STUDIO, TRAFFIC, country, loopLights, sky, streetLamps, trafficAt } from "./world.js";
 
 /** @typedef {ReturnType<typeof race>} Race */
 
@@ -106,9 +107,34 @@ const owned = (/** @type {string} */ id) => id === CARS[0].id || device.cars.inc
 
 const track = buildTrack();
 const gfx = renderer(canvas);
+/** The country round the course, and the lamps along it and in its villages. */
+const town = country(track);
+const trackLamps = streetLamps(track);
+const loopLit = loopLights(track);
+const allLamps = [...trackLamps.lights, ...loopLit.lights, ...town.lights];
+
+/**
+ * Day or night: the device's dark mode, followed as it changes. By night the
+ * lamps light the road, windows light up, and the cars' lights shine.
+ */
+const darkMode = matchMedia("(prefers-color-scheme: dark)");
+let look = darkMode.matches ? NIGHT : DAY;
+darkMode.addEventListener?.("change", () => (look = darkMode.matches ? NIGHT : DAY));
+
 const meshes = gfx && {
   road: gfx.mesh(scene.road(track)),
-  ground: gfx.mesh(scene.ground(track)),
+  ground: gfx.mesh(scene.ground(track, town.taken)),
+  skyDay: gfx.mesh(sky(DAY, [0.26, 0.5, 0.86])),
+  skyNight: gfx.mesh(sky(NIGHT, [0.005, 0.01, 0.035])),
+  posts: gfx.mesh(trackLamps.posts),
+  heads: gfx.mesh(trackLamps.heads),
+  loop: gfx.mesh(loopLit.glow),
+  lanes: gfx.mesh(town.ground),
+  houses: gfx.mesh(town.houses),
+  lit: gfx.mesh(town.lit),
+  unlit: gfx.mesh(town.unlit),
+  townPosts: gfx.mesh(town.posts),
+  townHeads: gfx.mesh(town.heads),
   coin: gfx.mesh(scene.coin()),
   can: gfx.mesh(scene.boostCan()),
   crate: gfx.mesh(scene.crate()),
@@ -118,7 +144,7 @@ const meshes = gfx && {
   cars: new Map(),
 };
 
-/** @typedef {{body: any, wheel: any, hubs: number[][], exhausts: number[][]}} CarMeshes */
+/** @typedef {{body: any, head: any, tail: any, wheel: any, hubs: number[][], exhausts: number[][]}} CarMeshes */
 
 /**
  * A car's meshes in a renderer: its body in its paint, its body style's
@@ -129,8 +155,9 @@ const meshes = gfx && {
 function carMeshes(r, cache, id) {
   let m = cache.get(id);
   if (!m) {
-    const d = carById(id) ?? CARS[0];
-    cache.set(id, (m = { body: r.mesh(scene.car(d)), wheel: r.mesh(scene.wheel(d)), hubs: scene.wheelsOf(d), exhausts: scene.exhaustsOf(d) }));
+    const d = carById(id) ?? /** @type {any} */ (TRAFFIC.find((t) => t.id === id)) ?? CARS[0];
+    const geo = scene.car(d);
+    cache.set(id, (m = { body: r.mesh(geo), head: r.mesh(geo.head), tail: r.mesh(geo.tail), wheel: r.mesh(scene.wheel(d)), hubs: scene.wheelsOf(d), exhausts: scene.exhaustsOf(d) }));
   }
   return m;
 }
@@ -594,7 +621,6 @@ function paintHud() {
 
 /* ---------- Drawing ---------- */
 
-const SKY = [0.62, 0.82, 0.96];
 const FAR = 1300;
 
 /** @param {number[]} a @param {number[]} b @param {number} t */
@@ -817,10 +843,34 @@ function draw(dt) {
   lift += (cover - lift) * ease(5, dt);
   proj[9] = -lift;
   const view = lookAt(cam.eye, target, cam.up);
-  gfx.begin(width, height, mul(proj, view), cam.eye, SKY, FAR * 0.75);
+  const night = look.night;
+  gfx.begin(width, height, mul(proj, view), cam.eye, look, night ? nearestLamps(p.pos) : undefined, night ? headlights(p) : undefined);
+  // The sky first, round the camera and behind everything.
+  gfx.depth(false);
+  gfx.draw(night ? meshes.skyNight : meshes.skyDay, place([1, 0, 0], [0, 1, 0], [0, 0, 1], cam.eye, 60, M), UNLIT, 1);
+  gfx.depth(true);
   gfx.draw(meshes.ground, IDENTITY);
   gfx.draw(meshes.road, IDENTITY);
+  // The lamps: posts lit as anything is; heads shining by night.
+  gfx.draw(meshes.posts, IDENTITY);
+  gfx.draw(meshes.heads, IDENTITY, WHITE, night ? 1.6 : 0.2);
+  // The loop's studs and side strips: shining by night, reflectors by day.
+  gfx.draw(meshes.loop, IDENTITY, WHITE, night ? 1.5 : 0.1);
+  // The country: its roads, houses, windows (lit at night, glass by day), lamps.
+  gfx.draw(meshes.lanes, IDENTITY);
+  gfx.draw(meshes.houses, IDENTITY);
+  gfx.draw(meshes.lit, IDENTITY, WHITE, night ? 1.3 : 0, night ? undefined : GLASS);
+  gfx.draw(meshes.unlit, IDENTITY);
+  gfx.draw(meshes.townPosts, IDENTITY);
+  gfx.draw(meshes.townHeads, IDENTITY, WHITE, night ? 1.6 : 0.2);
   const t = performance.now() / 1000;
+  // The traffic, going about its business, lights on after dark.
+  for (const c of town.traffic) {
+    const q = trafficAt(c, t, town.y);
+    if (Math.abs(q.pos[0] - cam.eye[0]) + Math.abs(q.pos[2] - cam.eye[2]) > 900) continue;
+    const m = carMesh(TRAFFIC[c.kind].id);
+    if (m) drawCarIn(gfx, m, q.pos, q.F, [0, 1, 0], 0, WHITE, undefined, night, false);
+  }
   const ex = cam.eye[0];
   const ez = cam.eye[2];
   const near = (/** @type {number[]} */ q) => Math.abs(q[0] - ex) + Math.abs(q[2] - ez) < 500;
@@ -832,7 +882,7 @@ function draw(dt) {
     const co = Math.cos(a);
     const si = Math.sin(a);
     const F = [c.t[0] * co + c.r[0] * si, c.t[1] * co + c.r[1] * si, c.t[2] * co + c.r[2] * si];
-    gfx.draw(meshes.coin, place(cross(c.n, F), c.n, F, c.pos, 1, M), WHITE, 0.25);
+    gfx.draw(meshes.coin, place(cross(c.n, F), c.n, F, c.pos, 1, M), WHITE, night ? 0.55 : 0.25);
   }
   for (let k = 0; k < canAt.length; k++) {
     const b = canAt[k];
@@ -841,7 +891,9 @@ function draw(dt) {
   }
   for (const m of crateAt) if (near([m[12], 0, m[14]])) gfx.draw(meshes.crate, m);
   // The car, its wheels, its flames, and its shadow on the road.
-  drawCar(device.car, p.pos, p.F, p.U, cur.steer, WHITE);
+  // Its tail lights brighten as it brakes (or rolls to a stop past the line).
+  const braking = (phase === "race" || phase === "done") && !cur.crashed && (input.brake > 0 || cur.finished) && speed(cur) > 0.5;
+  drawCar(device.car, p.pos, p.F, p.U, cur.steer, WHITE, undefined, braking);
   if (cur.boostT > 0 && !cur.crashed) {
     const L = cross(p.U, p.F);
     // Out of the back of this car's body, wherever its tail is.
@@ -870,26 +922,62 @@ const GHOST_TINT = [1, 1, 1, 0.5];
 const GHOST_IN = 2;
 const GHOST_FADE = 0.8;
 const SHADE = [1, 1, 1, 0.32];
+/** Drawn in its own colours, unlit: the sky. */
+const UNLIT = [0, 0, 0, 1];
+/** A lit window by day: just glass. */
+const GLASS = [0.22, 0.29, 0.38, 1];
+
+/** The nearest lamps to `at` (the street lamps, the loop's, the villages'), for the frame's light: brightest near, fading out past 150 m. */
+const lampBuf = new Float32Array(LAMPS * 4);
+/** @param {number[]} at */
+function nearestLamps(at) {
+  lampBuf.fill(0);
+  /** @type {{d: number, p: number[]}[]} */
+  const best = [];
+  for (const p of allLamps) {
+    const d = (p[0] - at[0]) ** 2 + (p[1] - at[1]) ** 2 + (p[2] - at[2]) ** 2;
+    if (best.length < LAMPS) best.push({ d, p });
+    else if (d < best[LAMPS - 1].d) best[LAMPS - 1] = { d, p };
+    else continue;
+    best.sort((a, b) => a.d - b.d);
+  }
+  best.forEach(({ d, p }, i) => {
+    // Its own strength (a street lamp's is 1), fading out with distance.
+    lampBuf.set([p[0], p[1], p[2], (p[3] ?? 1) * Math.max(0, Math.min(1, 1 - (Math.sqrt(d) - 150) / 90))], i * 4);
+  });
+  return lampBuf;
+}
+
+/** The car's headlights: from its nose, pointing a little down the road ahead. @param {{pos: number[], F: number[], U: number[]}} p */
+function headlights(p) {
+  return { pos: along(along(p.pos, p.F, 2.1), p.U, 0.6), dir: unit(along(p.F, p.U, -0.07)) };
+}
 
 /**
  * @param {string} id @param {number[]} pos @param {number[]} F @param {number[]} U @param {number} steer @param {number[]} tint @param {number[]} [flat]
  */
-function drawCar(id, pos, F, U, steer, tint, flat) {
+function drawCar(id, pos, F, U, steer, tint, flat, braking = false) {
   if (!gfx || !meshes) return;
   const m = carMesh(id);
   if (!m) return;
-  drawCarIn(gfx, m, pos, F, U, steer, tint, flat);
+  drawCarIn(gfx, m, pos, F, U, steer, tint, flat, look.night, braking);
 }
 
 /**
- * A car's body and its four wheels, the fronts turned by `steer`.
+ * A car's body, its lights and its four wheels, the fronts turned by
+ * `steer`. Its headlights shine at night; its tail lights glow at night and
+ * brighten as it brakes, by day or night.
  * @param {NonNullable<ReturnType<typeof renderer>>} r @param {CarMeshes} m
  * @param {number[]} pos @param {number[]} F @param {number[]} U @param {number} steer @param {number[]} tint @param {number[]} [flat]
+ * @param {boolean} [night] @param {boolean} [braking]
  */
-function drawCarIn(r, m, pos, F, U, steer, tint, flat) {
+function drawCarIn(r, m, pos, F, U, steer, tint, flat, night = false, braking = false) {
   const L = cross(U, F);
   const glow = flat ? 0.35 : 0;
-  r.draw(m.body, place(L, U, F, pos, 1, M), tint, glow, flat);
+  place(L, U, F, pos, 1, M);
+  r.draw(m.body, M, tint, glow, flat);
+  r.draw(m.head, M, tint, flat ? glow : night ? 1.9 : 0.25, flat);
+  r.draw(m.tail, M, tint, flat ? glow : braking ? (night ? 2.8 : 1.5) : night ? 1.0 : 0.2, flat);
   const a = -steer * 0.45;
   const turned = unit(along(scale(F, Math.cos(a)), L, Math.sin(a)));
   const turnedL = cross(U, turned);
@@ -1102,7 +1190,7 @@ function paintTile(id) {
   // The camera circles the car at a little over its height, looking at its middle.
   const eye = [Math.sin(t.angle) * 5.6, 1.9, Math.cos(t.angle) * 5.6];
   const vp = mul(perspective(0.55, w / h, 0.5, 60), lookAt(eye, [0, 0.62, 0], [0, 1, 0]));
-  shelfGfx.begin(w, h, vp, eye, [0, 0, 0], 1e5);
+  shelfGfx.begin(w, h, vp, eye, STUDIO);
   shelfGfx.draw(shelfShadow, place([1.12, 0, 0], [0, 1, 0], [0, 0, 1.1], [0, 0.01, 0], 1, M), SHADE);
   drawCarIn(shelfGfx, carMeshes(shelfGfx, shelfCars, id), [0, 0, 0], [0, 0, 1], [0, 1, 0], 0, WHITE);
   const ctx = c.getContext("2d");

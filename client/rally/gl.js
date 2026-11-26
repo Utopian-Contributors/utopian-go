@@ -1,11 +1,19 @@
 /**
  * Rally's renderer: a small WebGL one, rather than a library, as everything
- * here is flat-coloured triangles lit by one sun and fogged into the sky.
- * Meshes are built once (Geo) and uploaded; a frame draws each with its own
- * placement and a tint, which is how the ghost car is drawn see-through.
+ * here is flat-coloured triangles. A frame is lit by a "look" (begin()):
+ * light from the sky above and bounced from the ground below, a sun or a
+ * moon, fog into the horizon's colour, and at night the street lamps nearest
+ * the car and its own headlights. Some things give light of their own (a
+ * lamp's head, a lit window, a car's lights): drawn with `glow`, they shine
+ * whatever lights them. Meshes are built once (Geo) and uploaded; a frame
+ * draws each with its own placement and a tint, which is how the ghost car
+ * is drawn see-through.
  *
  * Matrices are column-major Float32Arrays, as WebGL takes them.
  */
+
+/** How many street lamps light a frame: the nearest. */
+export const LAMPS = 8;
 
 const VERT = `
 attribute vec3 aPos;
@@ -31,24 +39,60 @@ varying vec3 vNrm;
 varying vec3 vPos;
 uniform vec4 uTint;
 uniform vec3 uSun;
+uniform vec3 uSunCol;
+uniform vec3 uSky;
+uniform vec3 uGround;
 uniform vec3 uCam;
 uniform vec3 uFog;
 uniform vec2 uFogD;
 uniform float uGlow;
 uniform vec4 uFlat;
+uniform float uNight;
+uniform vec4 uLamp[${LAMPS}];
+uniform vec3 uLampCol;
+uniform vec3 uHeadPos;
+uniform vec3 uHeadDir;
 void main() {
   // Lit from whichever side faces the eye, so a face wound either way reads right.
   vec3 n = normalize(vNrm) * (gl_FrontFacing ? 1.0 : -1.0);
-  float sun = max(dot(n, uSun), 0.0);
-  float sky = 0.5 + 0.5 * n.y;
-  vec3 c = mix(vCol, uFlat.rgb, uFlat.a) * uTint.rgb * (0.34 + 0.22 * sky + 0.62 * sun + uGlow);
+  // The sky's light from above, the ground's bounce from below, the sun or the moon.
+  vec3 light = mix(uGround, uSky, 0.5 + 0.5 * n.y) + uSunCol * max(dot(n, uSun), 0.0);
+  if (uNight > 0.5) {
+    // The street lamps nearest: a warm pool under each, fading out by 40 m.
+    for (int i = 0; i < ${LAMPS}; i++) {
+      vec3 l = uLamp[i].xyz - vPos;
+      float d2 = dot(l, l);
+      float fall = max(0.0, 1.0 - d2 / 1600.0);
+      float facing = 0.35 + 0.65 * max(dot(n, l * inversesqrt(d2 + 0.001)), 0.0);
+      light += uLampCol * uLamp[i].w * facing * fall * fall * 70.0 / (12.0 + d2);
+    }
+    // The car's headlights: a cone ahead of it, reaching some 90 m.
+    vec3 h = vPos - uHeadPos;
+    float hd = length(h);
+    float cone = smoothstep(0.86, 0.97, dot(h / max(hd, 0.001), uHeadDir));
+    float reach = max(0.0, 1.0 - hd / 90.0);
+    float faces = 0.4 + 0.6 * max(dot(n, -h / max(hd, 0.001)), 0.0);
+    light += vec3(1.0, 0.96, 0.86) * cone * reach * reach * faces * 2.4 * min(1.0, hd / 3.0);
+  }
+  vec3 base = mix(vCol, uFlat.rgb, uFlat.a);
+  vec3 c = base * uTint.rgb * light + base * uGlow;
   float d = distance(vPos, uCam);
   float f = clamp((d - uFogD.x) / (uFogD.y - uFogD.x), 0.0, 1.0);
   gl_FragColor = vec4(mix(c, uFog, f * f), uTint.a);
 }`;
 
+/**
+ * How a frame is lit. `sun` is the direction light comes from; `fog` is also
+ * the horizon's colour and what is cleared to; `near` and `far` where the
+ * fog starts and is whole; `night` turns on the lamps and the headlights.
+ * @typedef {{sun: number[], sunCol: number[], sky: number[], ground: number[], fog: number[], near: number, far: number, night: boolean, lamp: number[]}} Look
+ */
+
 /** No flat colour: every mesh in its own. */
 const NONE = [0, 0, 0, 0];
+/** No lamps, and headlights pointing nowhere: for a frame without them. */
+const NO_LAMPS = new Float32Array(LAMPS * 4);
+const NO_HEAD = { pos: [0, -1e4, 0], dir: [0, -1, 0] };
 
 /** @param {WebGLRenderingContext} gl @param {number} type @param {string} src */
 function shader(gl, type, src) {
@@ -84,6 +128,14 @@ export function renderer(canvas, clear = false) {
     m: gl.getUniformLocation(prog, "uM"),
     tint: gl.getUniformLocation(prog, "uTint"),
     sun: gl.getUniformLocation(prog, "uSun"),
+    sunCol: gl.getUniformLocation(prog, "uSunCol"),
+    sky: gl.getUniformLocation(prog, "uSky"),
+    ground: gl.getUniformLocation(prog, "uGround"),
+    night: gl.getUniformLocation(prog, "uNight"),
+    lamps: gl.getUniformLocation(prog, "uLamp"),
+    lampCol: gl.getUniformLocation(prog, "uLampCol"),
+    headPos: gl.getUniformLocation(prog, "uHeadPos"),
+    headDir: gl.getUniformLocation(prog, "uHeadDir"),
     cam: gl.getUniformLocation(prog, "uCam"),
     fog: gl.getUniformLocation(prog, "uFog"),
     fogD: gl.getUniformLocation(prog, "uFogD"),
@@ -112,21 +164,35 @@ export function renderer(canvas, clear = false) {
       return { buf, count: geo.v.length / 9 };
     },
     /**
-     * Start a frame: the viewport, the sky, the camera.
-     * @param {number} w @param {number} h @param {Float32Array} vp
-     * @param {number[]} cam @param {number[]} fog @param {number} far
+     * Start a frame: the viewport, the camera, and how it is lit. At night,
+     * `lamps` are the nearest street lamps (x, y, z, brightness; LAMPS of
+     * them, zeros for none) and `head` the car's headlights: where they are
+     * and the way they point.
+     * @param {number} w @param {number} h @param {Float32Array} vp @param {number[]} cam
+     * @param {Look} look @param {Float32Array} [lamps] @param {{pos: number[], dir: number[]}} [head]
      */
-    begin(w, h, vp, cam, fog, far) {
+    begin(w, h, vp, cam, look, lamps = NO_LAMPS, head = NO_HEAD) {
       gl.viewport(0, 0, w, h);
+      const fog = look.fog;
       gl.clearColor(fog[0], fog[1], fog[2], clear ? 0 : 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.uniformMatrix4fv(loc.vp, false, vp);
       gl.uniform3fv(loc.cam, cam);
       gl.uniform3fv(loc.fog, fog);
-      gl.uniform2f(loc.fogD, far * 0.35, far);
-      const s = [0.45, 0.8, -0.35];
-      const l = Math.hypot(s[0], s[1], s[2]);
-      gl.uniform3f(loc.sun, s[0] / l, s[1] / l, s[2] / l);
+      gl.uniform2f(loc.fogD, look.near, look.far);
+      gl.uniform3fv(loc.sun, norm(look.sun));
+      gl.uniform3fv(loc.sunCol, look.sunCol);
+      gl.uniform3fv(loc.sky, look.sky);
+      gl.uniform3fv(loc.ground, look.ground);
+      gl.uniform1f(loc.night, look.night ? 1 : 0);
+      gl.uniform3fv(loc.lampCol, look.lamp);
+      gl.uniform4fv(loc.lamps, lamps);
+      gl.uniform3fv(loc.headPos, head.pos);
+      gl.uniform3fv(loc.headDir, head.dir);
+    },
+    /** Whether the depth buffer takes what is drawn next: off for the sky, behind everything. @param {boolean} on */
+    depth(on) {
+      gl.depthMask(on);
     },
     /**
      * Draw a mesh where `model` puts it, tinted; see-through when the tint's
